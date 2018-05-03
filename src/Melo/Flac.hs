@@ -8,8 +8,7 @@ import qualified Data.ByteString.Lazy as L
 import Debug.Trace
 
 readFlac :: FilePath -> IO Flac
-readFlac p = do
-  L.readFile p >>= return . decode
+readFlac p = decode <$> L.readFile p
 
 readFlacOrFail :: FilePath -> IO (Either (ByteOffset, String) Flac)
 readFlacOrFail = decodeFileOrFail
@@ -62,7 +61,7 @@ instance Binary MetadataBlock where
       _ -> do
         header' <- get
         let len = blockLength header'
-        skip $ fromIntegral $ len
+        skip $ fromIntegral len
         return $ PaddingBlock $ Padding len
 
 data MetadataBlockHeader = MetadataBlockHeader
@@ -77,8 +76,8 @@ instance Binary MetadataBlockHeader where
     byte <- getWord8
     let isLast = testBit byte 7
     let blockType = clearBit byte 7
-    len <- get24Bits
-    let header = MetadataBlockHeader blockType len isLast
+    blockLength <- get24Bits
+    let header = MetadataBlockHeader {blockType, blockLength, isLast}
     traceM $ show header
     return header
 
@@ -104,12 +103,12 @@ instance Binary StreamInfo where
     minFrameSize <- get24Bits
     maxFrameSize <- get24Bits
     rest <- getWord64be
-    let sampleRate = fromIntegral $ ((shiftR rest 44) .&. 0xFFFFF)
-    let channels = fromIntegral $ ((shiftR rest 41) .&. 0b111) + 1
-    let bps = fromIntegral $ ((shiftR rest 36) .&. 0b11111) + 1
-    let samples = fromIntegral $ (rest .&. 0xFFFFFFFFF)
+    let sampleRate = fromIntegral (shiftR rest 44 .&. 0xFFFFF)
+    let channels = fromIntegral (shiftR rest 41 .&. 0b111) + 1
+    let bps = fromIntegral (shiftR rest 36 .&. 0b11111) + 1
+    let samples = fromIntegral (rest .&. 0xFFFFFFFFF)
     md5 <- getLazyByteString 16
-    return $
+    return
       StreamInfo
         { minBlockSize
         , maxBlockSize
@@ -122,7 +121,7 @@ instance Binary StreamInfo where
         , md5
         }
 
-data Padding =
+newtype Padding =
   Padding Word32
   deriving (Show)
 
@@ -132,8 +131,8 @@ instance Binary Padding where
     header <- get :: Get MetadataBlockHeader
     guard $ blockType header == 1
     let paddingLength = blockLength header
-    traceM $ "found padding; skipping " ++ (show paddingLength)
-    skip $ fromIntegral $ paddingLength
+    traceM $ "found padding; skipping " ++ show paddingLength
+    skip $ fromIntegral paddingLength
     return $ Padding paddingLength
 
 data Application = Application
@@ -147,9 +146,9 @@ instance Binary Application where
     header <- get :: Get MetadataBlockHeader
     guard $ blockType header == 2
     Application <$> getWord32be <*>
-      (getLazyByteString $ fromIntegral (blockLength header))
+      getLazyByteString (fromIntegral (blockLength header))
 
-data SeekTable =
+newtype SeekTable =
   SeekTable [SeekPoint]
   deriving (Show)
 
@@ -158,7 +157,7 @@ instance Binary SeekTable where
   get = do
     header <- get :: Get MetadataBlockHeader
     guard $ blockType header == 3
-    let numPoints = fromIntegral $ (blockLength header) `div` 18
+    let numPoints = fromIntegral $ blockLength header `div` 18
     SeekTable <$> replicateM numPoints get
 
 data SeekPoint = SeekPoint
@@ -169,8 +168,7 @@ data SeekPoint = SeekPoint
 
 instance Binary SeekPoint where
   put = undefined
-  get = do
-    SeekPoint <$> getWord64be <*> getWord64be <*> getWord16be
+  get = SeekPoint <$> getWord64be <*> getWord64be <*> getWord16be
 
 data CueSheet = CueSheet
   { catalogNum :: L.ByteString
@@ -189,7 +187,7 @@ instance Binary CueSheet where
     skip 258
     numTracks <- fromIntegral <$> mfilter (> 1) getWord8
     tracks <- replicateM numTracks get
-    return $ CueSheet {catalogNum, leadInSamples, isCD, tracks}
+    return CueSheet {catalogNum, leadInSamples, isCD, tracks}
 
 data CueSheetTrack = CueSheetTrack
   { sampleOffset :: Word64
@@ -212,7 +210,7 @@ instance Binary CueSheetTrack where
     skip 13
     numIndexPoints <- fromIntegral <$> getWord8
     indexPoints <- replicateM numIndexPoints get
-    return $
+    return
       CueSheetTrack
         {sampleOffset, trackNumber, isrc, isAudio, preEmphasis, indexPoints}
 
@@ -231,7 +229,7 @@ instance Binary CueSheetTrackIndex where
 
 get24Bits :: (Num a, Bits a) => Get a
 get24Bits = do
-  x <- liftM fromIntegral getWord8
-  y <- liftM fromIntegral getWord8
-  z <- liftM fromIntegral getWord8
-  return $ (shiftL x 16) .|. (shiftL y 8) .|. z
+  x <- fromIntegral <$> getWord8
+  y <- fromIntegral <$> getWord8
+  z <- fromIntegral <$> getWord8
+  return $ shiftL x 16 .|. shiftL y 8 .|. z
