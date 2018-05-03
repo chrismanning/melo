@@ -17,7 +17,7 @@ spec = do
   describe "Flac" $ do
     it "parses flac" $ do
       flac <- readFlac "test/Melo/normal.flac"
-      (head $ blocks flac) `shouldSatisfy`
+      streamInfoBlock flac `shouldSatisfy`
         (\b ->
            case b of
              StreamInfo {} -> True
@@ -25,7 +25,7 @@ spec = do
     it "parses STREAMINFO" $ do
       flac <- readFlac "test/Melo/normal.flac"
       let (md5, _) = Hex.decode "8b8ef26d3251925d283774b7e1f8f949"
-      (head $ blocks flac) `shouldSatisfy`
+      streamInfoBlock flac `shouldSatisfy`
         (\b ->
            case b of
              StreamInfo { minBlockSize = 4096
@@ -35,7 +35,7 @@ spec = do
                         , sampleRate = 44100
                         , channels = 2
                         , bps = 16
-                        , samples = 9667896
+                        , samples = Just 9667896
                         , md5 = md5
                         } -> True
              _ -> False)
