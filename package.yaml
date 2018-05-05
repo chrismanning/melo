@@ -27,6 +27,7 @@ library:
   dependencies:
     - binary
     - bytestring
+    - text
 
 # executables:
 
@@ -40,9 +41,11 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - melo
+    - base16-bytestring
+    - binary
+    - bytestring
     - hspec
     - hspec-expectations-lifted
-    - base16-bytestring
 
 ghc-options:
   - -Wall

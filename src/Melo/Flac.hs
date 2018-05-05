@@ -7,6 +7,8 @@ import Data.Bits
 import qualified Data.ByteString.Lazy as L
 import Debug.Trace
 
+import Melo.Vorbis
+
 readFlac :: FilePath -> IO Flac
 readFlac p = decode <$> L.readFile p
 
@@ -43,7 +45,7 @@ data MetadataBlock
   | PaddingBlock Padding
   | ApplicationBlock Application
   | SeekTableBlock SeekTable
-  | VorbisCommentBlock
+  | VorbisCommentBlock FlacTags
   | CueSheetBlock CueSheet
   | PictureBlock
   deriving (Show)
@@ -57,6 +59,7 @@ instance Binary MetadataBlock where
       1 -> PaddingBlock <$> get
       2 -> ApplicationBlock <$> get
       3 -> SeekTableBlock <$> get
+      4 -> VorbisCommentBlock <$> get
       5 -> CueSheetBlock <$> get
       _ -> do
         header' <- get
@@ -169,6 +172,17 @@ data SeekPoint = SeekPoint
 instance Binary SeekPoint where
   put = undefined
   get = SeekPoint <$> getWord64be <*> getWord64be <*> getWord16be
+
+data FlacTags =
+  FlacTags VorbisComments
+  deriving (Show)
+
+instance Binary FlacTags where
+  put = undefined
+  get = do
+    header <- get :: Get MetadataBlockHeader
+    guard $ blockType header == 4
+    FlacTags <$> get
 
 data CueSheet = CueSheet
   { catalogNum :: L.ByteString
