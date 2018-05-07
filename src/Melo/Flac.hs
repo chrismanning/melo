@@ -4,9 +4,12 @@ import Control.Monad
 import Data.Binary
 import Data.Binary.Get
 import Data.Bits
+import Data.ByteString
 import qualified Data.ByteString.Lazy as L
+import Data.Text
 import Debug.Trace
 
+import Melo.BinaryUtil
 import Melo.Vorbis
 
 readFlac :: FilePath -> IO Flac
@@ -93,7 +96,7 @@ data StreamInfo = StreamInfo
   , channels :: Word8
   , bps :: Word8
   , samples :: Maybe Word64
-  , md5 :: L.ByteString
+  , md5 :: ByteString
   } deriving (Show)
 
 instance Binary StreamInfo where
@@ -110,7 +113,7 @@ instance Binary StreamInfo where
     let channels = fromIntegral (shiftR rest 41 .&. 0b111) + 1
     let bps = fromIntegral (shiftR rest 36 .&. 0b11111) + 1
     let samples = fromIntegral (rest .&. 0xFFFFFFFFF)
-    md5 <- getLazyByteString 16
+    md5 <- getByteString 16
     return
       StreamInfo
         { minBlockSize
@@ -140,7 +143,7 @@ instance Binary Padding where
 
 data Application = Application
   { applicationId :: Word32
-  , applicationData :: L.ByteString
+  , applicationData :: ByteString
   } deriving (Show)
 
 instance Binary Application where
@@ -149,7 +152,7 @@ instance Binary Application where
     header <- get :: Get MetadataBlockHeader
     guard $ blockType header == 2
     Application <$> getWord32be <*>
-      getLazyByteString (fromIntegral (blockLength header))
+      getByteString (fromIntegral (blockLength header))
 
 newtype SeekTable =
   SeekTable [SeekPoint]
@@ -185,7 +188,7 @@ instance Binary FlacTags where
     FlacTags <$> get
 
 data CueSheet = CueSheet
-  { catalogNum :: L.ByteString
+  { catalogNum :: Text
   , leadInSamples :: Word64
   , isCD :: Bool
   , tracks :: [CueSheetTrack]
@@ -194,7 +197,7 @@ data CueSheet = CueSheet
 instance Binary CueSheet where
   put = undefined
   get = do
-    catalogNum <- getLazyByteString 128
+    catalogNum <- getUTF8Text 128
     leadInSamples <- getWord64be
     a <- getWord8
     let isCD = testBit a 7
@@ -206,7 +209,7 @@ instance Binary CueSheet where
 data CueSheetTrack = CueSheetTrack
   { sampleOffset :: Word64
   , trackNumber :: Word8
-  , isrc :: L.ByteString
+  , isrc :: Text
   , isAudio :: Bool
   , preEmphasis :: Bool
   , indexPoints :: [CueSheetTrackIndex]
@@ -217,7 +220,7 @@ instance Binary CueSheetTrack where
   get = do
     sampleOffset <- getWord64be
     trackNumber <- getWord8
-    isrc <- getLazyByteString 12
+    isrc <- getUTF8Text 12
     a <- getWord8
     let isAudio = testBit a 7
     let preEmphasis = testBit a 6

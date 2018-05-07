@@ -5,8 +5,9 @@ import Data.Binary
 import Data.Binary.Get
 import Data.Bits
 import Data.Text
-import Data.Text.Encoding
 import Prelude hiding (drop, length, take)
+
+import Melo.BinaryUtil
 
 data FramedVorbisComments =
   FramedVorbisComments VorbisComments
@@ -29,11 +30,7 @@ instance Binary VorbisComments where
   put = undefined
   get = do
     vendorLength <- fromIntegral <$> getWord32le
-    vendorBs <- getByteString vendorLength
-    vendorString <-
-      case decodeUtf8' vendorBs of
-        Left e -> fail $ "Error decoding vorbis vendor string: " ++ show e
-        Right s -> return s
+    vendorString <- getUTF8Text vendorLength
     numComments <- fromIntegral <$> getWord32le
     VorbisComments vendorString <$> replicateM numComments get
 
@@ -46,12 +43,8 @@ instance Binary UserComment where
   put = undefined
   get = do
     commentLength <- fromIntegral <$> getWord32le
-    commentBs <- getByteString commentLength
-    Just (name, value) <-
-      case decodeUtf8' commentBs of
-        Left e -> fail $ "Error decoding vorbis comment: " ++ show e
-        Right comment -> do
-          return $ splitOnce (== '=') comment
+    comment <- getUTF8Text commentLength
+    Just (name, value) <- return $ splitOnce (== '=') comment
     return $ UserComment name value
 
 splitOnce :: (Char -> Bool) -> Text -> Maybe (Text, Text)
