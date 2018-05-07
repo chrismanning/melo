@@ -29,8 +29,7 @@ data VorbisComments =
 instance Binary VorbisComments where
   put = undefined
   get = do
-    vendorLength <- fromIntegral <$> getWord32le
-    vendorString <- getUTF8Text vendorLength
+    vendorString <- getUTF8Text =<< fromIntegral <$> getWord32le
     numComments <- fromIntegral <$> getWord32le
     VorbisComments vendorString <$> replicateM numComments get
 
@@ -42,8 +41,7 @@ data UserComment =
 instance Binary UserComment where
   put = undefined
   get = do
-    commentLength <- fromIntegral <$> getWord32le
-    comment <- getUTF8Text commentLength
+    comment <- getUTF8Text =<< fromIntegral <$> getWord32le
     Just (name, value) <- return $ splitOnce (== '=') comment
     return $ UserComment name value
 

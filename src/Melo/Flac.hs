@@ -111,9 +111,13 @@ instance Binary StreamInfo where
     header <- get
     guard $ blockType header == 0
     minBlockSize <- getWord16be
-    when (minBlockSize < 16) (fail $ "Invalid min block size " ++ show minBlockSize)
+    when
+      (minBlockSize < 16)
+      (fail $ "Invalid min block size " ++ show minBlockSize)
     maxBlockSize <- getWord16be
-    when (maxBlockSize < 16) (fail $ "Invalid max block size " ++ show maxBlockSize)
+    when
+      (maxBlockSize < 16)
+      (fail $ "Invalid max block size " ++ show maxBlockSize)
     minFrameSize <- get24Bits
     maxFrameSize <- get24Bits
     rest <- getWord64be
@@ -252,10 +256,3 @@ instance Binary CueSheetTrackIndex where
     indexPoint <- getWord8
     skip 3
     return $ CueSheetTrackIndex sampleOffset indexPoint
-
-get24Bits :: (Num a, Bits a) => Get a
-get24Bits = do
-  x <- fromIntegral <$> getWord8
-  y <- fromIntegral <$> getWord8
-  z <- fromIntegral <$> getWord8
-  return $ shiftL x 16 .|. shiftL y 8 .|. z
