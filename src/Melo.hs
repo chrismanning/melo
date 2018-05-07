@@ -1,5 +1,5 @@
 module Melo (
-  Flac
+  FlacStream
 ) where
 
 import Melo.Flac

@@ -12,23 +12,25 @@ import Debug.Trace
 import Melo.BinaryUtil
 import Melo.Vorbis
 
-readFlac :: FilePath -> IO Flac
+readFlac :: FilePath -> IO FlacStream
 readFlac p = decode <$> L.readFile p
 
-readFlacOrFail :: FilePath -> IO (Either (ByteOffset, String) Flac)
+readFlacOrFail :: FilePath -> IO (Either (ByteOffset, String) FlacStream)
 readFlacOrFail = decodeFileOrFail
 
-data Flac = Flac
+data Flac = Flac FlacStream | FlacWithId3v2 Int FlacStream
+
+data FlacStream = FlacStream
   { streamInfoBlock :: StreamInfo
   , metadataBlocks :: [MetadataBlock]
   } deriving (Show)
 
-instance Binary Flac where
+instance Binary FlacStream where
   put = undefined
   get = do
     marker <- getByteString 4
-    guard (marker == "fLaC")
-    Flac <$> get <*> getMetadataBlocks
+    mustMatch "fLaC" marker "Invalid flac stream"
+    FlacStream <$> get <*> getMetadataBlocks
 
 getMetadataBlocks :: Get [MetadataBlock]
 getMetadataBlocks = go
@@ -105,20 +107,16 @@ instance Binary StreamInfo where
   put = undefined
   get = do
     header <- get
-    guard $ blockType header == 0
+    mustMatch 0 (blockType header) "Error parsing STREAMINFO"
     minBlockSize <- getWord16be
-    when
-      (minBlockSize < 16)
-      (fail $ "Invalid min block size " ++ show minBlockSize)
+    mustSatisfy (>= 16) minBlockSize "Invalid min block size"
     maxBlockSize <- getWord16be
-    when
-      (maxBlockSize < 16)
-      (fail $ "Invalid max block size " ++ show maxBlockSize)
+    mustSatisfy (>= 16) maxBlockSize "Invalid max block size"
     minFrameSize <- get24Bits
     maxFrameSize <- get24Bits
     rest <- getWord64be
     let sampleRate = fromIntegral (shiftR rest 44 .&. 0xFFFFF)
-    when (sampleRate == 0) (fail "Invalid sample rate")
+    mustSatisfy (> 0) sampleRate ("Invalid sample rate")
     let channels = fromIntegral (shiftR rest 41 .&. 0b111) + 1
     let bps = fromIntegral (shiftR rest 36 .&. 0b11111) + 1
     let samples = fromIntegral (rest .&. 0xFFFFFFFFF)
@@ -144,7 +142,7 @@ instance Binary Padding where
   put = undefined
   get = do
     header <- get :: Get MetadataBlockHeader
-    guard $ blockType header == 1
+    mustMatch 1 (blockType header) "Error parsing PADDING"
     let paddingLength = blockLength header
     traceM $ "found padding; skipping " ++ show paddingLength
     skip $ fromIntegral paddingLength
@@ -159,7 +157,7 @@ instance Binary Application where
   put = undefined
   get = do
     header <- get :: Get MetadataBlockHeader
-    guard $ blockType header == 2
+    mustMatch 2 (blockType header) "Error parsing APPLICATION"
     Application <$> getWord32be <*>
       getByteString (fromIntegral (blockLength header))
 
@@ -171,7 +169,7 @@ instance Binary SeekTable where
   put = undefined
   get = do
     header <- get :: Get MetadataBlockHeader
-    guard $ blockType header == 3
+    mustMatch 3 (blockType header) "Error parsing SEEKTABLE"
     let numPoints = fromIntegral $ blockLength header `div` 18
     SeekTable <$> replicateM numPoints get
 
@@ -193,7 +191,7 @@ instance Binary FlacTags where
   put = undefined
   get = do
     header <- get :: Get MetadataBlockHeader
-    guard $ blockType header == 4
+    mustMatch 4 (blockType header) "Error parsing VORBIS_COMMENT"
     FlacTags <$> get
 
 data CueSheet = CueSheet
@@ -207,7 +205,7 @@ instance Binary CueSheet where
   put = undefined
   get = do
     header <- get :: Get MetadataBlockHeader
-    guard $ blockType header == 5
+    mustMatch 5 (blockType header) "Error parsing CUESHEET"
     catalogNum <- getUTF8Text 128
     leadInSamples <- getWord64be
     a <- getWord8
@@ -273,7 +271,7 @@ instance Binary Picture where
   put = undefined
   get = do
     header <- get :: Get MetadataBlockHeader
-    guard $ blockType header == 6
+    mustMatch 6 (blockType header) "Error parsing PICTURE"
     pictureType <- mfilter (<= 20) getWord32be
     mimeType <- getUTF8Text =<< fromIntegral <$> getWord32be
     description <- getUTF8Text =<< fromIntegral <$> getWord32be

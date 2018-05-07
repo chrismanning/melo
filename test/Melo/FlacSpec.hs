@@ -39,3 +39,9 @@ spec = do
                         , md5 = md5
                         } -> True
              _ -> False)
+    it "fails" $ do
+      flac <- readFlacOrFail "test/Melo/test.vorbiscomment"
+      case flac of
+        Left e -> do
+          putStrLn $ "error: " ++ show e
+        _ -> expectationFailure "expected failure"
