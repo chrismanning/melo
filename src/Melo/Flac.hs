@@ -50,7 +50,7 @@ data MetadataBlock
   | SeekTableBlock SeekTable
   | VorbisCommentBlock FlacTags
   | CueSheetBlock CueSheet
-  | PictureBlock
+  | PictureBlock Picture
   | Reserved
   deriving (Show)
 
@@ -65,11 +65,7 @@ instance Binary MetadataBlock where
       3 -> SeekTableBlock <$> get
       4 -> VorbisCommentBlock <$> get
       5 -> CueSheetBlock <$> get
-      6 -> do
-        header' <- get
-        let len = blockLength header'
-        skip $ fromIntegral len
-        return PictureBlock
+      6 -> PictureBlock <$> get
       127 -> fail "Invalid flac block type 127"
       _ -> do
         header' <- get
@@ -210,6 +206,8 @@ data CueSheet = CueSheet
 instance Binary CueSheet where
   put = undefined
   get = do
+    header <- get :: Get MetadataBlockHeader
+    guard $ blockType header == 5
     catalogNum <- getUTF8Text 128
     leadInSamples <- getWord64be
     a <- getWord8
@@ -256,3 +254,42 @@ instance Binary CueSheetTrackIndex where
     indexPoint <- getWord8
     skip 3
     return $ CueSheetTrackIndex sampleOffset indexPoint
+
+data Picture = Picture
+  { pictureType :: Word32
+  , mimeType :: Text
+  , description :: Text
+  , width :: Word32
+  , height :: Word32
+  , depth :: Word32
+  , numColours :: Maybe Word32
+  , pictureData :: ByteString
+  } deriving (Show)
+
+numColors :: Picture -> Maybe Word32
+numColors = numColours
+
+instance Binary Picture where
+  put = undefined
+  get = do
+    header <- get :: Get MetadataBlockHeader
+    guard $ blockType header == 6
+    pictureType <- mfilter (<= 20) getWord32be
+    mimeType <- getUTF8Text =<< fromIntegral <$> getWord32be
+    description <- getUTF8Text =<< fromIntegral <$> getWord32be
+    width <- getWord32be
+    height <- getWord32be
+    depth <- getWord32be
+    numColours <- getWord32be
+    pictureData <- getByteString =<< fromIntegral <$> getWord32be
+    return $
+      Picture
+        { pictureType
+        , mimeType
+        , description
+        , width
+        , height
+        , depth
+        , numColours = mfilter (> 0) $ Just numColours
+        , pictureData
+        }
