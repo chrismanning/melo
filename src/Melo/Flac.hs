@@ -51,6 +51,7 @@ data MetadataBlock
   | VorbisCommentBlock FlacTags
   | CueSheetBlock CueSheet
   | PictureBlock
+  | Reserved
   deriving (Show)
 
 instance Binary MetadataBlock where
@@ -64,11 +65,16 @@ instance Binary MetadataBlock where
       3 -> SeekTableBlock <$> get
       4 -> VorbisCommentBlock <$> get
       5 -> CueSheetBlock <$> get
-      _ -> do
+      6 -> do
         header' <- get
         let len = blockLength header'
         skip $ fromIntegral len
-        return $ PaddingBlock $ Padding len
+        return PictureBlock
+      127 -> fail "Invalid flac block type 127"
+      _ -> do
+        header' <- get
+        skip $ fromIntegral $ blockLength header'
+        return $ Reserved
 
 data MetadataBlockHeader = MetadataBlockHeader
   { blockType :: Word8
@@ -105,11 +111,14 @@ instance Binary StreamInfo where
     header <- get
     guard $ blockType header == 0
     minBlockSize <- getWord16be
+    when (minBlockSize < 16) (fail $ "Invalid min block size " ++ show minBlockSize)
     maxBlockSize <- getWord16be
+    when (maxBlockSize < 16) (fail $ "Invalid max block size " ++ show maxBlockSize)
     minFrameSize <- get24Bits
     maxFrameSize <- get24Bits
     rest <- getWord64be
     let sampleRate = fromIntegral (shiftR rest 44 .&. 0xFFFFF)
+    when (sampleRate == 0) (fail "Invalid sample rate")
     let channels = fromIntegral (shiftR rest 41 .&. 0b111) + 1
     let bps = fromIntegral (shiftR rest 36 .&. 0b11111) + 1
     let samples = fromIntegral (rest .&. 0xFFFFFFFFF)
