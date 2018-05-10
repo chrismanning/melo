@@ -53,7 +53,7 @@ data MetadataBlock
   | VorbisCommentBlock FlacTags
   | CueSheetBlock CueSheet
   | PictureBlock Picture
-  | Reserved
+  | ReservedBlock ByteString
   deriving (Show)
 
 instance Binary MetadataBlock where
@@ -71,8 +71,9 @@ instance Binary MetadataBlock where
       127 -> fail "Invalid flac block type 127"
       _ -> do
         header' <- get
-        skip $ fromIntegral $ blockLength header'
-        return $ Reserved
+        let len = blockLength header'
+        skip $ fromIntegral $ len
+        ReservedBlock <$> getByteString (fromIntegral len)
 
 data MetadataBlockHeader = MetadataBlockHeader
   { blockType :: Word8
