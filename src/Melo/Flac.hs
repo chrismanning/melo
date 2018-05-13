@@ -2,12 +2,14 @@ module Melo.Flac where
 
 import Control.Monad
 import Data.Binary
+import Data.Binary.Bits.Get ()
+import qualified Data.Binary.Bits.Get as BG
 import Data.Binary.Get
-import Data.Bits
 import Data.ByteString
 import qualified Data.ByteString.Lazy as L
 import Data.Text
 import Debug.Trace
+import Text.Printf
 
 import Melo.BinaryUtil
 import Melo.Vorbis
@@ -18,7 +20,10 @@ readFlac p = decode <$> L.readFile p
 readFlacOrFail :: FilePath -> IO (Either (ByteOffset, String) FlacStream)
 readFlacOrFail = decodeFileOrFail
 
-data Flac = Flac FlacStream | FlacWithId3v2 Int FlacStream
+data Flac
+  = Flac FlacStream
+  | FlacWithId3v2 Int
+                  FlacStream
 
 data FlacStream = FlacStream
   { streamInfoBlock :: StreamInfo
@@ -29,7 +34,7 @@ instance Binary FlacStream where
   put = undefined
   get = do
     marker <- getByteString 4
-    mustMatch "fLaC" marker "Invalid flac stream"
+    expect ("fLaC" == marker) "Expected marker `fLaC`"
     FlacStream <$> get <*> getMetadataBlocks
 
 getMetadataBlocks :: Get [MetadataBlock]
@@ -84,9 +89,8 @@ data MetadataBlockHeader = MetadataBlockHeader
 instance Binary MetadataBlockHeader where
   put = undefined
   get = do
-    byte <- getWord8
-    let isLast = testBit byte 7
-    let blockType = clearBit byte 7
+    (isLast, blockType) <-
+      BG.runBitGet $ do (,) <$> BG.getBool <*> BG.getWord8 7
     blockLength <- get24Bits
     let header = MetadataBlockHeader {blockType, blockLength, isLast}
     traceM $ show header
@@ -108,19 +112,21 @@ instance Binary StreamInfo where
   put = undefined
   get = do
     header <- get
-    mustMatch 0 (blockType header) "Error parsing STREAMINFO"
+    expect (blockType header == 0) (printf "Unexpected block type %d; expected 0 (STREAMINFO)" $ blockType header)
     minBlockSize <- getWord16be
-    mustSatisfy (>= 16) minBlockSize "Invalid min block size"
+    expect (minBlockSize >= 16) ("Invalid min block size" ++ show minBlockSize)
     maxBlockSize <- getWord16be
-    mustSatisfy (>= 16) maxBlockSize "Invalid max block size"
+    expect (maxBlockSize >= 16) ("Invalid max block size" ++ show maxBlockSize)
     minFrameSize <- get24Bits
     maxFrameSize <- get24Bits
-    rest <- getWord64be
-    let sampleRate = fromIntegral (shiftR rest 44 .&. 0xFFFFF)
-    mustSatisfy (> 0) sampleRate ("Invalid sample rate")
-    let channels = fromIntegral (shiftR rest 41 .&. 0b111) + 1
-    let bps = fromIntegral (shiftR rest 36 .&. 0b11111) + 1
-    let samples = fromIntegral (rest .&. 0xFFFFFFFFF)
+    (sampleRate, channels, bps, samples) <-
+      BG.runBitGet $ do
+        sampleRate <- BG.getWord32be 20
+        channels <- fmap (+ 1) $ BG.getWord8 3
+        bps <- fmap (+ 1) $ BG.getWord8 5
+        samples <- BG.getWord64be 36
+        return (sampleRate, channels, bps, samples)
+    expect (sampleRate > 0) ("Invalid sample rate" ++ show sampleRate)
     md5 <- getByteString 16
     return
       StreamInfo
@@ -143,7 +149,7 @@ instance Binary Padding where
   put = undefined
   get = do
     header <- get :: Get MetadataBlockHeader
-    mustMatch 1 (blockType header) "Error parsing PADDING"
+    expect (blockType header == 1) (printf "Unexpected block type %d; expected 1 (PADDING)" $ blockType header)
     let paddingLength = blockLength header
     traceM $ "found padding; skipping " ++ show paddingLength
     skip $ fromIntegral paddingLength
@@ -158,7 +164,7 @@ instance Binary Application where
   put = undefined
   get = do
     header <- get :: Get MetadataBlockHeader
-    mustMatch 2 (blockType header) "Error parsing APPLICATION"
+    expect (blockType header == 2) (printf "Unexpected block type %d; expected 2 (APPLICATION)" $ blockType header)
     Application <$> getWord32be <*>
       getByteString (fromIntegral (blockLength header))
 
@@ -170,7 +176,7 @@ instance Binary SeekTable where
   put = undefined
   get = do
     header <- get :: Get MetadataBlockHeader
-    mustMatch 3 (blockType header) "Error parsing SEEKTABLE"
+    expect (blockType header == 3) (printf "Unexpected block type %d; expected 3 (SEEKTABLE)" $ blockType header)
     let numPoints = fromIntegral $ blockLength header `div` 18
     SeekTable <$> replicateM numPoints get
 
@@ -192,7 +198,7 @@ instance Binary FlacTags where
   put = undefined
   get = do
     header <- get :: Get MetadataBlockHeader
-    mustMatch 4 (blockType header) "Error parsing VORBIS_COMMENT"
+    expect (blockType header == 4) (printf "Unexpected block type %d; expected 4 (VORBIS_COMMENT)" $ blockType header)
     FlacTags <$> get
 
 data CueSheet = CueSheet
@@ -206,13 +212,12 @@ instance Binary CueSheet where
   put = undefined
   get = do
     header <- get :: Get MetadataBlockHeader
-    mustMatch 5 (blockType header) "Error parsing CUESHEET"
+    expect (blockType header == 5) (printf "Unexpected block type %d; expected 5 (CUESHEET)" $ blockType header)
     catalogNum <- getUTF8Text 128
     leadInSamples <- getWord64be
-    a <- getWord8
-    let isCD = testBit a 7
+    isCD <- BG.runBitGet BG.getBool
     skip 258
-    numTracks <- fromIntegral <$> mfilter (> 1) getWord8
+    numTracks <- fromIntegral <$> failFilter (> 1) "Invalid number of cue sheet tracks" getWord8
     tracks <- replicateM numTracks get
     return CueSheet {catalogNum, leadInSamples, isCD, tracks}
 
@@ -231,9 +236,8 @@ instance Binary CueSheetTrack where
     sampleOffset <- getWord64be
     trackNumber <- getWord8
     isrc <- getUTF8Text 12
-    a <- getWord8
-    let isAudio = testBit a 7
-    let preEmphasis = testBit a 6
+    (isAudio, preEmphasis) <-
+      BG.runBitGet $ do (,) <$> BG.getBool <*> BG.getBool
     skip 13
     numIndexPoints <- fromIntegral <$> getWord8
     indexPoints <- replicateM numIndexPoints get
@@ -272,8 +276,8 @@ instance Binary Picture where
   put = undefined
   get = do
     header <- get :: Get MetadataBlockHeader
-    mustMatch 6 (blockType header) "Error parsing PICTURE"
-    pictureType <- mfilter (<= 20) getWord32be
+    expect (blockType header == 6) (printf "Unexpected block type %d; expected 6 (PICTURE)" $ blockType header)
+    pictureType <- failFilter (<= 20) "Invalid picture type" getWord32be
     mimeType <- getUTF8Text =<< fromIntegral <$> getWord32be
     description <- getUTF8Text =<< fromIntegral <$> getWord32be
     width <- getWord32be
