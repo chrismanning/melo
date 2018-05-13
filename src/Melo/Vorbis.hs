@@ -9,7 +9,7 @@ import Prelude hiding (drop, length, take)
 
 import Melo.BinaryUtil
 
-data FramedVorbisComments =
+newtype FramedVorbisComments =
   FramedVorbisComments VorbisComments
   deriving (Show, Eq)
 
@@ -48,4 +48,4 @@ instance Binary UserComment where
 splitOnce :: (Char -> Bool) -> Text -> Maybe (Text, Text)
 splitOnce p t = do
   n <- findIndex p t
-  return $ (take n t, drop (min (length t) (n + 1)) t)
+  return (take n t, drop (min (length t) (n + 1)) t)

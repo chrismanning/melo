@@ -77,7 +77,7 @@ instance Binary MetadataBlock where
       _ -> do
         header' <- get
         let len = blockLength header'
-        skip $ fromIntegral $ len
+        skip $ fromIntegral len
         ReservedBlock <$> getByteString (fromIntegral len)
 
 data MetadataBlockHeader = MetadataBlockHeader
@@ -90,7 +90,7 @@ instance Binary MetadataBlockHeader where
   put = undefined
   get = do
     (isLast, blockType) <-
-      BG.runBitGet $ do (,) <$> BG.getBool <*> BG.getWord8 7
+      BG.runBitGet $ (,) <$> BG.getBool <*> BG.getWord8 7
     blockLength <- get24Bits
     let header = MetadataBlockHeader {blockType, blockLength, isLast}
     traceM $ show header
@@ -122,8 +122,8 @@ instance Binary StreamInfo where
     (sampleRate, channels, bps, samples) <-
       BG.runBitGet $ do
         sampleRate <- BG.getWord32be 20
-        channels <- fmap (+ 1) $ BG.getWord8 3
-        bps <- fmap (+ 1) $ BG.getWord8 5
+        channels <- (+ 1) <$> BG.getWord8 3
+        bps <- (+ 1) <$> BG.getWord8 5
         samples <- BG.getWord64be 36
         return (sampleRate, channels, bps, samples)
     expect (sampleRate > 0) ("Invalid sample rate" ++ show sampleRate)
@@ -190,7 +190,7 @@ instance Binary SeekPoint where
   put = undefined
   get = SeekPoint <$> getWord64be <*> getWord64be <*> getWord16be
 
-data FlacTags =
+newtype FlacTags =
   FlacTags VorbisComments
   deriving (Show)
 
@@ -237,7 +237,7 @@ instance Binary CueSheetTrack where
     trackNumber <- getWord8
     isrc <- getUTF8Text 12
     (isAudio, preEmphasis) <-
-      BG.runBitGet $ do (,) <$> BG.getBool <*> BG.getBool
+      BG.runBitGet $ (,) <$> BG.getBool <*> BG.getBool
     skip 13
     numIndexPoints <- fromIntegral <$> getWord8
     indexPoints <- replicateM numIndexPoints get
