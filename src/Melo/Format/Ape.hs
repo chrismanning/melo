@@ -26,7 +26,8 @@ data APE = APE
 instance Binary APE where
   put a = do
     let bs = runPut $ forM_ (items a) put
-    putHeader a $ fromIntegral . L.length $ bs
+    if version a == APEv2 then putHeader a $ fromIntegral . L.length $ bs
+      else return ()
     putLazyByteString bs
     putFooter a $ fromIntegral . L.length $ bs
   get = do
