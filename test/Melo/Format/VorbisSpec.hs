@@ -1,4 +1,4 @@
-module Melo.VorbisSpec
+module Melo.Format.VorbisSpec
   ( main
   , spec
   ) where
@@ -8,7 +8,7 @@ import Test.Hspec
 import Data.Binary
 import qualified Data.ByteString.Lazy as L
 
-import Melo.Vorbis
+import Melo.Format.Vorbis
 
 main :: IO ()
 main = hspec spec

@@ -2,4 +2,5 @@ module Melo (
   FlacStream
 ) where
 
-import Melo.Flac
+import Melo.Format.Flac
+import Melo.Format.Ape

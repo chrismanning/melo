@@ -1,4 +1,4 @@
-module Melo.Vorbis where
+module Melo.Format.Vorbis where
 
 import Control.Monad
 import Data.Binary
@@ -7,7 +7,7 @@ import Data.Bits
 import Data.Text
 import Prelude hiding (drop, length, take)
 
-import Melo.BinaryUtil
+import Melo.Internal.BinaryUtil
 
 newtype FramedVorbisComments =
   FramedVorbisComments VorbisComments

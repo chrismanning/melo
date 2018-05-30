@@ -1,4 +1,4 @@
-module Melo.FlacSpec
+module Melo.Format.FlacSpec
   ( main
   , spec
   ) where
@@ -7,7 +7,7 @@ import Test.Hspec
 
 import Data.ByteString.Base16 as Hex
 
-import Melo.Flac
+import Melo.Format.Flac
 
 main :: IO ()
 main = hspec spec

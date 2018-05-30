@@ -1,4 +1,4 @@
-module Melo.ApeSpec
+module Melo.Format.ApeSpec
   ( main
   , spec
   ) where
@@ -8,7 +8,7 @@ import Test.Hspec
 import Data.Binary
 import qualified Data.ByteString.Lazy as L
 
-import Melo.Ape
+import Melo.Format.Ape
 
 main :: IO ()
 main = hspec spec

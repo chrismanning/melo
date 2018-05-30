@@ -1,4 +1,4 @@
-module Melo.Flac where
+module Melo.Format.Flac where
 
 import Control.Monad
 import Data.Binary
@@ -11,8 +11,8 @@ import Data.Text
 import Debug.Trace
 import Text.Printf
 
-import Melo.BinaryUtil
-import Melo.Vorbis
+import Melo.Internal.BinaryUtil
+import Melo.Format.Vorbis
 
 readFlac :: FilePath -> IO FlacStream
 readFlac p = decode <$> L.readFile p

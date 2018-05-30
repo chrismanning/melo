@@ -1,4 +1,4 @@
-module Melo.Ape where
+module Melo.Format.Ape where
 
 import Control.Monad
 import Data.Binary
@@ -16,7 +16,7 @@ import Data.Text.Encoding
 
 import Prelude as P
 
-import Melo.BinaryUtil
+import Melo.Internal.BinaryUtil
 
 data APE = APE
   { version :: Version

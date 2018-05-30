@@ -1,4 +1,4 @@
-module Melo.BinaryUtil
+module Melo.Internal.BinaryUtil
   ( decodeUtf8OrFail
   , getUTF8Text
   , getNullTerminatedAscii
