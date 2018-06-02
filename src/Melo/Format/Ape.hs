@@ -33,6 +33,7 @@ preamble :: BS.ByteString
 preamble = BC.pack "APETAGEX"
 
 instance MetadataFormat APE where
+  formatId = "APE"
   locate bs =
     case locateBinaryLazy @Header bs of
       Nothing -> Nothing
