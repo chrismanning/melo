@@ -8,55 +8,131 @@ import qualified Data.Binary.Bits.Get as BG
 import qualified Data.Binary.Bits.Put as BP
 import Data.Binary.Get
 import Data.Binary.Put
-import Data.ByteString as BS
-import Data.ByteString.Char8 as BC
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BC
 import qualified Data.ByteString.Lazy as L
+import Data.Int
 import Data.Text
 import Data.Text.Encoding
+import System.IO
 
 import Prelude as P
 
 import Melo.Internal.BinaryUtil
+import Melo.Internal.Format
 
 data APE = APE
   { version :: Version
   , items :: [TagItem]
   } deriving (Show, Eq)
 
+headerSize :: Integral a => a
+headerSize = 32
+
+preamble :: BS.ByteString
+preamble = BC.pack "APETAGEX"
+
+instance MetadataFormat APE where
+  locate bs =
+    case locateBinaryLazy @Header bs of
+      Nothing -> Nothing
+      Just i -> do
+        let header = runGet (lookAhead $ skip i >> getHeader) bs
+        Just $
+          if isHeader (flags header)
+            then i
+            else i - (fromIntegral $ numBytes header) + headerSize
+  hLocate h = do
+    hs <-
+      do hSeek h SeekFromEnd 0
+         hTell h
+    let n = hs - fromIntegral (min (headerSize * 10) hs)
+    hSeek h AbsoluteSeek n
+    buf <- L.hGet h (fromIntegral $ hs - n)
+    return $ locate @APE buf
+  tags = undefined
+
 instance Binary APE where
   put a = do
     let bs = runPut $ forM_ (items a) put
-    if version a == APEv2 then putHeader a $ fromIntegral . L.length $ bs
+    if (version a) == APEv2
+      then put $ mkHeader a $ fromIntegral . L.length $ bs
       else return ()
     putLazyByteString bs
-    putFooter a $ fromIntegral . L.length $ bs
+    put $ mkFooter a $ fromIntegral . L.length $ bs
   get = do
-    expectGet_ (getByteString 8) (== "APETAGEX") "Not an APEv2 header"
-    version <- get
-    numBytes <- fromIntegral <$> getWord32le
-    numItems <- fromIntegral <$> getWord32le
-    _ <- get :: Get Flags
-    skip 8
-    items <- replicateM numItems get
-    skip 32
-    bs <- bytesRead
-    expect (bs == (numBytes + 32)) "Inconsistent APE header tag size"
-    return $ APE version items
+    i <-
+      findHeader >>= \case
+        Nothing -> fail "APE tags not found"
+        Just i -> return i
+    header <- lookAhead (skip i >> getHeader)
+    let bytes = fromIntegral (numBytes header)
+    if isHeader (flags header)
+      then skip $ i + headerSize
+      else skip $ i - bytes + headerSize
+    items <-
+      isolate bytes $ do
+        items <- replicateM (fromIntegral . numItems $ header) getTagItem
+        _ <- getHeader
+        return items
+    return $ APE {items, version = headerVersion header}
 
-putHeader :: APE -> Word32 -> Put
-putHeader a n = putHeader_ a n $ Flags True False True TextItemType False
+data Header = Header
+  { headerVersion :: Version
+  , numBytes :: Word32
+  , numItems :: Word32
+  , flags :: Flags
+  } deriving (Show, Eq)
 
-putFooter :: APE -> Word32 -> Put
-putFooter a n = putHeader_ a n $ Flags True False False TextItemType False
+type Footer = Header
 
-putHeader_ :: APE -> Word32 -> Flags -> Put
-putHeader_ a n f = do
-  putByteString $ BC.pack "APETAGEX"
-  put $ version a
-  putWord32le $ fromIntegral (n + 32)
-  putWord32le $ fromIntegral (P.length $ items a)
-  put f
+instance Binary Header where
+  put = putHeader
+  get = getHeader
+
+findHeader :: Get (Maybe Int)
+findHeader = lookAhead $ findByChunk 1024 0
+  where
+    findByChunk :: Int -> Int -> Get (Maybe Int)
+    findByChunk c i = do
+      bs <- mfilter (not . L.null) $ getLazyByteStringUpTo c
+      case locateBinaryLazy @Header bs of
+        Nothing -> findByChunk c (i + (c `div` 2))
+        Just x -> return $ Just (x + i)
+
+mkHeader :: APE -> Word32 -> Header
+mkHeader a n = mkHeader_ a n $ Flags True False True TextItemType False
+
+mkFooter :: APE -> Word32 -> Footer
+mkFooter a n = mkHeader_ a n $ Flags True False False TextItemType False
+
+mkHeader_ :: APE -> Word32 -> Flags -> Header
+mkHeader_ a n f =
+  Header
+    { headerVersion = version a
+    , numBytes = n + headerSize
+    , numItems = fromIntegral (P.length $ items a)
+    , flags = f
+    }
+
+putHeader :: Header -> Put
+putHeader h = do
+  putByteString preamble
+  put $ headerVersion h
+  putWord32le $ fromIntegral (numBytes h)
+  putWord32le $ fromIntegral (numItems h)
+  put $ flags h
   putWord64be 0
+
+getHeader :: Get Header
+getHeader = do
+  expectGetEq
+    (getByteString (BS.length preamble))
+    preamble
+    "Invalid APE preamble"
+  h <- Header <$> getVersion <*> getWord32le <*> getWord32le <*> getFlags
+  skip 8
+  return h
 
 data Version
   = APEv1
@@ -68,11 +144,14 @@ instance Binary Version where
     case v of
       APEv1 -> putWord32le 1000
       APEv2 -> putWord32le 2000
-  get =
-    getWord32le >>= \case
-      1000 -> return APEv1
-      2000 -> return APEv2
-      x -> fail $ "Invalid APE tag version " ++ show x
+  get = getVersion
+
+getVersion :: Get Version
+getVersion =
+  getWord32le >>= \case
+    1000 -> return APEv1
+    2000 -> return APEv2
+    x -> fail $ "Invalid APE tag version " ++ show x
 
 data Flags = Flags
   { hasHeader :: Bool
@@ -93,13 +172,16 @@ instance Binary Flags where
       BP.putBool $ hasFooter f
       BP.putBool $ isHeader f
       BP.putWord8 5 0
-  get = do
-    (itemType, readOnly) <-
-      BG.runBitGet $ (,) <$> (BG.getWord8 5 *> getBits 2) <*> BG.getBool
-    skip 2
-    (hasHeader, hasFooter, isHeader) <-
-      BG.runBitGet $ (,,) <$> BG.getBool <*> BG.getBool <*> BG.getBool
-    return Flags {hasHeader, hasFooter, isHeader, itemType, readOnly}
+  get = getFlags
+
+getFlags :: Get Flags
+getFlags = do
+  (itemType, readOnly) <-
+    BG.runBitGet $ (,) <$> (BG.getWord8 5 *> getBits 2) <*> BG.getBool
+  skip 2
+  (hasHeader, hasFooter, isHeader) <-
+    BG.runBitGet $ (,,) <$> BG.getBool <*> BG.getBool <*> BG.getBool
+  return Flags {hasHeader, hasFooter, isHeader, itemType, readOnly}
 
 data TagItemType
   = TextItemType
@@ -130,12 +212,15 @@ instance Binary TagItem where
     putByteString $ encodeUtf8 key
     putByteString "\0"
     putLazyByteString bs
-  get = do
-    valueSize <- fromIntegral <$> getWord32le
-    itemFlags <- get :: Get Flags
-    key <- getNullTerminatedAscii
-    val <- getTagItemValue (itemType itemFlags) valueSize
-    return $ TagItem key val
+  get = getTagItem
+
+getTagItem :: Get TagItem
+getTagItem = do
+  valueSize <- fromIntegral <$> getWord32le
+  itemFlags <- get :: Get Flags
+  key <- getNullTerminatedAscii
+  val <- getTagItemValue (itemType itemFlags) valueSize
+  return $ TagItem key val
 
 data TagItemValue where
   TagItemValue :: TagValue a b -> TagItemValue
@@ -162,9 +247,9 @@ mkItemFlags (TagItemValue v) = Flags False False False t False
 
 data TagValue a b where
   TextTag :: [Text] -> TagValue 'TextItemType [Text]
-  BinaryTag :: ByteString -> TagValue 'BinaryItemType ByteString
+  BinaryTag :: BS.ByteString -> TagValue 'BinaryItemType BS.ByteString
   ExternalLocatorTag :: [Text] -> TagValue 'ExternalLocatorItemType [Text]
-  ReservedTag :: ByteString -> TagValue 'ReservedItemType ByteString
+  ReservedTag :: BS.ByteString -> TagValue 'ReservedItemType BS.ByteString
 
 deriving instance Show (TagValue a b)
 

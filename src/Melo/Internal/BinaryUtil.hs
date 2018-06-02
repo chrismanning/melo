@@ -1,14 +1,17 @@
 module Melo.Internal.BinaryUtil
   ( decodeUtf8OrFail
-  , getUTF8Text
-  , getNullTerminatedAscii
   , get24Bits
+  , getLazyByteStringUpTo
+  , getNullTerminatedAscii
+  , getUTF8Text
   , expect
   , expectGet
   , expectGet_
+  , expectGetEq
   , failFilter
   ) where
 
+import Control.Applicative
 import Control.Monad
 import Control.Monad.Fail as Fail
 import Data.Binary
@@ -18,6 +21,7 @@ import Data.ByteString
 import qualified Data.ByteString.Lazy as L
 import Data.Text as T
 import Data.Text.Encoding
+import Text.Printf
 
 getUTF8Text :: Int -> Get Text
 getUTF8Text n = getByteString n >>= decodeUtf8OrFail
@@ -50,3 +54,15 @@ expectGet g p s = do
 
 expectGet_ :: Get t -> (t -> Bool) -> String -> Get ()
 expectGet_ g p s = void $ expectGet g p s
+
+expectGetEq :: (Show t, Eq t) => Get t -> t -> String -> Get ()
+expectGetEq g t s = do
+    v <- g
+    if v == t then
+      return ()
+    else
+      Fail.fail $ printf "%s: expected '%s'; got '%s'" s (show t) (show v)
+
+getLazyByteStringUpTo :: Int -> Get L.ByteString
+getLazyByteStringUpTo n =
+  getLazyByteString (fromIntegral n) <|> getRemainingLazyByteString

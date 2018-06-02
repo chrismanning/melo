@@ -1,6 +1,7 @@
-module Melo (
-  FlacStream
-) where
+module Melo
+  ( FlacStream
+  , APE
+  ) where
 
-import Melo.Format.Flac
 import Melo.Format.Ape
+import Melo.Format.Flac
