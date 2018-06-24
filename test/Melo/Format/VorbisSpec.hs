@@ -5,17 +5,17 @@ module Melo.Format.VorbisSpec
 
 import Test.Hspec
 
-import Data.Binary
 import qualified Data.ByteString.Lazy as L
 
 import Melo.Format.Vorbis
+import Melo.Internal.Binary
 
 main :: IO ()
 main = hspec spec
 
 spec :: Spec
 spec = do
-  describe "Vorbis" $ do
+  describe "Vorbis Comments" $ do
     it "parses vendor string" $ do
       vc <- readVorbisComments "test/Melo/test.vorbiscomment"
       vc `shouldSatisfy`
@@ -33,4 +33,4 @@ spec = do
           ]
 
 readVorbisComments :: FilePath -> IO VorbisComments
-readVorbisComments p = decode <$> L.readFile p
+readVorbisComments p = bdecode <$> L.readFile p

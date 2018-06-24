@@ -33,8 +33,7 @@ data FlacStream = FlacStream
 instance Binary FlacStream where
   put = undefined
   get = do
-    marker <- getByteString 4
-    expect ("fLaC" == marker) "Expected marker `fLaC`"
+    expectGetEq (getByteString 4) "fLaC" "Expected marker `fLaC`"
     FlacStream <$> get <*> getMetadataBlocks
 
 getMetadataBlocks :: Get [MetadataBlock]

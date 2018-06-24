@@ -15,6 +15,7 @@ import Data.Int
 import Data.Text
 import Data.Text.Encoding
 import System.IO
+import Type.Reflection
 
 import Prelude as P
 
@@ -24,7 +25,7 @@ import Melo.Internal.Format
 data APE = APE
   { version :: Version
   , items :: [TagItem]
-  } deriving (Show, Eq)
+  } deriving (Show, Eq, Typeable)
 
 headerSize :: Integral a => a
 headerSize = 32
@@ -33,7 +34,10 @@ preamble :: BS.ByteString
 preamble = BC.pack "APETAGEX"
 
 instance MetadataFormat APE where
-  formatId = "APE"
+  formatDesc = "APE"
+  formatKind = MetadataKind (typeRep @ APE)
+
+instance MetadataReader APE where
   locate bs =
     case locateBinaryLazy @Header bs of
       Nothing -> Nothing
