@@ -5,9 +5,19 @@ import System.IO
 
 import Melo.Format.Ape
 import Melo.Internal.Format
+import Melo.Internal.Binary
 
 data WavPack =
   WavPack APE
+
+instance MetadataFormat WavPack where
+  formatDesc = "WavPack"
+
+instance MetadataReader WavPack where
+  tags = undefined
+
+instance BinaryGet WavPack where
+  bget = undefined
 
 ckId :: BS.ByteString
 ckId = "wvpk"

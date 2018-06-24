@@ -30,6 +30,14 @@ data FlacStream = FlacStream
   , metadataBlocks :: [MetadataBlock]
   } deriving (Show)
 
+vorbisComment :: FlacStream -> Maybe VorbisComments
+vorbisComment (FlacStream _ blocks) = findVcs blocks where
+  findVcs [] = Nothing
+  findVcs (m:ms) =
+    case m of
+      VorbisCommentBlock (FlacTags vcs) -> Just vcs
+      _ -> findVcs ms
+
 instance Binary FlacStream where
   put = undefined
   get = do
