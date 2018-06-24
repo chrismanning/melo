@@ -19,9 +19,6 @@ class MetadataFormat a where
   formatDesc :: String
   formatDesc' :: a -> String
   formatDesc' _ = formatDesc @ a
-  formatKind :: FormatKind
-  formatKind' :: a -> FormatKind
-  formatKind' _ = formatKind @ a
 
 data FormatKind where
   ContainerKind :: [FormatKind] -> FormatKind

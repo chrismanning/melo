@@ -16,14 +16,14 @@ spec :: Spec
 spec = do
   describe "Flac" $ do
     it "parses flac" $ do
-      flac <- readFlac "test/Melo/normal.flac"
+      Flac flac <- readFlac "test/Melo/normal.flac"
       streamInfoBlock flac `shouldSatisfy`
         (\b ->
            case b of
              StreamInfo {} -> True
              _ -> False)
     it "parses STREAMINFO" $ do
-      flac <- readFlac "test/Melo/normal.flac"
+      Flac flac <- readFlac "test/Melo/normal.flac"
       let (md5, _) = Hex.decode "8b8ef26d3251925d283774b7e1f8f949"
       streamInfoBlock flac `shouldSatisfy`
         (\b ->

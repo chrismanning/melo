@@ -14,11 +14,11 @@ import Text.Printf
 import Melo.Internal.BinaryUtil
 import Melo.Format.Vorbis
 
-readFlac :: FilePath -> IO FlacStream
-readFlac p = decode <$> L.readFile p
+readFlac :: FilePath -> IO Flac
+readFlac p = Flac <$> decode <$> L.readFile p
 
-readFlacOrFail :: FilePath -> IO (Either (ByteOffset, String) FlacStream)
-readFlacOrFail = decodeFileOrFail
+readFlacOrFail :: FilePath -> IO (Either (ByteOffset, String) Flac)
+readFlacOrFail p = decodeFileOrFail p >>= return . fmap Flac
 
 data Flac
   = Flac FlacStream
