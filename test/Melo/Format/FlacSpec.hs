@@ -17,11 +17,11 @@ spec :: Spec
 spec = do
   describe "Flac" $ do
     it "parses flac" $ do
-      Flac flac <- readFlac "test/Melo/normal.flac"
-      streamInfoBlock flac `shouldSatisfy`
-        (\b ->
-           case b of
-             StreamInfo {} -> True
+      flac <- readFlac "test/Melo/silence-1s.flac"
+      flac `shouldSatisfy`
+        (\f ->
+           case f of
+             Flac _ -> True
              _ -> False)
     it "parses STREAMINFO" $ do
       Flac flac <- readFlac "test/Melo/silence-1s.flac"

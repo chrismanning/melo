@@ -18,5 +18,7 @@ instance BinaryGet OggVorbis where
 instance MetadataFormat OggVorbis where
   formatDesc = "OggVorbis"
 
+instance MetadataLocator OggVorbis
+
 instance MetadataReader OggVorbis where
   tags = undefined

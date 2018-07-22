@@ -1,4 +1,14 @@
-module Melo.Format.Ape where
+module Melo.Format.Ape
+  ( APE(..)
+  , Header(..)
+  , Flags(..)
+  , Version(..)
+  , headerSize
+  , preamble
+  , getHeader
+  , mkTextTagItem
+  , pattern TextTagItem
+  ) where
 
 import Control.Monad
 import Data.Binary
@@ -30,12 +40,12 @@ headerSize :: Integral a => a
 headerSize = 32
 
 preamble :: BS.ByteString
-preamble = BC.pack "APETAGEX"
+preamble = "APETAGEX"
 
 instance MetadataFormat APE where
   formatDesc = "APE"
 
-instance MetadataReader APE where
+instance MetadataLocator APE where
   locate bs =
     case locateBinaryLazy @Header bs of
       Nothing -> Nothing
@@ -53,12 +63,14 @@ instance MetadataReader APE where
     hSeek h AbsoluteSeek n
     buf <- L.hGet h (fromIntegral $ hs - n)
     return $ locate @APE buf
+
+instance MetadataReader APE where
   tags = undefined
 
 instance Binary APE where
   put a = do
     let bs = runPut $ forM_ (items a) put
-    if (version a) == APEv2
+    if APEv2 == version a
       then put $ mkHeader a $ fromIntegral . L.length $ bs
       else return ()
     putLazyByteString bs
@@ -206,6 +218,8 @@ data TagItem =
 
 mkTextTagItem :: Text -> Text -> TagItem
 mkTextTagItem k v = TagItem k (TagItemValue (TextTag [v]))
+
+pattern TextTagItem k v = TagItem k (TagItemValue (TextTag [v]))
 
 instance Binary TagItem where
   put (TagItem key val) = do

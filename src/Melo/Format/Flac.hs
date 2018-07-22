@@ -15,15 +15,16 @@ import Melo.Internal.BinaryUtil
 import Melo.Format.Vorbis
 
 readFlac :: FilePath -> IO Flac
-readFlac p = Flac <$> decode <$> L.readFile p
+readFlac p = Flac . decode <$> L.readFile p
 
 readFlacOrFail :: FilePath -> IO (Either (ByteOffset, String) Flac)
-readFlacOrFail p = decodeFileOrFail p >>= return . fmap Flac
+readFlacOrFail p = fmap Flac <$> decodeFileOrFail p
 
 data Flac
   = Flac FlacStream
   | FlacWithId3v2 Int
                   FlacStream
+  deriving (Show)
 
 data FlacStream = FlacStream
   { streamInfoBlock :: StreamInfo

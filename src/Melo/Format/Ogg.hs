@@ -27,5 +27,5 @@ instance BinaryGet Page where
     _checksum <- getWord32le
     numSegments <- getWord8
     segmentTable <- getByteString $ fromIntegral numSegments
-    let pageLength = foldl (+) 0 (fmap fromIntegral (BS.unpack segmentTable))
+    let pageLength = sum (fmap fromIntegral (BS.unpack segmentTable))
     Page <$> getLazyByteString pageLength
