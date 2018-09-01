@@ -76,9 +76,9 @@ getTextItem t = case t of
 instance Binary APE where
   put a = do
     let bs = runPut $ forM_ (items a) put
-    if APEv2 == version a
-      then put $ mkHeader a $ fromIntegral . L.length $ bs
-      else return ()
+    case version a of
+      APEv2 -> put $ mkHeader a $ fromIntegral . L.length $ bs
+      _ -> return ()
     putLazyByteString bs
     put $ mkFooter a $ fromIntegral . L.length $ bs
   get = do

@@ -75,9 +75,9 @@ instance MetadataLocator ID3v1 where
     hSeek h SeekFromEnd (-128)
     pos <- fromIntegral <$> hTell h
     tag <- BS.hGet h 3
-    if tag == "TAG"
-      then return $ Just pos
-      else return Nothing
+    return $ case tag of
+      "TAG" -> Just pos
+      _ -> Nothing
 
 instance MetadataReader ID3v1 where
   tags = undefined

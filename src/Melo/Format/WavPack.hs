@@ -39,9 +39,9 @@ instance MetadataReader WavPack where
   tags wv = tags $ wavPackTags wv
 
 instance Detector WavPack where
-  fileDetectFormat p = if takeExtension p == ".wv" then
-    Just $ Detected readWavPackFile M.ape
-    else Nothing
+  fileDetectFormat p
+    | takeExtension p == ".wv" = Just $ Detected readWavPackFile M.ape
+    | otherwise = Nothing
   hDetectFormat h = do
     hSeek h AbsoluteSeek 0
     buf <- BS.hGet h 4

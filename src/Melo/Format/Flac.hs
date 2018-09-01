@@ -57,10 +57,9 @@ instance Detector Flac where
   hDetectFormat h = do
     hSeek h AbsoluteSeek 0
     buf <- hGet h 4
-    if buf == "fLaC" then
-      return $ Just $ Detected hReadFlac M.vorbis
-    else
-      return Nothing
+    return $ case buf of
+      "fLaC" -> Just $ Detected hReadFlac M.vorbis
+      _ -> Nothing
 
 data FlacStream = FlacStream
   { streamInfoBlock :: StreamInfo

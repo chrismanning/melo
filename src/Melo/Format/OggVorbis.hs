@@ -31,9 +31,9 @@ instance MetadataReader OggVorbis where
   tags (OggVorbis _ (FramedVorbisComments vc)) = getVorbisTags vc
 
 instance Detector OggVorbis where
-  fileDetectFormat p = if takeExtension p == ".ogg" then
-    Just $ Detected readOggVorbisFile M.vorbis
-    else Nothing
+  fileDetectFormat p
+    | takeExtension p == ".ogg" = Just $ Detected readOggVorbisFile M.vorbis
+    | otherwise = Nothing
   hDetectFormat h = do
     hSeek h AbsoluteSeek 0
     buf <- hGet h 4
