@@ -190,7 +190,7 @@ instance MetadataReader WavPackTags where
     JustAPE ape -> tags ape
     JustID3v1 id3v1 -> tags id3v1
     Both ape _ -> tags ape
-    NoTags -> []
+    NoTags -> Tags []
 
 findApe :: Handle -> IO (Maybe Int)
 findApe h = do

@@ -28,6 +28,8 @@ library:
     - binary
     - binary-bits
     - bytestring
+    - data-default
+    - filepath
     - text
 
 # executables:

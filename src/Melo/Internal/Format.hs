@@ -17,6 +17,9 @@ import Debug.Trace
 
 import Melo.Internal.Binary
 
+newtype Tags = Tags [(Text, Text)]
+  deriving (Show, Eq)
+
 class MetadataFormat a where
   formatDesc :: String
   formatDesc' :: a -> String
@@ -31,7 +34,7 @@ class (MetadataFormat a, BinaryGet a) => MetadataLocator a where
 class MetadataFormat a =>
       MetadataReader a
   where
-  tags :: a -> [(Text, Text)]
+  tags :: a -> Tags
 
 hGetMetadata :: forall a. MetadataLocator a => Handle -> IO a
 hGetMetadata h = do
