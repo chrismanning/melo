@@ -16,7 +16,7 @@ spec :: Spec
 spec = do
   describe "WavPack" $ do
     it "parses wavpack metadata header" $ do
-      wv <- readWavPack "test/Melo/silence-1s.wv"
+      wv <- readWavPackFile "test/Melo/silence-1s.wv"
       wv `shouldSatisfy` \case
         WavPack (WavPackInfo { totalSamples = Just 44100
                              , sampleSize = 16
@@ -26,13 +26,13 @@ spec = do
                              }) _ -> True
         _ -> False
     it "parses ape in wavpack" $ do
-      wv <- readWavPack "test/Melo/silence-1s.wv"
+      wv <- readWavPackFile "test/Melo/silence-1s.wv"
       wv `shouldSatisfy` \case
         WavPack _ (JustAPE (APE APEv2 [TextTagItem "encoder" "WavPack 5.1.0"])) ->
           True
         _ -> False
     it "parses id3v1 in wavpack" $ do
-      wv <- readWavPack "test/Melo/silence-1s-id3v1.wv"
+      wv <- readWavPackFile "test/Melo/silence-1s-id3v1.wv"
       wv `shouldSatisfy` \case
         WavPack _ (JustID3v1 (
           ID3v1 {
@@ -47,7 +47,7 @@ spec = do
           True
         _ -> False
     it "parses ape and id3v1 in wavpack" $ do
-      wv <- readWavPack "test/Melo/silence-1s-ape-id3v1.wv"
+      wv <- readWavPackFile "test/Melo/silence-1s-ape-id3v1.wv"
       wv `shouldSatisfy` \case
         WavPack _ (Both (APE APEv2 [TextTagItem "encoder" "WavPack 5.1.0"]) (
           ID3v1 {

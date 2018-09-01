@@ -32,7 +32,14 @@ library:
     - filepath
     - text
 
-# executables:
+executables:
+  melo-detect:
+    source-dirs: app/detect
+    main: Main.hs
+    dependencies:
+      - melo
+      - optparse-applicative
+      - text
 
 tests:
   melo-test:

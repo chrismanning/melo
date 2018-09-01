@@ -1,6 +1,8 @@
 module Melo.Format.Flac where
 
+import Control.Applicative
 import Control.Monad
+import qualified Control.Monad.Fail as Fail
 import Data.Binary
 import Data.Binary.Bits.Get ()
 import qualified Data.Binary.Bits.Get as BG
@@ -9,13 +11,21 @@ import Data.ByteString
 import qualified Data.ByteString.Lazy as L
 import Data.Text
 import Debug.Trace
+import System.FilePath
+import System.IO
 import Text.Printf
 
-import Melo.Internal.BinaryUtil
 import Melo.Format.Vorbis
+import Melo.Internal.Detect
+import Melo.Internal.Format
+import Melo.Internal.BinaryUtil
+import Melo.Mapping as M(FieldMappings(vorbis))
 
-readFlac :: FilePath -> IO Flac
-readFlac p = Flac . decode <$> L.readFile p
+readFlacFile :: FilePath -> IO Flac
+readFlacFile p = Flac . decode <$> L.readFile p
+
+hReadFlac :: Handle -> IO Flac
+hReadFlac p = Flac . decode <$> L.hGetContents p
 
 readFlacOrFail :: FilePath -> IO (Either (ByteOffset, String) Flac)
 readFlacOrFail p = fmap Flac <$> decodeFileOrFail p
@@ -25,6 +35,32 @@ data Flac
   | FlacWithId3v2 Int
                   FlacStream
   deriving (Show)
+
+instance MetadataFormat Flac where
+  formatDesc = "Flac"
+  formatDesc' (Flac _) = formatDesc @Flac
+  formatDesc' (FlacWithId3v2 _ _) = "Flac with ID3v2"
+
+instance MetadataReader Flac where
+  tags f = case f of
+    Flac fs -> getTags fs
+    FlacWithId3v2 _ fs -> getTags fs
+    where
+      getTags fs = case vorbisComment fs of
+        Just vcs -> getVorbisTags vcs
+        Nothing -> Tags []
+
+instance Detector Flac where
+  fileDetectFormat p
+    | takeExtension p == ".flac" = Just $ Detected readFlacFile M.vorbis
+    | otherwise = Nothing
+  hDetectFormat h = do
+    hSeek h AbsoluteSeek 0
+    buf <- hGet h 4
+    if buf == "fLaC" then
+      return $ Just $ Detected hReadFlac M.vorbis
+    else
+      return Nothing
 
 data FlacStream = FlacStream
   { streamInfoBlock :: StreamInfo
@@ -225,7 +261,7 @@ instance Binary CueSheet where
     leadInSamples <- getWord64be
     isCD <- BG.runBitGet BG.getBool
     skip 258
-    numTracks <- fromIntegral <$> failFilter (> 1) "Invalid number of cue sheet tracks" getWord8
+    numTracks <- fromIntegral <$> mfilter (> 1) getWord8 <|> Fail.fail "Invalid number of cue sheet tracks"
     tracks <- replicateM numTracks get
     return CueSheet {catalogNum, leadInSamples, isCD, tracks}
 
@@ -285,7 +321,7 @@ instance Binary Picture where
   get = do
     header <- get :: Get MetadataBlockHeader
     expect (blockType header == 6) (printf "Unexpected block type %d; expected 6 (PICTURE)" $ blockType header)
-    pictureType <- failFilter (<= 20) "Invalid picture type" getWord32be
+    pictureType <- mfilter (<= 20) getWord32be <|> Fail.fail "Invalid picture type"
     mimeType <- getUTF8Text =<< fromIntegral <$> getWord32be
     description <- getUTF8Text =<< fromIntegral <$> getWord32be
     width <- getWord32be

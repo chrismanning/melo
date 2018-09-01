@@ -8,7 +8,6 @@ module Melo.Internal.BinaryUtil
   , expectGet
   , expectGet_
   , expectGetEq
-  , failFilter
   ) where
 
 import Control.Applicative
@@ -37,11 +36,6 @@ getNullTerminatedAscii = L.toStrict <$> getLazyByteStringNul >>= decodeUtf8OrFai
 
 get24Bits :: Get Word32
 get24Bits = BG.runBitGet $ BG.getWord32be 24
-
-failFilter :: (MonadFail m) => (a -> Bool) -> String -> m a -> m a
-failFilter p s ma = do
-  a <- ma
-  if p a then return a else Fail.fail s
 
 expect :: (MonadFail m) => Bool -> String -> m ()
 expect True _ = return ()

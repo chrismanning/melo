@@ -4,8 +4,8 @@ module Melo.Format(
   tags
 ) where
 
-import Data.Foldable
-import Data.Text (Text, toLower)
+import Data.Foldable (concat, find)
+import Data.Text (Text)
 
 import Melo.Internal.Format
 import Melo.Mapping

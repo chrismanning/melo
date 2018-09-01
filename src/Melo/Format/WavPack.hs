@@ -5,7 +5,7 @@ module Melo.Format.WavPack
   , AudioType(..)
   , Channels(..)
   , ChannelMask(..)
-  , readWavPack
+  , readWavPackFile
   ) where
 
 import Data.Binary.Get
@@ -14,6 +14,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as L
 import Data.List (genericIndex)
 import Data.Word
+import System.FilePath
 import System.IO
 
 import qualified Melo.Format.Ape as Ape
@@ -21,7 +22,9 @@ import qualified Melo.Format.Id3 as Id3
 import qualified Melo.Format.Id3.Id3v1 as Id3
 import Melo.Internal.Binary
 import Melo.Internal.BinaryUtil
+import Melo.Internal.Detect
 import Melo.Internal.Format
+import Melo.Mapping as M(FieldMappings(ape))
 
 data WavPack = WavPack
   { wavPackInfo :: WavPackInfo
@@ -34,6 +37,18 @@ instance MetadataFormat WavPack where
 
 instance MetadataReader WavPack where
   tags wv = tags $ wavPackTags wv
+
+instance Detector WavPack where
+  fileDetectFormat p = if takeExtension p == ".wv" then
+    Just $ Detected readWavPackFile M.ape
+    else Nothing
+  hDetectFormat h = do
+    hSeek h AbsoluteSeek 0
+    buf <- BS.hGet h 4
+    if buf == ckId then
+      return $ Just $ Detected hReadWavPack M.ape
+    else
+      return Nothing
 
 data WavPackInfo = WavPackInfo
   { totalSamples :: Maybe Word64
@@ -219,9 +234,13 @@ findAt h p s = do
     then return $ fromIntegral <$> Just pos
     else return Nothing
 
-readWavPack :: FilePath -> IO WavPack
-readWavPack p = do
+readWavPackFile :: FilePath -> IO WavPack
+readWavPackFile p = do
   h <- openBinaryFile p ReadMode
+  hReadWavPack h
+
+hReadWavPack :: Handle -> IO WavPack
+hReadWavPack h = do
   wvInfo <- hGetMetadata h
   wvTags <-
     do seekable <- hIsSeekable h

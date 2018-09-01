@@ -8,6 +8,7 @@ import Data.Text
 import Data.Word
 import Prelude hiding (drop, length, take)
 
+import Melo.Format
 import Melo.Internal.Binary
 import Melo.Internal.BinaryUtil
 
@@ -105,3 +106,6 @@ splitOnce :: (Char -> Bool) -> Text -> Maybe (Text, Text)
 splitOnce p t = do
   n <- findIndex p t
   return (take n t, drop (min (length t) (n + 1)) t)
+
+getVorbisTags :: VorbisComments -> Tags
+getVorbisTags (VorbisComments _ cs) = Tags $ fmap (\(UserComment k v) -> (k, v)) cs

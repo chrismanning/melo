@@ -21,8 +21,9 @@ import Data.Binary.Put
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BC
 import qualified Data.ByteString.Lazy as L
+import Data.Foldable
 import Data.Int
-import Data.Text
+import Data.Text (Text)
 import Data.Text.Encoding
 import System.IO
 
@@ -65,7 +66,12 @@ instance MetadataLocator APE where
     return $ locate @APE buf
 
 instance MetadataReader APE where
-  tags = undefined
+  tags a = Tags $ concat $ traverse getTextItem (items a)
+
+getTextItem :: TagItem -> Maybe (Text, Text)
+getTextItem t = case t of
+  TextTagItem k v -> Just (k, v)
+  _ -> Nothing
 
 instance Binary APE where
   put a = do

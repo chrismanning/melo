@@ -17,14 +17,14 @@ spec :: Spec
 spec = do
   describe "Flac" $ do
     it "parses flac" $ do
-      flac <- readFlac "test/Melo/silence-1s.flac"
+      flac <- readFlacFile "test/Melo/silence-1s.flac"
       flac `shouldSatisfy`
         (\f ->
            case f of
              Flac _ -> True
              _ -> False)
     it "parses STREAMINFO" $ do
-      Flac flac <- readFlac "test/Melo/silence-1s.flac"
+      Flac flac <- readFlacFile "test/Melo/silence-1s.flac"
       let (md5, _) = Hex.decode "ee67686246536453b5950b21810fde82"
       streamInfoBlock flac `shouldSatisfy`
         (\b ->
@@ -41,7 +41,7 @@ spec = do
                         } -> True
              _ -> False)
     it "parses VORBIS COMMENT" $ do
-      Flac flac <- readFlac "test/Melo/silence-1s.flac"
+      Flac flac <- readFlacFile "test/Melo/silence-1s.flac"
       vorbisComment flac `shouldBe` Just (VorbisComments "reference libFLAC 1.3.2 20170101" [])
     it "fails" $ do
       flac <- readFlacOrFail "test/Melo/test.vorbiscomment"
