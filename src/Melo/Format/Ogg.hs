@@ -7,14 +7,14 @@ import qualified Data.ByteString.Lazy as L
 import Melo.Internal.Binary
 import Melo.Internal.BinaryUtil
 
-data OggPage a = OggPage a
+newtype OggPage a = OggPage a
 
 instance BinaryGet a => BinaryGet (OggPage a) where
   bget = do
     Page page <- bget
     return $ OggPage (runGet bget page)
 
-data Page = Page L.ByteString
+newtype Page = Page L.ByteString
 
 instance BinaryGet Page where
   bget = do

@@ -219,7 +219,7 @@ findApe h = do
         Just $
         if Ape.isHeader (Ape.flags footer)
           then n
-          else n - (fromIntegral $ Ape.numBytes footer)
+          else n - fromIntegral (Ape.numBytes footer)
     Nothing -> return Nothing
 
 findId3 :: Handle -> IO (Maybe Int)

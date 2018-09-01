@@ -25,7 +25,7 @@ data ID3v1 = ID3v1
   , album   :: Text
   , year    :: Text
   , comment :: Text
-  , track   :: (Maybe Word8)
+  , track   :: Maybe Word8
   , genre   :: Text
   } deriving (Show, Eq)
 

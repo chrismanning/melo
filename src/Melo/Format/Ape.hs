@@ -55,7 +55,7 @@ instance MetadataLocator APE where
         Just $
           if isHeader (flags header)
             then i
-            else i - (fromIntegral $ numBytes header) + headerSize
+            else i - fromIntegral (numBytes header) + headerSize
   hLocate h = do
     hs <-
       do hSeek h SeekFromEnd 0

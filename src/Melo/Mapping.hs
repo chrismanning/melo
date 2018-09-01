@@ -37,7 +37,7 @@ caseSensitiveMapping m = FieldMapping id (== m)
 caseInsensitiveMapping :: Text -> FieldMapping
 caseInsensitiveMapping m = FieldMapping id (\x -> toLower x == toLower m)
 
-data TagMapping = TagMapping [FieldMappings]
+newtype TagMapping = TagMapping [FieldMappings]
 
 singletonTagMapping :: FieldMappings -> TagMapping
 singletonTagMapping m = TagMapping [m]
