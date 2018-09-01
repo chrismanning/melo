@@ -10,7 +10,6 @@ import Data.Binary.Get
 import Data.ByteString
 import qualified Data.ByteString.Lazy as L
 import Data.Text
-import Debug.Trace
 import System.FilePath
 import System.IO
 import Text.Printf
@@ -86,7 +85,6 @@ getMetadataBlocks = go
     go = do
       header <- lookAhead get :: Get MetadataBlockHeader
       block <- get
-      traceM $ show block
       if isLast header
         then return [block]
         else do
@@ -135,9 +133,7 @@ instance Binary MetadataBlockHeader where
     (isLast, blockType) <-
       BG.runBitGet $ (,) <$> BG.getBool <*> BG.getWord8 7
     blockLength <- get24Bits
-    let header = MetadataBlockHeader {blockType, blockLength, isLast}
-    traceM $ show header
-    return header
+    return MetadataBlockHeader {blockType, blockLength, isLast}
 
 data StreamInfo = StreamInfo
   { minBlockSize :: Word16
@@ -194,7 +190,6 @@ instance Binary Padding where
     header <- get :: Get MetadataBlockHeader
     expect (blockType header == 1) (printf "Unexpected block type %d; expected 1 (PADDING)" $ blockType header)
     let paddingLength = blockLength header
-    traceM $ "found padding; skipping " ++ show paddingLength
     skip $ fromIntegral paddingLength
     return $ Padding paddingLength
 
