@@ -47,7 +47,6 @@ instance Monoid TagMapping where
   mappend = (<>)
 
 instance Semigroup TagMapping where
-  (<>) :: TagMapping -> TagMapping -> TagMapping
   (TagMapping xs) <> (TagMapping ys) = TagMapping $ xs ++ ys
 
 albumArtist :: TagMapping

@@ -30,6 +30,7 @@ library:
     - bytestring
     - data-default
     - filepath
+    - freer-simple
     - text
 
 executables:
@@ -37,6 +38,7 @@ executables:
     source-dirs: app/detect
     main: Main.hs
     dependencies:
+      - freer-simple
       - melo
       - optparse-applicative
       - text

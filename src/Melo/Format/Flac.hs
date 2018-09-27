@@ -14,17 +14,16 @@ import System.FilePath
 import System.IO
 import Text.Printf
 
+import Melo.Format
 import Melo.Format.Vorbis
-import Melo.Internal.Detect
-import Melo.Internal.Format
 import Melo.Internal.BinaryUtil
+import Melo.Internal.Detect
 import Melo.Mapping as M(FieldMappings(vorbis))
 
-readFlacFile :: FilePath -> IO Flac
-readFlacFile p = Flac . decode <$> L.readFile p
-
 hReadFlac :: Handle -> IO Flac
-hReadFlac p = Flac . decode <$> L.hGetContents p
+hReadFlac h = do
+  hSeek h AbsoluteSeek 0
+  Flac . decode <$> L.hGetContents h
 
 readFlacOrFail :: FilePath -> IO (Either (ByteOffset, String) Flac)
 readFlacOrFail p = fmap Flac <$> decodeFileOrFail p
@@ -50,15 +49,18 @@ instance MetadataReader Flac where
         Nothing -> Tags []
 
 instance Detector Flac where
-  fileDetectFormat p
-    | takeExtension p == ".flac" = Just $ Detected readFlacFile M.vorbis
+  pathDetectFormat p
+    | takeExtension p == ".flac" = Just detector
     | otherwise = Nothing
   hDetectFormat h = do
     hSeek h AbsoluteSeek 0
     buf <- hGet h 4
     return $ case buf of
-      "fLaC" -> Just $ Detected hReadFlac M.vorbis
+      "fLaC" -> Just detector
       _ -> Nothing
+
+detector :: DetectedP
+detector = mkDetected hReadFlac M.vorbis
 
 data FlacStream = FlacStream
   { streamInfoBlock :: StreamInfo
