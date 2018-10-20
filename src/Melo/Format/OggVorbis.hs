@@ -3,8 +3,7 @@ module Melo.Format.OggVorbis(
 , hReadOggVorbis
 ) where
 
-import Data.ByteString
-import System.FilePath
+import Data.Binary.Get
 import System.IO
 
 import Melo.Format.Ogg
@@ -48,17 +47,14 @@ instance InfoReader OggVorbis where
   }
 
 instance Detector OggVorbis where
-  pathDetectFormat p
-    | takeExtension p == ".ogg" = Just detector
-    | otherwise = Nothing
+  -- file extension is not enough to identify vorbis inside ogg
+  pathDetectFormat _ = Nothing
   hDetectFormat h = do
     hSeek h AbsoluteSeek 0
-    buf <- hGet h 4
-    -- FIXME ogg vorbis detection for handles
-    if buf == "OggS" then
-      return $ Just detector
-    else
-      return Nothing
+    buf <- hGetFileContents h
+    return $ case runGetOrFail bget buf of
+      Right (_, _, !(_ :: OggPage Header)) -> Just detector
+      Left _ -> Nothing
 
 detector :: DetectedP
 detector = mkDetected hReadOggVorbis M.vorbis
