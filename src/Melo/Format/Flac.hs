@@ -8,22 +8,23 @@ import Data.Binary.Bits.Get ()
 import qualified Data.Binary.Bits.Get as BG
 import Data.Binary.Get
 import Data.ByteString
-import qualified Data.ByteString.Lazy as L
 import Data.Text
 import System.FilePath
 import System.IO
 import Text.Printf
 
 import Melo.Format
-import Melo.Format.Vorbis
+import Melo.Format.Vorbis(VorbisComments(..), getVorbisTags)
 import Melo.Internal.BinaryUtil
 import Melo.Internal.Detect
+import Melo.Internal.Info
+import Melo.Internal.Tag
 import Melo.Mapping as M(FieldMappings(vorbis))
 
 hReadFlac :: Handle -> IO Flac
 hReadFlac h = do
   hSeek h AbsoluteSeek 0
-  Flac . decode <$> L.hGetContents h
+  Flac . decode <$> hGetFileContents h
 
 readFlacOrFail :: FilePath -> IO (Either (ByteOffset, String) Flac)
 readFlacOrFail p = fmap Flac <$> decodeFileOrFail p
@@ -39,7 +40,7 @@ instance MetadataFormat Flac where
   formatDesc' (Flac _) = formatDesc @Flac
   formatDesc' (FlacWithId3v2 _ _) = "Flac with ID3v2"
 
-instance MetadataReader Flac where
+instance TagReader Flac where
   tags f = case f of
     Flac fs -> getTags fs
     FlacWithId3v2 _ fs -> getTags fs
@@ -47,6 +48,24 @@ instance MetadataReader Flac where
       getTags fs = case vorbisComment fs of
         Just vcs -> getVorbisTags vcs
         Nothing -> Tags []
+
+instance InfoReader Flac where
+  info f = case f of
+    Flac fs -> getInfo fs
+    FlacWithId3v2 _ fs -> getInfo fs
+    where
+      getInfo :: FlacStream -> Info
+      getInfo fs = let si = streamInfoBlock fs in
+        Info {
+          sampleRate = SampleRate $ fromIntegral $
+            sampleRate (si :: StreamInfo)
+          , bitsPerSample = pure $ fromIntegral $ bps si
+          , channels = case channels (si :: StreamInfo) of
+            1 -> Mono
+            2 -> Stereo
+            _ -> MultiChannel ChannelMask
+          , totalSamples = fromIntegral <$> samples (si :: StreamInfo)
+        }
 
 instance Detector Flac where
   pathDetectFormat p

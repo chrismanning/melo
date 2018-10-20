@@ -32,6 +32,7 @@ library:
     - filepath
     - freer-simple
     - text
+    - time
 
 executables:
   melo-detect:
@@ -42,6 +43,7 @@ executables:
       - melo
       - optparse-applicative
       - text
+      - time
 
 tests:
   melo-test:
@@ -97,6 +99,7 @@ default-extensions:
   - OverloadedStrings
   - PatternSynonyms
   - RankNTypes
+  - RecordWildCards
   - ScopedTypeVariables
   - StandaloneDeriving
   - TupleSections

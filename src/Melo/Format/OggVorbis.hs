@@ -4,17 +4,20 @@ module Melo.Format.OggVorbis(
 ) where
 
 import Data.ByteString
-import qualified Data.ByteString.Lazy as L
 import System.FilePath
 import System.IO
 
 import Melo.Format.Ogg
-import Melo.Format.Vorbis
+import Melo.Format.Vorbis as V
 import Melo.Mapping as M(FieldMappings(vorbis))
 
 import Melo.Format
 import Melo.Internal.Binary
+import Melo.Internal.BinaryUtil
 import Melo.Internal.Detect
+import Melo.Internal.Info
+import Melo.Internal.Locate
+import Melo.Internal.Tag
 
 data OggVorbis = OggVorbis Identification FramedVorbisComments
   deriving (Eq, Show)
@@ -30,8 +33,19 @@ instance MetadataFormat OggVorbis where
 
 instance MetadataLocator OggVorbis
 
-instance MetadataReader OggVorbis where
+instance TagReader OggVorbis where
   tags (OggVorbis _ (FramedVorbisComments vc)) = getVorbisTags vc
+
+instance InfoReader OggVorbis where
+  info (OggVorbis ident _) = Info {
+    sampleRate = SampleRate $ fromIntegral $ V.sampleRate ident
+  , channels = case V.channels ident of
+      1 -> Mono
+      2 -> Stereo
+      _ -> MultiChannel ChannelMask
+  , totalSamples = Nothing
+  , bitsPerSample = Nothing
+  }
 
 instance Detector OggVorbis where
   pathDetectFormat p
@@ -40,7 +54,8 @@ instance Detector OggVorbis where
   hDetectFormat h = do
     hSeek h AbsoluteSeek 0
     buf <- hGet h 4
-    if buf == "fLaC" then
+    -- FIXME ogg vorbis detection for handles
+    if buf == "OggS" then
       return $ Just detector
     else
       return Nothing
@@ -49,4 +64,6 @@ detector :: DetectedP
 detector = mkDetected hReadOggVorbis M.vorbis
 
 hReadOggVorbis :: Handle -> IO OggVorbis
-hReadOggVorbis h = bdecode <$> L.hGetContents h
+hReadOggVorbis h = do
+  hSeek h AbsoluteSeek 0
+  bdecode <$> hGetFileContents h

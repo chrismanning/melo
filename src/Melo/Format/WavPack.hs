@@ -13,6 +13,7 @@ import Data.Bits
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as L
 import Data.List (genericIndex)
+import Data.Maybe
 import Data.Word
 import System.FilePath
 import System.IO
@@ -24,6 +25,10 @@ import qualified Melo.Format.Id3.Id3v1 as Id3
 import Melo.Internal.Binary
 import Melo.Internal.BinaryUtil
 import Melo.Internal.Detect
+import qualified Melo.Internal.Info as I
+import Melo.Internal.Info (InfoReader(..), Info(..))
+import Melo.Internal.Locate
+import Melo.Internal.Tag
 import Melo.Mapping as M(FieldMappings(ape))
 
 data WavPack = WavPack
@@ -35,8 +40,21 @@ instance MetadataFormat WavPack where
   formatDesc = "WavPack"
   formatDesc' wv = "WavPack with " ++ formatDesc' (wavPackTags wv)
 
-instance MetadataReader WavPack where
+instance TagReader WavPack where
   tags wv = tags $ wavPackTags wv
+
+instance InfoReader WavPack where
+  info wv = let wi = wavPackInfo wv in
+    Info {
+      sampleRate = I.SampleRate $ fromIntegral $ fromMaybe 0 $ sampleRate (wi :: WavPackInfo)
+    , channels = case channels (wi :: WavPackInfo) of
+        Mono -> I.Mono
+        Stereo -> I.Stereo
+        JointStereo -> I.JointStereo
+        MultiChannel _ -> I.MultiChannel I.ChannelMask
+    , totalSamples = fromIntegral <$> totalSamples (wi :: WavPackInfo)
+    , bitsPerSample = Just $ fromIntegral $ sampleSize wi
+    }
 
 instance Detector WavPack where
   pathDetectFormat p
@@ -66,8 +84,11 @@ instance MetadataFormat WavPackInfo where
 
 instance MetadataLocator WavPackInfo where
   hLocate h = do
-    buf <- L.hGetContents h
-    return $ locateBinaryLazy @WavPackInfo buf
+    hSeek h AbsoluteSeek 0
+    buf <- BS.hGet h 32
+    return $ case runGetOrFail bget (L.fromStrict buf) of
+      Right (_, _, _ :: WavPackInfo) -> Just 0
+      Left _ -> Nothing
 
 instance BinaryGet WavPackInfo where
   bget = do
@@ -203,7 +224,7 @@ instance MetadataLocator WavPackTags where
               Nothing -> return $ Just id3pos
               Just apepos -> return $ Just apepos
 
-instance MetadataReader WavPackTags where
+instance TagReader WavPackTags where
   tags = \case
     JustAPE ape -> tags ape
     JustID3v1 id3v1 -> tags id3v1
@@ -240,11 +261,11 @@ findAt h p s = do
 hReadWavPack :: Handle -> IO WavPack
 hReadWavPack h = do
   wvInfo <- hGetMetadata h
-  wvTags <-
-    do seekable <- hIsSeekable h
-       if seekable
-         then do
-           hSeek h AbsoluteSeek 0
-           hGetMetadata h
-         else return NoTags
+  wvTags <- do
+    seekable <- hIsSeekable h
+    if seekable
+      then do
+        hSeek h AbsoluteSeek 0
+        hGetMetadata h
+    else return NoTags
   return $ WavPack wvInfo wvTags

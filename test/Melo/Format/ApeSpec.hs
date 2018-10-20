@@ -10,7 +10,7 @@ import qualified Data.ByteString.Lazy as L
 import System.IO
 
 import Melo.Format.Ape
-import Melo.Internal.Format
+import Melo.Internal.Locate
 
 main :: IO ()
 main = hspec spec

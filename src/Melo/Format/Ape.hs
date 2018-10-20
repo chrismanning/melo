@@ -31,6 +31,8 @@ import Prelude as P
 
 import Melo.Internal.BinaryUtil
 import Melo.Internal.Format
+import Melo.Internal.Locate
+import Melo.Internal.Tag
 
 data APE = APE
   { version :: Version
@@ -62,10 +64,10 @@ instance MetadataLocator APE where
          hTell h
     let n = hs - fromIntegral (min (headerSize * 10) hs)
     hSeek h AbsoluteSeek n
-    buf <- L.hGet h (fromIntegral $ hs - n)
-    return $ locate @APE buf
+    buf <- BS.hGet h (fromIntegral $ hs - n)
+    return $ locate @APE (L.fromStrict buf)
 
-instance MetadataReader APE where
+instance TagReader APE where
   tags a = Tags $ concat $ traverse getTextItem (items a)
 
 getTextItem :: TagItem -> Maybe (Text, Text)

@@ -8,9 +8,9 @@ import Data.Text
 import Data.Word
 import Prelude hiding (drop, length, take)
 
-import Melo.Format
 import Melo.Internal.Binary
 import Melo.Internal.BinaryUtil
+import Melo.Internal.Tag
 
 data Header
   = IdentificationHeader Identification

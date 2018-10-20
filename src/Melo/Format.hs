@@ -1,13 +1,8 @@
 module Melo.Format
 (
-  Tags(..)
-, getTagByField
+  getTagByField
 , getMappedTag
 , MetadataFormat(..)
-, MetadataLocator(..)
-, MetadataReader(..)
-, locateBinaryLazy
-, locateBinary
 , hGetMetadata
 ) where
 
@@ -19,7 +14,10 @@ import Data.Text (Text)
 import System.IO
 
 import Melo.Internal.Binary
+import Melo.Internal.BinaryUtil
 import Melo.Internal.Format
+import Melo.Internal.Locate
+import Melo.Internal.Tag
 import Melo.Mapping
 
 import Debug.Trace
@@ -47,6 +45,7 @@ hGetMetadata h = do
         hIsClosed h >>= \c -> traceIO $ "h is " ++ if c then "closed" else "open"
         hSeek h AbsoluteSeek (fromIntegral i)
         hTell h >>= \p -> traceIO $ "h is at " ++ show p
-        L.hGetContents h
+        hIsClosed h >>= \c -> traceIO $ "h is " ++ if c then "closed" else "open"
+        hGetFileContents h
   when (L.null bs) $ traceIO "no bytes"
   return $ bdecode bs

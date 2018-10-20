@@ -13,7 +13,7 @@ import System.IO
 
 import Melo.Format.Id3.Id3v1
 import Melo.Internal.Binary
-import Melo.Internal.Format
+import Melo.Internal.Locate
 
 main :: IO ()
 main = hspec spec

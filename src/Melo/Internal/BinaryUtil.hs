@@ -8,6 +8,7 @@ module Melo.Internal.BinaryUtil
   , expectGet
   , expectGet_
   , expectGetEq
+  , hGetFileContents
   ) where
 
 import Control.Applicative
@@ -20,6 +21,7 @@ import Data.ByteString
 import qualified Data.ByteString.Lazy as L
 import Data.Text as T
 import Data.Text.Encoding
+import System.IO
 import Text.Printf
 
 getUTF8Text :: Int -> Get Text
@@ -60,3 +62,8 @@ expectGetEq g t s = do
 getLazyByteStringUpTo :: Int -> Get L.ByteString
 getLazyByteStringUpTo n =
   getLazyByteString (fromIntegral n) <|> getRemainingLazyByteString
+
+hGetFileContents :: Handle -> IO L.ByteString
+hGetFileContents h = do
+  len <- hFileSize h
+  L.hGet h (fromIntegral len)

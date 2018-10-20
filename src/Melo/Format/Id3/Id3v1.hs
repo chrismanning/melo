@@ -14,10 +14,12 @@ import Data.Text as T
 import Data.Text.Encoding
 import System.IO
 
+import Melo.Format.Id3.Id3v1Genre
 import Melo.Internal.Binary
 import Melo.Internal.BinaryUtil
 import Melo.Internal.Format
-import Melo.Format.Id3.Id3v1Genre
+import Melo.Internal.Locate
+import Melo.Internal.Tag
 
 data ID3v1 = ID3v1
   { title   :: Text
@@ -79,7 +81,7 @@ instance MetadataLocator ID3v1 where
       "TAG" -> Just pos
       _ -> Nothing
 
-instance MetadataReader ID3v1 where
+instance TagReader ID3v1 where
   tags = undefined
 
 id3v1Id :: BS.ByteString
