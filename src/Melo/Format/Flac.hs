@@ -1,4 +1,14 @@
-module Melo.Format.Flac where
+module Melo.Format.Flac(
+  Flac
+, pattern Flac
+, pattern FlacWithId3v2
+, FlacStream
+, StreamInfo(..)
+, streamInfoBlock
+, vorbisComment
+, hReadFlac
+, readFlacOrFail
+) where
 
 import Control.Applicative
 import Control.Monad
@@ -14,6 +24,7 @@ import System.IO
 import Text.Printf
 
 import Melo.Format
+import Melo.Format.Id3.Id3v2
 import Melo.Format.Vorbis(VorbisComments(..), getVorbisTags)
 import Melo.Internal.BinaryUtil
 import Melo.Internal.Detect
@@ -24,16 +35,24 @@ import Melo.Mapping as M(FieldMappings(vorbis))
 hReadFlac :: Handle -> IO Flac
 hReadFlac h = do
   hSeek h AbsoluteSeek 0
-  Flac . decode <$> hGetFileContents h
+  MkFlac . decode <$> hGetFileContents h
 
 readFlacOrFail :: FilePath -> IO (Either (ByteOffset, String) Flac)
-readFlacOrFail p = fmap Flac <$> decodeFileOrFail p
+readFlacOrFail p = fmap MkFlac <$> decodeFileOrFail p
 
 data Flac
-  = Flac FlacStream
-  | FlacWithId3v2 Int
+  = MkFlac FlacStream
+  | MkFlacWithId3v2 Id3v2
                   FlacStream
   deriving (Show)
+
+pattern Flac :: FlacStream -> Flac
+pattern Flac flac = MkFlac flac
+
+pattern FlacWithId3v2 :: Id3v2 -> FlacStream -> Flac
+pattern FlacWithId3v2 id3v2 flac = MkFlacWithId3v2 id3v2 flac
+
+{-# COMPLETE FlacWithId3v2, Flac #-}
 
 instance MetadataFormat Flac where
   formatDesc = "Flac"
