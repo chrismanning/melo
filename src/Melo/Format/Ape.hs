@@ -48,6 +48,7 @@ preamble = "APETAGEX"
 
 instance MetadataFormat APE where
   formatDesc = "APE"
+  formatDesc' ape = show $ version ape
 
 instance MetadataLocator APE where
   locate bs =
