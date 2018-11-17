@@ -1,6 +1,5 @@
 module Melo.Internal.BinaryUtil
-  ( decodeUtf8OrFail
-  , get24Bits
+  ( get24Bits
   , getLazyByteStringUpTo
   , getNullTerminatedAscii
   , getUTF8Text
@@ -17,21 +16,15 @@ import Control.Monad.Fail as Fail
 import Data.Binary
 import Data.Binary.Get
 import qualified Data.Binary.Bits.Get as BG
-import Data.ByteString
 import qualified Data.ByteString.Lazy as L
 import Data.Text as T
-import Data.Text.Encoding
 import System.IO
 import Text.Printf
 
+import Melo.Internal.Encoding
+
 getUTF8Text :: Int -> Get Text
 getUTF8Text n = getByteString n >>= decodeUtf8OrFail
-
-decodeUtf8OrFail :: MonadFail m => ByteString -> m Text
-decodeUtf8OrFail bs =
-  case decodeUtf8' bs of
-    Left e -> Fail.fail $ "Error decoding string: " ++ show e
-    Right s -> return s
 
 getNullTerminatedAscii :: Get Text
 getNullTerminatedAscii = L.toStrict <$> getLazyByteStringNul >>= decodeUtf8OrFail

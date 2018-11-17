@@ -67,6 +67,9 @@ trackNumber = trackNumberTag
 year :: TagMapping
 year = yearTag
 
+genre :: TagMapping
+genre = genreTag
+
 albumTitleTag :: TagMapping
 albumTitleTag =
   singletonTagMapping
@@ -193,4 +196,15 @@ trackNumberTag =
       , id3v2_3 = caseSensitiveMapping "TRCK"
       , id3v2_4 = caseSensitiveMapping "TRCK"
       , vorbis = caseSensitiveMapping "TRACKNUMBER"
+      }
+
+genreTag :: TagMapping
+genreTag =
+  singletonTagMapping
+    def
+      { ape = caseInsensitiveMapping "Genre"
+      , id3v1 = caseSensitiveMapping "TCON"
+      , id3v2_3 = caseSensitiveMapping "TCON"
+      , id3v2_4 = caseSensitiveMapping "TCON"
+      , vorbis = caseSensitiveMapping "GENRE"
       }

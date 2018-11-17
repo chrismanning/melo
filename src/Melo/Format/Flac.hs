@@ -24,7 +24,7 @@ import System.IO
 import Text.Printf
 
 import Melo.Format
-import Melo.Format.Id3.Id3v2
+import Melo.Format.Id3.Id3v2 hiding (Padding)
 import Melo.Format.Vorbis(VorbisComments(..), getVorbisTags)
 import Melo.Internal.BinaryUtil
 import Melo.Internal.Detect

@@ -42,7 +42,7 @@ instance InfoReader OggVorbis where
       1 -> Mono
       2 -> Stereo
       _ -> MultiChannel ChannelMask
-  , totalSamples = Nothing
+  , totalSamples = Nothing -- TODO ogg vorbis total samples
   , bitsPerSample = Nothing
   }
 

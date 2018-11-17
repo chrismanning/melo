@@ -33,6 +33,7 @@ library:
     - freer-simple
     - text
     - time
+    - tuple
 
 executables:
   melo-detect:
@@ -60,6 +61,7 @@ tests:
     - bytestring
     - hspec
     - hspec-expectations-lifted
+    - text
 
 ghc-options:
   - -Wall
@@ -107,3 +109,4 @@ default-extensions:
   - TypeFamilies
   - TypeFamilyDependencies
   - TypeOperators
+  - ViewPatterns

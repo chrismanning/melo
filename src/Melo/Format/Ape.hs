@@ -30,6 +30,7 @@ import System.IO
 import Prelude as P
 
 import Melo.Internal.BinaryUtil
+import Melo.Internal.Encoding
 import Melo.Internal.Format
 import Melo.Internal.Locate
 import Melo.Internal.Tag

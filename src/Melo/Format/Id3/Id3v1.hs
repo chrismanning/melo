@@ -1,6 +1,6 @@
 module Melo.Format.Id3.Id3v1 (
   ID3v1(..)
-  ,id3v1Id
+, id3v1Id
 ) where
 
 import Control.Monad
