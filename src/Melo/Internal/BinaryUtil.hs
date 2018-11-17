@@ -8,32 +8,34 @@ module Melo.Internal.BinaryUtil
   , expectGet_
   , expectGetEq
   , hGetFileContents
-  ) where
+  )
+where
 
-import Control.Applicative
-import Control.Monad
-import Control.Monad.Fail as Fail
-import Data.Binary
-import Data.Binary.Get
-import qualified Data.Binary.Bits.Get as BG
-import qualified Data.ByteString.Lazy as L
-import Data.Text as T
-import System.IO
-import Text.Printf
+import           Control.Applicative
+import           Control.Monad
+import           Control.Monad.Fail            as Fail
+import           Data.Binary
+import           Data.Binary.Get
+import qualified Data.Binary.Bits.Get          as BG
+import qualified Data.ByteString.Lazy          as L
+import           Data.Text                     as T
+import           System.IO
+import           Text.Printf
 
-import Melo.Internal.Encoding
+import           Melo.Internal.Encoding
 
 getUTF8Text :: Int -> Get Text
 getUTF8Text n = getByteString n >>= decodeUtf8OrFail
 
 getNullTerminatedAscii :: Get Text
-getNullTerminatedAscii = L.toStrict <$> getLazyByteStringNul >>= decodeUtf8OrFail
+getNullTerminatedAscii =
+  L.toStrict <$> getLazyByteStringNul >>= decodeUtf8OrFail
 
 get24Bits :: Get Word32
 get24Bits = BG.runBitGet $ BG.getWord32be 24
 
 expect :: (MonadFail m) => Bool -> String -> m ()
-expect True _ = return ()
+expect True  _ = return ()
 expect False s = Fail.fail s
 
 expectGet :: Get t -> (t -> Bool) -> String -> Get t
@@ -46,11 +48,10 @@ expectGet_ g p s = void $ expectGet g p s
 
 expectGetEq :: (Show t, Eq t) => Get t -> t -> String -> Get ()
 expectGetEq g t s = do
-    v <- g
-    if v == t then
-      return ()
-    else
-      Fail.fail $ printf "%s: expected '%s'; got '%s'" s (show t) (show v)
+  v <- g
+  if v == t
+    then return ()
+    else Fail.fail $ printf "%s: expected '%s'; got '%s'" s (show t) (show v)
 
 getLazyByteStringUpTo :: Int -> Get L.ByteString
 getLazyByteStringUpTo n =

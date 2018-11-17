@@ -1,8 +1,8 @@
 module Melo.Internal.Tag where
 
-import Data.Text
+import           Data.Text
 
-import Melo.Internal.Format
+import           Melo.Internal.Format
 
 newtype Tags = Tags [(Text, Text)]
   deriving (Show, Eq)
@@ -14,8 +14,7 @@ class MetadataFormat a =>
 
 tagLookup :: Text -> Tags -> [Text]
 tagLookup n (Tags ts) = linearLookup n ts
-  where
+ where
   linearLookup _ [] = []
-  linearLookup n ((k, v) : ts)
-    | n == k = v : linearLookup n ts
-    | otherwise = linearLookup n ts
+  linearLookup n ((k, v) : ts) | n == k    = v : linearLookup n ts
+                               | otherwise = linearLookup n ts

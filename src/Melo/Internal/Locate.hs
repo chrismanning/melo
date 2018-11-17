@@ -13,7 +13,7 @@ import           System.IO
 
 import           Melo.Internal.Binary
 import           Melo.Internal.BinaryUtil
-import Melo.Internal.Format
+import           Melo.Internal.Format
 
 class (MetadataFormat a, BinaryGet a) => MetadataLocator a where
   locate :: L.ByteString -> Maybe Int

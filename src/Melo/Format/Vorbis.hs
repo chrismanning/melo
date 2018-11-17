@@ -1,16 +1,19 @@
 module Melo.Format.Vorbis where
 
-import Control.Monad
-import Data.Binary (Binary(..))
-import Data.Binary.Get
-import Data.Int
-import Data.Text
-import Data.Word
-import Prelude hiding (drop, length, take)
+import           Control.Monad
+import           Data.Binary                              ( Binary(..) )
+import           Data.Binary.Get
+import           Data.Int
+import           Data.Text
+import           Data.Word
+import           Prelude                           hiding ( drop
+                                                          , length
+                                                          , take
+                                                          )
 
-import Melo.Internal.Binary
-import Melo.Internal.BinaryUtil
-import Melo.Internal.Tag
+import           Melo.Internal.Binary
+import           Melo.Internal.BinaryUtil
+import           Melo.Internal.Tag
 
 data Header
   = IdentificationHeader Identification
@@ -108,4 +111,5 @@ splitOnce p t = do
   return (take n t, drop (min (length t) (n + 1)) t)
 
 getVorbisTags :: VorbisComments -> Tags
-getVorbisTags (VorbisComments _ cs) = Tags $ fmap (\(UserComment k v) -> (k, v)) cs
+getVorbisTags (VorbisComments _ cs) =
+  Tags $ fmap (\(UserComment k v) -> (k, v)) cs

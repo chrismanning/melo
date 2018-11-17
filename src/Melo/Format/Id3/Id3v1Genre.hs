@@ -1,6 +1,6 @@
 module Melo.Format.Id3.Id3v1Genre where
 
-import Data.Text
+import           Data.Text
 
 genres :: [Text]
 genres =

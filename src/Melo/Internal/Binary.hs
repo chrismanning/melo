@@ -4,11 +4,12 @@ module Melo.Internal.Binary
   ( BinaryGet(..)
   , bdecode
   , BinaryPut(..)
-  ) where
+  )
+where
 
-import qualified Data.Binary as Bin
-import qualified Data.Binary.Get as Bin
-import qualified Data.ByteString.Lazy as L
+import qualified Data.Binary                   as Bin
+import qualified Data.Binary.Get               as Bin
+import qualified Data.ByteString.Lazy          as L
 
 class BinaryGet a where
   bget :: Bin.Get a

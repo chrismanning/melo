@@ -1,17 +1,17 @@
 module Melo.Tag where
 
-import Control.Exception
-import Control.Monad.Freer
-import Data.Text
-import System.IO
+import           Control.Exception
+import           Control.Monad.Freer
+import           Data.Text
+import           System.IO
 
-import Melo.Detect
-import Melo.Format
-import Melo.Internal.Tag as Tag
-import Melo.Mapping
-import Melo.Metadata
+import           Melo.Detect
+import           Melo.Format
+import           Melo.Internal.Tag             as Tag
+import           Melo.Mapping
+import           Melo.Metadata
 
-import Debug.Trace
+import           Debug.Trace
 
 data TagEnv = TagEnv {
   fieldSel :: FieldMappingSelector

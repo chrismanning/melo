@@ -1,11 +1,11 @@
 module Melo.Format.Ogg where
 
-import Data.Binary.Get
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as L
+import           Data.Binary.Get
+import qualified Data.ByteString               as BS
+import qualified Data.ByteString.Lazy          as L
 
-import Melo.Internal.Binary
-import Melo.Internal.BinaryUtil
+import           Melo.Internal.Binary
+import           Melo.Internal.BinaryUtil
 
 newtype OggPage a = OggPage a
 

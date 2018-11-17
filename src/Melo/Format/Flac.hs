@@ -1,36 +1,43 @@
-module Melo.Format.Flac(
-  Flac
-, pattern Flac
-, pattern FlacWithId3v2
-, FlacStream
-, StreamInfo(..)
-, streamInfoBlock
-, vorbisComment
-, hReadFlac
-, readFlacOrFail
-) where
+module Melo.Format.Flac
+  ( Flac
+  , pattern Flac
+  , pattern FlacWithId3v2
+  , FlacStream
+  , StreamInfo(..)
+  , streamInfoBlock
+  , vorbisComment
+  , hReadFlac
+  , readFlacOrFail
+  )
+where
 
-import Control.Applicative
-import Control.Monad
-import qualified Control.Monad.Fail as Fail
-import Data.Binary
-import Data.Binary.Bits.Get ()
-import qualified Data.Binary.Bits.Get as BG
-import Data.Binary.Get
-import Data.ByteString
-import Data.Text
-import System.FilePath
-import System.IO
-import Text.Printf
+import           Control.Applicative
+import           Control.Monad
+import qualified Control.Monad.Fail            as Fail
+import           Data.Binary
+import           Data.Binary.Bits.Get                     ( )
+import qualified Data.Binary.Bits.Get          as BG
+import           Data.Binary.Get
+import           Data.ByteString
+import           Data.Text
+import           System.FilePath
+import           System.IO
+import           Text.Printf
 
-import Melo.Format
-import Melo.Format.Id3.Id3v2 hiding (Padding)
-import Melo.Format.Vorbis(VorbisComments(..), getVorbisTags)
-import Melo.Internal.BinaryUtil
-import Melo.Internal.Detect
-import Melo.Internal.Info
-import Melo.Internal.Tag
-import Melo.Mapping as M(FieldMappings(vorbis))
+import           Melo.Format
+import           Melo.Format.Id3.Id3v2             hiding ( Padding )
+import           Melo.Format.Vorbis                       ( VorbisComments(..)
+                                                          , getVorbisTags
+                                                          )
+import           Melo.Internal.BinaryUtil
+import           Melo.Internal.Detect
+import           Melo.Internal.Info
+import           Melo.Internal.Tag
+import           Melo.Mapping                  as M
+                                                          ( FieldMappings
+                                                            ( vorbis
+                                                            )
+                                                          )
 
 hReadFlac :: Handle -> IO Flac
 hReadFlac h = do
@@ -106,12 +113,12 @@ data FlacStream = FlacStream
   } deriving (Show)
 
 vorbisComment :: FlacStream -> Maybe VorbisComments
-vorbisComment (FlacStream _ blocks) = findVcs blocks where
-  findVcs [] = Nothing
-  findVcs (m:ms) =
-    case m of
-      VorbisCommentBlock (FlacTags vcs) -> Just vcs
-      _ -> findVcs ms
+vorbisComment (FlacStream _ blocks) = findVcs blocks
+ where
+  findVcs []       = Nothing
+  findVcs (m : ms) = case m of
+    VorbisCommentBlock (FlacTags vcs) -> Just vcs
+    _ -> findVcs ms
 
 instance Binary FlacStream where
   put = undefined
@@ -121,15 +128,15 @@ instance Binary FlacStream where
 
 getMetadataBlocks :: Get [MetadataBlock]
 getMetadataBlocks = go
-  where
-    go = do
-      header <- lookAhead get :: Get MetadataBlockHeader
-      block <- get
-      if isLast header
-        then return [block]
-        else do
-          blocks <- go
-          return $ block : blocks
+ where
+  go = do
+    header <- lookAhead get :: Get MetadataBlockHeader
+    block  <- get
+    if isLast header
+      then return [block]
+      else do
+        blocks <- go
+        return $ block : blocks
 
 data MetadataBlock
   = StreamInfoBlock StreamInfo

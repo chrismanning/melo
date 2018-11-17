@@ -8,32 +8,32 @@ module Melo.Format.Ape
   , getHeader
   , mkTextTagItem
   , pattern TextTagItem
-  ) where
+  )
+where
 
-import Control.Monad
-import Data.Binary
-import Data.Binary.Bits
-import Data.Binary.Bits.Get ()
-import qualified Data.Binary.Bits.Get as BG
-import qualified Data.Binary.Bits.Put as BP
-import Data.Binary.Get
-import Data.Binary.Put
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as BC
-import qualified Data.ByteString.Lazy as L
-import Data.Foldable
-import Data.Int
-import Data.Text (Text)
-import Data.Text.Encoding
-import System.IO
+import           Control.Monad
+import           Data.Binary
+import           Data.Binary.Bits
+import qualified Data.Binary.Bits.Get          as BG
+import qualified Data.Binary.Bits.Put          as BP
+import           Data.Binary.Get
+import           Data.Binary.Put
+import qualified Data.ByteString               as BS
+import qualified Data.ByteString.Char8         as BC
+import qualified Data.ByteString.Lazy          as L
+import           Data.Foldable
+import           Data.Int
+import           Data.Text                                ( Text )
+import           Data.Text.Encoding
+import           System.IO
 
-import Prelude as P
+import           Prelude                       as P
 
-import Melo.Internal.BinaryUtil
-import Melo.Internal.Encoding
-import Melo.Internal.Format
-import Melo.Internal.Locate
-import Melo.Internal.Tag
+import           Melo.Internal.BinaryUtil
+import           Melo.Internal.Encoding
+import           Melo.Internal.Format
+import           Melo.Internal.Locate
+import           Melo.Internal.Tag
 
 data APE = APE
   { version :: Version
@@ -74,7 +74,7 @@ instance TagReader APE where
 getTextItem :: TagItem -> Maybe (Text, Text)
 getTextItem t = case t of
   TextTagItem k v -> Just (k, v)
-  _ -> Nothing
+  _               -> Nothing
 
 instance Binary APE where
   put a = do
@@ -116,13 +116,13 @@ instance Binary Header where
 
 findHeader :: Get (Maybe Int)
 findHeader = lookAhead $ findByChunk 1024 0
-  where
-    findByChunk :: Int -> Int -> Get (Maybe Int)
-    findByChunk c i = do
-      bs <- mfilter (not . L.null) $ getLazyByteStringUpTo c
-      case locateBinaryLazy @Header bs of
-        Nothing -> findByChunk c (i + (c `div` 2))
-        Just x -> return $ Just (x + i)
+ where
+  findByChunk :: Int -> Int -> Get (Maybe Int)
+  findByChunk c i = do
+    bs <- mfilter (not . L.null) $ getLazyByteStringUpTo c
+    case locateBinaryLazy @Header bs of
+      Nothing -> findByChunk c (i + (c `div` 2))
+      Just x  -> return $ Just (x + i)
 
 mkHeader :: APE -> Word32 -> Header
 mkHeader a n = mkHeader_ a n $ Flags True False True TextItemType False
@@ -131,13 +131,12 @@ mkFooter :: APE -> Word32 -> Footer
 mkFooter a n = mkHeader_ a n $ Flags True False False TextItemType False
 
 mkHeader_ :: APE -> Word32 -> Flags -> Header
-mkHeader_ a n f =
-  Header
-    { headerVersion = version a
-    , numBytes = n + headerSize
-    , numItems = fromIntegral (P.length $ items a)
-    , flags = f
-    }
+mkHeader_ a n f = Header
+  { headerVersion = version a
+  , numBytes      = n + headerSize
+  , numItems      = fromIntegral (P.length $ items a)
+  , flags         = f
+  }
 
 putHeader :: Header -> Put
 putHeader h = do
@@ -150,10 +149,9 @@ putHeader h = do
 
 getHeader :: Get Header
 getHeader = do
-  expectGetEq
-    (getByteString (BS.length preamble))
-    preamble
-    "Invalid APE preamble"
+  expectGetEq (getByteString (BS.length preamble))
+              preamble
+              "Invalid APE preamble"
   h <- Header <$> getVersion <*> getWord32le <*> getWord32le <*> getFlags
   skip 8
   return h
@@ -171,11 +169,10 @@ instance Binary Version where
   get = getVersion
 
 getVersion :: Get Version
-getVersion =
-  getWord32le >>= \case
-    1000 -> return APEv1
-    2000 -> return APEv2
-    x -> fail $ "Invalid APE tag version " ++ show x
+getVersion = getWord32le >>= \case
+  1000 -> return APEv1
+  2000 -> return APEv2
+  x    -> fail $ "Invalid APE tag version " ++ show x
 
 data Flags = Flags
   { hasHeader :: Bool
@@ -205,7 +202,7 @@ getFlags = do
   skip 2
   (hasHeader, hasFooter, isHeader) <-
     BG.runBitGet $ (,,) <$> BG.getBool <*> BG.getBool <*> BG.getBool
-  return Flags {hasHeader, hasFooter, isHeader, itemType, readOnly}
+  return Flags {hasHeader , hasFooter , isHeader , itemType , readOnly }
 
 data TagItemType
   = TextItemType
@@ -228,6 +225,9 @@ data TagItem =
 mkTextTagItem :: Text -> Text -> TagItem
 mkTextTagItem k v = TagItem k (TagItemValue (TextTag [v]))
 
+pattern TextTagItem :: forall (a :: TagItemType) b.
+                             (a ~ 'TextItemType, b ~ [Text]) =>
+                             Text -> Text -> TagItem
 pattern TextTagItem k v = TagItem k (TagItemValue (TextTag [v]))
 
 instance Binary TagItem where
@@ -244,8 +244,8 @@ getTagItem :: Get TagItem
 getTagItem = do
   valueSize <- fromIntegral <$> getWord32le
   itemFlags <- get :: Get Flags
-  key <- getNullTerminatedAscii
-  val <- getTagItemValue (itemType itemFlags) valueSize
+  key       <- getNullTerminatedAscii
+  val       <- getTagItemValue (itemType itemFlags) valueSize
   return $ TagItem key val
 
 data TagItemValue where
@@ -263,13 +263,12 @@ instance Eq TagItemValue where
 
 mkItemFlags :: TagItemValue -> Flags
 mkItemFlags (TagItemValue v) = Flags False False False t False
-  where
-    t =
-      case v of
-        TextTag _ -> TextItemType
-        BinaryTag _ -> BinaryItemType
-        ExternalLocatorTag _ -> ExternalLocatorItemType
-        ReservedTag _ -> ReservedItemType
+ where
+  t = case v of
+    TextTag            _ -> TextItemType
+    BinaryTag          _ -> BinaryItemType
+    ExternalLocatorTag _ -> ExternalLocatorItemType
+    ReservedTag        _ -> ReservedItemType
 
 data TagValue a b where
   TextTag :: [Text] -> TagValue 'TextItemType [Text]
@@ -282,13 +281,12 @@ deriving instance Show (TagValue a b)
 deriving instance Eq b => Eq (TagValue a b)
 
 getTagItemValue :: TagItemType -> Int -> Get TagItemValue
-getTagItemValue t n =
-  case t of
-    TextItemType -> TagItemValue . TextTag <$> getValueList n
-    BinaryItemType -> TagItemValue . BinaryTag <$> getByteString n
-    ExternalLocatorItemType ->
-      TagItemValue . ExternalLocatorTag <$> getValueList n
-    ReservedItemType -> TagItemValue . ReservedTag <$> getByteString n
+getTagItemValue t n = case t of
+  TextItemType   -> TagItemValue . TextTag <$> getValueList n
+  BinaryItemType -> TagItemValue . BinaryTag <$> getByteString n
+  ExternalLocatorItemType ->
+    TagItemValue . ExternalLocatorTag <$> getValueList n
+  ReservedItemType -> TagItemValue . ReservedTag <$> getByteString n
 
 getValueList :: Int -> Get [Text]
 getValueList n = do
@@ -297,12 +295,11 @@ getValueList n = do
   forM vals decodeUtf8OrFail
 
 putTagItemValue :: TagItemValue -> Put
-putTagItemValue (TagItemValue t) =
-  case t of
-    TextTag vals -> putValueList vals
-    BinaryTag val -> putByteString val
-    ExternalLocatorTag vals -> putValueList vals
-    ReservedTag val -> putByteString val
+putTagItemValue (TagItemValue t) = case t of
+  TextTag            vals -> putValueList vals
+  BinaryTag          val  -> putByteString val
+  ExternalLocatorTag vals -> putValueList vals
+  ReservedTag        val  -> putByteString val
 
 putValueList :: [Text] -> Put
 putValueList vals =

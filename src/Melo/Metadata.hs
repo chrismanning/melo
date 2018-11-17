@@ -1,7 +1,8 @@
-module Melo.Metadata(
-  Metadata(..)
-, MetadataException(..)
-) where
+module Melo.Metadata
+  ( Metadata(..)
+  , MetadataException(..)
+  )
+where
 
 import           Control.Exception
 

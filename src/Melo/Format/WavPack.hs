@@ -6,30 +6,34 @@ module Melo.Format.WavPack
   , Channels(..)
   , ChannelMask(..)
   , hReadWavPack
-  ) where
+  )
+where
 
-import Data.Binary.Get
-import Data.Bits
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as L
-import Data.List (genericIndex)
-import Data.Maybe
-import Data.Word
-import System.FilePath
-import System.IO
+import           Data.Binary.Get
+import           Data.Bits
+import qualified Data.ByteString               as BS
+import qualified Data.ByteString.Lazy          as L
+import           Data.List                                ( genericIndex )
+import           Data.Maybe
+import           Data.Word
+import           System.FilePath
+import           System.IO
 
-import Melo.Format
-import qualified Melo.Format.Ape as Ape
-import qualified Melo.Format.Id3 as Id3
-import qualified Melo.Format.Id3.Id3v1 as Id3
-import Melo.Internal.Binary
-import Melo.Internal.BinaryUtil
-import Melo.Internal.Detect
-import qualified Melo.Internal.Info as I
-import Melo.Internal.Info (InfoReader(..), Info(..))
-import Melo.Internal.Locate
-import Melo.Internal.Tag
-import Melo.Mapping as M(FieldMappings(ape))
+import           Melo.Format
+import qualified Melo.Format.Ape               as Ape
+import qualified Melo.Format.Id3               as Id3
+import qualified Melo.Format.Id3.Id3v1         as Id3
+import           Melo.Internal.Binary
+import           Melo.Internal.BinaryUtil
+import           Melo.Internal.Detect
+import qualified Melo.Internal.Info            as I
+import           Melo.Internal.Info                       ( InfoReader(..)
+                                                          , Info(..)
+                                                          )
+import           Melo.Internal.Locate
+import           Melo.Internal.Tag
+import           Melo.Mapping                  as M
+                                                          ( FieldMappings(ape) )
 
 data WavPack = WavPack
   { wavPackInfo :: WavPackInfo
@@ -117,16 +121,15 @@ instance BinaryGet WavPackInfo where
 forty :: Word8 -> Word32 -> Word64
 forty u8 l32 =
   let l32' :: Word64 = fromIntegral l32
-      u8' :: Word64 = fromIntegral u8
-   in u8' `shiftL` 32 .|. l32'
+      u8' :: Word64  = fromIntegral u8
+  in  u8' `shiftL` 32 .|. l32'
 
 getSampleSize :: Word32 -> Word8
 getSampleSize flags = fromIntegral $ 8 + (8 * (flags .&. 0b11))
 
 getChannels :: Word32 -> Channels
-getChannels flags
-  | testBit flags 2 = Mono
-  | otherwise = Stereo
+getChannels flags | testBit flags 2 = Mono
+                  | otherwise       = Stereo
 
 sampleRates :: [Word32]
 sampleRates =
@@ -150,14 +153,13 @@ sampleRates =
 getSampleRate :: Word32 -> Maybe Word32
 getSampleRate flags =
   let rateIdx = (flags `shiftR` 23) .&. 0b1111
-   in if rateIdx /= 0b1111
+  in  if rateIdx /= 0b1111
         then Just $ sampleRates `genericIndex` rateIdx
         else Nothing
 
 getAudioType :: Word32 -> AudioType
-getAudioType flags
-  | testBit flags 31 = DSD
-  | otherwise = PCM
+getAudioType flags | testBit flags 31 = DSD
+                   | otherwise        = PCM
 
 ckId :: BS.ByteString
 ckId = "wvpk"
@@ -239,11 +241,9 @@ findApe h = do
       hSeek h AbsoluteSeek $ fromIntegral n
       bs <- BS.hGet h Ape.headerSize
       let footer = runGet Ape.getHeader (L.fromStrict bs)
-      return $
-        Just $
-        if Ape.isHeader (Ape.flags footer)
-          then n
-          else n - fromIntegral (Ape.numBytes footer)
+      return $ Just $ if Ape.isHeader (Ape.flags footer)
+        then n
+        else n - fromIntegral (Ape.numBytes footer)
     Nothing -> return Nothing
 
 findId3 :: Handle -> IO (Maybe Int)
@@ -253,10 +253,8 @@ findAt :: Handle -> Integer -> BS.ByteString -> IO (Maybe Int)
 findAt h p s = do
   hSeek h RelativeSeek p
   pos <- hTell h
-  s' <- BS.hGet h (BS.length s)
-  if s' == s
-    then return $ fromIntegral <$> Just pos
-    else return Nothing
+  s'  <- BS.hGet h (BS.length s)
+  if s' == s then return $ fromIntegral <$> Just pos else return Nothing
 
 hReadWavPack :: Handle -> IO WavPack
 hReadWavPack h = do
@@ -267,5 +265,5 @@ hReadWavPack h = do
       then do
         hSeek h AbsoluteSeek 0
         hGetMetadata h
-    else return NoTags
+      else return NoTags
   return $ WavPack wvInfo wvTags

@@ -2,8 +2,9 @@ module Melo
   ( FlacStream
   , APE
   , WavPack
-  ) where
+  )
+where
 
-import Melo.Format.Ape
-import Melo.Format.Flac
-import Melo.Format.WavPack
+import           Melo.Format.Ape
+import           Melo.Format.Flac
+import           Melo.Format.WavPack
