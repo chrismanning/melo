@@ -1,4 +1,4 @@
-name:                melo
+name:                melo-format
 version:             0.1.0.0
 github:              "chrismanning/melo"
 license:             BSD3
@@ -33,7 +33,6 @@ library:
     - freer-simple
     - text
     - time
-    - tuple
 
 executables:
   melo-detect:
@@ -41,13 +40,13 @@ executables:
     main: Main.hs
     dependencies:
       - freer-simple
-      - melo
+      - melo-format
       - optparse-applicative
       - text
       - time
 
 tests:
-  melo-test:
+  melo-format-test:
     main:                Spec.hs
     source-dirs:         test
     ghc-options:
@@ -55,7 +54,7 @@ tests:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - melo
+    - melo-format
     - base16-bytestring
     - binary
     - bytestring

@@ -3,3 +3,4 @@ melo.cabal
 *~
 .idea/
 *.iml
+out/
