@@ -2,6 +2,7 @@ module Melo.Tag where
 
 import           Control.Exception
 import           Control.Monad.Freer
+import           Control.Monad.Freer.TH
 import           Data.Text
 import           System.IO
 
@@ -23,14 +24,7 @@ data TagRead r where
   ReadTag :: TagMapping -> TagRead [Text]
   ReadField :: FieldMappings -> TagRead [Text]
 
-readTags :: Member TagRead effs => Eff effs Tags
-readTags = send ReadTags
-
-readTag :: Member TagRead effs => TagMapping -> Eff effs [Text]
-readTag = send . ReadTag
-
-readField :: Member TagRead effs => FieldMappings -> Eff effs [Text]
-readField = send . ReadField
+makeEffect ''TagRead
 
 runTagReadPure :: TagEnv -> Eff '[TagRead] a -> a
 runTagReadPure env a = run $ runTagReadPureM env a
@@ -71,7 +65,7 @@ hReadMetaEnv h = send (hDetect h) >>= \case
     let fieldSel'      = getFieldSel d
     let hReadMetadata' = getHReadMetadata d
     send $ hTell h >>= \p -> traceM $ "hReadMetaEnv h is at " ++ show p
-    !t <- Tag.tags <$> (send $ hReadMetadata' h)
+    !t <- Tag.tags <$> send (hReadMetadata' h)
     send $ hTell h >>= \p -> traceM $ "hReadMetaEnv h is at " ++ show p
 --    send $ hSeek h AbsoluteSeek 0
     let env = TagEnv {fieldSel = fieldSel', envtags = t}

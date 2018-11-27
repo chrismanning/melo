@@ -15,7 +15,7 @@
 # resolver:
 #  name: custom-snapshot
 #  location: "./custom-snapshot.yaml"
-resolver: lts-12.7
+resolver: lts-12.17
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -37,9 +37,12 @@ resolver: lts-12.7
 # will not be run. This is useful for tweaking upstream packages.
 packages:
 - melo-format
+- .
 # Dependency packages to be pulled from upstream that are not in the resolver
 # (e.g., acme-missiles-0.3)
-extra-deps: [time-1.9.2]
+extra-deps:
+  - freer-simple-1.2.1.0
+  - time-1.9.2
 
 allow-newer: true
 

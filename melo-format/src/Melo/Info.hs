@@ -21,6 +21,7 @@ where
 
 import           Control.Exception
 import           Control.Monad.Freer
+import           Control.Monad.Freer.TH
 import           Data.Fixed
 import           Data.Functor
 import           Data.Time.Clock
@@ -33,8 +34,7 @@ import           Melo.Metadata
 data InfoRead a where
   ReadInfo :: InfoRead Info
 
-readInfo :: Member InfoRead effs => Eff effs Info
-readInfo = send ReadInfo
+makeEffect ''InfoRead
 
 readSampleRate :: Member InfoRead effs => Eff effs SampleRate
 readSampleRate = sampleRate <$> readInfo
@@ -79,7 +79,7 @@ hRunInfoReadM h a = send (hDetect h) >>= \case
   Nothing            -> throw UnknownFormat
   Just (DetectedP d) -> do
     let hReadMetadata' = getHReadMetadata d
-    !i <- info <$> (send $ hReadMetadata' h)
+    !i <- info <$> send (hReadMetadata' h)
     interpret
       (\case
         ReadInfo -> pure i
