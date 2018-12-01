@@ -1,6 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 
-module Melo.Internal.Detect
+module Melo.Format.Internal.Detect
   ( Detector(..)
   , Detected(..)
   , DetectedP(..)
@@ -12,10 +12,10 @@ where
 import           Data.Text
 import           System.IO
 
-import           Melo.Format
-import           Melo.Internal.Info
-import           Melo.Internal.Tag
-import           Melo.Mapping
+import           Melo.Format.Format
+import           Melo.Format.Internal.Info
+import           Melo.Format.Internal.Tag
+import           Melo.Format.Mapping
 
 class Detector a where
   pathDetectFormat :: FilePath -> Maybe (DetectedP)

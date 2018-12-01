@@ -1,4 +1,4 @@
-module Melo.Internal.Encoding
+module Melo.Format.Internal.Encoding
   ( decodeUtf8OrFail
   , decodeUtf16BEOrFail
   , decodeUtf16WithBOMOrFail

@@ -1,6 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 
-module Melo.Mapping where
+module Melo.Format.Mapping where
 
 import           Data.Default
 import           Data.Text

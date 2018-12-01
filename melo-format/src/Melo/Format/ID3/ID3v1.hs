@@ -1,4 +1,4 @@
-module Melo.Format.Id3.Id3v1
+module Melo.Format.ID3.ID3v1
   ( ID3v1(..)
   , id3v1Id
   )
@@ -17,12 +17,12 @@ import           Data.Text                     as T
 import           Data.Text.Encoding
 import           System.IO
 
-import           Melo.Format.Id3.Id3v1Genre
-import           Melo.Internal.Binary
-import           Melo.Internal.BinaryUtil
-import           Melo.Internal.Format
-import           Melo.Internal.Locate
-import           Melo.Internal.Tag
+import           Melo.Format.ID3.ID3v1Genre
+import           Melo.Format.Internal.Binary
+import           Melo.Format.Internal.BinaryUtil
+import           Melo.Format.Internal.Format
+import           Melo.Format.Internal.Locate
+import           Melo.Format.Internal.Tag
 
 data ID3v1 = ID3v1
   { title   :: Text
@@ -35,17 +35,17 @@ data ID3v1 = ID3v1
   } deriving (Show, Eq)
 
 instance BinaryGet ID3v1 where
-  bget = isolate 128 getId3v1
+  bget = isolate 128 getID3v1
 
-getId3v1 :: Get ID3v1
-getId3v1 = do
+getID3v1 :: Get ID3v1
+getID3v1 = do
   expectGetEq (getByteString 3) "TAG" "Expected ID3v1 marker `TAG`"
   title  <- getTag 30
   artist <- getTag 30
   album  <- getTag 30
   year   <- T.filter isDigit <$> getTag 4
   when (T.length year == 0) (F.fail "Year must contain at least one digit")
-  hasTrackNum <- isId3v1_1 <$> lookAhead (getByteString 30)
+  hasTrackNum <- isID3v1_1 <$> lookAhead (getByteString 30)
   comment     <- getTag (if hasTrackNum then 28 else 30)
   track       <- if hasTrackNum
     then do
@@ -70,8 +70,8 @@ getTag n = do
   bs <- BS.takeWhile (/= 0) <$> getByteString n
   return $ decodeLatin1 bs
 
-isId3v1_1 :: BS.ByteString -> Bool
-isId3v1_1 bs = BS.index bs 28 == 0 && BS.index bs 29 /= 0
+isID3v1_1 :: BS.ByteString -> Bool
+isID3v1_1 bs = BS.index bs 28 == 0 && BS.index bs 29 /= 0
 
 instance MetadataFormat ID3v1 where
   formatDesc = "ID3v1"

@@ -1,4 +1,4 @@
-module Melo.Info
+module Melo.Format.Info
   ( Info(..)
   , InfoReader(..)
   , InfoRead(..)
@@ -27,9 +27,9 @@ import           Data.Functor
 import           Data.Time.Clock
 import           System.IO
 
-import           Melo.Detect
-import           Melo.Internal.Info
-import           Melo.Metadata
+import           Melo.Format.Detect
+import           Melo.Format.Internal.Info
+import           Melo.Format.Metadata
 
 data InfoRead a where
   ReadInfo :: InfoRead Info

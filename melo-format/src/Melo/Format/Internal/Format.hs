@@ -1,6 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 
-module Melo.Internal.Format where
+module Melo.Format.Internal.Format where
 
 class MetadataFormat a where
   formatDesc :: String

@@ -1,4 +1,4 @@
-module Melo.Tag where
+module Melo.Format.Tag where
 
 import           Control.Exception
 import           Control.Monad.Freer
@@ -6,11 +6,11 @@ import           Control.Monad.Freer.TH
 import           Data.Text
 import           System.IO
 
-import           Melo.Detect
-import           Melo.Format
-import           Melo.Internal.Tag             as Tag
-import           Melo.Mapping
-import           Melo.Metadata
+import           Melo.Format.Detect
+import           Melo.Format.Format
+import           Melo.Format.Internal.Tag      as Tag
+import           Melo.Format.Mapping
+import           Melo.Format.Metadata
 
 import           Debug.Trace
 
@@ -55,7 +55,7 @@ readMetaEnvFromPath p = send (detect p) >>= \case
     t <- send $ withBinaryFile p ReadMode $ \h -> do
       !t <- Tag.tags <$> hReadMetadata' h
       return t
-    let env = TagEnv {fieldSel = fieldSel', envtags = t}
+    let env = TagEnv { fieldSel = fieldSel', envtags = t }
     return env
 
 hReadMetaEnv :: Member IO effs => Handle -> Eff effs TagEnv
@@ -68,7 +68,7 @@ hReadMetaEnv h = send (hDetect h) >>= \case
     !t <- Tag.tags <$> send (hReadMetadata' h)
     send $ hTell h >>= \p -> traceM $ "hReadMetaEnv h is at " ++ show p
 --    send $ hSeek h AbsoluteSeek 0
-    let env = TagEnv {fieldSel = fieldSel', envtags = t}
+    let env = TagEnv { fieldSel = fieldSel', envtags = t }
     return env
 
 runTagReadM

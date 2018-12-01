@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeInType #-}
 
-module Melo.Internal.TypeLevel where
+module Melo.Format.Internal.TypeLevel where
 
 type family FMap (m :: a -> b) (x :: f a) :: f b
 

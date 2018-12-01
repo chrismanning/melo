@@ -9,19 +9,19 @@ import           System.IO
 
 import           Melo.Format.Ogg
 import           Melo.Format.Vorbis            as V
-import           Melo.Mapping                  as M
+import           Melo.Format.Mapping           as M
                                                           ( FieldMappings
                                                             ( vorbis
                                                             )
                                                           )
 
-import           Melo.Format
-import           Melo.Internal.Binary
-import           Melo.Internal.BinaryUtil
-import           Melo.Internal.Detect
-import           Melo.Internal.Info
-import           Melo.Internal.Locate
-import           Melo.Internal.Tag
+import           Melo.Format.Format
+import           Melo.Format.Internal.Binary
+import           Melo.Format.Internal.BinaryUtil
+import           Melo.Format.Internal.Detect
+import           Melo.Format.Internal.Info
+import           Melo.Format.Internal.Locate
+import           Melo.Format.Internal.Tag
 
 data OggVorbis = OggVorbis Identification FramedVorbisComments
   deriving (Eq, Show)

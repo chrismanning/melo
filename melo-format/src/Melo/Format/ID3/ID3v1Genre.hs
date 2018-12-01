@@ -1,4 +1,4 @@
-module Melo.Format.Id3.Id3v1Genre where
+module Melo.Format.ID3.ID3v1Genre where
 
 import           Data.Text
 

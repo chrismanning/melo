@@ -1,4 +1,4 @@
-module Melo.Internal.BinaryUtil
+module Melo.Format.Internal.BinaryUtil
   ( get24Bits
   , getLazyByteStringUpTo
   , getNullTerminatedAscii
@@ -22,7 +22,7 @@ import           Data.Text                     as T
 import           System.IO
 import           Text.Printf
 
-import           Melo.Internal.Encoding
+import           Melo.Format.Internal.Encoding
 
 getUTF8Text :: Int -> Get Text
 getUTF8Text n = getByteString n >>= decodeUtf8OrFail

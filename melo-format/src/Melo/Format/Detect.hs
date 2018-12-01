@@ -1,6 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 
-module Melo.Detect
+module Melo.Format.Detect
   ( DetectedP(..)
   , Detected(..)
   , Detector(..)
@@ -19,9 +19,9 @@ import           System.IO
 import           Melo.Format.Flac                         ( Flac )
 import           Melo.Format.OggVorbis                    ( OggVorbis )
 import           Melo.Format.WavPack                      ( WavPack )
-import           Melo.Internal.Detect
-import           Melo.Internal.Tag
-import           Melo.Internal.TypeLevel
+import           Melo.Format.Internal.Detect
+import           Melo.Format.Internal.Tag
+import           Melo.Format.Internal.TypeLevel
 
 type SupportedFormats = '[Flac, WavPack, OggVorbis]
 
@@ -35,7 +35,7 @@ instance (Detector d, PathDetect ds) => PathDetect (KProxy d ': ds) where
   pdf p = pathDetectFormat @d p <|> pdf @ds p
 
 detectPath :: FilePath -> Maybe DetectedP
-detectPath p = pdf @(FMap KProxy SupportedFormats) p
+detectPath = pdf @(FMap KProxy SupportedFormats)
 
 class HandleDetect (d :: [*]) where
   hdf :: Handle -> IO (Maybe DetectedP)
@@ -50,7 +50,7 @@ instance (Detector d, HandleDetect ds) => HandleDetect (KProxy d ': ds) where
     return $ fmt <|> fmts
 
 hDetect :: Handle -> IO (Maybe DetectedP)
-hDetect h = hdf @(FMap KProxy SupportedFormats) h
+hDetect = hdf @(FMap KProxy SupportedFormats)
 
 detect :: FilePath -> IO (Maybe DetectedP)
 detect p = case detectPath p of

@@ -1,6 +1,6 @@
 {-# LANGUAGE UndecidableInstances #-}
 
-module Melo.Internal.Binary
+module Melo.Format.Internal.Binary
   ( BinaryGet(..)
   , bdecode
   , BinaryPut(..)

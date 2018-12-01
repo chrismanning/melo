@@ -1,6 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 
-module Melo.Internal.Locate where
+module Melo.Format.Internal.Locate where
 
 
 import           Data.Binary                              ( Get )
@@ -11,9 +11,9 @@ import           Data.Either
 import           Data.List                     as List
 import           System.IO
 
-import           Melo.Internal.Binary
-import           Melo.Internal.BinaryUtil
-import           Melo.Internal.Format
+import           Melo.Format.Internal.Binary
+import           Melo.Format.Internal.BinaryUtil
+import           Melo.Format.Internal.Format
 
 class (MetadataFormat a, BinaryGet a) => MetadataLocator a where
   locate :: L.ByteString -> Maybe Int

@@ -19,20 +19,20 @@ import           Data.Word
 import           System.FilePath
 import           System.IO
 
-import           Melo.Format
+import           Melo.Format.Format
 import qualified Melo.Format.Ape               as Ape
-import qualified Melo.Format.Id3               as Id3
-import qualified Melo.Format.Id3.Id3v1         as Id3
-import           Melo.Internal.Binary
-import           Melo.Internal.BinaryUtil
-import           Melo.Internal.Detect
-import qualified Melo.Internal.Info            as I
-import           Melo.Internal.Info                       ( InfoReader(..)
+import qualified Melo.Format.ID3               as ID3
+import qualified Melo.Format.ID3.ID3v1         as ID3
+import           Melo.Format.Internal.Binary
+import           Melo.Format.Internal.BinaryUtil
+import           Melo.Format.Internal.Detect
+import qualified Melo.Format.Internal.Info     as I
+import           Melo.Format.Internal.Info                ( InfoReader(..)
                                                           , Info(..)
                                                           )
-import           Melo.Internal.Locate
-import           Melo.Internal.Tag
-import           Melo.Mapping                  as M
+import           Melo.Format.Internal.Locate
+import           Melo.Format.Internal.Tag
+import           Melo.Format.Mapping           as M
                                                           ( FieldMappings(ape) )
 
 data WavPack = WavPack
@@ -125,7 +125,7 @@ forty u8 l32 =
   in  u8' `shiftL` 32 .|. l32'
 
 getSampleSize :: Word32 -> Word8
-getSampleSize flags = fromIntegral $ 8 + (8 * (flags .&. 0b11))
+getSampleSize flags = fromIntegral $ 8 + (8 * (flags .&. 0 b11))
 
 getChannels :: Word32 -> Channels
 getChannels flags | testBit flags 2 = Mono
@@ -152,8 +152,8 @@ sampleRates =
 
 getSampleRate :: Word32 -> Maybe Word32
 getSampleRate flags =
-  let rateIdx = (flags `shiftR` 23) .&. 0b1111
-  in  if rateIdx /= 0b1111
+  let rateIdx = (flags `shiftR` 23) .&. 0 b1111
+  in  if rateIdx /= 0 b1111
         then Just $ sampleRates `genericIndex` rateIdx
         else Nothing
 
@@ -184,9 +184,9 @@ deriving instance Show ChannelMask
 data WavPackTags
   = NoTags
   | JustAPE Ape.APE
-  | JustID3v1 Id3.ID3v1
+  | JustID3v1 ID3.ID3v1
   | Both Ape.APE
-         Id3.ID3v1
+         ID3.ID3v1
   deriving (Show)
 
 instance BinaryGet WavPackTags where
@@ -198,7 +198,7 @@ instance BinaryGet WavPackTags where
         isEmpty >>= \case
           True -> return $ JustAPE ape
           False -> Both ape <$> bget
-      else if BS.isPrefixOf Id3.id3v1Id what
+      else if BS.isPrefixOf ID3.id3v1Id what
              then JustID3v1 <$> bget
              else return NoTags
 
@@ -216,7 +216,7 @@ instance MetadataLocator WavPackTags where
       Just n -> return $ Just n
       Nothing -> do
         hSeek h SeekFromEnd 0
-        findId3 h >>= \case
+        findID3 h >>= \case
           Nothing -> do
             hSeek h AbsoluteSeek Ape.headerSize
             findApe h
@@ -246,8 +246,8 @@ findApe h = do
         else n - fromIntegral (Ape.numBytes footer)
     Nothing -> return Nothing
 
-findId3 :: Handle -> IO (Maybe Int)
-findId3 h = findAt h (-128) Id3.id3v1Id
+findID3 :: Handle -> IO (Maybe Int)
+findID3 h = findAt h (-128) ID3.id3v1Id
 
 findAt :: Handle -> Integer -> BS.ByteString -> IO (Maybe Int)
 findAt h p s = do

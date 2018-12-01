@@ -29,11 +29,11 @@ import           System.IO
 
 import           Prelude                       as P
 
-import           Melo.Internal.BinaryUtil
-import           Melo.Internal.Encoding
-import           Melo.Internal.Format
-import           Melo.Internal.Locate
-import           Melo.Internal.Tag
+import           Melo.Format.Internal.BinaryUtil
+import           Melo.Format.Internal.Encoding
+import           Melo.Format.Internal.Format
+import           Melo.Format.Internal.Locate
+import           Melo.Format.Internal.Tag
 
 data APE = APE
   { version :: Version
@@ -203,7 +203,7 @@ getFlags = do
   skip 2
   (hasHeader, hasFooter, isHeader) <-
     BG.runBitGet $ (,,) <$> BG.getBool <*> BG.getBool <*> BG.getBool
-  return Flags {hasHeader , hasFooter , isHeader , itemType , readOnly }
+  return Flags { hasHeader , hasFooter , isHeader , itemType , readOnly }
 
 data TagItemType
   = TextItemType

@@ -1,4 +1,4 @@
-module Melo.Metadata
+module Melo.Format.Metadata
   ( Metadata(..)
   , MetadataException(..)
   )
@@ -6,7 +6,7 @@ where
 
 import           Control.Exception
 
-import           Melo.Mapping
+import           Melo.Format.Mapping
 
 data Metadata = Tag TagMapping | AudioProperty
 

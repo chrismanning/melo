@@ -11,9 +11,9 @@ import           Prelude                           hiding ( drop
                                                           , take
                                                           )
 
-import           Melo.Internal.Binary
-import           Melo.Internal.BinaryUtil
-import           Melo.Internal.Tag
+import           Melo.Format.Internal.Binary
+import           Melo.Format.Internal.BinaryUtil
+import           Melo.Format.Internal.Tag
 
 data Header
   = IdentificationHeader Identification

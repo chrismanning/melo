@@ -1,5 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
-module Melo.Format.Id3.Id3v2 where
+module Melo.Format.ID3.ID3v2 where
 
 import           Control.Monad
 import           Control.Monad.Fail            as F
@@ -16,29 +16,29 @@ import           Data.Maybe
 import           Data.Text                     as T
 import           Data.Text.Encoding
 
-import           Melo.Internal.Binary              hiding ( put )
-import           Melo.Internal.BinaryUtil
-import           Melo.Internal.Encoding
-import           Melo.Internal.Locate
-import           Melo.Internal.Format
-import           Melo.Internal.Tag
+import           Melo.Format.Internal.Binary       hiding ( put )
+import           Melo.Format.Internal.BinaryUtil
+import           Melo.Format.Internal.Encoding
+import           Melo.Format.Internal.Locate
+import           Melo.Format.Internal.Format
+import           Melo.Format.Internal.Tag
 
-data Id3v2 = Id3v2 {
-  frameVersion :: Id3v2Version
+data ID3v2 = ID3v2 {
+  frameVersion :: ID3v2Version
 , headerFlags :: HeaderFlags
 , frames :: Frames
 }
 
-deriving instance Show Id3v2
+deriving instance Show ID3v2
 
-instance MetadataFormat Id3v2 where
-  formatDesc = "Id3v2"
+instance MetadataFormat ID3v2 where
+  formatDesc = "ID3v2"
   formatDesc' id3 = show $ frameVersion id3
 
-instance MetadataLocator Id3v2 where
+instance MetadataLocator ID3v2 where
   locate bs = if L.isPrefixOf "ID3" bs then Just 0 else Nothing
 
-instance TagReader Id3v2 where
+instance TagReader ID3v2 where
   tags id3 = let frames' = frames id3
                  contents = foldlFrames accumFrames [] frames'
              in
@@ -46,16 +46,16 @@ instance TagReader Id3v2 where
       where
         accumFrames acc frame = acc <> catMaybes [extractFrameContent frame]
 
-instance BinaryGet Id3v2 where
+instance BinaryGet ID3v2 where
   bget = do
     header <- getHeader
     when (hasExtendedHeader (flags header)) skipExtendedHeader
-    Id3v2 (version header) (flags header) <$> getFrames header
+    ID3v2 (version header) (flags header) <$> getFrames header
       where
     skipExtendedHeader = skip =<< lookAhead (fromSyncSafe <$> bget)
 
 data Header = Header {
-  version :: Id3v2Version
+  version :: ID3v2Version
 , flags :: HeaderFlags
 , totalSize :: SyncSafe
 } deriving (Eq, Show)
@@ -79,28 +79,28 @@ instance BinaryGet Footer where
     expect (isReadable (flags footer)) "Unrecognised ID3v2 flags found"
     pure $ Footer footer
 
-data Id3v2Version = Id3v24 | Id3v23
+data ID3v2Version = ID3v24 | ID3v23
   deriving (Eq)
 
-instance Show Id3v2Version where
+instance Show ID3v2Version where
   show = \case
-    Id3v24 -> "ID3v2.4"
-    Id3v23 -> "ID3v2.3"
+    ID3v24 -> "ID3v2.4"
+    ID3v23 -> "ID3v2.3"
 
-instance BinaryGet Id3v2Version where
+instance BinaryGet ID3v2Version where
   bget = getWord16le >>= \case
-    3 -> pure Id3v23
-    4 -> pure Id3v24
+    3 -> pure ID3v23
+    4 -> pure ID3v24
     a -> F.fail $ "Unknown ID3v2 version " ++ show a
 
-class Version (v :: Id3v2Version) where
-  id3v2Version :: Id3v2Version
+class Version (v :: ID3v2Version) where
+  id3v2Version :: ID3v2Version
 
-instance Version 'Id3v24 where
-  id3v2Version = Id3v24
+instance Version 'ID3v24 where
+  id3v2Version = ID3v24
 
-instance Version 'Id3v23 where
-  id3v2Version = Id3v23
+instance Version 'ID3v23 where
+  id3v2Version = ID3v23
 
 newtype HeaderFlags = HeaderFlags Word8
   deriving (Eq, Show)
@@ -140,13 +140,13 @@ type GetFrame v = (GetFrameHeader v, GetEncoding v, GetFrameId v, GetTextContent
 getFrames :: Header -> Get Frames
 getFrames header = do
   case version header of
-    Id3v23 -> Frames <$> getFrames' @ 'Id3v23
-    Id3v24 -> Frames <$> getFrames' @ 'Id3v24
+    ID3v23 -> Frames <$> getFrames' @ 'ID3v23
+    ID3v24 -> Frames <$> getFrames' @ 'ID3v24
  where
   flags' = flags header
-  getFrames' :: GetFrame v => Get (NonEmpty (Frame (v :: Id3v2Version)))
+  getFrames' :: GetFrame v => Get (NonEmpty (Frame (v :: ID3v2Version)))
   getFrames' = liftM2 (:|) bget getRest
-  getRest :: GetFrame v => Get [Frame (v :: Id3v2Version)]
+  getRest :: GetFrame v => Get [Frame (v :: ID3v2Version)]
   getRest = isEnd >>= \case
     True  -> pure []
     False -> liftM2 (:) bget getRest
@@ -160,7 +160,7 @@ getFrames header = do
       "\0" -> True
       _    -> False
 
-data Frame (v :: Id3v2Version) = Frame (FrameContent v)
+data Frame (v :: ID3v2Version) = Frame (FrameContent v)
   deriving (Eq, Show)
 
 instance GetFrame v => BinaryGet (Frame v) where
@@ -192,7 +192,7 @@ toTagKey :: FrameId -> Text
 toTagKey (PreDefinedId fid       ) = fid
 toTagKey (UserDefinedId fid1 fid2) = fid1 <> ";" <> fid2
 
-data FrameHeader (v :: Id3v2Version) = FrameHeader {
+data FrameHeader (v :: ID3v2Version) = FrameHeader {
   frameId :: Text
 , frameSize :: Word32
 , frameFlags :: FrameHeaderFlags
@@ -204,13 +204,13 @@ deriving instance Show (FrameHeader v)
 instance GetFrameHeader v => BinaryGet (FrameHeader v) where
   bget = getFrameHeader
 
-class GetFrameHeader (v :: Id3v2Version) where
+class GetFrameHeader (v :: ID3v2Version) where
   getFrameHeader :: Get (FrameHeader v)
 
-instance GetFrameHeader 'Id3v23 where
+instance GetFrameHeader 'ID3v23 where
   getFrameHeader = FrameHeader <$> getUTF8Text 4 <*> getWord32be <*> bget
 
-instance GetFrameHeader 'Id3v24 where
+instance GetFrameHeader 'ID3v24 where
   getFrameHeader = FrameHeader <$> getUTF8Text 4 <*> (fromSyncSafe <$> bget) <*> bget
 
 data FrameHeaderFlags = FrameHeaderFlags
@@ -219,7 +219,7 @@ data FrameHeaderFlags = FrameHeaderFlags
 instance BinaryGet FrameHeaderFlags where
   bget = skip 2 >> pure FrameHeaderFlags
 
-data FrameContent (v :: Id3v2Version) =
+data FrameContent (v :: ID3v2Version) =
     TextFrame FrameId [Text]
   | UrlFrame FrameId [Text]
   | OtherFrame ByteString
@@ -234,13 +234,13 @@ extractFrameContent (Frame content) = case content of
 data TextEncoding = NullTerminated | UCS2 | UTF16 | UTF16BE | UTF8
   deriving (Show)
 
-class GetEncoding (v :: Id3v2Version) where
+class GetEncoding (v :: ID3v2Version) where
   getEncoding :: Get TextEncoding
 
-class GetTextContent (v :: Id3v2Version) where
+class GetTextContent (v :: ID3v2Version) where
   getTextContent :: FrameHeader v -> FrameId -> TextEncoding -> Get [Text]
 
-class GetFrameId (v :: Id3v2Version) where
+class GetFrameId (v :: ID3v2Version) where
   getFrameId :: FrameHeader v -> TextEncoding -> Get FrameId
 
 instance GetTextContent v where
@@ -250,7 +250,7 @@ instance GetTextContent v where
               _ -> 0
     let sz = frameSize header - 1 - fidSz
     bs <- BS.dropWhile (== 0) <$> (getByteString $ fromIntegral sz)
-    mapM (decodeId3Text enc) (splitFields (terminator enc) bs)
+    mapM (decodeID3Text enc) (splitFields (terminator enc) bs)
 
 splitFields :: ByteString -> ByteString -> [ByteString]
 splitFields term fields
@@ -270,17 +270,17 @@ getUserDefinedFrameId :: FrameHeader v -> TextEncoding -> Get Text
 getUserDefinedFrameId header enc = do
   let sz = frameSize header
   bs <- lookAhead $ getByteString $ fromIntegral sz
-  t  <- decodeId3Text enc $ fst (BS.breakSubstring (terminator enc) bs)
+  t  <- decodeID3Text enc $ fst (BS.breakSubstring (terminator enc) bs)
   skip $ T.length t
   pure t
 
-instance GetEncoding 'Id3v23 where
+instance GetEncoding 'ID3v23 where
   getEncoding = getWord8 >>= \case
     0 -> pure NullTerminated
     1 -> pure UCS2
     x -> F.fail $ "Unrecognised ID3v2.3 encoding flag " ++ show x
 
-instance GetEncoding 'Id3v24 where
+instance GetEncoding 'ID3v24 where
   getEncoding = getWord8 >>= \case
     0 -> pure NullTerminated
     1 -> pure UTF16
@@ -295,17 +295,17 @@ terminator UTF8           = "\0"
 terminator UTF16          = "\0\0"
 terminator UTF16BE        = "\0\0"
 
-getId3Text :: TextEncoding -> Int -> Get Text
-getId3Text NullTerminated _ = getNullTerminatedAscii
-getId3Text UTF8           n = getUTF8Text n
-getId3Text _              _ = undefined
+getID3Text :: TextEncoding -> Int -> Get Text
+getID3Text NullTerminated _ = getNullTerminatedAscii
+getID3Text UTF8           n = getUTF8Text n
+getID3Text _              _ = undefined
 
-decodeId3Text :: MonadFail m => TextEncoding -> ByteString -> m Text
-decodeId3Text NullTerminated bs = pure $ decodeLatin1 bs
-decodeId3Text UTF8           bs = decodeUtf8OrFail bs
-decodeId3Text UTF16BE        bs = decodeUtf16BEOrFail bs
-decodeId3Text UTF16          bs = decodeUtf16WithBOMOrFail bs
-decodeId3Text UCS2           bs = decodeUtf16WithBOMOrFail bs
+decodeID3Text :: MonadFail m => TextEncoding -> ByteString -> m Text
+decodeID3Text NullTerminated bs = pure $ decodeLatin1 bs
+decodeID3Text UTF8           bs = decodeUtf8OrFail bs
+decodeID3Text UTF16BE        bs = decodeUtf16BEOrFail bs
+decodeID3Text UTF16          bs = decodeUtf16WithBOMOrFail bs
+decodeID3Text UCS2           bs = decodeUtf16WithBOMOrFail bs
 
 newtype SyncSafe = SyncSafe {
   syncSafe :: ByteString

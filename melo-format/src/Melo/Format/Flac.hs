@@ -1,7 +1,7 @@
 module Melo.Format.Flac
   ( Flac
   , pattern Flac
-  , pattern FlacWithId3v2
+  , pattern FlacWithID3v2
   , FlacStream
   , StreamInfo(..)
   , streamInfoBlock
@@ -24,16 +24,16 @@ import           System.FilePath
 import           System.IO
 import           Text.Printf
 
-import           Melo.Format
-import           Melo.Format.Id3.Id3v2             hiding ( Padding )
+import           Melo.Format.Format
+import           Melo.Format.ID3.ID3v2             hiding ( Padding )
 import           Melo.Format.Vorbis                       ( VorbisComments(..)
                                                           , getVorbisTags
                                                           )
-import           Melo.Internal.BinaryUtil
-import           Melo.Internal.Detect
-import           Melo.Internal.Info
-import           Melo.Internal.Tag
-import           Melo.Mapping                  as M
+import           Melo.Format.Internal.BinaryUtil
+import           Melo.Format.Internal.Detect
+import           Melo.Format.Internal.Info
+import           Melo.Format.Internal.Tag
+import           Melo.Format.Mapping                  as M
                                                           ( FieldMappings
                                                             ( vorbis
                                                             )
@@ -49,27 +49,27 @@ readFlacOrFail p = fmap MkFlac <$> decodeFileOrFail p
 
 data Flac
   = MkFlac FlacStream
-  | MkFlacWithId3v2 Id3v2
+  | MkFlacWithID3v2 ID3v2
                   FlacStream
   deriving (Show)
 
 pattern Flac :: FlacStream -> Flac
 pattern Flac flac = MkFlac flac
 
-pattern FlacWithId3v2 :: Id3v2 -> FlacStream -> Flac
-pattern FlacWithId3v2 id3v2 flac = MkFlacWithId3v2 id3v2 flac
+pattern FlacWithID3v2 :: ID3v2 -> FlacStream -> Flac
+pattern FlacWithID3v2 id3v2 flac = MkFlacWithID3v2 id3v2 flac
 
-{-# COMPLETE FlacWithId3v2, Flac #-}
+{-# COMPLETE FlacWithID3v2, Flac #-}
 
 instance MetadataFormat Flac where
   formatDesc = "Flac"
   formatDesc' (Flac _) = formatDesc @Flac
-  formatDesc' (FlacWithId3v2 _ _) = "Flac with ID3v2"
+  formatDesc' (FlacWithID3v2 _ _) = "Flac with ID3v2"
 
 instance TagReader Flac where
   tags f = case f of
     Flac fs -> getTags fs
-    FlacWithId3v2 _ fs -> getTags fs
+    FlacWithID3v2 _ fs -> getTags fs
     where
       getTags fs = case vorbisComment fs of
         Just vcs -> getVorbisTags vcs
@@ -78,7 +78,7 @@ instance TagReader Flac where
 instance InfoReader Flac where
   info f = case f of
     Flac fs -> getInfo fs
-    FlacWithId3v2 _ fs -> getInfo fs
+    FlacWithID3v2 _ fs -> getInfo fs
     where
       getInfo :: FlacStream -> Info
       getInfo fs = let si = streamInfoBlock fs in

@@ -1,4 +1,4 @@
-module Melo.Internal.Info where
+module Melo.Format.Internal.Info where
 
 data Info = Info {
   sampleRate :: SampleRate
