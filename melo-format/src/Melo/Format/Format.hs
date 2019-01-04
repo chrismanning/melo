@@ -35,8 +35,8 @@ getTagByField (Tags []) _ = []
 getTagByField (Tags ts) m = fmap snd . filter (matches m . fst) $ ts
  where
   matches :: FieldMapping -> Text -> Bool
-  matches (FieldMapping _ f) v = f v
-  matches _                  _ = False
+  matches NoFieldMapping     _ = False
+  matches fm v = fieldMatcher fm v
 
 hGetMetadata :: forall a . MetadataLocator a => Handle -> IO a
 hGetMetadata h = do

@@ -36,7 +36,9 @@ decodeUtf16WithBOMOrFail bs =
           traceM "Big endian string detected"
           traceM $ "UTF16BE: " ++ show (BS.drop 2 bs)
           decodeUtf16BEOrFail (BS.drop 2 bs)
-        _ -> decodeUtf16BEOrFail bs
+        _ -> do
+          traceM "No BOM detected; assuming UTF16BE"
+          decodeUtf16BEOrFail bs
 
 decodeUtfOrFail :: MonadFail m => Either UnicodeException Text -> m Text
 decodeUtfOrFail = \case

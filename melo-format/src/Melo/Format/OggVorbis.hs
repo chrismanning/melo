@@ -67,4 +67,4 @@ detector = mkDetected hReadOggVorbis M.vorbis
 hReadOggVorbis :: Handle -> IO OggVorbis
 hReadOggVorbis h = do
   hSeek h AbsoluteSeek 0
-  bdecode <$> hGetFileContents h
+  bdecodeOrThrowIO =<< hGetFileContents h

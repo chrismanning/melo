@@ -3,13 +3,10 @@ module Melo.Format.Vorbis where
 import           Control.Monad
 import           Data.Binary                              ( Binary(..) )
 import           Data.Binary.Get
+import           Data.Functor
 import           Data.Int
-import           Data.Text
+import           Data.Text                     as T
 import           Data.Word
-import           Prelude                           hiding ( drop
-                                                          , length
-                                                          , take
-                                                          )
 
 import           Melo.Format.Internal.Binary
 import           Melo.Format.Internal.BinaryUtil
@@ -35,7 +32,7 @@ data PacketType
   deriving (Eq, Show)
 
 getPacketType :: Get (Maybe PacketType)
-getPacketType = flip fmap getWord8 $ \case
+getPacketType = getWord8 <&> \case
   1 -> Just IdentificationHeaderType
   3 -> Just CommentsHeaderType
   _ -> Nothing
@@ -93,9 +90,7 @@ instance Binary VorbisComments where
     numComments <- fromIntegral <$> getWord32le
     VorbisComments vendorString <$> replicateM numComments bget
 
-data UserComment =
-  UserComment Text
-              Text
+data UserComment = UserComment Text Text
   deriving (Show, Eq)
 
 instance Binary UserComment where
@@ -108,8 +103,14 @@ instance Binary UserComment where
 splitOnce :: (Char -> Bool) -> Text -> Maybe (Text, Text)
 splitOnce p t = do
   n <- findIndex p t
-  return (take n t, drop (min (length t) (n + 1)) t)
+  pure (T.take n t, T.drop (min (T.length t) (n + 1)) t)
 
 getVorbisTags :: VorbisComments -> Tags
 getVorbisTags (VorbisComments _ cs) =
   Tags $ fmap (\(UserComment k v) -> (k, v)) cs
+
+toUserComments :: Tags -> [UserComment]
+toUserComments (Tags ts) = fmap (uncurry UserComment) ts
+
+replaceUserComments :: VorbisComments -> [UserComment] -> VorbisComments
+replaceUserComments (VorbisComments ven _) = VorbisComments ven

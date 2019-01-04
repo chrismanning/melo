@@ -11,6 +11,7 @@ import qualified Data.ByteString.Lazy          as L
 import           System.IO
 
 import           Melo.Format.Ape
+import           Melo.Format.Internal.Binary
 import           Melo.Format.Internal.Locate
 
 main :: IO ()
@@ -19,7 +20,7 @@ main = hspec spec
 spec :: Spec
 spec = do
   describe "APEv2" $ do
-    it "reads APEv2 tags" $ do
+    it "reads APEv2 tags" $
       readApeTags "test/Melo/test.apev2" `shouldReturn` APE
         APEv2
         [ mkTextTagItem "ALBUM"   "Aqualung"
@@ -45,7 +46,7 @@ spec = do
       expected <- L.readFile "test/Melo/test.apev2"
       actual `shouldBe` expected
   describe "APEv1" $ do
-    it "reads APEv1 tags" $ do
+    it "reads APEv1 tags" $
       readApeTags "test/Melo/test.apev1" `shouldReturn` APE
         APEv1
         [ mkTextTagItem "ALBUM"   "Aqualung"
@@ -95,4 +96,4 @@ spec = do
       hLocate @APE h `shouldReturn` Nothing
 
 readApeTags :: FilePath -> IO APE
-readApeTags p = decode <$> L.readFile p
+readApeTags p = bdecodeOrThrowIO =<< L.readFile p

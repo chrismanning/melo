@@ -8,10 +8,12 @@ module Melo.Format.Flac
   , vorbisComment
   , hReadFlac
   , readFlacOrFail
+  , removeID3
   )
 where
 
 import           Control.Applicative
+import           Control.Exception
 import           Control.Monad
 import qualified Control.Monad.Fail            as Fail
 import           Data.Binary
@@ -19,7 +21,8 @@ import           Data.Binary.Bits.Get                     ( )
 import qualified Data.Binary.Bits.Get          as BG
 import           Data.Binary.Get
 import           Data.ByteString
-import           Data.Text
+import qualified Data.ByteString.Lazy          as L
+import           Data.Text as T
 import           System.FilePath
 import           System.IO
 import           Text.Printf
@@ -29,28 +32,40 @@ import           Melo.Format.ID3.ID3v2             hiding ( Padding )
 import           Melo.Format.Vorbis                       ( VorbisComments(..)
                                                           , getVorbisTags
                                                           )
+import           Melo.Format.Internal.Binary
 import           Melo.Format.Internal.BinaryUtil
 import           Melo.Format.Internal.Detect
 import           Melo.Format.Internal.Info
+import           Melo.Format.Internal.Locate
 import           Melo.Format.Internal.Tag
 import           Melo.Format.Mapping                  as M
                                                           ( FieldMappings
                                                             ( vorbis
                                                             )
                                                           )
+import           Melo.Format.Metadata
 
 hReadFlac :: Handle -> IO Flac
 hReadFlac h = do
   hSeek h AbsoluteSeek 0
-  MkFlac . decode <$> hGetFileContents h
+  flacLoc <- hFindFlac h
+  case flacLoc of
+    Nothing -> throwIO UnknownFormat
+    Just x -> do
+      hSeek h AbsoluteSeek 0
+      buf <- hGetFileContents h
+      case x of
+        0 -> MkFlac <$> bdecodeOrThrowIO buf
+        _ -> do
+          let (id3buf, flacbuf) = L.splitAt (fromIntegral x) buf
+          id3 <- bdecodeOrThrowIO id3buf
+          flac <- bdecodeOrThrowIO flacbuf
+          pure $ MkFlacWithID3v2 id3 flac
 
 readFlacOrFail :: FilePath -> IO (Either (ByteOffset, String) Flac)
-readFlacOrFail p = fmap MkFlac <$> decodeFileOrFail p
+readFlacOrFail p = fmap MkFlac <$> bdecodeFileOrFail p
 
-data Flac
-  = MkFlac FlacStream
-  | MkFlacWithID3v2 ID3v2
-                  FlacStream
+data Flac = MkFlac FlacStream | MkFlacWithID3v2 ID3v2 FlacStream
   deriving (Show)
 
 pattern Flac :: FlacStream -> Flac
@@ -63,8 +78,8 @@ pattern FlacWithID3v2 id3v2 flac = MkFlacWithID3v2 id3v2 flac
 
 instance MetadataFormat Flac where
   formatDesc = "Flac"
-  formatDesc' (Flac _) = formatDesc @Flac
   formatDesc' (FlacWithID3v2 _ _) = "Flac with ID3v2"
+  formatDesc' _ = formatDesc @Flac
 
 instance TagReader Flac where
   tags f = case f of
@@ -83,8 +98,7 @@ instance InfoReader Flac where
       getInfo :: FlacStream -> Info
       getInfo fs = let si = streamInfoBlock fs in
         Info {
-          sampleRate = SampleRate $ fromIntegral $
-            sampleRate (si :: StreamInfo)
+          sampleRate = SampleRate $ fromIntegral (sampleRate (si :: StreamInfo))
           , bitsPerSample = pure $ fromIntegral $ bps si
           , channels = case channels (si :: StreamInfo) of
             1 -> Mono
@@ -98,11 +112,30 @@ instance Detector Flac where
     | takeExtension p == ".flac" = Just detector
     | otherwise = Nothing
   hDetectFormat h = do
-    hSeek h AbsoluteSeek 0
-    buf <- hGet h 4
-    return $ case buf of
-      "fLaC" -> Just detector
-      _ -> Nothing
+    flacLoc <- hFindFlac h
+    pure $ case flacLoc of
+      Nothing -> Nothing
+      Just _ -> Just detector
+
+hFindFlac :: Handle -> IO (Maybe Integer)
+hFindFlac h = do
+  id3loc <- hLocate @ID3v2 h
+  hSeek h AbsoluteSeek 0
+  case id3loc of
+    Nothing -> do
+      buf <- hGet h 4
+      pure $ case buf of
+        "fLaC" -> Just 0
+        _ -> Nothing
+    Just id3loc' -> do
+      hSeek h AbsoluteSeek (fromIntegral id3loc')
+      id3 <- bdecode <$> hGetFileContents h
+      hSeek h AbsoluteSeek $ id3v2size id3 + fromIntegral headerSize
+      flacLoc <- hTell h
+      buf <- hGet h 4
+      pure $ case buf of
+        "fLaC" -> Just (fromIntegral flacLoc)
+        _ -> Nothing
 
 detector :: DetectedP
 detector = mkDetected hReadFlac M.vorbis
@@ -120,18 +153,17 @@ vorbisComment (FlacStream _ blocks) = findVcs blocks
     VorbisCommentBlock (FlacTags vcs) -> Just vcs
     _ -> findVcs ms
 
-instance Binary FlacStream where
-  put = undefined
-  get = do
-    expectGetEq (getByteString 4) "fLaC" "Expected marker `fLaC`"
-    FlacStream <$> get <*> getMetadataBlocks
+instance BinaryGet FlacStream where
+  bget = do
+    expectGetEq (getByteString 4) "fLaC" "Couldn't find fLaC marker"
+    FlacStream <$> bget <*> getMetadataBlocks
 
 getMetadataBlocks :: Get [MetadataBlock]
 getMetadataBlocks = go
  where
   go = do
-    header <- lookAhead get :: Get MetadataBlockHeader
-    block  <- get
+    header <- lookAhead bget
+    block  <- bget
     if isLast header
       then return [block]
       else do
@@ -141,32 +173,25 @@ getMetadataBlocks = go
 data MetadataBlock
   = StreamInfoBlock StreamInfo
   | PaddingBlock Padding
-  | ApplicationBlock Application
-  | SeekTableBlock SeekTable
   | VorbisCommentBlock FlacTags
-  | CueSheetBlock CueSheet
   | PictureBlock Picture
-  | ReservedBlock ByteString
+  | OtherBlock Word8 Word32
   deriving (Show)
 
-instance Binary MetadataBlock where
-  put = undefined
-  get = do
-    header <- lookAhead get
+instance BinaryGet MetadataBlock where
+  bget = do
+    header <- lookAhead bget
     case blockType header of
-      0 -> StreamInfoBlock <$> get
-      1 -> PaddingBlock <$> get
-      2 -> ApplicationBlock <$> get
-      3 -> SeekTableBlock <$> get
-      4 -> VorbisCommentBlock <$> get
-      5 -> CueSheetBlock <$> get
-      6 -> PictureBlock <$> get
+      0 -> StreamInfoBlock <$> bget
+      1 -> PaddingBlock <$> bget
+      4 -> VorbisCommentBlock <$> bget
+      6 -> PictureBlock <$> bget
       127 -> fail "Invalid flac block type 127"
-      _ -> do
-        header' <- get
+      bt -> do
+        header' <- bget
         let len = blockLength header'
         skip $ fromIntegral len
-        ReservedBlock <$> getByteString (fromIntegral len)
+        pure $ OtherBlock bt len
 
 data MetadataBlockHeader = MetadataBlockHeader
   { blockType :: Word8
@@ -174,9 +199,8 @@ data MetadataBlockHeader = MetadataBlockHeader
   , isLast :: Bool
   } deriving (Show)
 
-instance Binary MetadataBlockHeader where
-  put = undefined
-  get = do
+instance BinaryGet MetadataBlockHeader where
+  bget = do
     (isLast, blockType) <-
       BG.runBitGet $ (,) <$> BG.getBool <*> BG.getWord8 7
     blockLength <- get24Bits
@@ -194,10 +218,9 @@ data StreamInfo = StreamInfo
   , md5 :: ByteString
   } deriving (Show)
 
-instance Binary StreamInfo where
-  put = undefined
-  get = do
-    header <- get
+instance BinaryGet StreamInfo where
+  bget = do
+    header <- bget
     expect (blockType header == 0) (printf "Unexpected block type %d; expected 0 (STREAMINFO)" $ blockType header)
     minBlockSize <- getWord16be
     expect (minBlockSize >= 16) ("Invalid min block size" ++ show minBlockSize)
@@ -227,121 +250,26 @@ instance Binary StreamInfo where
         , md5
         }
 
-newtype Padding =
-  Padding Word32
+newtype Padding = Padding Word32
   deriving (Show)
 
-instance Binary Padding where
-  put = undefined
-  get = do
-    header <- get :: Get MetadataBlockHeader
+instance BinaryGet Padding where
+  bget = do
+    header <- bget
     expect (blockType header == 1) (printf "Unexpected block type %d; expected 1 (PADDING)" $ blockType header)
     let paddingLength = blockLength header
     skip $ fromIntegral paddingLength
     return $ Padding paddingLength
 
-data Application = Application
-  { applicationId :: Word32
-  , applicationData :: ByteString
-  } deriving (Show)
-
-instance Binary Application where
-  put = undefined
-  get = do
-    header <- get :: Get MetadataBlockHeader
-    expect (blockType header == 2) (printf "Unexpected block type %d; expected 2 (APPLICATION)" $ blockType header)
-    Application <$> getWord32be <*>
-      getByteString (fromIntegral (blockLength header))
-
-newtype SeekTable =
-  SeekTable [SeekPoint]
-  deriving (Show)
-
-instance Binary SeekTable where
-  put = undefined
-  get = do
-    header <- get :: Get MetadataBlockHeader
-    expect (blockType header == 3) (printf "Unexpected block type %d; expected 3 (SEEKTABLE)" $ blockType header)
-    let numPoints = fromIntegral $ blockLength header `div` 18
-    SeekTable <$> replicateM numPoints get
-
-data SeekPoint = SeekPoint
-  { firstSample :: Word64
-  , byteOffset :: Word64
-  , samples :: Word16
-  } deriving (Show)
-
-instance Binary SeekPoint where
-  put = undefined
-  get = SeekPoint <$> getWord64be <*> getWord64be <*> getWord16be
-
 newtype FlacTags =
   FlacTags VorbisComments
   deriving (Show)
 
-instance Binary FlacTags where
-  put = undefined
-  get = do
-    header <- get :: Get MetadataBlockHeader
+instance BinaryGet FlacTags where
+  bget = do
+    header <- bget
     expect (blockType header == 4) (printf "Unexpected block type %d; expected 4 (VORBIS_COMMENT)" $ blockType header)
     FlacTags <$> get
-
-data CueSheet = CueSheet
-  { catalogNum :: Text
-  , leadInSamples :: Word64
-  , isCD :: Bool
-  , tracks :: [CueSheetTrack]
-  } deriving (Show)
-
-instance Binary CueSheet where
-  put = undefined
-  get = do
-    header <- get :: Get MetadataBlockHeader
-    expect (blockType header == 5) (printf "Unexpected block type %d; expected 5 (CUESHEET)" $ blockType header)
-    catalogNum <- getUTF8Text 128
-    leadInSamples <- getWord64be
-    isCD <- BG.runBitGet BG.getBool
-    skip 258
-    numTracks <- fromIntegral <$> mfilter (> 1) getWord8 <|> Fail.fail "Invalid number of cue sheet tracks"
-    tracks <- replicateM numTracks get
-    return CueSheet {catalogNum, leadInSamples, isCD, tracks}
-
-data CueSheetTrack = CueSheetTrack
-  { sampleOffset :: Word64
-  , trackNumber :: Word8
-  , isrc :: Text
-  , isAudio :: Bool
-  , preEmphasis :: Bool
-  , indexPoints :: [CueSheetTrackIndex]
-  } deriving (Show)
-
-instance Binary CueSheetTrack where
-  put = undefined
-  get = do
-    sampleOffset <- getWord64be
-    trackNumber <- getWord8
-    isrc <- getUTF8Text 12
-    (isAudio, preEmphasis) <-
-      BG.runBitGet $ (,) <$> BG.getBool <*> BG.getBool
-    skip 13
-    numIndexPoints <- fromIntegral <$> getWord8
-    indexPoints <- replicateM numIndexPoints get
-    return
-      CueSheetTrack
-        {sampleOffset, trackNumber, isrc, isAudio, preEmphasis, indexPoints}
-
-data CueSheetTrackIndex = CueSheetTrackIndex
-  { sampleOffset :: Word64
-  , indexPoint :: Word8
-  } deriving (Show)
-
-instance Binary CueSheetTrackIndex where
-  put = undefined
-  get = do
-    sampleOffset <- getWord64be
-    indexPoint <- getWord8
-    skip 3
-    return $ CueSheetTrackIndex sampleOffset indexPoint
 
 data Picture = Picture
   { pictureType :: Word32
@@ -357,10 +285,9 @@ data Picture = Picture
 numColors :: Picture -> Maybe Word32
 numColors = numColours
 
-instance Binary Picture where
-  put = undefined
-  get = do
-    header <- get :: Get MetadataBlockHeader
+instance BinaryGet Picture where
+  bget = do
+    header <- bget
     expect (blockType header == 6) (printf "Unexpected block type %d; expected 6 (PICTURE)" $ blockType header)
     pictureType <- mfilter (<= 20) getWord32be <|> Fail.fail "Invalid picture type"
     mimeType <- getUTF8Text =<< fromIntegral <$> getWord32be
@@ -381,3 +308,7 @@ instance Binary Picture where
         , numColours = mfilter (> 0) $ Just numColours
         , pictureData
         }
+
+removeID3 :: Flac -> Flac
+removeID3 f@(Flac _) = f
+removeID3 (FlacWithID3v2 _ fs) = Flac fs

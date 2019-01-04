@@ -25,22 +25,27 @@ instance Default FieldMappings where
       , vorbis = NoFieldMapping
       }
 
-data FieldMapping
-  = FieldMapping (Text -> Text) (Text -> Bool)
-  | NoFieldMapping
+data FieldMapping = FieldMapping {
+    toCanonicalForm :: Text
+  , fieldMatcher :: Text -> Bool
+  } | NoFieldMapping
 
 type FieldMappingSelector = (FieldMappings -> FieldMapping)
 
 caseSensitiveMapping :: Text -> FieldMapping
-caseSensitiveMapping m = FieldMapping id (== m)
+caseSensitiveMapping m = FieldMapping m (== m)
 
 caseInsensitiveMapping :: Text -> FieldMapping
-caseInsensitiveMapping m = FieldMapping id (\x -> toLower x == toLower m)
+caseInsensitiveMapping m = FieldMapping m (\x -> toLower x == toLower m)
 
 newtype TagMapping = TagMapping [FieldMappings]
 
 singletonTagMapping :: FieldMappings -> TagMapping
 singletonTagMapping m = TagMapping [m]
+
+headTagMapping :: TagMapping -> Maybe FieldMappings
+headTagMapping (TagMapping [m]) = Just m
+headTagMapping _ = Nothing
 
 instance Monoid TagMapping where
   mempty = TagMapping []
@@ -178,3 +183,11 @@ genreTag = singletonTagMapping def { ape     = caseInsensitiveMapping "Genre"
                                    , id3v2_4 = caseSensitiveMapping "TCON"
                                    , vorbis  = caseSensitiveMapping "GENRE"
                                    }
+
+commentTag :: TagMapping
+commentTag = singletonTagMapping def { ape = caseInsensitiveMapping "Comment"
+                                     , id3v1   = caseSensitiveMapping "COMM"
+                                     , id3v2_3 = caseSensitiveMapping "COMM"
+                                     , id3v2_4 = caseSensitiveMapping "COMM"
+                                     , vorbis  = caseSensitiveMapping "COMMENT"
+                                     }

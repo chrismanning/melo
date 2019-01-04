@@ -15,8 +15,13 @@ import           Data.List.NonEmpty
 import           Data.Maybe
 import           Data.Text                     as T
 import           Data.Text.Encoding
+import           System.IO                                ( hSeek
+                                                          , SeekMode
+                                                            ( AbsoluteSeek
+                                                            )
+                                                          )
 
-import           Melo.Format.Internal.Binary       hiding ( put )
+import           Melo.Format.Internal.Binary
 import           Melo.Format.Internal.BinaryUtil
 import           Melo.Format.Internal.Encoding
 import           Melo.Format.Internal.Locate
@@ -26,6 +31,7 @@ import           Melo.Format.Internal.Tag
 data ID3v2 = ID3v2 {
   frameVersion :: ID3v2Version
 , headerFlags :: HeaderFlags
+, id3v2size :: Integer
 , frames :: Frames
 }
 
@@ -37,12 +43,13 @@ instance MetadataFormat ID3v2 where
 
 instance MetadataLocator ID3v2 where
   locate bs = if L.isPrefixOf "ID3" bs then Just 0 else Nothing
+  hLocate h = hSeek h AbsoluteSeek 0 >> locate @ID3v2 <$> hGetFileContents h
 
 instance TagReader ID3v2 where
   tags id3 = let frames' = frames id3
                  contents = foldlFrames accumFrames [] frames'
              in
-    Tags $ fmap (first toTagKey) contents >>= \(a, bs) -> fmap ((a,)) bs
+    Tags $ fmap (first toTagKey) contents >>= \(a, bs) -> fmap (a,) bs
       where
         accumFrames acc frame = acc <> catMaybes [extractFrameContent frame]
 
@@ -50,7 +57,7 @@ instance BinaryGet ID3v2 where
   bget = do
     header <- getHeader
     when (hasExtendedHeader (flags header)) skipExtendedHeader
-    ID3v2 (version header) (flags header) <$> getFrames header
+    ID3v2 (version header) (flags header) (fromSyncSafe $ totalSize header) <$> getFrames header
       where
     skipExtendedHeader = skip =<< lookAhead (fromSyncSafe <$> bget)
 
@@ -60,8 +67,11 @@ data Header = Header {
 , totalSize :: SyncSafe
 } deriving (Eq, Show)
 
+headerSize :: Int
+headerSize = 10
+
 instance BinaryGet Header where
-  bget = do
+  bget = isolate headerSize $ do
     expectGetEq (getByteString 3) "ID3" "Expected ID3v2 identifier"
     header <- Header <$> bget <*> bget <*> bget
     expect (isReadable (flags header)) "Unrecognised ID3v2 flags found"
@@ -138,10 +148,9 @@ foldlFrames f z (Frames frms) = F.foldl f z frms
 type GetFrame v = (GetFrameHeader v, GetEncoding v, GetFrameId v, GetTextContent v, Version v)
 
 getFrames :: Header -> Get Frames
-getFrames header = do
-  case version header of
-    ID3v23 -> Frames <$> getFrames' @ 'ID3v23
-    ID3v24 -> Frames <$> getFrames' @ 'ID3v24
+getFrames header = case version header of
+  ID3v23 -> Frames <$> getFrames' @ 'ID3v23
+  ID3v24 -> Frames <$> getFrames' @ 'ID3v24
  where
   flags' = flags header
   getFrames' :: GetFrame v => Get (NonEmpty (Frame (v :: ID3v2Version)))
@@ -160,7 +169,7 @@ getFrames header = do
       "\0" -> True
       _    -> False
 
-data Frame (v :: ID3v2Version) = Frame (FrameContent v)
+newtype Frame (v :: ID3v2Version) = Frame (FrameContent v)
   deriving (Eq, Show)
 
 instance GetFrame v => BinaryGet (Frame v) where
@@ -170,8 +179,8 @@ instance GetFrame v => BinaryGet (Frame v) where
       (\a -> T.isPrefixOf "T" a || T.isPrefixOf "W" a -> True) -> do
         enc <- getEncoding @v
         fid <- getFrameId @v header enc
-        Frame <$> mkFrameContent fid <$> getTextContent @v header fid enc
-      _ -> Frame <$> OtherFrame <$> getByteString (fromIntegral $ frameSize header)
+        Frame . mkFrameContent fid <$> getTextContent @v header fid enc
+      _ -> Frame . OtherFrame <$> getByteString (fromIntegral $ frameSize header)
 
 mkFrameContent :: FrameId -> [Text] -> FrameContent v
 mkFrameContent fid t = case fid of
@@ -244,20 +253,21 @@ class GetFrameId (v :: ID3v2Version) where
   getFrameId :: FrameHeader v -> TextEncoding -> Get FrameId
 
 instance GetTextContent v where
-  getTextContent header frameId enc = do
-    let fidSz = case frameId of
+  getTextContent header frameId' enc = do
+    let fidSz = case frameId' of
               UserDefinedId _ t -> fromIntegral $ T.length t
               _ -> 0
     let sz = frameSize header - 1 - fidSz
-    bs <- BS.dropWhile (== 0) <$> (getByteString $ fromIntegral sz)
-    mapM (decodeID3Text enc) (splitFields (terminator enc) bs)
+    bs <- BS.dropWhile (== 0) <$> getByteString (fromIntegral sz)
+    let enc' = if "W" `T.isPrefixOf` frameId header then NullTerminated else enc
+    mapM (decodeID3Text enc') (splitFields (terminator enc') bs)
 
 splitFields :: ByteString -> ByteString -> [ByteString]
 splitFields term fields
   | BS.null fields = []
   | otherwise = h
   : if BS.null t then [] else splitFields term (BS.drop (BS.length term) t)
-  where (h, t) = breakSubstring term fields
+  where (h, t) = breakSubstring term (fromMaybe fields $ BS.stripSuffix term fields)
 
 instance GetFrameId v where
   getFrameId header enc = do
@@ -270,9 +280,9 @@ getUserDefinedFrameId :: FrameHeader v -> TextEncoding -> Get Text
 getUserDefinedFrameId header enc = do
   let sz = frameSize header
   bs <- lookAhead $ getByteString $ fromIntegral sz
-  t  <- decodeID3Text enc $ fst (BS.breakSubstring (terminator enc) bs)
-  skip $ T.length t
-  pure t
+  let uid = fst (BS.breakSubstring (terminator enc) bs)
+  skip $ BS.length uid
+  decodeID3Text enc uid
 
 instance GetEncoding 'ID3v23 where
   getEncoding = getWord8 >>= \case
@@ -295,11 +305,6 @@ terminator UTF8           = "\0"
 terminator UTF16          = "\0\0"
 terminator UTF16BE        = "\0\0"
 
-getID3Text :: TextEncoding -> Int -> Get Text
-getID3Text NullTerminated _ = getNullTerminatedAscii
-getID3Text UTF8           n = getUTF8Text n
-getID3Text _              _ = undefined
-
 decodeID3Text :: MonadFail m => TextEncoding -> ByteString -> m Text
 decodeID3Text NullTerminated bs = pure $ decodeLatin1 bs
 decodeID3Text UTF8           bs = decodeUtf8OrFail bs
@@ -313,11 +318,10 @@ newtype SyncSafe = SyncSafe {
 
 fromSyncSafe :: (Num a, Bits a) => SyncSafe -> a
 fromSyncSafe s =
-  let s' = syncSafe s
-  in  BS.foldl (\a b -> shiftL a 7 .|. (fromIntegral b)) 0 s'
+  let s' = syncSafe s in BS.foldl (\a b -> shiftL a 7 .|. fromIntegral b) 0 s'
 
 isSyncSafe :: ByteString -> Bool
-isSyncSafe bs = not $ BS.any (\b -> testBit b 7) bs
+isSyncSafe bs = not $ BS.any (`testBit` 7) bs
 
 instance Binary SyncSafe where
   get = do

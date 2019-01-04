@@ -125,7 +125,7 @@ forty u8 l32 =
   in  u8' `shiftL` 32 .|. l32'
 
 getSampleSize :: Word32 -> Word8
-getSampleSize flags = fromIntegral $ 8 + (8 * (flags .&. 0 b11))
+getSampleSize flags = fromIntegral $ 8 + (8 * (flags .&. 0b11))
 
 getChannels :: Word32 -> Channels
 getChannels flags | testBit flags 2 = Mono
@@ -152,8 +152,8 @@ sampleRates =
 
 getSampleRate :: Word32 -> Maybe Word32
 getSampleRate flags =
-  let rateIdx = (flags `shiftR` 23) .&. 0 b1111
-  in  if rateIdx /= 0 b1111
+  let rateIdx = (flags `shiftR` 23) .&. 0b1111
+  in  if rateIdx /= 0b1111
         then Just $ sampleRates `genericIndex` rateIdx
         else Nothing
 
@@ -185,8 +185,7 @@ data WavPackTags
   = NoTags
   | JustAPE Ape.APE
   | JustID3v1 ID3.ID3v1
-  | Both Ape.APE
-         ID3.ID3v1
+  | Both Ape.APE ID3.ID3v1
   deriving (Show)
 
 instance BinaryGet WavPackTags where
@@ -198,7 +197,7 @@ instance BinaryGet WavPackTags where
         isEmpty >>= \case
           True -> return $ JustAPE ape
           False -> Both ape <$> bget
-      else if BS.isPrefixOf ID3.id3v1Id what
+      else if BS.isPrefixOf ID3.iD3v1Id what
              then JustID3v1 <$> bget
              else return NoTags
 
@@ -247,7 +246,7 @@ findApe h = do
     Nothing -> return Nothing
 
 findID3 :: Handle -> IO (Maybe Int)
-findID3 h = findAt h (-128) ID3.id3v1Id
+findID3 h = findAt h (-128) ID3.iD3v1Id
 
 findAt :: Handle -> Integer -> BS.ByteString -> IO (Maybe Int)
 findAt h p s = do

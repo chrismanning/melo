@@ -1,15 +1,19 @@
 module Melo.Format.FlacSpec
   ( main
   , spec
-  ) where
+  )
+where
 
-import Test.Hspec
+import           Test.Hspec
 
-import Data.ByteString.Base16 as Hex
-import System.IO
+import           Data.ByteString.Base16        as Hex
+import           System.IO
 
-import Melo.Format.Flac
-import Melo.Format.Vorbis
+import           Melo.Format.Flac
+import           Melo.Format.Info
+import           Melo.Format.Metadata
+import           Melo.Format.Vorbis
+import           Melo.Format.Internal.Tag
 
 main :: IO ()
 main = hspec spec
@@ -44,13 +48,44 @@ spec = do
                         , md5 = md5
                         } -> True
              _ -> False)
+    it "translates to Info" $ do
+      h <- openBinaryFile "test/Melo/silence-1s.flac" ReadMode
+      flac <- hReadFlac h
+      let i = info flac
+      sampleRate (i :: Info) `shouldBe` SampleRate 44100
+      channels (i :: Info) `shouldBe` Mono
+      bitsPerSample (i :: Info) `shouldBe` Just 16
+      totalSamples (i :: Info) `shouldBe` Just 44100
     it "parses VORBIS COMMENT" $ do
       h <- openBinaryFile "test/Melo/silence-1s.flac" ReadMode
       Flac flac <- hReadFlac h
       vorbisComment flac `shouldBe` Just (VorbisComments "reference libFLAC 1.3.2 20170101" [])
-    it "fails" $ do
-      flac <- readFlacOrFail "test/Melo/test.vorbiscomment"
-      case flac of
-        Left e -> do
-          putStrLn $ "error: " ++ show e
-        _ -> expectationFailure "expected failure"
+  describe "Flac with ID3v2" $
+    it "reads flac file with ID3" $ do
+      h <- openBinaryFile "test/Melo/silence-1s-id3v2.flac" ReadMode
+      flac@(FlacWithID3v2 id3 _) <- hReadFlac h
+      tags id3 `shouldBe` Tags [("TIT2", "В чащах юга жил бы цитрус? Да, но фальшивый экземпляр!"),
+        ("TPE1", "κόσμε"),
+        ("TALB", "イロハニホヘト チリヌルヲ ワカヨタレソ ツネナラム ウヰノオクヤマ ケフコエテ アサキユメミシ ヱヒモセスン"),
+        ("TRCK", "04"),
+        ("TCON", "Psychedelic Rock"),
+        ("TENC", "lame"),
+        ("TLAN", "english"),
+        ("WXXX;", "http://www.google.com"),
+        ("TDRC", "2011")]
+      tags flac `shouldBe` Tags [("TITLE", "В чащах юга жил бы цитрус? Да, но фальшивый экземпляр!"),
+        ("ARTIST", "κόσμε"),
+        ("ALBUM", "イロハニホヘト チリヌルヲ ワカヨタレソ ツネナラム ウヰノオクヤマ ケフコエテ アサキユメミシ ヱヒモセスン"),
+        ("GENRE", "Psychedelic Rock"),
+        ("ENCODEDBY", "lame"),
+        ("LANGUAGE", "english"),
+        ("WWW", "http://www.google.com"),
+        ("DATE", "2011"),
+        ("TRACKNUMBER", "04")]
+      hClose h
+  it "rejects non-flac files" $ do
+    h <- openBinaryFile "test/Melo/silence-1s.ogg" ReadMode
+    hReadFlac h `shouldThrow` (== UnknownFormat)
+  it "rejects non-flac files with ID3v2" $ do
+    h <- openBinaryFile "test/Melo/silence-1s-id3v24.mp3" ReadMode
+    hReadFlac h `shouldThrow` (== UnknownFormat)

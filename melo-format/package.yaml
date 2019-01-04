@@ -58,8 +58,10 @@ tests:
     - base16-bytestring
     - binary
     - bytestring
+    - conduit
     - hspec
     - hspec-expectations-lifted
+    - temporary
     - text
 
 ghc-options:
