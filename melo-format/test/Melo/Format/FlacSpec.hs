@@ -7,6 +7,7 @@ where
 import           Test.Hspec
 
 import           Data.ByteString.Base16        as Hex
+import           Data.Vector
 import           System.IO
 
 import           Melo.Format.Flac
@@ -59,7 +60,7 @@ spec = do
     it "parses VORBIS COMMENT" $ do
       h <- openBinaryFile "test/Melo/silence-1s.flac" ReadMode
       Flac flac <- hReadFlac h
-      vorbisComment flac `shouldBe` Just (VorbisComments "reference libFLAC 1.3.2 20170101" [])
+      vorbisComment flac `shouldBe` Just (VorbisComments "reference libFLAC 1.3.2 20170101" empty)
   describe "Flac with ID3v2" $
     it "reads flac file with ID3" $ do
       h <- openBinaryFile "test/Melo/silence-1s-id3v2.flac" ReadMode

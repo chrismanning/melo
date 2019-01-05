@@ -7,6 +7,7 @@ where
 import           Test.Hspec
 
 import qualified Data.ByteString.Lazy          as L
+import           Data.Vector
 
 import           Melo.Format.Vorbis
 import           Melo.Format.Internal.Binary
@@ -27,13 +28,15 @@ spec = do
       readVorbisComments "test/Melo/test.vorbiscomment"
         `shouldReturn` VorbisComments
                          "reference libFLAC 1.2.1 20070917"
-                         [ UserComment "ALBUM"       "Almost Heathen"
-                         , UserComment "GENRE"       "Stoner Metal"
-                         , UserComment "DATE"        "2001"
-                         , UserComment "TITLE"       "Forty"
-                         , UserComment "TRACKNUMBER" "10"
-                         , UserComment "ARTIST"      "Karma To Burn"
-                         ]
+                         -- FIXME rewrite tags
+                         (fromList
+                          [ UserComment "ALBUM"       "Almost Heathen"
+                          , UserComment "GENRE"       "Stoner Metal"
+                          , UserComment "DATE"        "2001"
+                          , UserComment "TITLE"       "Forty"
+                          , UserComment "TRACKNUMBER" "10"
+                          , UserComment "ARTIST"      "Karma To Burn"
+                          ])
 
 readVorbisComments :: FilePath -> IO VorbisComments
 readVorbisComments p = bdecode <$> L.readFile p

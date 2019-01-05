@@ -23,7 +23,7 @@ import           Melo.Format.Internal.Info
 import           Melo.Format.Internal.Locate
 import           Melo.Format.Internal.Tag
 
-data OggVorbis = OggVorbis Identification FramedVorbisComments
+data OggVorbis = OggVorbis !Identification !FramedVorbisComments
   deriving (Eq, Show)
 
 instance BinaryGet OggVorbis where

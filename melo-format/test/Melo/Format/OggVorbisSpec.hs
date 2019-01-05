@@ -7,6 +7,7 @@ where
 import           Test.Hspec
 
 import qualified Data.ByteString.Lazy          as L
+import           Data.Vector
 
 import           Melo.Format.OggVorbis
 import           Melo.Format.Vorbis
@@ -30,5 +31,4 @@ spec = do
         , bitrateMin     = Nothing
         }
       vc `shouldBe` VorbisComments
-        "Lavf57.83.100"
-        [UserComment "encoder" "Lavc57.107.100 libvorbis"]
+        "Lavf57.83.100" (singleton (UserComment "encoder" "Lavc57.107.100 libvorbis"))

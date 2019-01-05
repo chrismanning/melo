@@ -45,13 +45,13 @@ import           Melo.Format.Mapping                      ( trackTitleTag
                                                           )
 
 data ID3v1 = ID3v1
-  { title   :: Text
-  , artist  :: Text
-  , album   :: Text
-  , year    :: Text
-  , comment :: Text
-  , track   :: Maybe Word8
-  , genre   :: Text
+  { title   :: !Text
+  , artist  :: !Text
+  , album   :: !Text
+  , year    :: !Text
+  , comment :: !Text
+  , track   :: !(Maybe Word8)
+  , genre   :: !Text
   } deriving (Show, Eq)
 
 instance MetadataFormat ID3v1 where

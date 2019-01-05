@@ -29,10 +29,10 @@ import           Melo.Format.Internal.Format
 import           Melo.Format.Internal.Tag
 
 data ID3v2 = ID3v2 {
-  frameVersion :: ID3v2Version
-, headerFlags :: HeaderFlags
-, id3v2size :: Integer
-, frames :: Frames
+  frameVersion :: !ID3v2Version
+, headerFlags :: !HeaderFlags
+, id3v2size :: !Integer
+, frames :: !Frames
 }
 
 deriving instance Show ID3v2
@@ -62,9 +62,9 @@ instance BinaryGet ID3v2 where
     skipExtendedHeader = skip =<< lookAhead (fromSyncSafe <$> bget)
 
 data Header = Header {
-  version :: ID3v2Version
-, flags :: HeaderFlags
-, totalSize :: SyncSafe
+  version :: !ID3v2Version
+, flags :: !HeaderFlags
+, totalSize :: !SyncSafe
 } deriving (Eq, Show)
 
 headerSize :: Int
@@ -138,7 +138,7 @@ newtype Padding = Padding Word32
   deriving (Eq, Show)
 
 data Frames where
-  Frames :: Version v => NonEmpty (Frame v) -> Frames
+  Frames :: Version v => !(NonEmpty (Frame v)) -> Frames
 
 deriving instance Show Frames
 
@@ -193,8 +193,8 @@ mkFrameContent fid t = case fid of
     _                          -> OtherFrame BS.empty
 
 data FrameId =
-    PreDefinedId Text
-  | UserDefinedId Text Text
+    PreDefinedId !Text
+  | UserDefinedId !Text !Text
   deriving (Show, Eq)
 
 toTagKey :: FrameId -> Text
@@ -202,9 +202,9 @@ toTagKey (PreDefinedId fid       ) = fid
 toTagKey (UserDefinedId fid1 fid2) = fid1 <> ";" <> fid2
 
 data FrameHeader (v :: ID3v2Version) = FrameHeader {
-  frameId :: Text
-, frameSize :: Word32
-, frameFlags :: FrameHeaderFlags
+  frameId :: !Text
+, frameSize :: !Word32
+, frameFlags :: !FrameHeaderFlags
 }
 
 deriving instance Eq (FrameHeader v)
@@ -229,9 +229,9 @@ instance BinaryGet FrameHeaderFlags where
   bget = skip 2 >> pure FrameHeaderFlags
 
 data FrameContent (v :: ID3v2Version) =
-    TextFrame FrameId [Text]
-  | UrlFrame FrameId [Text]
-  | OtherFrame ByteString
+    TextFrame !FrameId ![Text]
+  | UrlFrame !FrameId ![Text]
+  | OtherFrame !ByteString
   deriving (Show, Eq)
 
 extractFrameContent :: Frame v -> Maybe (FrameId, [Text])

@@ -36,8 +36,8 @@ import           Melo.Format.Mapping           as M
                                                           ( FieldMappings(ape) )
 
 data WavPack = WavPack
-  { wavPackInfo :: WavPackInfo
-  , wavPackTags :: WavPackTags
+  { wavPackInfo :: !WavPackInfo
+  , wavPackTags :: !WavPackTags
   } deriving (Show)
 
 instance MetadataFormat WavPack where
@@ -76,12 +76,12 @@ detector :: DetectedP
 detector = mkDetected hReadWavPack M.ape
 
 data WavPackInfo = WavPackInfo
-  { totalSamples :: Maybe Word64
-  , sampleSize :: Word8
-  , channels :: Channels
-  , sampleRate :: Maybe Word32
-  , audioType :: AudioType
-  } deriving (Show)
+  { totalSamples :: !(Maybe Word64)
+  , sampleSize :: !Word8
+  , channels :: !Channels
+  , sampleRate :: !(Maybe Word32)
+  , audioType :: !AudioType
+  } deriving (Show, Eq)
 
 instance MetadataFormat WavPackInfo where
   formatDesc = "WavPack metadata block"
@@ -167,26 +167,27 @@ ckId = "wvpk"
 data AudioType
   = PCM
   | DSD
-  deriving (Show)
+  deriving (Show, Eq)
 
 data Channels
   = Mono
   | Stereo
   | JointStereo
-  | MultiChannel ChannelMask
-  deriving (Show)
+  | MultiChannel !ChannelMask
+  deriving (Show, Eq)
 
 data ChannelMask =
   ChannelMask
 
 deriving instance Show ChannelMask
+deriving instance Eq ChannelMask
 
 data WavPackTags
   = NoTags
-  | JustAPE Ape.APE
-  | JustID3v1 ID3.ID3v1
-  | Both Ape.APE ID3.ID3v1
-  deriving (Show)
+  | JustAPE !Ape.APE
+  | JustID3v1 !ID3.ID3v1
+  | Both Ape.APE !ID3.ID3v1
+  deriving (Show, Eq)
 
 instance BinaryGet WavPackTags where
   bget = do

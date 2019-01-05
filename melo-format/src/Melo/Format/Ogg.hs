@@ -12,9 +12,9 @@ newtype OggPage a = OggPage a
 instance BinaryGet a => BinaryGet (OggPage a) where
   bget = do
     Page page <- bget
-    return $ OggPage (runGet bget page)
+    return $ OggPage (runGet bget $ L.fromStrict page)
 
-newtype Page = Page L.ByteString
+newtype Page = Page BS.ByteString
 
 instance BinaryGet Page where
   bget = do
@@ -28,4 +28,4 @@ instance BinaryGet Page where
     numSegments <- getWord8
     segmentTable <- getByteString $ fromIntegral numSegments
     let pageLength = sum (fmap fromIntegral (BS.unpack segmentTable))
-    Page <$> getLazyByteString pageLength
+    Page <$> getByteString pageLength

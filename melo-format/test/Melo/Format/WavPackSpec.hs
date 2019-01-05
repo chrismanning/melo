@@ -6,6 +6,7 @@ where
 
 import           Test.Hspec
 
+import           Data.Vector
 import           System.IO
 
 import           Melo.Format.Ape
@@ -16,7 +17,7 @@ main :: IO ()
 main = hspec spec
 
 spec :: Spec
-spec = do
+spec =
   describe "WavPack" $ do
     it "parses wavpack metadata header" $ do
       h  <- openBinaryFile "test/Melo/silence-1s.wv" ReadMode
@@ -29,10 +30,8 @@ spec = do
     it "parses ape in wavpack" $ do
       h  <- openBinaryFile "test/Melo/silence-1s.wv" ReadMode
       wv <- hReadWavPack h
-      wv `shouldSatisfy` \case
-        WavPack _ (JustAPE (APE APEv2 [TextTagItem "encoder" "WavPack 5.1.0"]))
-          -> True
-        _ -> False
+      let wvTags = wavPackTags wv
+      wvTags `shouldBe` JustAPE (APE APEv2 (fromList [TextTagItem "encoder" (singleton "WavPack 5.1.0")]))
       hClose h
     it "parses id3v1 in wavpack" $ do
       h  <- openBinaryFile "test/Melo/silence-1s-id3v1.wv" ReadMode
@@ -45,8 +44,6 @@ spec = do
     it "parses ape and id3v1 in wavpack" $ do
       h  <- openBinaryFile "test/Melo/silence-1s-ape-id3v1.wv" ReadMode
       wv <- hReadWavPack h
-      wv `shouldSatisfy` \case
-        WavPack _ (Both (APE APEv2 [TextTagItem "encoder" "WavPack 5.1.0"]) (ID3v1 { title = "Title", artist = "Artist", album = "Album", year = "2003", comment = "Comment", track = Nothing, genre = "Hip-Hop" }))
-          -> True
-        _ -> False
+      let wvTags = wavPackTags wv
+      wvTags `shouldBe` Both (APE APEv2 (fromList [TextTagItem "encoder" (singleton "WavPack 5.1.0")])) (ID3v1 { title = "Title", artist = "Artist", album = "Album", year = "2003", comment = "Comment", track = Nothing, genre = "Hip-Hop" })
       hClose h

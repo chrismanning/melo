@@ -1,11 +1,13 @@
 module Melo.Format.Vorbis where
 
 import           Control.Monad
-import           Data.Binary                              ( Binary(..) )
+import           Control.Monad.Fail            as F
 import           Data.Binary.Get
 import           Data.Functor
 import           Data.Int
 import           Data.Text                     as T
+import           Data.Vector                              ( Vector )
+import qualified Data.Vector                   as V
 import           Data.Word
 
 import           Melo.Format.Internal.Binary
@@ -13,8 +15,8 @@ import           Melo.Format.Internal.BinaryUtil
 import           Melo.Format.Internal.Tag
 
 data Header
-  = IdentificationHeader Identification
-  | CommentsHeader FramedVorbisComments
+  = IdentificationHeader !Identification
+  | CommentsHeader !FramedVorbisComments
   deriving (Eq, Show)
 
 instance BinaryGet Header where
@@ -24,7 +26,7 @@ instance BinaryGet Header where
     case t of
       Just IdentificationHeaderType -> IdentificationHeader <$> bget
       Just CommentsHeaderType -> CommentsHeader <$> bget
-      _ -> fail "Unexpected packet header"
+      _ -> F.fail "Unexpected packet header"
 
 data PacketType
   = IdentificationHeaderType
@@ -38,12 +40,12 @@ getPacketType = getWord8 <&> \case
   _ -> Nothing
 
 data Identification = Identification
-  { vorbisVersion :: Word32
-  , channels :: Word8
-  , sampleRate :: Word32
-  , bitrateMax :: Maybe Int32
-  , bitrateNominal :: Maybe Int32
-  , bitrateMin :: Maybe Int32
+  { vorbisVersion :: !Word32
+  , channels :: !Word8
+  , sampleRate :: !Word32
+  , bitrateMax :: !(Maybe Int32)
+  , bitrateNominal :: !(Maybe Int32)
+  , bitrateMin :: !(Maybe Int32)
   }
   deriving (Eq, Show)
 
@@ -71,33 +73,32 @@ newtype FramedVorbisComments =
   FramedVorbisComments VorbisComments
   deriving (Show, Eq)
 
-instance Binary FramedVorbisComments where
-  put = undefined
-  get = do
-    vc <- get
+instance BinaryGet FramedVorbisComments where
+  bget = do
+    vc <- bget
     expectGetEq getWord8 1 "Expected vorbis framing bit"
     return $ FramedVorbisComments vc
 
-data VorbisComments =
-  VorbisComments Text
-                 [UserComment]
-  deriving (Show, Eq)
+data VorbisComments = VorbisComments {
+  vendorString :: !Text
+, userComments :: !(Vector UserComment)
+} deriving (Show, Eq)
 
-instance Binary VorbisComments where
-  put = undefined
-  get = do
+instance BinaryGet VorbisComments where
+  bget = do
     vendorString <- getUTF8Text =<< fromIntegral <$> getWord32le
     numComments <- fromIntegral <$> getWord32le
-    VorbisComments vendorString <$> replicateM numComments bget
+    VorbisComments vendorString <$> V.replicateM numComments bget
 
 data UserComment = UserComment Text Text
   deriving (Show, Eq)
 
-instance Binary UserComment where
-  put = undefined
-  get = do
+instance BinaryGet UserComment where
+  bget = do
     comment <- getUTF8Text =<< fromIntegral <$> getWord32le
-    Just (name, value) <- return $ splitOnce (== '=') comment
+    (name, value) <- case splitOnce (== '=') comment of
+      Just x -> pure x
+      Nothing -> F.fail "Invalid vorbis user comment"
     return $ UserComment name value
 
 splitOnce :: (Char -> Bool) -> Text -> Maybe (Text, Text)
@@ -107,10 +108,10 @@ splitOnce p t = do
 
 getVorbisTags :: VorbisComments -> Tags
 getVorbisTags (VorbisComments _ cs) =
-  Tags $ fmap (\(UserComment k v) -> (k, v)) cs
+  Tags $ V.toList $ fmap (\(UserComment k v) -> (k, v)) cs
 
 toUserComments :: Tags -> [UserComment]
 toUserComments (Tags ts) = fmap (uncurry UserComment) ts
 
 replaceUserComments :: VorbisComments -> [UserComment] -> VorbisComments
-replaceUserComments (VorbisComments ven _) = VorbisComments ven
+replaceUserComments (VorbisComments ven _) = VorbisComments ven . V.fromList

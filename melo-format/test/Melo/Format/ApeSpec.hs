@@ -8,6 +8,7 @@ import           Test.Hspec
 
 import           Data.Binary
 import qualified Data.ByteString.Lazy          as L
+import           Data.Vector
 import           System.IO
 
 import           Melo.Format.Ape
@@ -21,8 +22,8 @@ spec :: Spec
 spec = do
   describe "APEv2" $ do
     it "reads APEv2 tags" $
-      readApeTags "test/Melo/test.apev2" `shouldReturn` APE
-        APEv2
+      readApeTags "test/Melo/test.apev2" `shouldReturn` (APE
+        APEv2 $ fromList
         [ mkTextTagItem "ALBUM"   "Aqualung"
         , mkTextTagItem "ARTIST"  "Jethro Tull"
         , mkTextTagItem "COMMENT" "CDP 32 1044 2"
@@ -30,10 +31,10 @@ spec = do
         , mkTextTagItem "TITLE"   "Cheap Day Return"
         , mkTextTagItem "TRACK"   "3"
         , mkTextTagItem "YEAR"    "1971"
-        ]
+        ])
     it "writes APEv2 tags" $ do
       let a = APE
-            APEv2
+            APEv2 $ fromList
             [ mkTextTagItem "ALBUM"   "Aqualung"
             , mkTextTagItem "ARTIST"  "Jethro Tull"
             , mkTextTagItem "COMMENT" "CDP 32 1044 2"
@@ -47,8 +48,8 @@ spec = do
       actual `shouldBe` expected
   describe "APEv1" $ do
     it "reads APEv1 tags" $
-      readApeTags "test/Melo/test.apev1" `shouldReturn` APE
-        APEv1
+      readApeTags "test/Melo/test.apev1" `shouldReturn` (APE
+        APEv1 $ fromList
         [ mkTextTagItem "ALBUM"   "Aqualung"
         , mkTextTagItem "ARTIST"  "Jethro Tull"
         , mkTextTagItem "COMMENT" "CDP 32 1044 2"
@@ -56,10 +57,10 @@ spec = do
         , mkTextTagItem "TITLE"   "Cheap Day Return"
         , mkTextTagItem "TRACK"   "3"
         , mkTextTagItem "YEAR"    "1971"
-        ]
+        ])
     it "writes APEv1 tags" $ do
       let a = APE
-            APEv1
+            APEv1 $ fromList
             [ mkTextTagItem "ALBUM"   "Aqualung"
             , mkTextTagItem "ARTIST"  "Jethro Tull"
             , mkTextTagItem "COMMENT" "CDP 32 1044 2"

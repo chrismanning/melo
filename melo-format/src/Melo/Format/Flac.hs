@@ -23,6 +23,7 @@ import           Data.Binary.Get
 import           Data.ByteString
 import qualified Data.ByteString.Lazy          as L
 import           Data.Text as T
+import           Data.Vector
 import           System.FilePath
 import           System.IO
 import           Text.Printf
@@ -65,7 +66,7 @@ hReadFlac h = do
 readFlacOrFail :: FilePath -> IO (Either (ByteOffset, String) Flac)
 readFlacOrFail p = fmap MkFlac <$> bdecodeFileOrFail p
 
-data Flac = MkFlac FlacStream | MkFlacWithID3v2 ID3v2 FlacStream
+data Flac = MkFlac !FlacStream | MkFlacWithID3v2 !ID3v2 !FlacStream
   deriving (Show)
 
 pattern Flac :: FlacStream -> Flac
@@ -141,12 +142,12 @@ detector :: DetectedP
 detector = mkDetected hReadFlac M.vorbis
 
 data FlacStream = FlacStream
-  { streamInfoBlock :: StreamInfo
-  , metadataBlocks :: [MetadataBlock]
+  { streamInfoBlock :: !StreamInfo
+  , metadataBlocks :: !(Vector MetadataBlock)
   } deriving (Show)
 
 vorbisComment :: FlacStream -> Maybe VorbisComments
-vorbisComment (FlacStream _ blocks) = findVcs blocks
+vorbisComment (FlacStream _ blocks) = findVcs $ toList blocks
  where
   findVcs []       = Nothing
   findVcs (m : ms) = case m of
@@ -158,24 +159,24 @@ instance BinaryGet FlacStream where
     expectGetEq (getByteString 4) "fLaC" "Couldn't find fLaC marker"
     FlacStream <$> bget <*> getMetadataBlocks
 
-getMetadataBlocks :: Get [MetadataBlock]
-getMetadataBlocks = go
+getMetadataBlocks :: Get (Vector MetadataBlock)
+getMetadataBlocks = fromList <$> go
  where
   go = do
     header <- lookAhead bget
     block  <- bget
     if isLast header
-      then return [block]
+      then pure [block]
       else do
         blocks <- go
         return $ block : blocks
 
 data MetadataBlock
-  = StreamInfoBlock StreamInfo
-  | PaddingBlock Padding
-  | VorbisCommentBlock FlacTags
-  | PictureBlock Picture
-  | OtherBlock Word8 Word32
+  = StreamInfoBlock !StreamInfo
+  | PaddingBlock !Padding
+  | VorbisCommentBlock !FlacTags
+  | PictureBlock !Picture
+  | OtherBlock !Word8 !Word32
   deriving (Show)
 
 instance BinaryGet MetadataBlock where
@@ -194,9 +195,9 @@ instance BinaryGet MetadataBlock where
         pure $ OtherBlock bt len
 
 data MetadataBlockHeader = MetadataBlockHeader
-  { blockType :: Word8
-  , blockLength :: Word32
-  , isLast :: Bool
+  { blockType :: !Word8
+  , blockLength :: !Word32
+  , isLast :: !Bool
   } deriving (Show)
 
 instance BinaryGet MetadataBlockHeader where
@@ -207,15 +208,15 @@ instance BinaryGet MetadataBlockHeader where
     return MetadataBlockHeader {blockType, blockLength, isLast}
 
 data StreamInfo = StreamInfo
-  { minBlockSize :: Word16
-  , maxBlockSize :: Word16
-  , minFrameSize :: Maybe Word32
-  , maxFrameSize :: Maybe Word32
-  , sampleRate :: Word32
-  , channels :: Word8
-  , bps :: Word8
-  , samples :: Maybe Word64
-  , md5 :: ByteString
+  { minBlockSize :: !Word16
+  , maxBlockSize :: !Word16
+  , minFrameSize :: !(Maybe Word32)
+  , maxFrameSize :: !(Maybe Word32)
+  , sampleRate :: !Word32
+  , channels :: !Word8
+  , bps :: !Word8
+  , samples :: !(Maybe Word64)
+  , md5 :: !ByteString
   } deriving (Show)
 
 instance BinaryGet StreamInfo where
@@ -223,9 +224,9 @@ instance BinaryGet StreamInfo where
     header <- bget
     expect (blockType header == 0) (printf "Unexpected block type %d; expected 0 (STREAMINFO)" $ blockType header)
     minBlockSize <- getWord16be
-    expect (minBlockSize >= 16) ("Invalid min block size" ++ show minBlockSize)
+    expect (minBlockSize >= 16) ("Invalid min block size" <> show minBlockSize)
     maxBlockSize <- getWord16be
-    expect (maxBlockSize >= 16) ("Invalid max block size" ++ show maxBlockSize)
+    expect (maxBlockSize >= 16) ("Invalid max block size" <> show maxBlockSize)
     minFrameSize <- get24Bits
     maxFrameSize <- get24Bits
     (sampleRate, channels, bps, samples) <-
@@ -235,7 +236,7 @@ instance BinaryGet StreamInfo where
         bps <- (+ 1) <$> BG.getWord8 5
         samples <- BG.getWord64be 36
         return (sampleRate, channels, bps, samples)
-    expect (sampleRate > 0) ("Invalid sample rate" ++ show sampleRate)
+    expect (sampleRate > 0) ("Invalid sample rate" <> show sampleRate)
     md5 <- getByteString 16
     return
       StreamInfo
@@ -269,17 +270,17 @@ instance BinaryGet FlacTags where
   bget = do
     header <- bget
     expect (blockType header == 4) (printf "Unexpected block type %d; expected 4 (VORBIS_COMMENT)" $ blockType header)
-    FlacTags <$> get
+    FlacTags <$> bget
 
 data Picture = Picture
-  { pictureType :: Word32
-  , mimeType :: Text
-  , description :: Text
-  , width :: Word32
-  , height :: Word32
-  , depth :: Word32
-  , numColours :: Maybe Word32
-  , pictureData :: ByteString
+  { pictureType :: !Word32
+  , mimeType :: !Text
+  , description :: !Text
+  , width :: !Word32
+  , height :: !Word32
+  , depth :: !Word32
+  , numColours :: !(Maybe Word32)
+  , pictureData :: !ByteString
   } deriving (Show)
 
 numColors :: Picture -> Maybe Word32
