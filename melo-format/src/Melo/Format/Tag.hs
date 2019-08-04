@@ -1,9 +1,8 @@
 module Melo.Format.Tag where
 
 import           Control.Exception
-import           Control.Monad.Freer
-import           Control.Monad.Freer.TH
 import           Data.Text
+import           Polysemy
 import           System.IO
 
 import           Melo.Format.Detect
@@ -19,20 +18,23 @@ data TagEnv = TagEnv {
 , envtags :: Tags
 }
 
-data TagRead r where
-  ReadTags :: TagRead Tags
-  ReadTag :: TagMapping -> TagRead [Text]
-  ReadField :: FieldMappings -> TagRead [Text]
+data TagRead (m :: * -> *) a where
+  ReadTags :: TagRead m Tags
+  ReadTag :: TagMapping -> TagRead m [Text]
+  ReadField :: FieldMappings -> TagRead m [Text]
 
-makeEffect ''TagRead
+makeSem ''TagRead
 
-runTagReadPure :: TagEnv -> Eff '[TagRead] a -> a
+data TagWrite r where
+  WriteTags :: Tags -> TagWrite ()
+
+runTagReadPure :: TagEnv -> Sem '[TagRead] a -> a
 runTagReadPure env a = run $ runTagReadPureM env a
 
-runTagReadPureM :: TagEnv -> Eff (TagRead ': effs) ~> Eff effs
+runTagReadPureM :: TagEnv -> Sem (TagRead ': effs) a -> Sem effs a
 runTagReadPureM env = interpret $ interpretTagRead env
  where
-  interpretTagRead :: TagEnv -> TagRead ~> Eff effs
+  interpretTagRead :: TagEnv -> TagRead m a -> Sem effs a
   interpretTagRead me tr =
     let sel = fieldSel me
         ts  = envtags me
@@ -41,52 +43,52 @@ runTagReadPureM env = interpret $ interpretTagRead env
           ReadTag   t -> return $ getMappedTag sel t ts
           ReadField f -> return $ getTagByField ts (sel f)
 
-runTagReadFromPath :: Eff '[TagRead, IO] a -> FilePath -> IO a
+runTagReadFromPath :: Sem '[TagRead, Embed IO] a -> FilePath -> IO a
 runTagReadFromPath a p = do
   env <- runM $ readMetaEnvFromPath p
   runM $ runTagReadPureM env a
 
-readMetaEnvFromPath :: Member IO effs => FilePath -> Eff effs TagEnv
-readMetaEnvFromPath p = send (detect p) >>= \case
+readMetaEnvFromPath :: Member (Embed IO) effs => FilePath -> Sem effs TagEnv
+readMetaEnvFromPath p = embed (detect p) >>= \case
   Nothing            -> throw UnknownFormat
   Just (DetectedP d) -> do
     let fieldSel'      = getFieldSel d
     let hReadMetadata' = getHReadMetadata d
-    t <- send $ withBinaryFile p ReadMode $ \h -> do
+    t <- embed $ withBinaryFile p ReadMode $ \h -> do
       !t <- Tag.tags <$> hReadMetadata' h
       return t
     let env = TagEnv { fieldSel = fieldSel', envtags = t }
     return env
 
-hReadMetaEnv :: Member IO effs => Handle -> Eff effs TagEnv
-hReadMetaEnv h = send (hDetect h) >>= \case
+hReadMetaEnv :: Member (Embed IO) effs => Handle -> Sem effs TagEnv
+hReadMetaEnv h = embed (hDetect h) >>= \case
   Nothing            -> throw UnknownFormat
   Just (DetectedP d) -> do
     let fieldSel'      = getFieldSel d
     let hReadMetadata' = getHReadMetadata d
-    send $ hTell h >>= \p -> traceM $ "hReadMetaEnv h is at " ++ show p
-    !t <- Tag.tags <$> send (hReadMetadata' h)
-    send $ hTell h >>= \p -> traceM $ "hReadMetaEnv h is at " ++ show p
+    embed $ hTell h >>= \p -> traceM $ "hReadMetaEnv h is at " ++ show p
+    !t <- Tag.tags <$> embed (hReadMetadata' h)
+    embed $ hTell h >>= \p -> traceM $ "hReadMetaEnv h is at " ++ show p
 --    send $ hSeek h AbsoluteSeek 0
     let env = TagEnv { fieldSel = fieldSel', envtags = t }
     return env
 
 runTagReadM
   :: forall effs a
-   . LastMember IO effs
+   . LastMember (Embed IO) effs
   => FilePath
-  -> Eff (TagRead ': effs) a
-  -> Eff effs a
+  -> Sem (TagRead ': effs) a
+  -> Sem effs a
 runTagReadM p a = do
   env <- readMetaEnvFromPath p
   runTagReadPureM env a
 
 hRunTagReadM
   :: forall effs a
-   . LastMember IO effs
+   . LastMember (Embed IO) effs
   => Handle
-  -> Eff (TagRead ': effs) a
-  -> Eff effs a
+  -> Sem (TagRead ': effs) a
+  -> Sem effs a
 hRunTagReadM h a = do
   env <- hReadMetaEnv h
   runTagReadPureM env a

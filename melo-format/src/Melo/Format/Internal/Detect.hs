@@ -18,8 +18,8 @@ import           Melo.Format.Internal.Tag
 import           Melo.Format.Mapping
 
 class Detector a where
-  pathDetectFormat :: FilePath -> Maybe (DetectedP)
-  hDetectFormat :: Handle -> IO (Maybe (DetectedP))
+  pathDetectFormat :: FilePath -> Maybe DetectedP
+  hDetectFormat :: Handle -> IO (Maybe DetectedP)
 
 type MetadataReader a = (MetadataFormat a, InfoReader a, TagReader a)
 

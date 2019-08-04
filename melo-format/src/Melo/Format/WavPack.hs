@@ -16,6 +16,7 @@ import qualified Data.ByteString.Lazy          as L
 import           Data.List                                ( genericIndex )
 import           Data.Maybe
 import           Data.Word
+import           GHC.Records
 import           System.FilePath
 import           System.IO
 
@@ -50,13 +51,13 @@ instance TagReader WavPack where
 instance InfoReader WavPack where
   info wv = let wi = wavPackInfo wv in
     Info {
-      sampleRate = I.SampleRate $ fromIntegral $ fromMaybe 0 $ sampleRate (wi :: WavPackInfo)
-    , channels = case channels (wi :: WavPackInfo) of
+      sampleRate = I.SampleRate $ fromIntegral $ fromMaybe 0 $ getField @"sampleRate" wi
+    , channels = case getField @"channels" wi of
         Mono -> I.Mono
         Stereo -> I.Stereo
         JointStereo -> I.JointStereo
         MultiChannel _ -> I.MultiChannel I.ChannelMask
-    , totalSamples = fromIntegral <$> totalSamples (wi :: WavPackInfo)
+    , totalSamples = fromIntegral <$> getField @"totalSamples" wi
     , bitsPerSample = Just $ fromIntegral $ sampleSize wi
     }
 

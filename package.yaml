@@ -4,7 +4,7 @@ github:              "chrismanning/melo"
 license:             BSD3
 author:              "Chris Manning"
 maintainer:          "cmanning999@gmail.com"
-copyright:           "2018 Chris Manning"
+copyright:           "2019 Chris Manning"
 
 extra-source-files:
 - README.md
@@ -25,28 +25,78 @@ dependencies:
 library:
   source-dirs: src
   dependencies:
+  - melo-format
+  - aeson
+  - attoparsec
+  - beam-core
+  - beam-migrate
+  - beam-postgres
   - binary
   - binary-bits
   - bytestring
   - conduit
+  - containers
+  - country
   - data-default
+  - directory
   - filepath
-  - freer-simple
+  - generic-aeson
+  - generic-lens
+  - lens
+  - network-uri
+  - network-uri-json
+  - polysemy
+  - postgresql-simple
+  - resource-pool
+  - servant-server
+  - string-combinators
   - text
+  - text-icu
   - time
+  - uuid
+  - wai
+  - wai-extra
+  - warp
 
 executables:
   melo-import:
     source-dirs: app/import
     main: Main.hs
     dependencies:
-    - freer-simple
+    - melo
     - melo-format
     - optparse-applicative
     - text
     - time
 
-#tests:
+tests:
+  melo-test:
+    main:                Spec.hs
+    source-dirs:         test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - melo
+    - melo-format
+    - attoparsec
+    - base16-bytestring
+    - beam-core
+    - beam-migrate
+    - beam-postgres
+    - binary
+    - bytestring
+    - conduit
+    - generic-lens
+    - hspec
+    - hspec-expectations-lifted
+    - lens
+    - postgresql-simple
+    - raw-strings-qq
+    - temporary
+    - text
+    - vector
 
 ghc-options:
 - -Wall
@@ -63,6 +113,7 @@ default-extensions:
 - ConstraintKinds
 - DataKinds
 - DefaultSignatures
+- DeriveAnyClass
 - DeriveFoldable
 - DeriveFunctor
 - DeriveGeneric
@@ -89,6 +140,7 @@ default-extensions:
 - RecordWildCards
 - ScopedTypeVariables
 - StandaloneDeriving
+- TemplateHaskell
 - TupleSections
 - TypeApplications
 - TypeFamilies

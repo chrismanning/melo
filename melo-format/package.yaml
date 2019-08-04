@@ -4,7 +4,7 @@ github:              "chrismanning/melo"
 license:             BSD3
 author:              "Chris Manning"
 maintainer:          "cmanning999@gmail.com"
-copyright:           "2018 Chris Manning"
+copyright:           "2019 Chris Manning"
 
 extra-source-files:
 - README.md
@@ -28,9 +28,15 @@ library:
     - binary
     - binary-bits
     - bytestring
+    - containers
     - data-default
     - filepath
-    - freer-simple
+    - generic-lens
+    - linkedhashmap
+    - microlens
+    - polysemy
+    - polysemy-plugin
+    - polysemy-zoo
     - text
     - time
     - vector
@@ -40,9 +46,9 @@ executables:
     source-dirs: app/detect
     main: Main.hs
     dependencies:
-      - freer-simple
       - melo-format
       - optparse-applicative
+      - polysemy
       - text
       - time
 

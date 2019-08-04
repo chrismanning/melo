@@ -1,10 +1,10 @@
 module Main where
 
-import           Control.Monad.Freer
 import qualified Data.Text                     as T
 import qualified Data.Text.IO                  as T
 import           Data.Time.Format
 import           Options.Applicative
+import           Polysemy
 import           System.IO
 
 import           Melo.Format.Info                  hiding ( info )
@@ -29,10 +29,10 @@ main = detectAppM =<< execParser opts
     )
 
 detectAppM :: Opts -> IO ()
-detectAppM o = withBinaryFile (path o) ReadMode $ \h -> do
+detectAppM o = withBinaryFile (path o) ReadMode $ \h ->
   runM $ (hRunTagReadM h . hRunInfoReadM h) printTags
 
-printTags :: (Members '[IO, TagRead, InfoRead] effs) => Eff effs ()
+printTags :: (Members '[Embed IO, TagRead, InfoRead] effs) => Sem effs ()
 printTags = do
   putLine
   psl "Info"
@@ -60,6 +60,6 @@ printTags = do
   printTag "Album Artist" albumArtist
  where
   putLine = psl (T.replicate 20 "-")
-  psl     = send . T.putStrLn
+  psl     = embed . T.putStrLn
   printTag lbl m = formatTag lbl <$> readTag m >>= psl
   formatTag l t = l <> T.pack ": " <> T.intercalate (T.pack " / ") t

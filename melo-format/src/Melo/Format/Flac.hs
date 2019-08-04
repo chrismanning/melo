@@ -24,6 +24,7 @@ import           Data.ByteString
 import qualified Data.ByteString.Lazy          as L
 import           Data.Text as T
 import           Data.Vector
+import           GHC.Records
 import           System.FilePath
 import           System.IO
 import           Text.Printf
@@ -99,13 +100,13 @@ instance InfoReader Flac where
       getInfo :: FlacStream -> Info
       getInfo fs = let si = streamInfoBlock fs in
         Info {
-          sampleRate = SampleRate $ fromIntegral (sampleRate (si :: StreamInfo))
+          sampleRate = SampleRate $ fromIntegral (getField @"sampleRate" si)
           , bitsPerSample = pure $ fromIntegral $ bps si
-          , channels = case channels (si :: StreamInfo) of
+          , channels = case getField @"channels" si of
             1 -> Mono
             2 -> Stereo
             _ -> MultiChannel ChannelMask
-          , totalSamples = fromIntegral <$> samples (si :: StreamInfo)
+          , totalSamples = fromIntegral <$> getField @"samples" si
         }
 
 instance Detector Flac where

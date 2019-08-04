@@ -1,14 +1,14 @@
 module Melo.Format.Internal.Tag where
 
 import           Data.Text
+import           GHC.Generics
 
 import           Melo.Format.Internal.Format
 
 newtype Tags = Tags [(Text, Text)]
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
 
-class MetadataFormat a =>
-      TagReader a
+class MetadataFormat a => TagReader a
   where
   tags :: a -> Tags
 

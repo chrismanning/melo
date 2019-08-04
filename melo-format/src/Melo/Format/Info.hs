@@ -20,38 +20,37 @@ module Melo.Format.Info
 where
 
 import           Control.Exception
-import           Control.Monad.Freer
-import           Control.Monad.Freer.TH
 import           Data.Fixed
 import           Data.Functor
 import           Data.Time.Clock
+import           Polysemy
 import           System.IO
 
 import           Melo.Format.Detect
 import           Melo.Format.Internal.Info
 import           Melo.Format.Metadata
 
-data InfoRead a where
-  ReadInfo :: InfoRead Info
+data InfoRead (m :: * -> *) a where
+  ReadInfo :: InfoRead m Info
 
-makeEffect ''InfoRead
+makeSem ''InfoRead
 
-readSampleRate :: Member InfoRead effs => Eff effs SampleRate
+readSampleRate :: Member InfoRead effs => Sem effs SampleRate
 readSampleRate = sampleRate <$> readInfo
 
-readChannels :: Member InfoRead effs => Eff effs Channels
+readChannels :: Member InfoRead effs => Sem effs Channels
 readChannels = channels <$> readInfo
 
-readTotalSamples :: Member InfoRead effs => Eff effs (Maybe Integer)
+readTotalSamples :: Member InfoRead effs => Sem effs (Maybe Integer)
 readTotalSamples = totalSamples <$> readInfo
 
-readLengthMilliseconds :: Member InfoRead effs => Eff effs (Maybe Double)
+readLengthMilliseconds :: Member InfoRead effs => Sem effs (Maybe Double)
 readLengthMilliseconds = lengthMilliseconds <$> readInfo
 
-readAudioLength :: Member InfoRead effs => Eff effs (Maybe NominalDiffTime)
+readAudioLength :: Member InfoRead effs => Sem effs (Maybe NominalDiffTime)
 readAudioLength = audioLength <$> readInfo
 
-readBitsPerSample :: Member InfoRead effs => Eff effs (Maybe Int)
+readBitsPerSample :: Member InfoRead effs => Sem effs (Maybe Int)
 readBitsPerSample = bitsPerSample <$> readInfo
 
 samplesPerSecond :: SampleRate -> Integer
@@ -71,15 +70,15 @@ lengthMilliseconds i =
 
 hRunInfoReadM
   :: forall effs a
-   . LastMember IO effs
+   . LastMember (Embed IO) effs
   => Handle
-  -> Eff (InfoRead ': effs) a
-  -> Eff effs a
-hRunInfoReadM h a = send (hDetect h) >>= \case
+  -> Sem (InfoRead ': effs) a
+  -> Sem effs a
+hRunInfoReadM h a = embed (hDetect h) >>= \case
   Nothing            -> throw UnknownFormat
   Just (DetectedP d) -> do
     let hReadMetadata' = getHReadMetadata d
-    !i <- info <$> send (hReadMetadata' h)
+    !i <- info <$> embed (hReadMetadata' h)
     interpret
       (\case
         ReadInfo -> pure i
