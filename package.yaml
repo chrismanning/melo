@@ -28,6 +28,7 @@ library:
   - melo-format
   - aeson
   - attoparsec
+  - barbies
   - beam-core
   - beam-migrate
   - beam-postgres
@@ -35,17 +36,36 @@ library:
   - binary-bits
   - bytestring
   - conduit
+  - conduit-audio
+  - conduit-audio-lame
+  - conduit-audio-samplerate
+  - conduit-audio-sndfile
   - containers
   - country
+  - cue-sheet
   - data-default
   - directory
+  - directory-tree
+  - exceptions
   - filepath
   - generic-aeson
   - generic-lens
+  - graphql
+  - hashable
+  - hashtables
+  - hasql
+  - hasql-pool
+  - hasql-transaction
+  - haxl
+  - higgledy
   - lens
   - network-uri
   - network-uri-json
+  - path
+  - path-io
   - polysemy
+  - polysemy-plugin
+  - polysemy-zoo
   - postgresql-simple
   - resource-pool
   - servant-server
@@ -53,7 +73,9 @@ library:
   - text
   - text-icu
   - time
+  - transformers
   - uuid
+  - vector
   - wai
   - wai-extra
   - warp
@@ -80,6 +102,7 @@ tests:
     dependencies:
     - melo
     - melo-format
+    - aeson
     - attoparsec
     - base16-bytestring
     - beam-core
@@ -89,11 +112,15 @@ tests:
     - bytestring
     - conduit
     - generic-lens
+    - graphql
+    - haxl
     - hspec
     - hspec-expectations-lifted
     - lens
     - postgresql-simple
     - raw-strings-qq
+    - resource-pool
+    - template-haskell
     - temporary
     - text
     - vector
