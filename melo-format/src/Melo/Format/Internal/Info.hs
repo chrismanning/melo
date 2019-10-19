@@ -1,13 +1,15 @@
 module Melo.Format.Internal.Info where
 
-import           GHC.Generics
+import GHC.Generics
 
-data Info = Info {
-  sampleRate :: !SampleRate
-, channels :: !Channels
-, totalSamples :: !(Maybe Integer)
-, bitsPerSample :: !(Maybe Int)
-} deriving (Show, Eq, Generic)
+data Info
+  = Info
+      { sampleRate :: !SampleRate,
+        channels :: !Channels,
+        totalSamples :: !(Maybe Integer),
+        bitsPerSample :: !(Maybe Int)
+      }
+  deriving (Show, Eq, Generic)
 
 class InfoReader a where
   info :: a -> Info

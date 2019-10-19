@@ -1,27 +1,25 @@
 module Melo.Format.OggVorbis
-  ( OggVorbis(..)
-  , hReadOggVorbis
+  ( OggVorbis (..),
+    hReadOggVorbis,
   )
 where
 
-import           Data.Binary.Get
-import           System.IO
-
-import           Melo.Format.Ogg
-import           Melo.Format.Vorbis            as V
-import           Melo.Format.Mapping           as M
-                                                          ( FieldMappings
-                                                            ( vorbis
-                                                            )
-                                                          )
-
-import           Melo.Format.Format
-import           Melo.Format.Internal.Binary
-import           Melo.Format.Internal.BinaryUtil
-import           Melo.Format.Internal.Detect
-import           Melo.Format.Internal.Info
-import           Melo.Format.Internal.Locate
-import           Melo.Format.Internal.Tag
+import Data.Binary.Get
+import Melo.Format.Format
+import Melo.Format.Internal.Binary
+import Melo.Format.Internal.BinaryUtil
+import Melo.Format.Internal.Detect
+import Melo.Format.Internal.Info
+import Melo.Format.Internal.Locate
+import Melo.Format.Internal.Tag
+import Melo.Format.Mapping as M
+  ( FieldMappings
+      ( vorbis
+      ),
+  )
+import Melo.Format.Ogg
+import Melo.Format.Vorbis as V
+import System.IO
 
 data OggVorbis = OggVorbis !Identification !FramedVorbisComments
   deriving (Eq, Show)
@@ -41,19 +39,21 @@ instance TagReader OggVorbis where
   tags (OggVorbis _ (FramedVorbisComments vc)) = getVorbisTags vc
 
 instance InfoReader OggVorbis where
-  info (OggVorbis ident _) = Info {
-    sampleRate = SampleRate $ fromIntegral $ V.sampleRate ident
-  , channels = case V.channels ident of
-      1 -> Mono
-      2 -> Stereo
-      _ -> MultiChannel ChannelMask
-  , totalSamples = Nothing -- TODO ogg vorbis total samples
-  , bitsPerSample = Nothing
-  }
+  info (OggVorbis ident _) = Info
+    { sampleRate = SampleRate $ fromIntegral $ V.sampleRate ident,
+      channels = case V.channels ident of
+        1 -> Mono
+        2 -> Stereo
+        _ -> MultiChannel ChannelMask,
+      totalSamples = Nothing, -- TODO ogg vorbis total samples
+      bitsPerSample = Nothing
+    }
 
 instance Detector OggVorbis where
+
   -- file extension is not enough to identify vorbis inside ogg
   pathDetectFormat _ = Nothing
+
   hDetectFormat h = do
     hSeek h AbsoluteSeek 0
     buf <- hGetFileContents h

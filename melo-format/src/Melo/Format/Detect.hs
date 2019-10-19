@@ -1,24 +1,23 @@
 module Melo.Format.Detect
-  ( DetectedP(..)
-  , Detected(..)
-  , Detector(..)
-  , detectPath
-  , hDetect
-  , detect
-  , withDetected
-  , SupportedFormats
+  ( DetectedP (..),
+    Detected (..),
+    Detector (..),
+    detectPath,
+    hDetect,
+    detect,
+    withDetected,
+    SupportedFormats,
   )
 where
 
-import           Control.Applicative
-import           Data.Proxy
-import           System.IO
-
-import           Melo.Format.Flac                         ( Flac )
-import           Melo.Format.OggVorbis                    ( OggVorbis )
-import           Melo.Format.WavPack                      ( WavPack )
-import           Melo.Format.Internal.Detect
-import           Melo.Format.Internal.Tag
+import Control.Applicative
+import Data.Proxy
+import Melo.Format.Flac (Flac)
+import Melo.Format.Internal.Detect
+import Melo.Format.Internal.Tag
+import Melo.Format.OggVorbis (OggVorbis)
+import Melo.Format.WavPack (WavPack)
+import System.IO
 
 type SupportedFormats = '[Flac, WavPack, OggVorbis]
 
@@ -54,5 +53,5 @@ detect p = case detectPath p of
   Just dp -> return $ Just dp
   Nothing -> withBinaryFile p ReadMode hDetect
 
-withDetected :: DetectedP -> (forall a . TagReader a => Detected a -> r) -> r
+withDetected :: DetectedP -> (forall a. TagReader a => Detected a -> r) -> r
 withDetected (DetectedP d) f = f d

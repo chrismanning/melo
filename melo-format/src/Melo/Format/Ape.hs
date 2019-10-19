@@ -1,45 +1,45 @@
 module Melo.Format.Ape
-  ( APE(..)
-  , Header(..)
-  , Flags(..)
-  , Version(..)
-  , headerSize
-  , preamble
-  , getHeader
-  , mkTextTagItem
-  , pattern TextTagItem
+  ( APE (..),
+    Header (..),
+    Flags (..),
+    Version (..),
+    headerSize,
+    preamble,
+    getHeader,
+    mkTextTagItem,
+    pattern TextTagItem,
   )
 where
 
-import           Control.Monad
-import           Data.Binary
-import           Data.Binary.Bits
-import qualified Data.Binary.Bits.Get          as BG
-import qualified Data.Binary.Bits.Put          as BP
-import           Data.Binary.Get
-import           Data.Binary.Put
-import qualified Data.ByteString               as BS
-import qualified Data.ByteString.Char8         as BC
-import qualified Data.ByteString.Lazy          as L
-import           Data.Int
-import           Data.Text                                ( Text )
-import           Data.Text.Encoding
-import           Data.Vector                              ( Vector )
-import qualified Data.Vector                   as V
-import           System.IO
+import Control.Monad
+import Data.Binary
+import Data.Binary.Bits
+import qualified Data.Binary.Bits.Get as BG
+import qualified Data.Binary.Bits.Put as BP
+import Data.Binary.Get
+import Data.Binary.Put
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BC
+import qualified Data.ByteString.Lazy as L
+import Data.Int
+import Data.Text (Text)
+import Data.Text.Encoding
+import Data.Vector (Vector)
+import qualified Data.Vector as V
+import Melo.Format.Internal.BinaryUtil
+import Melo.Format.Internal.Encoding
+import Melo.Format.Internal.Format
+import Melo.Format.Internal.Locate
+import Melo.Format.Internal.Tag
+import System.IO
+import Prelude as P
 
-import           Prelude                       as P
-
-import           Melo.Format.Internal.BinaryUtil
-import           Melo.Format.Internal.Encoding
-import           Melo.Format.Internal.Format
-import           Melo.Format.Internal.Locate
-import           Melo.Format.Internal.Tag
-
-data APE = APE
-  { version :: !Version
-  , items :: !(Vector TagItem)
-  } deriving (Show, Eq)
+data APE
+  = APE
+      { version :: !Version,
+        items :: !(Vector TagItem)
+      }
+  deriving (Show, Eq)
 
 headerSize :: Integral a => a
 headerSize = 32
@@ -48,10 +48,13 @@ preamble :: BS.ByteString
 preamble = "APETAGEX"
 
 instance MetadataFormat APE where
+
   formatDesc = "APE"
+
   formatDesc' ape = show $ version ape
 
 instance MetadataLocator APE where
+
   locate bs =
     case locateBinaryLazy @Header bs of
       Nothing -> Nothing
@@ -61,10 +64,12 @@ instance MetadataLocator APE where
           if isHeader (flags header)
             then i
             else i - fromIntegral (numBytes header) + headerSize
+
   hLocate h = do
     hs <-
-      do hSeek h SeekFromEnd 0
-         hTell h
+      do
+        hSeek h SeekFromEnd 0
+        hTell h
     let n = hs - fromIntegral (min (headerSize * 10) hs)
     hSeek h AbsoluteSeek n
     buf <- BS.hGet h (fromIntegral $ hs - n)
@@ -75,10 +80,11 @@ instance TagReader APE where
 
 getTextItem :: TagItem -> Vector (Text, Text)
 getTextItem t = case t of
-  TagItem k (TagItemValue (TextTag vs)) -> fmap (k, ) vs
+  TagItem k (TagItemValue (TextTag vs)) -> fmap (k,) vs
   _ -> V.empty
 
 instance Binary APE where
+
   put a = do
     let bs = runPut $ V.forM_ (items a) put
     case version a of
@@ -86,6 +92,7 @@ instance Binary APE where
       _ -> return ()
     putLazyByteString bs
     put $ mkFooter a $ fromIntegral . L.length $ bs
+
   get = do
     i <-
       findHeader >>= \case
@@ -103,28 +110,32 @@ instance Binary APE where
         return items
     return $ APE {items, version = headerVersion header}
 
-data Header = Header
-  { headerVersion :: !Version
-  , numBytes :: !Word32
-  , numItems :: !Word32
-  , flags :: !Flags
-  } deriving (Show, Eq)
+data Header
+  = Header
+      { headerVersion :: !Version,
+        numBytes :: !Word32,
+        numItems :: !Word32,
+        flags :: !Flags
+      }
+  deriving (Show, Eq)
 
 type Footer = Header
 
 instance Binary Header where
+
   put = putHeader
+
   get = getHeader
 
 findHeader :: Get (Maybe Int)
 findHeader = lookAhead $ findByChunk 1024 0
- where
-  findByChunk :: Int -> Int -> Get (Maybe Int)
-  findByChunk c i = do
-    bs <- mfilter (not . L.null) $ getLazyByteStringUpTo c
-    case locateBinaryLazy @Header bs of
-      Nothing -> findByChunk c (i + (c `div` 2))
-      Just x  -> return $ Just (x + i)
+  where
+    findByChunk :: Int -> Int -> Get (Maybe Int)
+    findByChunk c i = do
+      bs <- mfilter (not . L.null) $ getLazyByteStringUpTo c
+      case locateBinaryLazy @Header bs of
+        Nothing -> findByChunk c (i + (c `div` 2))
+        Just x -> return $ Just (x + i)
 
 mkHeader :: APE -> Word32 -> Header
 mkHeader a n = mkHeader_ a n $ Flags True False True TextItemType False
@@ -134,10 +145,10 @@ mkFooter a n = mkHeader_ a n $ Flags True False False TextItemType False
 
 mkHeader_ :: APE -> Word32 -> Flags -> Header
 mkHeader_ a n f = Header
-  { headerVersion = version a
-  , numBytes      = n + headerSize
-  , numItems      = fromIntegral (P.length $ items a)
-  , flags         = f
+  { headerVersion = version a,
+    numBytes = n + headerSize,
+    numItems = fromIntegral (P.length $ items a),
+    flags = f
   }
 
 putHeader :: Header -> Put
@@ -151,9 +162,10 @@ putHeader h = do
 
 getHeader :: Get Header
 getHeader = do
-  expectGetEq (getByteString (BS.length preamble))
-              preamble
-              "Invalid APE preamble"
+  expectGetEq
+    (getByteString (BS.length preamble))
+    preamble
+    "Invalid APE preamble"
   h <- Header <$> getVersion <*> getWord32le <*> getWord32le <*> getFlags
   skip 8
   return h
@@ -164,27 +176,32 @@ data Version
   deriving (Show, Eq)
 
 instance Binary Version where
+
   put v =
     case v of
       APEv1 -> putWord32le 1000
       APEv2 -> putWord32le 2000
+
   get = getVersion
 
 getVersion :: Get Version
 getVersion = getWord32le >>= \case
   1000 -> return APEv1
   2000 -> return APEv2
-  x    -> fail $ "Invalid APE tag version " <> show x
+  x -> fail $ "Invalid APE tag version " <> show x
 
-data Flags = Flags
-  { hasHeader :: !Bool
-  , hasFooter :: !Bool
-  , isHeader :: !Bool
-  , itemType :: !TagItemType
-  , readOnly :: !Bool
-  } deriving (Show, Eq)
+data Flags
+  = Flags
+      { hasHeader :: !Bool,
+        hasFooter :: !Bool,
+        isHeader :: !Bool,
+        itemType :: !TagItemType,
+        readOnly :: !Bool
+      }
+  deriving (Show, Eq)
 
 instance Binary Flags where
+
   put f =
     BP.runBitPut $ do
       BP.putWord8 5 0
@@ -195,6 +212,7 @@ instance Binary Flags where
       BP.putBool $ hasFooter f
       BP.putBool $ isHeader f
       BP.putWord8 5 0
+
   get = getFlags
 
 getFlags :: Get Flags
@@ -204,7 +222,7 @@ getFlags = do
   skip 2
   (hasHeader, hasFooter, isHeader) <-
     BG.runBitGet $ (,,) <$> BG.getBool <*> BG.getBool <*> BG.getBool
-  return Flags { hasHeader , hasFooter , isHeader , itemType , readOnly }
+  return Flags {hasHeader, hasFooter, isHeader, itemType, readOnly}
 
 data TagItemType
   = TextItemType
@@ -214,25 +232,32 @@ data TagItemType
   deriving (Show, Eq, Enum)
 
 instance BinaryBit TagItemType where
+
   putBits 2 t = BP.putWord8 2 (fromIntegral . fromEnum $ t)
   putBits _ _ = fail "Invalid tag item type size"
+
   getBits 2 = toEnum . fromIntegral <$> BG.getWord8 2
   getBits _ = fail "Invalid tag item type size"
 
-data TagItem =
-  TagItem !Text
-          !TagItemValue
+data TagItem
+  = TagItem
+      !Text
+      !TagItemValue
   deriving (Show, Eq)
 
 mkTextTagItem :: Text -> Text -> TagItem
 mkTextTagItem k v = TagItem k (TagItemValue (TextTag (V.singleton v)))
 
-pattern TextTagItem :: forall (a :: TagItemType) b.
-                              (a ~ 'TextItemType, b ~ Vector Text) =>
-                              Text -> Vector Text -> TagItem
+pattern TextTagItem ::
+  forall (a :: TagItemType) b.
+  (a ~ 'TextItemType, b ~ Vector Text) =>
+  Text ->
+  Vector Text ->
+  TagItem
 pattern TextTagItem k vs = TagItem k (TagItemValue (TextTag vs))
 
 instance Binary TagItem where
+
   put (TagItem key val) = do
     let bs = runPut $ putTagItemValue val
     putWord32le $ fromIntegral . L.length $ bs
@@ -240,14 +265,15 @@ instance Binary TagItem where
     putByteString $ encodeUtf8 key
     putByteString "\0"
     putLazyByteString bs
+
   get = getTagItem
 
 getTagItem :: Get TagItem
 getTagItem = do
   valueSize <- fromIntegral <$> getWord32le
   itemFlags <- get :: Get Flags
-  key       <- getNullTerminatedAscii
-  val       <- getTagItemValue (itemType itemFlags) valueSize
+  key <- getNullTerminatedAscii
+  val <- getTagItemValue (itemType itemFlags) valueSize
   return $ TagItem key val
 
 data TagItemValue where
@@ -265,12 +291,12 @@ instance Eq TagItemValue where
 
 mkItemFlags :: TagItemValue -> Flags
 mkItemFlags (TagItemValue v) = Flags False False False t False
- where
-  t = case v of
-    TextTag            _ -> TextItemType
-    BinaryTag          _ -> BinaryItemType
-    ExternalLocatorTag _ -> ExternalLocatorItemType
-    ReservedTag        _ -> ReservedItemType
+  where
+    t = case v of
+      TextTag _ -> TextItemType
+      BinaryTag _ -> BinaryItemType
+      ExternalLocatorTag _ -> ExternalLocatorItemType
+      ReservedTag _ -> ReservedItemType
 
 data TagValue a b where
   TextTag :: !(Vector Text) -> TagValue 'TextItemType (Vector Text)
@@ -284,7 +310,7 @@ deriving instance Eq b => Eq (TagValue a b)
 
 getTagItemValue :: TagItemType -> Int -> Get TagItemValue
 getTagItemValue t n = case t of
-  TextItemType   -> TagItemValue . TextTag <$> getValueList n
+  TextItemType -> TagItemValue . TextTag <$> getValueList n
   BinaryItemType -> TagItemValue . BinaryTag <$> getByteString n
   ExternalLocatorItemType ->
     TagItemValue . ExternalLocatorTag <$> getValueList n
@@ -298,10 +324,10 @@ getValueList n = do
 
 putTagItemValue :: TagItemValue -> Put
 putTagItemValue (TagItemValue t) = case t of
-  TextTag            vals -> putValueList vals
-  BinaryTag          val  -> putByteString val
+  TextTag vals -> putValueList vals
+  BinaryTag val -> putByteString val
   ExternalLocatorTag vals -> putValueList vals
-  ReservedTag        val  -> putByteString val
+  ReservedTag val -> putByteString val
 
 putValueList :: Vector Text -> Put
 putValueList vals =

@@ -1,88 +1,97 @@
 module Melo.Format.WavPack
-  ( WavPack(..)
-  , WavPackInfo(..)
-  , WavPackTags(..)
-  , AudioType(..)
-  , Channels(..)
-  , ChannelMask(..)
-  , hReadWavPack
+  ( WavPack (..),
+    WavPackInfo (..),
+    WavPackTags (..),
+    AudioType (..),
+    Channels (..),
+    ChannelMask (..),
+    hReadWavPack,
   )
 where
 
-import           Data.Binary.Get
-import           Data.Bits
-import qualified Data.ByteString               as BS
-import qualified Data.ByteString.Lazy          as L
-import           Data.List                                ( genericIndex )
-import           Data.Maybe
-import           Data.Word
-import           GHC.Records
-import           System.FilePath
-import           System.IO
+import Data.Binary.Get
+import Data.Bits
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as L
+import Data.List (genericIndex)
+import Data.Maybe
+import Data.Word
+import GHC.Records
+import qualified Melo.Format.Ape as Ape
+import Melo.Format.Format
+import qualified Melo.Format.ID3 as ID3
+import qualified Melo.Format.ID3.ID3v1 as ID3
+import Melo.Format.Internal.Binary
+import Melo.Format.Internal.BinaryUtil
+import Melo.Format.Internal.Detect
+import qualified Melo.Format.Internal.Info as I
+import Melo.Format.Internal.Info
+  ( Info (..),
+    InfoReader (..),
+  )
+import Melo.Format.Internal.Locate
+import Melo.Format.Internal.Tag
+import Melo.Format.Mapping as M
+  ( FieldMappings (ape),
+  )
+import System.FilePath
+import System.IO
 
-import           Melo.Format.Format
-import qualified Melo.Format.Ape               as Ape
-import qualified Melo.Format.ID3               as ID3
-import qualified Melo.Format.ID3.ID3v1         as ID3
-import           Melo.Format.Internal.Binary
-import           Melo.Format.Internal.BinaryUtil
-import           Melo.Format.Internal.Detect
-import qualified Melo.Format.Internal.Info     as I
-import           Melo.Format.Internal.Info                ( InfoReader(..)
-                                                          , Info(..)
-                                                          )
-import           Melo.Format.Internal.Locate
-import           Melo.Format.Internal.Tag
-import           Melo.Format.Mapping           as M
-                                                          ( FieldMappings(ape) )
-
-data WavPack = WavPack
-  { wavPackInfo :: !WavPackInfo
-  , wavPackTags :: !WavPackTags
-  } deriving (Show)
+data WavPack
+  = WavPack
+      { wavPackInfo :: !WavPackInfo,
+        wavPackTags :: !WavPackTags
+      }
+  deriving (Show)
 
 instance MetadataFormat WavPack where
+
   formatDesc = "WavPack"
+
   formatDesc' wv = "WavPack with " ++ formatDesc' (wavPackTags wv)
 
 instance TagReader WavPack where
   tags wv = tags $ wavPackTags wv
 
 instance InfoReader WavPack where
-  info wv = let wi = wavPackInfo wv in
-    Info {
-      sampleRate = I.SampleRate $ fromIntegral $ fromMaybe 0 $ getField @"sampleRate" wi
-    , channels = case getField @"channels" wi of
-        Mono -> I.Mono
-        Stereo -> I.Stereo
-        JointStereo -> I.JointStereo
-        MultiChannel _ -> I.MultiChannel I.ChannelMask
-    , totalSamples = fromIntegral <$> getField @"totalSamples" wi
-    , bitsPerSample = Just $ fromIntegral $ sampleSize wi
-    }
+  info wv =
+    let wi = wavPackInfo wv
+     in Info
+          { sampleRate = I.SampleRate $ fromIntegral $ fromMaybe 0 $ getField @"sampleRate" wi,
+            channels = case getField @"channels" wi of
+              Mono -> I.Mono
+              Stereo -> I.Stereo
+              JointStereo -> I.JointStereo
+              MultiChannel _ -> I.MultiChannel I.ChannelMask,
+            totalSamples = fromIntegral <$> getField @"totalSamples" wi,
+            bitsPerSample = Just $ fromIntegral $ sampleSize wi
+          }
 
 instance Detector WavPack where
+
   pathDetectFormat p
     | takeExtension p == ".wv" = Just detector
     | otherwise = Nothing
+
   hDetectFormat h = do
     hSeek h AbsoluteSeek 0
     buf <- BS.hGet h 4
-    if buf == ckId then
-      return $ Just detector
-    else
-      return Nothing
+    if buf == ckId
+      then return $ Just detector
+      else return Nothing
 
 detector :: DetectedP
 detector = mkDetected hReadWavPack M.ape
 
-data WavPackInfo = WavPackInfo
-  { totalSamples :: !(Maybe Word64)
-  , sampleSize :: !Word8
-  , channels :: !Channels
-  , sampleRate :: !(Maybe Word32)
-  , audioType :: !AudioType
-  } deriving (Show, Eq)
+data WavPackInfo
+  = WavPackInfo
+      { totalSamples :: !(Maybe Word64),
+        sampleSize :: !Word8,
+        channels :: !Channels,
+        sampleRate :: !(Maybe Word32),
+        audioType :: !AudioType
+      }
+  deriving (Show, Eq)
 
 instance MetadataFormat WavPackInfo where
   formatDesc = "WavPack metadata block"
@@ -112,55 +121,57 @@ instance BinaryGet WavPackInfo where
             else Nothing
     return $
       WavPackInfo
-        { totalSamples
-        , sampleSize = getSampleSize flags
-        , channels = getChannels flags
-        , sampleRate = getSampleRate flags
-        , audioType = getAudioType flags
+        { totalSamples,
+          sampleSize = getSampleSize flags,
+          channels = getChannels flags,
+          sampleRate = getSampleRate flags,
+          audioType = getAudioType flags
         }
 
 forty :: Word8 -> Word32 -> Word64
 forty u8 l32 =
   let l32' :: Word64 = fromIntegral l32
-      u8' :: Word64  = fromIntegral u8
-  in  u8' `shiftL` 32 .|. l32'
+      u8' :: Word64 = fromIntegral u8
+   in u8' `shiftL` 32 .|. l32'
 
 getSampleSize :: Word32 -> Word8
 getSampleSize flags = fromIntegral $ 8 + (8 * (flags .&. 0b11))
 
 getChannels :: Word32 -> Channels
-getChannels flags | testBit flags 2 = Mono
-                  | otherwise       = Stereo
+getChannels flags
+  | testBit flags 2 = Mono
+  | otherwise = Stereo
 
 sampleRates :: [Word32]
 sampleRates =
-  [ 6000
-  , 8000
-  , 9600
-  , 11025
-  , 12000
-  , 16000
-  , 22050
-  , 24000
-  , 32000
-  , 44100
-  , 48000
-  , 64000
-  , 88200
-  , 96000
-  , 192000
+  [ 6000,
+    8000,
+    9600,
+    11025,
+    12000,
+    16000,
+    22050,
+    24000,
+    32000,
+    44100,
+    48000,
+    64000,
+    88200,
+    96000,
+    192000
   ]
 
 getSampleRate :: Word32 -> Maybe Word32
 getSampleRate flags =
   let rateIdx = (flags `shiftR` 23) .&. 0b1111
-  in  if rateIdx /= 0b1111
+   in if rateIdx /= 0b1111
         then Just $ sampleRates `genericIndex` rateIdx
         else Nothing
 
 getAudioType :: Word32 -> AudioType
-getAudioType flags | testBit flags 31 = DSD
-                   | otherwise        = PCM
+getAudioType flags
+  | testBit flags 31 = DSD
+  | otherwise = PCM
 
 ckId :: BS.ByteString
 ckId = "wvpk"
@@ -177,10 +188,11 @@ data Channels
   | MultiChannel !ChannelMask
   deriving (Show, Eq)
 
-data ChannelMask =
-  ChannelMask
+data ChannelMask
+  = ChannelMask
 
 deriving instance Show ChannelMask
+
 deriving instance Eq ChannelMask
 
 data WavPackTags
@@ -199,12 +211,15 @@ instance BinaryGet WavPackTags where
         isEmpty >>= \case
           True -> return $ JustAPE ape
           False -> Both ape <$> bget
-      else if BS.isPrefixOf ID3.iD3v1Id what
-             then JustID3v1 <$> bget
-             else return NoTags
+      else
+        if BS.isPrefixOf ID3.iD3v1Id what
+          then JustID3v1 <$> bget
+          else return NoTags
 
 instance MetadataFormat WavPackTags where
+
   formatDesc = "APEv2 and/or ID3v1"
+
   formatDesc' NoTags = "empty tags"
   formatDesc' (JustAPE _) = "APEv2"
   formatDesc' (JustID3v1 _) = "ID3v1"
@@ -236,15 +251,16 @@ instance TagReader WavPackTags where
 
 findApe :: Handle -> IO (Maybe Int)
 findApe h = do
-  footerpos <- findAt h (-Ape.headerSize) Ape.preamble
+  footerpos <- findAt h (- Ape.headerSize) Ape.preamble
   case footerpos of
     Just n -> do
       hSeek h AbsoluteSeek $ fromIntegral n
       bs <- BS.hGet h Ape.headerSize
       let footer = runGet Ape.getHeader (L.fromStrict bs)
-      return $ Just $ if Ape.isHeader (Ape.flags footer)
-        then n
-        else n - fromIntegral (Ape.numBytes footer)
+      return $ Just $
+        if Ape.isHeader (Ape.flags footer)
+          then n
+          else n - fromIntegral (Ape.numBytes footer)
     Nothing -> return Nothing
 
 findID3 :: Handle -> IO (Maybe Int)
@@ -254,7 +270,7 @@ findAt :: Handle -> Integer -> BS.ByteString -> IO (Maybe Int)
 findAt h p s = do
   hSeek h RelativeSeek p
   pos <- hTell h
-  s'  <- BS.hGet h (BS.length s)
+  s' <- BS.hGet h (BS.length s)
   if s' == s then return $ fromIntegral <$> Just pos else return Nothing
 
 hReadWavPack :: Handle -> IO WavPack

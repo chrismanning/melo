@@ -1,27 +1,27 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Format.Internal.Binary
-  ( BinaryGet(..)
-  , bdecode
-  , bdecodeOrFail
-  , bdecodeFile
-  , bdecodeFileOrFail
-  , bdecodeOrThrowIO
+  ( BinaryGet (..),
+    bdecode,
+    bdecodeOrFail,
+    bdecodeFile,
+    bdecodeFileOrFail,
+    bdecodeOrThrowIO,
   )
 where
 
-import qualified Data.Binary                   as Bin
-import qualified Data.Binary.Get               as Bin
-import           Data.Binary.Get                          ( Decoder(..) )
-import qualified Data.ByteString               as B
-import qualified Data.ByteString.Lazy          as L
+import Control.Exception.Base
+import qualified Data.Binary as Bin
+import qualified Data.Binary.Get as Bin
+import Data.Binary.Get (Decoder (..))
+import qualified Data.ByteString as B
+import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString.Lazy.Internal as L
-                                                          ( defaultChunkSize )
-import qualified Data.Text                     as T
-import           Control.Exception.Base
-import           System.IO
-
-import           Melo.Format.Metadata
+  ( defaultChunkSize,
+  )
+import qualified Data.Text as T
+import Melo.Format.Metadata
+import System.IO
 
 class BinaryGet a where
   bget :: Bin.Get a
@@ -37,7 +37,7 @@ bdecodeFile f = do
   result <- bdecodeFileOrFail f
   case result of
     Right x -> return x
-    Left (_,str) -> error str
+    Left (_, str) -> error str
 
 bdecodeFileOrFail :: BinaryGet a => FilePath -> IO (Either (Bin.ByteOffset, String) a)
 bdecodeFileOrFail f =
@@ -53,8 +53,8 @@ bdecodeFileOrFail f =
 
 bdecodeOrThrowIO :: BinaryGet a => L.ByteString -> IO a
 bdecodeOrThrowIO buf = case Bin.runGetOrFail bget buf of
-  Left (_,_, s) -> throwIO $ MetadataReadError (T.pack s)
-  Right (_,_, a) -> pure a
+  Left (_, _, s) -> throwIO $ MetadataReadError (T.pack s)
+  Right (_, _, a) -> pure a
 
 instance {-# OVERLAPPABLE #-} Bin.Binary a => BinaryGet a where
   bget = Bin.get

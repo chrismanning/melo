@@ -43,19 +43,19 @@ libraryDb =
       { album_artist_alias =
           modifyTableFields
             ( tableModification
-                & (setField@"album_id" (AlbumKey $ fieldNamed "album_id"))
-                . (setField@"artist_alias_id" (ArtistAliasKey $ fieldNamed "artist_alias_id"))
+                & (setField @"album_id" (AlbumKey $ fieldNamed "album_id"))
+                . (setField @"artist_alias_id" (ArtistAliasKey $ fieldNamed "artist_alias_id"))
             ),
         track =
           modifyTableFields
             ( tableModification
-                & (setField@"album_id" (AlbumKey $ fieldNamed "album_id"))
+                & (setField @"album_id" (AlbumKey $ fieldNamed "album_id"))
             ),
         track_genre =
           modifyTableFields
             ( tableModification
-                & (setField@"track_id" (TrackKey $ fieldNamed "track_id"))
-                . (setField@"genre_id" (GenreKey $ fieldNamed "genre_id"))
+                & (setField @"track_id" (TrackKey $ fieldNamed "track_id"))
+                . (setField @"genre_id" (GenreKey $ fieldNamed "genre_id"))
             )
       }
 

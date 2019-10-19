@@ -13,7 +13,7 @@ import Data.Traversable
 import Data.Typeable
 import Database.Beam hiding (C)
 import Database.Beam.Postgres
-import GHC.Generics as G hiding (to)
+import GHC.Generics (Generic)
 import GHC.OverloadedLabels ()
 import Haxl.Core
 import Language.GraphQL.AST.Core hiding (Query)

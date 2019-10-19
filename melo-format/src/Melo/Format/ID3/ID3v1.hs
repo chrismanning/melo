@@ -1,60 +1,63 @@
 module Melo.Format.ID3.ID3v1
-  ( ID3v1(..)
-  , iD3v1Id
-  , hReplaceID3v1
-  , hRemoveID3v1
+  ( ID3v1 (..),
+    iD3v1Id,
+    hReplaceID3v1,
+    hRemoveID3v1,
   )
 where
 
-import           Control.Monad
-import           Control.Monad.Fail            as F
-import           Data.Binary
-import           Data.Binary.Get
-import           Data.Binary.Put
-import qualified Data.ByteString.Char8         as C8
-import qualified Data.ByteString               as BS
-import qualified Data.ByteString.Lazy          as L
-import           Data.Char
-import           Data.Functor
-import           Data.List                                ( genericIndex
-                                                          , genericLength
-                                                          , elemIndex
-                                                          )
-import           Data.Maybe
-import           Data.Text                     as T
-import           Data.Text.Encoding
-import           GHC.Generics
-import           System.IO
-import           Text.Read
+import Control.Monad
+import Control.Monad.Fail as F
+import Data.Binary
+import Data.Binary.Get
+import Data.Binary.Put
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as C8
+import qualified Data.ByteString.Lazy as L
+import Data.Char
+import Data.Functor
+import Data.List
+  ( elemIndex,
+    genericIndex,
+    genericLength,
+  )
+import Data.Maybe
+import Data.Text as T
+import Data.Text.Encoding
+import GHC.Generics
+import Melo.Format.ID3.ID3v1Genre
+import Melo.Format.Internal.BinaryUtil
+import Melo.Format.Internal.Format
+import Melo.Format.Internal.Locate
+import Melo.Format.Internal.Tag
+import Melo.Format.Mapping
+  ( FieldMapping
+      ( toCanonicalForm
+      ),
+    FieldMappings (id3v1),
+    albumTitleTag,
+    commentTag,
+    genreTag,
+    headTagMapping,
+    trackArtistTag,
+    trackNumberTag,
+    trackTitleTag,
+    yearTag,
+  )
+import System.IO
+import Text.Read
 
-import           Melo.Format.ID3.ID3v1Genre
-import           Melo.Format.Internal.BinaryUtil
-import           Melo.Format.Internal.Format
-import           Melo.Format.Internal.Locate
-import           Melo.Format.Internal.Tag
-import           Melo.Format.Mapping                      ( trackTitleTag
-                                                          , trackArtistTag
-                                                          , albumTitleTag
-                                                          , yearTag
-                                                          , commentTag
-                                                          , trackNumberTag
-                                                          , genreTag
-                                                          , FieldMappings(id3v1)
-                                                          , headTagMapping
-                                                          , FieldMapping
-                                                            ( toCanonicalForm
-                                                            )
-                                                          )
-
-data ID3v1 = ID3v1
-  { title   :: !Text
-  , artist  :: !Text
-  , album   :: !Text
-  , year    :: !Text
-  , comment :: !Text
-  , track   :: !(Maybe Word8)
-  , genre   :: !Text
-  } deriving (Show, Eq, Generic)
+data ID3v1
+  = ID3v1
+      { title :: !Text,
+        artist :: !Text,
+        album :: !Text,
+        year :: !Text,
+        comment :: !Text,
+        track :: !(Maybe Word8),
+        genre :: !Text
+      }
+  deriving (Show, Eq, Generic)
 
 instance MetadataFormat ID3v1 where
   formatDesc = "ID3v1"
@@ -69,67 +72,77 @@ instance MetadataLocator ID3v1 where
       _ -> Nothing
 
 instance TagReader ID3v1 where
-  tags id3 = Tags $ catMaybes [
-      tag trackTitleTag title
-    , tag trackArtistTag artist
-    , tag albumTitleTag album
-    , tag yearTag year
-    , tag commentTag comment
-    , do
-        fm <- headTagMapping trackNumberTag
-        track' <- track id3
-        pure (toCanonicalForm $ id3v1 fm, T.pack $ show track')
-    , tag genreTag genre
-    ]
+  tags id3 =
+    Tags $
+      catMaybes
+        [ tag trackTitleTag title,
+          tag trackArtistTag artist,
+          tag albumTitleTag album,
+          tag yearTag year,
+          tag commentTag comment,
+          do
+            fm <- headTagMapping trackNumberTag
+            track' <- track id3
+            pure (toCanonicalForm $ id3v1 fm, T.pack $ show track'),
+          tag genreTag genre
+        ]
     where
       tag tm sel = headTagMapping tm <&> \fm ->
         (toCanonicalForm $ id3v1 fm, sel id3)
 
 instance TagWriter ID3v1 where
   saveTags _ newTags =
-    ID3v1 {
-      title = saveTag trackTitleTag
-    , artist = saveTag trackArtistTag
-    , album = saveTag albumTitleTag
-    , year = saveTag yearTag
-    , comment = saveTag commentTag
-    , track = readMaybe $ T.unpack $ saveTag trackNumberTag
-    , genre = saveTag genreTag
-    }
+    ID3v1
+      { title = saveTag trackTitleTag,
+        artist = saveTag trackArtistTag,
+        album = saveTag albumTitleTag,
+        year = saveTag yearTag,
+        comment = saveTag commentTag,
+        track = readMaybe $ T.unpack $ saveTag trackNumberTag,
+        genre = saveTag genreTag
+      }
     where
-      saveTag tm = fromMaybe "" (headTagMapping tm >>= \f ->
-        listToMaybe $ lookupTag (toCanonicalForm $ id3v1 f) newTags)
+      saveTag tm =
+        fromMaybe
+          ""
+          ( headTagMapping tm >>= \f ->
+              listToMaybe $ lookupTag (toCanonicalForm $ id3v1 f) newTags
+          )
 
 instance Binary ID3v1 where
+
   get = isolate 128 getID3v1
+
   put = putID3v1
 
 getID3v1 :: Get ID3v1
 getID3v1 = do
   expectGetEq (getByteString 3) iD3v1Id "Expected ID3v1 marker `TAG`"
-  title  <- getTag 30
+  title <- getTag 30
   artist <- getTag 30
-  album  <- getTag 30
-  year   <- T.filter isDigit <$> getTag 4
+  album <- getTag 30
+  year <- T.filter isDigit <$> getTag 4
   when (T.length year == 0) (F.fail "Year must contain at least one digit")
   hasTrackNum <- isID3v1_1 <$> lookAhead (getByteString 30)
-  comment     <- getTag (if hasTrackNum then 28 else 30)
-  track       <- if hasTrackNum
-    then do
-      skip 1
-      Just <$> getWord8
-    else return Nothing
+  comment <- getTag (if hasTrackNum then 28 else 30)
+  track <-
+    if hasTrackNum
+      then do
+        skip 1
+        Just <$> getWord8
+      else return Nothing
   genreIndex <- getWord8
-  when (genreIndex > genericLength genres)
-       (F.fail $ "Unknown genre index " ++ show genreIndex)
+  when
+    (genreIndex > genericLength genres)
+    (F.fail $ "Unknown genre index " ++ show genreIndex)
   return $ ID3v1
-    { title
-    , artist
-    , album
-    , year
-    , comment
-    , track
-    , genre   = genres `genericIndex` genreIndex
+    { title,
+      artist,
+      album,
+      year,
+      comment,
+      track,
+      genre = genres `genericIndex` genreIndex
     }
 
 getTag :: Int -> Get Text
@@ -147,7 +160,7 @@ putID3v1 id3 = do
   putTag 30 (title id3)
   putTag 30 (artist id3)
   putTag 30 (album id3)
-  putTag 4  (year id3)
+  putTag 4 (year id3)
   case track id3 of
     Just track' -> do
       putTag 28 (comment id3)
@@ -155,11 +168,13 @@ putID3v1 id3 = do
       putWord8 track'
     Nothing -> putTag 30 (comment id3)
   putWord8 genreIndex
-  where genreIndex = maybe 0 fromIntegral $ elemIndex (genre id3) genres
+  where
+    genreIndex = maybe 0 fromIntegral $ elemIndex (genre id3) genres
 
 putTag :: Int -> Text -> Put
-putTag n t = putLazyByteString
-  $ L.take (fromIntegral n) (L.fromStrict (encodeLatin1 t) <> L.repeat 0)
+putTag n t =
+  putLazyByteString $
+    L.take (fromIntegral n) (L.fromStrict (encodeLatin1 t) <> L.repeat 0)
   where
     encodeLatin1 a = C8.pack $ T.unpack a
 

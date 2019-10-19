@@ -1,18 +1,17 @@
 module Melo.Format.Vorbis where
 
-import           Control.Monad
-import           Control.Monad.Fail            as F
-import           Data.Binary.Get
-import           Data.Functor
-import           Data.Int
-import           Data.Text                     as T
-import           Data.Vector                              ( Vector )
-import qualified Data.Vector                   as V
-import           Data.Word
-
-import           Melo.Format.Internal.Binary
-import           Melo.Format.Internal.BinaryUtil
-import           Melo.Format.Internal.Tag
+import Control.Monad
+import Control.Monad.Fail as F
+import Data.Binary.Get
+import Data.Functor
+import Data.Int
+import Data.Text as T
+import Data.Vector (Vector)
+import qualified Data.Vector as V
+import Data.Word
+import Melo.Format.Internal.Binary
+import Melo.Format.Internal.BinaryUtil
+import Melo.Format.Internal.Tag
 
 data Header
   = IdentificationHeader !Identification
@@ -39,18 +38,19 @@ getPacketType = getWord8 <&> \case
   3 -> Just CommentsHeaderType
   _ -> Nothing
 
-data Identification = Identification
-  { vorbisVersion :: !Word32
-  , channels :: !Word8
-  , sampleRate :: !Word32
-  , bitrateMax :: !(Maybe Int32)
-  , bitrateNominal :: !(Maybe Int32)
-  , bitrateMin :: !(Maybe Int32)
-  }
+data Identification
+  = Identification
+      { vorbisVersion :: !Word32,
+        channels :: !Word8,
+        sampleRate :: !Word32,
+        bitrateMax :: !(Maybe Int32),
+        bitrateNominal :: !(Maybe Int32),
+        bitrateMin :: !(Maybe Int32)
+      }
   deriving (Eq, Show)
 
 instance BinaryGet Identification where
-  bget =  do
+  bget = do
     vorbisVersion <- getWord32le
     channels <- getWord8
     sampleRate <- getWord32le
@@ -59,18 +59,17 @@ instance BinaryGet Identification where
     bitrateMin <- getInt32le
     _blockSize <- getWord8
     expectGetEq getWord8 1 "Expected vorbis framing bit"
-    return
-      Identification
-        { vorbisVersion
-        , channels
-        , sampleRate
-        , bitrateMax = mfilter (> 0) $ Just bitrateMax
-        , bitrateNominal = mfilter (> 0) $ Just bitrateNominal
-        , bitrateMin = mfilter (> 0) $ Just bitrateMin
-        }
+    return Identification
+      { vorbisVersion,
+        channels,
+        sampleRate,
+        bitrateMax = mfilter (> 0) $ Just bitrateMax,
+        bitrateNominal = mfilter (> 0) $ Just bitrateNominal,
+        bitrateMin = mfilter (> 0) $ Just bitrateMin
+      }
 
-newtype FramedVorbisComments =
-  FramedVorbisComments VorbisComments
+newtype FramedVorbisComments
+  = FramedVorbisComments VorbisComments
   deriving (Show, Eq)
 
 instance BinaryGet FramedVorbisComments where
@@ -79,10 +78,12 @@ instance BinaryGet FramedVorbisComments where
     expectGetEq getWord8 1 "Expected vorbis framing bit"
     return $ FramedVorbisComments vc
 
-data VorbisComments = VorbisComments {
-  vendorString :: !Text
-, userComments :: !(Vector UserComment)
-} deriving (Show, Eq)
+data VorbisComments
+  = VorbisComments
+      { vendorString :: !Text,
+        userComments :: !(Vector UserComment)
+      }
+  deriving (Show, Eq)
 
 instance BinaryGet VorbisComments where
   bget = do

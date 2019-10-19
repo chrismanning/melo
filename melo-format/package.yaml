@@ -28,6 +28,10 @@ library:
     - binary
     - binary-bits
     - bytestring
+    - conduit
+    - conduit-audio
+    - conduit-extra
+    - conduit-vfs
     - containers
     - data-default
     - filepath
@@ -37,6 +41,7 @@ library:
     - polysemy
     - polysemy-plugin
     - polysemy-zoo
+    - range
     - text
     - time
     - vector

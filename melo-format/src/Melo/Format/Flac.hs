@@ -1,51 +1,51 @@
 module Melo.Format.Flac
-  ( Flac
-  , pattern Flac
-  , pattern FlacWithID3v2
-  , FlacStream
-  , StreamInfo(..)
-  , streamInfoBlock
-  , vorbisComment
-  , hReadFlac
-  , readFlacOrFail
-  , removeID3
+  ( Flac,
+    pattern Flac,
+    pattern FlacWithID3v2,
+    FlacStream,
+    StreamInfo (..),
+    streamInfoBlock,
+    vorbisComment,
+    hReadFlac,
+    readFlacOrFail,
+    removeID3,
   )
 where
 
-import           Control.Applicative
-import           Control.Exception
-import           Control.Monad
-import qualified Control.Monad.Fail            as Fail
-import           Data.Binary
-import           Data.Binary.Bits.Get                     ( )
-import qualified Data.Binary.Bits.Get          as BG
-import           Data.Binary.Get
-import           Data.ByteString
-import qualified Data.ByteString.Lazy          as L
-import           Data.Text as T
-import           Data.Vector
-import           GHC.Records
-import           System.FilePath
-import           System.IO
-import           Text.Printf
-
-import           Melo.Format.Format
-import           Melo.Format.ID3.ID3v2             hiding ( Padding )
-import           Melo.Format.Vorbis                       ( VorbisComments(..)
-                                                          , getVorbisTags
-                                                          )
-import           Melo.Format.Internal.Binary
-import           Melo.Format.Internal.BinaryUtil
-import           Melo.Format.Internal.Detect
-import           Melo.Format.Internal.Info
-import           Melo.Format.Internal.Locate
-import           Melo.Format.Internal.Tag
-import           Melo.Format.Mapping                  as M
-                                                          ( FieldMappings
-                                                            ( vorbis
-                                                            )
-                                                          )
-import           Melo.Format.Metadata
+import Control.Applicative
+import Control.Exception
+import Control.Monad
+import qualified Control.Monad.Fail as Fail
+import Data.Binary
+import Data.Binary.Bits.Get ()
+import qualified Data.Binary.Bits.Get as BG
+import Data.Binary.Get
+import Data.ByteString
+import qualified Data.ByteString.Lazy as L
+import Data.Text as T
+import Data.Vector
+import GHC.Records
+import Melo.Format.Format
+import Melo.Format.ID3.ID3v2 hiding (Padding)
+import Melo.Format.Internal.Binary
+import Melo.Format.Internal.BinaryUtil
+import Melo.Format.Internal.Detect
+import Melo.Format.Internal.Info
+import Melo.Format.Internal.Locate
+import Melo.Format.Internal.Tag
+import Melo.Format.Mapping as M
+  ( FieldMappings
+      ( vorbis
+      ),
+  )
+import Melo.Format.Metadata
+import Melo.Format.Vorbis
+  ( VorbisComments (..),
+    getVorbisTags,
+  )
+import System.FilePath
+import System.IO
+import Text.Printf
 
 hReadFlac :: Handle -> IO Flac
 hReadFlac h = do
@@ -79,7 +79,9 @@ pattern FlacWithID3v2 id3v2 flac = MkFlacWithID3v2 id3v2 flac
 {-# COMPLETE FlacWithID3v2, Flac #-}
 
 instance MetadataFormat Flac where
+
   formatDesc = "Flac"
+
   formatDesc' (FlacWithID3v2 _ _) = "Flac with ID3v2"
   formatDesc' _ = formatDesc @Flac
 
@@ -98,21 +100,24 @@ instance InfoReader Flac where
     FlacWithID3v2 _ fs -> getInfo fs
     where
       getInfo :: FlacStream -> Info
-      getInfo fs = let si = streamInfoBlock fs in
-        Info {
-          sampleRate = SampleRate $ fromIntegral (getField @"sampleRate" si)
-          , bitsPerSample = pure $ fromIntegral $ bps si
-          , channels = case getField @"channels" si of
-            1 -> Mono
-            2 -> Stereo
-            _ -> MultiChannel ChannelMask
-          , totalSamples = fromIntegral <$> getField @"samples" si
-        }
+      getInfo fs =
+        let si = streamInfoBlock fs
+         in Info
+              { sampleRate = SampleRate $ fromIntegral (getField @"sampleRate" si),
+                bitsPerSample = pure $ fromIntegral $ bps si,
+                channels = case getField @"channels" si of
+                  1 -> Mono
+                  2 -> Stereo
+                  _ -> MultiChannel ChannelMask,
+                totalSamples = fromIntegral <$> getField @"samples" si
+              }
 
 instance Detector Flac where
+
   pathDetectFormat p
     | takeExtension p == ".flac" = Just detector
     | otherwise = Nothing
+
   hDetectFormat h = do
     flacLoc <- hFindFlac h
     pure $ case flacLoc of
@@ -142,18 +147,20 @@ hFindFlac h = do
 detector :: DetectedP
 detector = mkDetected hReadFlac M.vorbis
 
-data FlacStream = FlacStream
-  { streamInfoBlock :: !StreamInfo
-  , metadataBlocks :: !(Vector MetadataBlock)
-  } deriving (Show)
+data FlacStream
+  = FlacStream
+      { streamInfoBlock :: !StreamInfo,
+        metadataBlocks :: !(Vector MetadataBlock)
+      }
+  deriving (Show)
 
 vorbisComment :: FlacStream -> Maybe VorbisComments
 vorbisComment (FlacStream _ blocks) = findVcs $ toList blocks
- where
-  findVcs []       = Nothing
-  findVcs (m : ms) = case m of
-    VorbisCommentBlock (FlacTags vcs) -> Just vcs
-    _ -> findVcs ms
+  where
+    findVcs [] = Nothing
+    findVcs (m : ms) = case m of
+      VorbisCommentBlock (FlacTags vcs) -> Just vcs
+      _ -> findVcs ms
 
 instance BinaryGet FlacStream where
   bget = do
@@ -162,15 +169,15 @@ instance BinaryGet FlacStream where
 
 getMetadataBlocks :: Get (Vector MetadataBlock)
 getMetadataBlocks = fromList <$> go
- where
-  go = do
-    header <- lookAhead bget
-    block  <- bget
-    if isLast header
-      then pure [block]
-      else do
-        blocks <- go
-        return $ block : blocks
+  where
+    go = do
+      header <- lookAhead bget
+      block <- bget
+      if isLast header
+        then pure [block]
+        else do
+          blocks <- go
+          return $ block : blocks
 
 data MetadataBlock
   = StreamInfoBlock !StreamInfo
@@ -195,11 +202,13 @@ instance BinaryGet MetadataBlock where
         skip $ fromIntegral len
         pure $ OtherBlock bt len
 
-data MetadataBlockHeader = MetadataBlockHeader
-  { blockType :: !Word8
-  , blockLength :: !Word32
-  , isLast :: !Bool
-  } deriving (Show)
+data MetadataBlockHeader
+  = MetadataBlockHeader
+      { blockType :: !Word8,
+        blockLength :: !Word32,
+        isLast :: !Bool
+      }
+  deriving (Show)
 
 instance BinaryGet MetadataBlockHeader where
   bget = do
@@ -208,17 +217,19 @@ instance BinaryGet MetadataBlockHeader where
     blockLength <- get24Bits
     return MetadataBlockHeader {blockType, blockLength, isLast}
 
-data StreamInfo = StreamInfo
-  { minBlockSize :: !Word16
-  , maxBlockSize :: !Word16
-  , minFrameSize :: !(Maybe Word32)
-  , maxFrameSize :: !(Maybe Word32)
-  , sampleRate :: !Word32
-  , channels :: !Word8
-  , bps :: !Word8
-  , samples :: !(Maybe Word64)
-  , md5 :: !ByteString
-  } deriving (Show)
+data StreamInfo
+  = StreamInfo
+      { minBlockSize :: !Word16,
+        maxBlockSize :: !Word16,
+        minFrameSize :: !(Maybe Word32),
+        maxFrameSize :: !(Maybe Word32),
+        sampleRate :: !Word32,
+        channels :: !Word8,
+        bps :: !Word8,
+        samples :: !(Maybe Word64),
+        md5 :: !ByteString
+      }
+  deriving (Show)
 
 instance BinaryGet StreamInfo where
   bget = do
@@ -239,18 +250,17 @@ instance BinaryGet StreamInfo where
         return (sampleRate, channels, bps, samples)
     expect (sampleRate > 0) ("Invalid sample rate" <> show sampleRate)
     md5 <- getByteString 16
-    return
-      StreamInfo
-        { minBlockSize
-        , maxBlockSize
-        , minFrameSize = mfilter (> 0) $ Just minFrameSize
-        , maxFrameSize = mfilter (> 0) $ Just maxFrameSize
-        , sampleRate
-        , channels
-        , bps
-        , samples = mfilter (> 0) $ Just samples
-        , md5
-        }
+    return StreamInfo
+      { minBlockSize,
+        maxBlockSize,
+        minFrameSize = mfilter (> 0) $ Just minFrameSize,
+        maxFrameSize = mfilter (> 0) $ Just maxFrameSize,
+        sampleRate,
+        channels,
+        bps,
+        samples = mfilter (> 0) $ Just samples,
+        md5
+      }
 
 newtype Padding = Padding Word32
   deriving (Show)
@@ -263,8 +273,8 @@ instance BinaryGet Padding where
     skip $ fromIntegral paddingLength
     return $ Padding paddingLength
 
-newtype FlacTags =
-  FlacTags VorbisComments
+newtype FlacTags
+  = FlacTags VorbisComments
   deriving (Show)
 
 instance BinaryGet FlacTags where
@@ -273,16 +283,18 @@ instance BinaryGet FlacTags where
     expect (blockType header == 4) (printf "Unexpected block type %d; expected 4 (VORBIS_COMMENT)" $ blockType header)
     FlacTags <$> bget
 
-data Picture = Picture
-  { pictureType :: !Word32
-  , mimeType :: !Text
-  , description :: !Text
-  , width :: !Word32
-  , height :: !Word32
-  , depth :: !Word32
-  , numColours :: !(Maybe Word32)
-  , pictureData :: !ByteString
-  } deriving (Show)
+data Picture
+  = Picture
+      { pictureType :: !Word32,
+        mimeType :: !Text,
+        description :: !Text,
+        width :: !Word32,
+        height :: !Word32,
+        depth :: !Word32,
+        numColours :: !(Maybe Word32),
+        pictureData :: !ByteString
+      }
+  deriving (Show)
 
 numColors :: Picture -> Maybe Word32
 numColors = numColours
@@ -301,14 +313,14 @@ instance BinaryGet Picture where
     pictureData <- getByteString =<< fromIntegral <$> getWord32be
     return $
       Picture
-        { pictureType
-        , mimeType
-        , description
-        , width
-        , height
-        , depth
-        , numColours = mfilter (> 0) $ Just numColours
-        , pictureData
+        { pictureType,
+          mimeType,
+          description,
+          width,
+          height,
+          depth,
+          numColours = mfilter (> 0) $ Just numColours,
+          pictureData
         }
 
 removeID3 :: Flac -> Flac

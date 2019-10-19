@@ -1,34 +1,33 @@
 module Melo.Format.Info
-  ( Info(..)
-  , InfoReader(..)
-  , InfoRead(..)
-  , SampleRate(..)
-  , Channels(..)
-  , ChannelMask(..)
-  , readInfo
-  , readSampleRate
-  , readChannels
-  , readTotalSamples
-  , readBitsPerSample
-  , samplesPerSecond
-  , hRunInfoReadM
-  , readLengthMilliseconds
-  , lengthMilliseconds
-  , audioLength
-  , readAudioLength
+  ( Info (..),
+    InfoReader (..),
+    InfoRead (..),
+    SampleRate (..),
+    Channels (..),
+    ChannelMask (..),
+    readInfo,
+    readSampleRate,
+    readChannels,
+    readTotalSamples,
+    readBitsPerSample,
+    samplesPerSecond,
+    hRunInfoReadM,
+    readLengthMilliseconds,
+    lengthMilliseconds,
+    audioLength,
+    readAudioLength,
   )
 where
 
-import           Control.Exception
-import           Data.Fixed
-import           Data.Functor
-import           Data.Time.Clock
-import           Polysemy
-import           System.IO
-
-import           Melo.Format.Detect
-import           Melo.Format.Internal.Info
-import           Melo.Format.Metadata
+import Control.Exception
+import Data.Fixed
+import Data.Functor
+import Data.Time.Clock
+import Melo.Format.Detect
+import Melo.Format.Internal.Info
+import Melo.Format.Metadata
+import Polysemy
+import System.IO
 
 data InfoRead (m :: * -> *) a where
   ReadInfo :: InfoRead m Info
@@ -59,28 +58,28 @@ samplesPerSecond (SampleRate r) = r
 audioLength :: Info -> Maybe NominalDiffTime
 audioLength i =
   let samples :: Maybe Pico = fromIntegral <$> totalSamples i
-      samplesPerSec         = fromIntegral (samplesPerSecond $ sampleRate i)
-  in  samples <&> (/ samplesPerSec) <&> secondsToNominalDiffTime
+      samplesPerSec = fromIntegral (samplesPerSecond $ sampleRate i)
+   in samples <&> (/ samplesPerSec) <&> secondsToNominalDiffTime
 
 lengthMilliseconds :: Info -> Maybe Double
 lengthMilliseconds i =
   let samples :: Maybe Double = fromIntegral <$> totalSamples i
-      samplesPerSec           = fromIntegral (samplesPerSecond $ sampleRate i)
-  in  samples <&> (/ samplesPerSec) <&> (* 1000)
+      samplesPerSec = fromIntegral (samplesPerSecond $ sampleRate i)
+   in samples <&> (/ samplesPerSec) <&> (* 1000)
 
-hRunInfoReadM
-  :: forall r a
-   . Member (Embed IO) r
-  => Handle
-  -> Sem (InfoRead ': r) a
-  -> Sem r a
+hRunInfoReadM ::
+  forall r a.
+  Member (Embed IO) r =>
+  Handle ->
+  Sem (InfoRead ': r) a ->
+  Sem r a
 hRunInfoReadM h a = embed (hDetect h) >>= \case
-  Nothing            -> throw UnknownFormat
+  Nothing -> throw UnknownFormat
   Just (DetectedP d) -> do
     let hReadMetadata' = getHReadMetadata d
     !i <- info <$> embed (hReadMetadata' h)
     interpret
-      (\case
-        ReadInfo -> pure i
+      ( \case
+          ReadInfo -> pure i
       )
       a

@@ -1,19 +1,17 @@
 module Melo.Format.ApeSpec
-  ( main
-  , spec
+  ( main,
+    spec,
   )
 where
 
-import           Test.Hspec
-
-import           Data.Binary
-import qualified Data.ByteString.Lazy          as L
-import           Data.Vector
-import           System.IO
-
-import           Melo.Format.Ape
-import           Melo.Format.Internal.Binary
-import           Melo.Format.Internal.Locate
+import Data.Binary
+import qualified Data.ByteString.Lazy as L
+import Data.Vector
+import Melo.Format.Ape
+import Melo.Format.Internal.Binary
+import Melo.Format.Internal.Locate
+import System.IO
+import Test.Hspec
 
 main :: IO ()
 main = hspec spec
@@ -22,53 +20,63 @@ spec :: Spec
 spec = do
   describe "APEv2" $ do
     it "reads APEv2 tags" $
-      readApeTags "test/Melo/test.apev2" `shouldReturn` (APE
-        APEv2 $ fromList
-        [ mkTextTagItem "ALBUM"   "Aqualung"
-        , mkTextTagItem "ARTIST"  "Jethro Tull"
-        , mkTextTagItem "COMMENT" "CDP 32 1044 2"
-        , mkTextTagItem "GENRE"   "Progressive Rock"
-        , mkTextTagItem "TITLE"   "Cheap Day Return"
-        , mkTextTagItem "TRACK"   "3"
-        , mkTextTagItem "YEAR"    "1971"
-        ])
+      readApeTags "test/Melo/test.apev2"
+        `shouldReturn` ( APE
+                           APEv2
+                           $ fromList
+                             [ mkTextTagItem "ALBUM" "Aqualung",
+                               mkTextTagItem "ARTIST" "Jethro Tull",
+                               mkTextTagItem "COMMENT" "CDP 32 1044 2",
+                               mkTextTagItem "GENRE" "Progressive Rock",
+                               mkTextTagItem "TITLE" "Cheap Day Return",
+                               mkTextTagItem "TRACK" "3",
+                               mkTextTagItem "YEAR" "1971"
+                             ]
+                       )
     it "writes APEv2 tags" $ do
-      let a = APE
-            APEv2 $ fromList
-            [ mkTextTagItem "ALBUM"   "Aqualung"
-            , mkTextTagItem "ARTIST"  "Jethro Tull"
-            , mkTextTagItem "COMMENT" "CDP 32 1044 2"
-            , mkTextTagItem "GENRE"   "Progressive Rock"
-            , mkTextTagItem "TITLE"   "Cheap Day Return"
-            , mkTextTagItem "TRACK"   "3"
-            , mkTextTagItem "YEAR"    "1971"
-            ]
+      let a =
+            APE
+              APEv2
+              $ fromList
+                [ mkTextTagItem "ALBUM" "Aqualung",
+                  mkTextTagItem "ARTIST" "Jethro Tull",
+                  mkTextTagItem "COMMENT" "CDP 32 1044 2",
+                  mkTextTagItem "GENRE" "Progressive Rock",
+                  mkTextTagItem "TITLE" "Cheap Day Return",
+                  mkTextTagItem "TRACK" "3",
+                  mkTextTagItem "YEAR" "1971"
+                ]
       let actual = encode a
       expected <- L.readFile "test/Melo/test.apev2"
       actual `shouldBe` expected
   describe "APEv1" $ do
     it "reads APEv1 tags" $
-      readApeTags "test/Melo/test.apev1" `shouldReturn` (APE
-        APEv1 $ fromList
-        [ mkTextTagItem "ALBUM"   "Aqualung"
-        , mkTextTagItem "ARTIST"  "Jethro Tull"
-        , mkTextTagItem "COMMENT" "CDP 32 1044 2"
-        , mkTextTagItem "GENRE"   "Progressive Rock"
-        , mkTextTagItem "TITLE"   "Cheap Day Return"
-        , mkTextTagItem "TRACK"   "3"
-        , mkTextTagItem "YEAR"    "1971"
-        ])
+      readApeTags "test/Melo/test.apev1"
+        `shouldReturn` ( APE
+                           APEv1
+                           $ fromList
+                             [ mkTextTagItem "ALBUM" "Aqualung",
+                               mkTextTagItem "ARTIST" "Jethro Tull",
+                               mkTextTagItem "COMMENT" "CDP 32 1044 2",
+                               mkTextTagItem "GENRE" "Progressive Rock",
+                               mkTextTagItem "TITLE" "Cheap Day Return",
+                               mkTextTagItem "TRACK" "3",
+                               mkTextTagItem "YEAR" "1971"
+                             ]
+                       )
     it "writes APEv1 tags" $ do
-      let a = APE
-            APEv1 $ fromList
-            [ mkTextTagItem "ALBUM"   "Aqualung"
-            , mkTextTagItem "ARTIST"  "Jethro Tull"
-            , mkTextTagItem "COMMENT" "CDP 32 1044 2"
-            , mkTextTagItem "GENRE"   "Progressive Rock"
-            , mkTextTagItem "TITLE"   "Cheap Day Return"
-            , mkTextTagItem "TRACK"   "3"
-            , mkTextTagItem "YEAR"    "1971"
-            ]
+      let a =
+            APE
+              APEv1
+              $ fromList
+                [ mkTextTagItem "ALBUM" "Aqualung",
+                  mkTextTagItem "ARTIST" "Jethro Tull",
+                  mkTextTagItem "COMMENT" "CDP 32 1044 2",
+                  mkTextTagItem "GENRE" "Progressive Rock",
+                  mkTextTagItem "TITLE" "Cheap Day Return",
+                  mkTextTagItem "TRACK" "3",
+                  mkTextTagItem "YEAR" "1971"
+                ]
       let actual = encode a
       expected <- L.readFile "test/Melo/test.apev1"
       actual `shouldBe` expected
