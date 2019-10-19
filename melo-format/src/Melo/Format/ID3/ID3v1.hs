@@ -23,7 +23,9 @@ import           Data.List                                ( genericIndex
 import           Data.Maybe
 import           Data.Text                     as T
 import           Data.Text.Encoding
+import           GHC.Generics
 import           System.IO
+import           Text.Read
 
 import           Melo.Format.ID3.ID3v1Genre
 import           Melo.Format.Internal.BinaryUtil
@@ -52,7 +54,7 @@ data ID3v1 = ID3v1
   , comment :: !Text
   , track   :: !(Maybe Word8)
   , genre   :: !Text
-  } deriving (Show, Eq)
+  } deriving (Show, Eq, Generic)
 
 instance MetadataFormat ID3v1 where
   formatDesc = "ID3v1"
@@ -82,6 +84,21 @@ instance TagReader ID3v1 where
     where
       tag tm sel = headTagMapping tm <&> \fm ->
         (toCanonicalForm $ id3v1 fm, sel id3)
+
+instance TagWriter ID3v1 where
+  saveTags _ newTags =
+    ID3v1 {
+      title = saveTag trackTitleTag
+    , artist = saveTag trackArtistTag
+    , album = saveTag albumTitleTag
+    , year = saveTag yearTag
+    , comment = saveTag commentTag
+    , track = readMaybe $ T.unpack $ saveTag trackNumberTag
+    , genre = saveTag genreTag
+    }
+    where
+      saveTag tm = fromMaybe "" (headTagMapping tm >>= \f ->
+        listToMaybe $ lookupTag (toCanonicalForm $ id3v1 f) newTags)
 
 instance Binary ID3v1 where
   get = isolate 128 getID3v1

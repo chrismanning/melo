@@ -1,7 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
-
 module Melo.Format.Internal.Locate where
-
 
 import           Data.Binary                              ( Get )
 import           Data.Binary.Get                          ( runGetOrFail )
