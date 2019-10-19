@@ -69,11 +69,11 @@ lengthMilliseconds i =
   in  samples <&> (/ samplesPerSec) <&> (* 1000)
 
 hRunInfoReadM
-  :: forall effs a
-   . LastMember (Embed IO) effs
+  :: forall r a
+   . Member (Embed IO) r
   => Handle
-  -> Sem (InfoRead ': effs) a
-  -> Sem effs a
+  -> Sem (InfoRead ': r) a
+  -> Sem r a
 hRunInfoReadM h a = embed (hDetect h) >>= \case
   Nothing            -> throw UnknownFormat
   Just (DetectedP d) -> do

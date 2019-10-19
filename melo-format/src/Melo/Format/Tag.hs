@@ -69,26 +69,26 @@ hReadMetaEnv h = embed (hDetect h) >>= \case
     embed $ hTell h >>= \p -> traceM $ "hReadMetaEnv h is at " ++ show p
     !t <- Tag.tags <$> embed (hReadMetadata' h)
     embed $ hTell h >>= \p -> traceM $ "hReadMetaEnv h is at " ++ show p
---    send $ hSeek h AbsoluteSeek 0
+--    embed $ hSeek h AbsoluteSeek 0
     let env = TagEnv { fieldSel = fieldSel', envtags = t }
     return env
 
 runTagReadM
-  :: forall effs a
-   . LastMember (Embed IO) effs
+  :: forall r a
+   . Member (Embed IO) r
   => FilePath
-  -> Sem (TagRead ': effs) a
-  -> Sem effs a
+  -> Sem (TagRead ': r) a
+  -> Sem r a
 runTagReadM p a = do
   env <- readMetaEnvFromPath p
   runTagReadPureM env a
 
 hRunTagReadM
-  :: forall effs a
-   . LastMember (Embed IO) effs
+  :: forall r a
+   . Member (Embed IO) r
   => Handle
-  -> Sem (TagRead ': effs) a
-  -> Sem effs a
+  -> Sem (TagRead ': r) a
+  -> Sem r a
 hRunTagReadM h a = do
   env <- hReadMetaEnv h
   runTagReadPureM env a
