@@ -1,5 +1,3 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
-
 module Melo.Format.Detect
   ( DetectedP(..)
   , Detected(..)
@@ -21,36 +19,35 @@ import           Melo.Format.OggVorbis                    ( OggVorbis )
 import           Melo.Format.WavPack                      ( WavPack )
 import           Melo.Format.Internal.Detect
 import           Melo.Format.Internal.Tag
-import           Melo.Format.Internal.TypeLevel
 
 type SupportedFormats = '[Flac, WavPack, OggVorbis]
 
 class PathDetect (d :: [*]) where
-  pdf :: FilePath -> Maybe DetectedP
+  pdf :: Proxy d -> FilePath -> Maybe DetectedP
 
 instance PathDetect '[] where
-  pdf _ = Nothing
+  pdf _ _ = Nothing
 
-instance (Detector d, PathDetect ds) => PathDetect (KProxy d ': ds) where
-  pdf p = pathDetectFormat @d p <|> pdf @ds p
+instance (Detector d, PathDetect ds) => PathDetect (d ': ds) where
+  pdf _ p = pathDetectFormat @d p <|> pdf (Proxy @ds) p
 
 detectPath :: FilePath -> Maybe DetectedP
-detectPath = pdf @(FMap KProxy SupportedFormats)
+detectPath = pdf (Proxy @SupportedFormats)
 
 class HandleDetect (d :: [*]) where
-  hdf :: Handle -> IO (Maybe DetectedP)
+  hdf :: Proxy d -> Handle -> IO (Maybe DetectedP)
 
 instance HandleDetect '[] where
-  hdf _ = return Nothing
+  hdf _ _ = return Nothing
 
-instance (Detector d, HandleDetect ds) => HandleDetect (KProxy d ': ds) where
-  hdf h = do
+instance (Detector d, HandleDetect ds) => HandleDetect (d ': ds) where
+  hdf _ h = do
     fmt <- hDetectFormat @d h
-    fmts <- hdf @ds h
+    fmts <- hdf (Proxy @ds) h
     return $ fmt <|> fmts
 
 hDetect :: Handle -> IO (Maybe DetectedP)
-hDetect = hdf @(FMap KProxy SupportedFormats)
+hDetect = hdf (Proxy @SupportedFormats)
 
 detect :: FilePath -> IO (Maybe DetectedP)
 detect p = case detectPath p of
