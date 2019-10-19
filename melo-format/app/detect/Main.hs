@@ -32,7 +32,7 @@ detectAppM :: Opts -> IO ()
 detectAppM o = withBinaryFile (path o) ReadMode $ \h ->
   runM $ (hRunTagReadM h . hRunInfoReadM h) printTags
 
-printTags :: (Members '[Embed IO, TagRead, InfoRead] effs) => Sem effs ()
+printTags :: Members '[Embed IO, TagRead, InfoRead] effs => Sem effs ()
 printTags = do
   putLine
   psl "Info"
@@ -58,6 +58,7 @@ printTags = do
   printTag "Album"        album
   printTag "Year"         year
   printTag "Album Artist" albumArtist
+  printTag "Genre"        genre
  where
   putLine = psl (T.replicate 20 "-")
   psl     = embed . T.putStrLn
