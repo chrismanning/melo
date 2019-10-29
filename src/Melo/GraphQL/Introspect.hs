@@ -77,16 +77,16 @@ data GQLEnumValue = GQLEnumValue {
 } deriving (Show, Eq, Generic, ToJSON)
 
 class GraphQLType a where
-  asGQLType :: GQLType
-  default asGQLType :: GQLType
-  asGQLType = GQLType {
+  asGQLType :: Bool -> GQLType
+  default asGQLType :: Bool -> GQLType
+  asGQLType inclDep = GQLType {
     kind = typeKind @a,
     name = Just $ typeName @a,
     description = description @a,
-    fields = typeFields @a True,
+    fields = typeFields @a inclDep,
     interfaces = Nothing, --interfaces a,
     possibleTypes = Nothing, --possibleTypes a,
-    enumValues = Nothing, --enumValues a True
+    enumValues = Nothing, --enumValues a inclDep
     inputFields = Nothing, --inputFields a
     ofType = ofType @a
   }
@@ -212,9 +212,9 @@ type SelectorProxy' s = SelectorProxy s Proxy ()
 
 -- Object
 instance (Selector s, GraphQLType (FieldResult a)) => GGraphQLFields (M1 S s (Rec0 a)) where
-  typeFields' _ = let f = GQLField {
+  typeFields' inclDep = let f = GQLField {
     name = T.pack $ selName (SelectorProxy :: SelectorProxy' s),
-    fieldType = asGQLType @(FieldResult a),
+    fieldType = asGQLType @(FieldResult a) inclDep,
     description = Nothing,
     args = [],
     isDeprecated = False,
@@ -273,7 +273,7 @@ instance GraphQLType a => GraphQLType (Vector a) where
   typeFields _ = Nothing
   enumValues _ = Nothing
   inputFields = Nothing
-  ofType = Just $ asGQLType @a
+  ofType = Just $ asGQLType @a True
 
 instance GraphQLType a => GraphQLType [a] where
   typeKind = ListKind
@@ -281,7 +281,7 @@ instance GraphQLType a => GraphQLType [a] where
   typeFields _ = Nothing
   enumValues _ = Nothing
   inputFields = Nothing
-  ofType = Just $ asGQLType @a
+  ofType = Just $ asGQLType @a True
 
 -- instance GraphQLType a => GraphQLType (Maybe a) where
   -- name _ = 
