@@ -200,7 +200,9 @@ class GGraphQLFields f where
 
 type family FieldResult a where
   FieldResult (Tagged _ a) = FieldResult a
-  FieldResult (a -> b -> c) = TypeError ('TL.Text "Fields functions may only have a single argument => a record to define named query arguments")
+  FieldResult (a -> b -> c) = TypeError
+    ('TL.Text "Method fields may only have a single argument. "
+      ':<>: 'TL.Text "This argument must be a record defining named query arguments")
   FieldResult (a -> b) = FieldResult b
   FieldResult a = a
 
