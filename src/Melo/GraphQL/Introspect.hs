@@ -3,10 +3,11 @@
 {-# LANGUAGE UndecidableInstances #-}
 module Melo.GraphQL.Introspect where
 
-import Data.Aeson
 import Data.Generic.HKD
 import Data.List.NonEmpty hiding (filter)
 import Data.Proxy
+import Data.Singletons
+import Data.Tagged
 import Data.Text as T hiding (filter)
 import Data.Vector hiding (filter)
 import GHC.Generics
@@ -198,27 +199,35 @@ class GGraphQLFields f where
   typeFields' :: Bool -> Maybe [GQLField]
 
 type family FieldResult a where
+  FieldResult (Tagged _ a) = FieldResult a
   FieldResult (a -> b -> c) = TypeError ('TL.Text "Fields functions may only have a single argument => a record to define named query arguments")
   FieldResult (a -> b) = FieldResult b
   FieldResult a = a
+
+data DeprecatedTag
+type Deprecated a = Tagged DeprecatedTag a
+
+type family IsFieldDeprecated a :: Bool where
+  IsFieldDeprecated (Tagged DeprecatedTag a) = 'True
+  IsFieldDeprecated (Tagged x a) = IsFieldDeprecated a
+  IsFieldDeprecated a = 'False
 
 data SelectorProxy s (f :: * -> *) a = SelectorProxy
 type SelectorProxy' s = SelectorProxy s Proxy ()
 
 -- Object
-instance (Selector s, GraphQLType (FieldResult a)) => GGraphQLFields (M1 S s (Rec0 a)) where
+instance (Selector s, GraphQLType (FieldResult a), SingI (IsFieldDeprecated a)) => GGraphQLFields (M1 S s (Rec0 a)) where
   typeFields' inclDep = let f = GQLField {
     name = T.pack $ selName (SelectorProxy :: SelectorProxy' s),
     fieldType = asGQLType @(FieldResult a),
     description = Nothing,
     args = [],
-    isDeprecated = False,
+    isDeprecated = fromSing $ sing @(IsFieldDeprecated a),
     deprecationReason = Nothing
-  } in
-    Just $ filter (const inclDep) [f]
+  } in Just $ if not inclDep && (fromSing $ sing @(IsFieldDeprecated a)) then [] else [f]
 
 -- Object
-instance (f ~ (M1 S s (Rec0 a)), GraphQLType (FieldResult a), Selector s, GGraphQLFields g) => GGraphQLFields (f :*: g) where
+instance (GGraphQLFields f, GGraphQLFields g) => GGraphQLFields (f :*: g) where
   typeFields' inclDep = case typeFields' @f inclDep of
     Just fs -> (fs <>) <$> typeFields' @g inclDep
     Nothing -> typeFields' @g inclDep
@@ -303,7 +312,8 @@ instance GraphQLType ExUnion
 data ExObj = ExObj {
   a :: Text,
   b :: BArgs -> Text,
-  c :: ExEnum
+  c :: ExEnum,
+  d :: Deprecated Text
 } deriving (Generic)
 
 instance GraphQLType ExObj

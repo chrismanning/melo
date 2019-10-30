@@ -69,7 +69,9 @@ library:
   - postgresql-simple
   - resource-pool
   - servant-server
+  - singletons
   - string-combinators
+  - tagged
   - text
   - text-icu
   - time
