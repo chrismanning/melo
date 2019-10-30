@@ -5,10 +5,10 @@ module Melo.GraphQL.Introspect where
 
 import Data.Aeson
 import Data.Generic.HKD
-import Data.List.NonEmpty
+import Data.List.NonEmpty hiding (filter)
 import Data.Proxy
-import Data.Text as T
-import Data.Vector
+import Data.Text as T hiding (filter)
+import Data.Vector hiding (filter)
 import GHC.Generics
 import GHC.TypeLits as TL
 
@@ -24,34 +24,29 @@ data GQLTypeKind = ScalarKind |
   NonNullKind
   deriving (Show, Eq, Generic)
 
-instance ToJSON GQLTypeKind where
-  toJSON ScalarKind = String "SCALAR"
-  toJSON ObjectKind = String "OBJECT"
-  toJSON InterfaceKind = String "INTERFACE"
-  toJSON UnionKind = String "UNION"
-  toJSON EnumKind = String "ENUM"
-  toJSON InputObjectKind = String "INPUT_OBJECT"
-  toJSON ListKind = String "LIST"
-  toJSON NonNullKind = String "NON_NULL"
 
 data GQLSchema = GQLSchema {
   types :: NonEmpty GQLType,
   queryType :: GQLType,
   mutationType :: Maybe GQLType,
   subscriptionType :: Maybe GQLType
-} deriving (Show, Eq, Generic, ToJSON)
+} deriving (Generic)
+
+data FieldsArgs = FieldsArgs {
+  includeDeprecated :: Bool
+} deriving (Generic)
 
 data GQLType = GQLType {
   kind :: GQLTypeKind,
   name :: Maybe Text,
   description :: Maybe Text,
-  fields :: Maybe [GQLField],
+  fields :: FieldsArgs -> Maybe [GQLField],
   interfaces :: Maybe [GQLType],
   possibleTypes :: Maybe [GQLType],
   enumValues :: Maybe [GQLEnumValue],
   inputFields :: Maybe [GQLInputValue],
   ofType :: Maybe GQLType
-} deriving (Show, Eq, Generic, ToJSON)
+} deriving (Generic)
 
 data GQLField = GQLField {
   name :: Text,
@@ -60,30 +55,30 @@ data GQLField = GQLField {
   fieldType :: GQLType,
   isDeprecated :: Bool,
   deprecationReason :: Maybe Text
-} deriving (Show, Eq, Generic, ToJSON)
+} deriving (Generic)
 
 data GQLInputValue = GQLInputValue {
   name :: Text,
   description :: Maybe Text,
   inputValueType :: GQLType,
   defaultValue :: Maybe Text
-} deriving (Show, Eq, Generic, ToJSON)
+} deriving (Generic)
 
 data GQLEnumValue = GQLEnumValue {
   name :: Text,
   description :: Maybe Text,
   isDeprecated :: Bool,
   deprecationReason :: Maybe Text
-} deriving (Show, Eq, Generic, ToJSON)
+} deriving (Show, Eq, Generic)
 
 class GraphQLType a where
-  asGQLType :: Bool -> GQLType
-  default asGQLType :: Bool -> GQLType
-  asGQLType inclDep = GQLType {
+  asGQLType :: GQLType
+  default asGQLType :: GQLType
+  asGQLType = GQLType {
     kind = typeKind @a,
     name = Just $ typeName @a,
     description = description @a,
-    fields = typeFields @a inclDep,
+    fields = \(FieldsArgs inclDep) -> typeFields @a inclDep,
     interfaces = Nothing, --interfaces a,
     possibleTypes = Nothing, --possibleTypes a,
     enumValues = Nothing, --enumValues a inclDep
@@ -214,13 +209,13 @@ type SelectorProxy' s = SelectorProxy s Proxy ()
 instance (Selector s, GraphQLType (FieldResult a)) => GGraphQLFields (M1 S s (Rec0 a)) where
   typeFields' inclDep = let f = GQLField {
     name = T.pack $ selName (SelectorProxy :: SelectorProxy' s),
-    fieldType = asGQLType @(FieldResult a) inclDep,
+    fieldType = asGQLType @(FieldResult a),
     description = Nothing,
     args = [],
     isDeprecated = False,
     deprecationReason = Nothing
   } in
-    Just [f]
+    Just $ filter (const inclDep) [f]
 
 -- Object
 instance (f ~ (M1 S s (Rec0 a)), GraphQLType (FieldResult a), Selector s, GGraphQLFields g) => GGraphQLFields (f :*: g) where
@@ -273,7 +268,7 @@ instance GraphQLType a => GraphQLType (Vector a) where
   typeFields _ = Nothing
   enumValues _ = Nothing
   inputFields = Nothing
-  ofType = Just $ asGQLType @a True
+  ofType = Just $ asGQLType @a
 
 instance GraphQLType a => GraphQLType [a] where
   typeKind = ListKind
@@ -281,7 +276,7 @@ instance GraphQLType a => GraphQLType [a] where
   typeFields _ = Nothing
   enumValues _ = Nothing
   inputFields = Nothing
-  ofType = Just $ asGQLType @a True
+  ofType = Just $ asGQLType @a
 
 -- instance GraphQLType a => GraphQLType (Maybe a) where
   -- name _ = 
