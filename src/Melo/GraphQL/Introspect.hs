@@ -7,6 +7,7 @@ import Data.Generic.HKD
 import Data.List.NonEmpty hiding (filter)
 import Data.Proxy
 import Data.Singletons
+import Data.Singletons.TH
 import Data.Tagged
 import Data.Text as T hiding (filter)
 import Data.Vector hiding (filter)
@@ -23,8 +24,9 @@ data GQLTypeKind = ScalarKind |
   InputObjectKind |
   ListKind |
   NonNullKind
-  deriving (Show, Eq, Generic)
+  deriving (Show, Eq, Generic, Enum)
 
+$(genSingletons [''GQLTypeKind])
 
 data GQLSchema = GQLSchema {
   types :: NonEmpty GQLType,
@@ -77,6 +79,7 @@ data GQLEnumValue = GQLEnumValue {
 } deriving (Show, Eq, Generic)
 
 class GraphQLType a where
+  type TypeKind a :: GQLTypeKind
   asGQLType :: GQLType
   default asGQLType :: GQLType
   asGQLType = GQLType {
@@ -87,21 +90,19 @@ class GraphQLType a where
       ObjectKind -> typeFields @a inclDep
       InterfaceKind -> typeFields @a inclDep
       _ -> Nothing,
-    interfaces = Nothing, --interfaces a,
-    possibleTypes = Nothing, --possibleTypes a,
+    interfaces = interfaces @a,
+    possibleTypes = possibleTypes @a,
     enumValues = \(EnumValuesArgs inclDep) -> typeEnumValues @a inclDep,
-    inputFields = case typeKind @a of
-      InputObjectKind -> typeInputFields @a
-      _ -> Nothing,
+    inputFields = typeInputFields @a,
     ofType = ofType @a
   }
 
   typeKind :: GQLTypeKind
-  default typeKind :: (GGraphQLKind (Rep a)) => GQLTypeKind
-  typeKind = typeKind' @(Rep a)
+  default typeKind :: SingI (TypeKind a) => GQLTypeKind
+  typeKind = fromSing $ sing @(TypeKind a)
 
   typeName :: Text
-  default typeName :: (GTypeName (Rep a)) => Text
+  default typeName :: GTypeName (Rep a) => Text
   typeName = typeName' @(Rep a)
 
   description :: Maybe Text
@@ -109,8 +110,8 @@ class GraphQLType a where
   description = Nothing
 
   typeFields :: Bool -> Maybe [GQLField]
-  default typeFields :: (GGraphQLFields (Rep a)) => Bool -> Maybe [GQLField]
-  typeFields = typeFields' @(Rep a)
+  default typeFields :: GGraphQLFields a (KindHasFields (TypeKind a)) => Bool -> Maybe [GQLField]
+  typeFields = typeFields' @a @(KindHasFields (TypeKind a))
 
   interfaces :: Maybe [GQLType]
   default interfaces :: Maybe [GQLType]
@@ -121,12 +122,12 @@ class GraphQLType a where
   possibleTypes = Nothing
 
   typeEnumValues :: Bool -> Maybe [GQLEnumValue]
-  default typeEnumValues :: GGraphQLEnumValue (Rep a) => Bool -> Maybe [GQLEnumValue]
-  typeEnumValues = typeEnumValues' @(Rep a)
+  default typeEnumValues :: GGraphQLEnumValue a (KindHasEnumValues (TypeKind a)) => Bool -> Maybe [GQLEnumValue]
+  typeEnumValues = typeEnumValues' @a @(KindHasEnumValues (TypeKind a))
 
   typeInputFields :: Maybe [GQLInputValue]
-  default typeInputFields :: (GGraphQLInputFields (Rep a)) => Maybe [GQLInputValue]
-  typeInputFields = typeInputFields' @(Rep a)
+  default typeInputFields :: GGraphQLInputFields a (KindHasInputFields (TypeKind a)) => Maybe [GQLInputValue]
+  typeInputFields = typeInputFields' @a @(KindHasInputFields (TypeKind a))
 
   ofType :: Maybe GQLType
   default ofType :: Maybe GQLType
@@ -141,62 +142,57 @@ class GTypeName f where
 instance (Datatype d) => GTypeName (D1 d f) where
   typeName' = T.pack $ datatypeName (DatatypeProxy :: DatatypeProxy' d)
 
-class GraphQLScalar a where
-
-class GraphQLType a => GraphQLObject a where
-  objectFields :: a -> Bool -> [GQLField]
-
-class GGraphQLObject a where
-  objectFields' :: f a -> [GQLField]
-
-class GraphQLType a => GraphQLInterface a where
-  interfaceFields :: a -> Bool -> [GQLField]
-
-class GraphQLUnion a
-
-class GraphQLWrappedType a where
-  wrapperOfType :: a -> GQLType
-
--- instance GraphQLType a => GraphQLWrappedType [a] where
-  -- wrapperOfType _ = asGQLType @a
-
 -- KINDS ----------------------------------
 
-type family GraphQLKind a :: k -> GQLTypeKind
+type family DataTypeName d where
+  DataTypeName ('MetaData tn _ _ _) = tn
 
-class GGraphQLKind f where
-  typeKind' :: GQLTypeKind
+type family GGraphQLKind (a :: k -> *) :: GQLTypeKind
+type instance GGraphQLKind (D1 d V1) =
+    TypeError ('Text "Data type " ':<>: 'Text (DataTypeName d)
+      ':<>: 'Text " has no constructors"
+      ':$$: 'Text "Not a valid GraphQL type")
+-- single constructor Enum
+type instance GGraphQLKind (D1 d (C1 ('MetaCons _ _ 'False) U1)) = 'EnumKind
+-- multiple constructor Enum
+type instance GGraphQLKind (D1 d ((C1 c U1) :+: g)) = EqOrE 'EnumKind (GGraphQLKind (D1 d g))
+    (TypeError ('Text "Data type " ':<>: 'Text (DataTypeName d)
+      ':<>: 'Text " detected as GraphQL ENUM but has invalid constructor(s)"))
+-- Object
+type instance GGraphQLKind (D1 d (C1 ('MetaCons _ _ 'True) _)) = 'ObjectKind
+-- single variant Union
+type instance GGraphQLKind (D1 d (C1 ('MetaCons _ _ 'False) (S1 _ _))) = 'UnionKind
+-- multiple variant Union
+type instance GGraphQLKind (D1 d ((C1 ('MetaCons _ _ 'False) (S1 _ _)) :+: g)) = 'UnionKind
+-- multiple unnamed fields
+type instance GGraphQLKind (D1 d (C1 ('MetaCons _ _ 'False) ((S1 _ _) :*: g))) =
+    TypeError ('Text "Data type " ':<>: 'Text " has multiple unnamed fields"
+      ':$$: 'Text "Not a valid GraphQL type")
 
-instance GGraphQLKind f => GGraphQLKind (M1 D p f) where
-  typeKind' = typeKind' @f
-
-instance (Constructor c) => GGraphQLKind (M1 C c f) where
-  typeKind' = if conIsRecord (ConstructorProxy :: ConstructorProxy' c) then ObjectKind else UnionKind
-
-instance GGraphQLKind ((M1 S s (Rec0 a)) :*: f) where
-  typeKind' = ObjectKind
-
-instance GGraphQLKind (M1 S s (Rec0 a)) where
-  typeKind' = ObjectKind
-
-instance GGraphQLKind (M1 C p U1) where
-  typeKind' = EnumKind
-
-instance GGraphQLKind ((M1 C p U1) :+: g) where
-  typeKind' = EnumKind
-
-instance GGraphQLKind ((M1 C p (M1 S s r)) :+: g) where
-  typeKind' = UnionKind
+type family EqOrE a b e where
+  EqOrE a a _ = a
+  EqOrE a b e = e
 
 -- FIELDS ---------------------------------
 
-class GGraphQLFields f where
+type family KindHasFields (k :: GQLTypeKind) :: Bool where
+  KindHasFields 'ObjectKind = 'True
+  KindHasFields 'InterfaceKind = 'True
+  KindHasFields _ = 'False
+
+class GGraphQLFields f (k :: Bool) where
   typeFields' :: Bool -> Maybe [GQLField]
+
+instance GGraphQLFields' (Rep f) => GGraphQLFields f 'True where
+  typeFields' = Just . typeObjectFields' @(Rep f)
+
+instance GGraphQLFields a 'False where
+  typeFields' = const Nothing
 
 type family FieldResult a where
   FieldResult (Tagged _ a) = FieldResult a
   FieldResult (a -> b -> c) = TypeError
-    ('TL.Text "Method fields may only have a single argument. "
+    ('TL.Text "GraphQL method fields may only have a single argument"
       ':<>: 'TL.Text "This argument must be a record defining named query arguments")
   FieldResult (a -> b) = FieldResult b
   FieldResult a = a
@@ -212,163 +208,130 @@ type family IsFieldDeprecated a :: Bool where
 data SelectorProxy s (f :: * -> *) a = SelectorProxy
 type SelectorProxy' s = SelectorProxy s Proxy ()
 
--- Object
-instance (Selector s, GraphQLType (FieldResult a), SingI (IsFieldDeprecated a)) => GGraphQLFields (M1 S s (Rec0 a)) where
-  typeFields' inclDep = let f = GQLField {
+class GGraphQLFields' f where
+  typeObjectFields' :: Bool -> [GQLField]
+
+instance GGraphQLFields' f => GGraphQLFields' (M1 D p (M1 C c f)) where
+  typeObjectFields' = typeObjectFields' @f
+
+instance GGraphQLFields' f => GGraphQLFields' (M1 C c f) where
+  typeObjectFields' = typeObjectFields' @f
+
+instance (Selector s, GraphQLType (FieldResult a), SingI (IsFieldDeprecated a)) =>
+  GGraphQLFields' (M1 S s (Rec0 a)) where
+  typeObjectFields' inclDep = let f = GQLField {
     name = T.pack $ selName (SelectorProxy :: SelectorProxy' s),
     fieldType = asGQLType @(FieldResult a),
     description = Nothing,
     args = [],
     isDeprecated = fromSing $ sing @(IsFieldDeprecated a),
     deprecationReason = Nothing
-  } in Just $ if not inclDep && (fromSing $ sing @(IsFieldDeprecated a)) then [] else [f]
+  } in if not inclDep && (fromSing $ sing @(IsFieldDeprecated a)) then [] else [f]
 
--- Object
-instance (GGraphQLFields f, GGraphQLFields g) => GGraphQLFields (f :*: g) where
-  typeFields' inclDep = case typeFields' @f inclDep of
-    Just fs -> (fs <>) <$> typeFields' @g inclDep
-    Nothing -> typeFields' @g inclDep
-
-instance GGraphQLFields f => GGraphQLFields (M1 D p f) where
-  typeFields' = typeFields' @f
-
--- Enum
-instance GGraphQLFields (M1 C c U1) where
-  typeFields' = const Nothing
-
--- Enum
-instance GGraphQLFields ((M1 C c U1) :+: g) where
-  typeFields' = const Nothing
-
--- Union
-instance GGraphQLFields ((M1 C c (M1 S s r)) :+: g) where
-  typeFields' = const Nothing
-
-data ConstructorProxy c (f :: * -> *) a = ConstructorProxy
-type ConstructorProxy' c = ConstructorProxy c Proxy ()
-
--- Single field Object or Union
-instance (Constructor c, GGraphQLFields f) => GGraphQLFields (M1 C c f) where
-  typeFields' inclDep = if conIsRecord (ConstructorProxy :: ConstructorProxy' c) then
-      typeFields' @f inclDep
-    else
-      Nothing
+instance (GGraphQLFields' f, GGraphQLFields' g) => GGraphQLFields' (f :*: g) where
+  typeObjectFields' inclDep = typeObjectFields' @f inclDep <> typeObjectFields' @g inclDep
 
 -- INPUT FIELDS ---------------------------------
 
-class GGraphQLInputFields a where
+type family KindHasInputFields (k :: GQLTypeKind) :: Bool where
+  KindHasInputFields 'InputObjectKind = 'True
+  KindHasInputFields _ = 'False
+
+class GGraphQLInputFields f (b :: Bool) where
   typeInputFields' :: Maybe [GQLInputValue]
 
--- Object
-instance (Selector s, GraphQLType (FieldResult a)) => GGraphQLInputFields (M1 S s (Rec0 a)) where
-  typeInputFields' = let f = GQLInputValue {
+instance GGraphQLInputFields' (Rep f) => GGraphQLInputFields f 'True where
+  typeInputFields' = Just $ inputFields' @(Rep f)
+
+instance GGraphQLInputFields f 'False where
+  typeInputFields' :: Maybe [GQLInputValue]
+  typeInputFields' = Nothing
+
+class GGraphQLInputFields' f where
+  inputFields' :: [GQLInputValue]
+
+instance GGraphQLInputFields' f => GGraphQLInputFields' (M1 D p f) where
+  inputFields' = inputFields' @f
+
+instance (Selector s, GraphQLType (FieldResult a)) => GGraphQLInputFields' (M1 S s (Rec0 a)) where
+  inputFields' = let f = GQLInputValue {
     name = T.pack $ selName (SelectorProxy :: SelectorProxy' s),
     description = Nothing,
     inputValueType = asGQLType @(FieldResult a),
     defaultValue = Nothing
-  } in Just [f]
+  } in [f]
 
--- Object
-instance (GGraphQLInputFields f, GGraphQLInputFields g) => GGraphQLInputFields (f :*: g) where
-  typeInputFields' = case typeInputFields' @f of
-    Just fs -> (fs <>) <$> typeInputFields' @g
-    Nothing -> typeInputFields' @g
+instance (GGraphQLInputFields' f, GGraphQLInputFields' g) => GGraphQLInputFields' (f :*: g) where
+  inputFields' = inputFields' @f <> inputFields' @g
 
-instance GGraphQLInputFields f => GGraphQLInputFields (M1 D p f) where
-  typeInputFields' = typeInputFields' @f
-
--- Enum
-instance GGraphQLInputFields (M1 C c U1) where
-  typeInputFields' = Nothing
-
--- Enum
-instance GGraphQLInputFields ((M1 C c U1) :+: g) where
-  typeInputFields' = Nothing
-
--- Union
-instance GGraphQLInputFields ((M1 C c (M1 S s r)) :+: g) where
-  typeInputFields' = Nothing
-
--- Single field Object or Union
-instance (Constructor c, GGraphQLInputFields f) => GGraphQLInputFields (M1 C c f) where
-  typeInputFields' = if conIsRecord (ConstructorProxy :: ConstructorProxy' c) then
-    typeInputFields' @f
-    else
-      Nothing
+instance (GGraphQLInputFields' f) => GGraphQLInputFields' (M1 C ('MetaCons x y 'True) f) where
+  inputFields' = inputFields' @f
 
 -- ENUM VALUES ---------------------------------
 
-class GGraphQLEnumValue f where
+type family KindHasEnumValues (k :: GQLTypeKind) where
+  KindHasEnumValues 'EnumKind = 'True
+  KindHasEnumValues _ = 'False
+
+class GGraphQLEnumValue f (b :: Bool) where
   typeEnumValues' :: Bool -> Maybe [GQLEnumValue]
 
-instance GGraphQLEnumValue f => GGraphQLEnumValue (M1 D p f) where
-  typeEnumValues' = typeEnumValues' @f
+instance GGraphQLEnumValue f 'False where
+  typeEnumValues' = const Nothing
 
--- Enum
-instance Constructor c => GGraphQLEnumValue (M1 C c U1) where
-  typeEnumValues' inclDep = let v = GQLEnumValue {
+instance GGraphQLEnumValue' (Rep f) => GGraphQLEnumValue f 'True where
+  typeEnumValues' = Just . enumValues' @(Rep f)
+
+class GGraphQLEnumValue' f where
+  enumValues' :: Bool -> [GQLEnumValue]
+
+instance GGraphQLEnumValue' f => GGraphQLEnumValue' (M1 D p f) where
+  enumValues' = enumValues' @f
+
+instance Constructor c => GGraphQLEnumValue' (M1 C c U1) where
+  enumValues' inclDep = let v = GQLEnumValue {
     name = T.pack $ conName (ConstructorProxy :: ConstructorProxy' c),
     description = Nothing,
     isDeprecated = False,
     deprecationReason = Nothing
-  } in Just [v]
+  } in [v]
 
--- Enum
-instance (GGraphQLEnumValue f, GGraphQLEnumValue g) => GGraphQLEnumValue (f :+: g) where
-  typeEnumValues' inclDep = (<>) <$> typeEnumValues' @f inclDep <*> typeEnumValues' @g inclDep
+instance (GGraphQLEnumValue' f, GGraphQLEnumValue' g) => GGraphQLEnumValue' (f :+: g) where
+  enumValues' inclDep = enumValues' @f inclDep <> enumValues' @g inclDep
 
--- Union
--- instance GGraphQLEnumValue (M1 S s r) where
-  -- typeEnumValues' = const Nothing
-
-instance GGraphQLEnumValue (M1 C c (f :*: g)) where
-  typeEnumValues' = const Nothing
-
-instance GGraphQLEnumValue (M1 C c (M1 S s r)) where
-  typeEnumValues' = const Nothing
+data ConstructorProxy c (f :: * -> *) a = ConstructorProxy
+type ConstructorProxy' c = ConstructorProxy c Proxy ()
 
 -----------------------------------
 
-data Query a
-
--- instance GraphQLType a => GraphQLType (Tagged t a)
+data Schema q m s = Schema {
+  query :: q,
+  mutation :: m,
+  schema :: s
+}
 
 instance GraphQLType Text where
+  type TypeKind Text = 'ScalarKind
   typeKind = ScalarKind
   typeName = "String"
   description = Just "String type"
-  typeFields _ = Nothing
-  typeEnumValues _ = Nothing
-  typeInputFields = Nothing
 
 instance GraphQLType Int where
-  typeKind = ScalarKind
+  type TypeKind Int = 'ScalarKind
   typeName = "Int"
   description = Just "Int type"
-  typeFields _ = Nothing
-  typeEnumValues _ = Nothing
-  typeInputFields = Nothing
-
-instance GraphQLScalar Text where
 
 instance GraphQLType a => GraphQLType (Vector a) where
-  typeKind = ListKind
+  type TypeKind (Vector a) = 'ListKind
   typeName = "List"
-  typeFields _ = Nothing
-  typeEnumValues _ = Nothing
-  typeInputFields = Nothing
+  description = fmap ("List of " <>) (description @a)
   ofType = Just $ asGQLType @a
 
 instance GraphQLType a => GraphQLType [a] where
-  typeKind = ListKind
+  type TypeKind [a] = 'ListKind
   typeName = "List"
-  typeFields _ = Nothing
-  typeEnumValues _ = Nothing
-  typeInputFields = Nothing
+  description = fmap ("List of " <>) (description @a)
   ofType = Just $ asGQLType @a
-
--- instance GraphQLType a => GraphQLType (Maybe a) where
-  -- name _ = 
 
 -----------------------
 
@@ -377,17 +340,19 @@ data IFace = IFace {
 } deriving (Generic)
 
 instance GraphQLType IFace where
-  typeKind = InterfaceKind
+  type TypeKind IFace = 'InterfaceKind
 
 data ExEnum = ExA | ExB
   deriving (Generic)
 
-instance GraphQLType ExEnum
+instance GraphQLType ExEnum where
+  type TypeKind ExEnum = 'EnumKind
 
 data ExUnion = ExInt Int | ExStr Text
   deriving (Generic)
 
-instance GraphQLType ExUnion
+instance GraphQLType ExUnion where
+  type TypeKind ExUnion = 'UnionKind
 
 data ExObj = ExObj {
   a :: Text,
@@ -396,22 +361,24 @@ data ExObj = ExObj {
   d :: Deprecated Text
 } deriving (Generic)
 
-instance GraphQLType ExObj
+instance GraphQLType ExObj where
+  type TypeKind ExObj = 'ObjectKind
 
 data ExObj2 = ExObj2 {
   ref :: ExObj
 } deriving (Generic)
 
-instance GraphQLType ExObj2
+instance GraphQLType ExObj2 where
+  type TypeKind ExObj2 = 'ObjectKind
 
 data BArgs = BArgs {
   i :: Int
 } deriving (Generic)
 
 instance GraphQLType BArgs where
-  typeKind = InputObjectKind
+  type TypeKind BArgs = 'InputObjectKind
 
--- type ExF f = HKD ExObj f
+-- type ExObjF f = HKD ExObj f
 
 data ExG = ExG {
   a :: GQLField,
