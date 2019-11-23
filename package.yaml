@@ -30,7 +30,6 @@ library:
   - attoparsec
   - barbies
   - beam-core
-  - beam-migrate
   - beam-postgres
   - binary
   - binary-bits
@@ -65,7 +64,6 @@ library:
   - path-io
   - polysemy
   - polysemy-plugin
-  - polysemy-zoo
   - postgresql-simple
   - resource-pool
   - servant-server
@@ -108,7 +106,6 @@ tests:
     - attoparsec
     - base16-bytestring
     - beam-core
-    - beam-migrate
     - beam-postgres
     - binary
     - bytestring

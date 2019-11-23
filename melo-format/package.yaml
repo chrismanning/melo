@@ -40,7 +40,6 @@ library:
     - microlens
     - polysemy
     - polysemy-plugin
-    - polysemy-zoo
     - range
     - text
     - time

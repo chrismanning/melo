@@ -2,21 +2,25 @@
 
 module Melo.API where
 
+import Data.Generic.HKD
 import GHC.Generics
 import Melo.API.Haxl
+import Melo.GraphQL.Introspect
 import Melo.GraphQL.Resolve
 import Melo.Library.API
 
-data Query m
-  = Query
-      { library :: FieldResolver m (QLFieldContext (Query m)) (Library m)
-      }
-  deriving (Generic)
+data Query = Query {
+  library :: Library
+} deriving (Generic)
 
-instance GraphQlType (Query Haxl) where
-  resolver = Query
-    { library = \_ _args fields -> resolveFields resolver LibraryFieldContext fields
-    }
+instance GraphQLType Query where
+  type TypeKind Query = 'ObjectKind
 
-instance QLFieldResolve Haxl (Query Haxl) where
-  data QLFieldContext (Query Haxl) = QueryFieldContext
+data QueryCtx = QueryCtx
+
+instance ObjectResolver Haxl Query where
+  type ResolverContext Query = QueryCtx
+
+instance GenericResolver Haxl Query where
+  genericResolver = let g = build @Query in
+    g (Resolve $ \_ _ fs -> resolveFieldValues LibraryCtx fs)

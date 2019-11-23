@@ -4,6 +4,7 @@ import Control.Lens hiding ((.=))
 import Control.Monad
 import Data.Aeson as A
 import Data.Bifunctor
+import Data.Generic.HKD
 import Data.Hashable
 import qualified Data.Map.Strict as Map
 import Data.Maybe
@@ -11,74 +12,137 @@ import Data.Pool
 import Data.Text as T hiding (null)
 import Data.Traversable
 import Data.Typeable
+import Data.UUID (toText)
 import Database.Beam hiding (C)
 import Database.Beam.Postgres
 import GHC.Generics (Generic)
 import GHC.OverloadedLabels ()
 import Haxl.Core
-import Language.GraphQL.AST.Core hiding (Query)
 import Melo.API.Haxl
+import Melo.GraphQL.Introspect
 import Melo.GraphQL.Resolve
 import qualified Melo.Library.Database.Model as BM
 import Melo.Library.Database.Query
 
-data Library m
+import Debug.Trace
+
+data Library
   = Library
-      { genres :: FieldResolver m (QLFieldContext (Library m)) [Genre m]
+      { genres :: [Genre],
+        artists :: [Artist],
+        albums :: [Album],
+        tracks :: [Track]
       }
   deriving (Generic)
 
-instance GraphQlType (Library Haxl) where
-  resolver = Library
-    { genres = \_ _args fields -> do
+instance GraphQLType Library where
+  type TypeKind Library = 'ObjectKind
+
+data LibraryCtx = LibraryCtx
+
+instance ObjectResolver Haxl Library where
+  type ResolverContext Library = LibraryCtx
+
+instance GenericResolver Haxl Library where
+  genericResolver = let g = build @Library in
+    g (Resolve $ \_ _ fs -> do
         genres <- getAllGenres
         hydratedGenres <- for genres $ \genre ->
-          resolveFields resolver (GenreFieldContext genre) fields
+          resolveFieldValues genre fs
+        traceShowM $ hydratedGenres
         pure $ toJSON hydratedGenres
-    }
+      )
+      (nullresolver)
+      (nullresolver)
+      (nullresolver)
 
-data Genre m
+data Genre
   = Genre
-      { id :: FieldResolver m (QLFieldContext (Genre m)) Text,
-        name :: FieldResolver m (QLFieldContext (Genre m)) Text,
-        tracks :: FieldResolver m (QLFieldContext (Genre m)) [Track m]
+      { id :: Text,
+        name :: Text,
+        tracks :: [Track]
       }
   deriving (Generic)
 
-instance GraphQlType (Genre Haxl) where
-  resolver = Genre
-    { id = \(GenreFieldContext bg) _ _ -> pure $ toJSON $ bg ^. #id,
-      name = \(GenreFieldContext bg) _ _ -> pure $ toJSON $ bg ^. #name,
-      tracks = \(GenreFieldContext bg) args fields -> toJSON <$> resolveGenreTracks resolver (primaryKey bg) args fields
-    }
+instance GraphQLType Genre where
+  type TypeKind Genre = 'ObjectKind
 
-data Track m
+instance ObjectResolver Haxl Genre where
+  type ResolverContext Genre = BM.Genre
+
+instance GenericResolver Haxl Genre where
+  genericResolver = let g = build @Genre in
+    g (pureCtxResolver (toText . (^. #id)))
+      (pureCtxResolver (^. #name))
+      (Resolve $ \ctx _ fields -> do
+        tracks <- getGenreTracks (primaryKey ctx)
+        fmap toJSON $ forM tracks $ \track ->
+          resolveFieldValues track fields
+      )
+
+data Artist
+  = Artist
+      { id :: Text,
+        name :: Text,
+        biography :: Maybe Text,
+        shortBio :: Maybe Text,
+        country :: Maybe Text,
+        genres :: [Genre],
+        albums :: [Album],
+        tracks :: [Track]
+      } deriving (Generic)
+
+instance GraphQLType Artist where
+  type TypeKind Artist = 'ObjectKind
+
+instance ObjectResolver Haxl Artist where
+  type ResolverContext Artist = BM.Artist
+
+instance GenericResolver Haxl Artist where
+  genericResolver = let a = build @Artist in
+    a (pureCtxResolver (toText . (^. #id)))
+      (pureCtxResolver (^. #name))
+      (pureCtxResolver (^. #bio))
+      (pureCtxResolver (^. #short_bio))
+      (pureCtxResolver (^. #country))
+      (nullresolver)
+      (nullresolver)
+      (nullresolver)
+
+data Album
+  = Album
+      { id :: Text,
+        title :: Text
+      } deriving (Generic, ToJSON)
+
+instance GraphQLType Album where
+  type TypeKind Album = 'ObjectKind
+
+instance ObjectResolver Haxl Album where
+  type ResolverContext Album = BM.Album
+
+instance GenericResolver Haxl Album where
+  genericResolver = let a = build @Album in
+    a (pureCtxResolver (toText . (^. #id)))
+      (pureCtxResolver (^. #title))
+
+data Track
   = Track
-      { id :: FieldResolver m (QLFieldContext (Track m)) Text,
-        title :: FieldResolver m (QLFieldContext (Track m)) Text
+      { id :: Text,
+        title :: Text
       }
-  deriving (Generic)
+  deriving (Generic, ToJSON)
 
-instance GraphQlType (Track Haxl) where
-  resolver = Track
-    { id = \(TrackFieldContext bt) _ _ -> pure $ toJSON $ bt ^. #id,
-      title = \(TrackFieldContext bt) _ _ -> pure $ toJSON $ bt ^. #title
-    }
+instance GraphQLType Track where
+  type TypeKind Track = 'ObjectKind
 
-instance QLFieldResolve Haxl (Library Haxl) where
-  data QLFieldContext (Library Haxl) = LibraryFieldContext
+instance ObjectResolver Haxl Track where
+  type ResolverContext Track = BM.Track
 
-instance QLFieldResolve Haxl (Genre Haxl) where
-  data QLFieldContext (Genre Haxl) = GenreFieldContext BM.Genre
-
-instance QLFieldResolve Haxl (Track Haxl) where
-  data QLFieldContext (Track Haxl) = TrackFieldContext BM.Track
-
-resolveGenreTracks :: Track Haxl -> BM.GenreKey -> [Argument] -> [Field] -> Haxl [A.Value]
-resolveGenreTracks t genreKey _args fields = do
-  -- TODO args
-  tracks <- getGenreTracks genreKey
-  for tracks $ \track -> resolveFields t (TrackFieldContext track) fields
+instance GenericResolver Haxl Track where
+  genericResolver = let t = build @Track in
+    t (pureCtxResolver (toText . (^. #id)))
+      (pureCtxResolver (^. #title))
 
 getAllGenres :: Haxl [BM.Genre]
 getAllGenres = dataFetch GetAllGenres
