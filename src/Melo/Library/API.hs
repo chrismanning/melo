@@ -3,6 +3,7 @@ module Melo.Library.API where
 import Control.Lens hiding ((.=))
 import Control.Monad
 import Data.Aeson as A
+import Data.Aeson.Encoding as A
 import Data.Bifunctor
 import Data.Generic.HKD
 import Data.Hashable
@@ -50,7 +51,7 @@ instance GenericResolver Haxl Library where
         hydratedGenres <- for genres $ \genre ->
           resolveFieldValues genre fs
         traceShowM $ hydratedGenres
-        pure $ toJSON hydratedGenres
+        pure $ A.list (\x -> x) hydratedGenres
       )
       (nullresolver)
       (nullresolver)
@@ -76,7 +77,7 @@ instance GenericResolver Haxl Genre where
       (pureCtxResolver (^. #name))
       (Resolve $ \ctx _ fields -> do
         tracks <- getGenreTracks (primaryKey ctx)
-        fmap toJSON $ forM tracks $ \track ->
+        fmap (A.list (\x -> x)) $ forM tracks $ \track ->
           resolveFieldValues track fields
       )
 

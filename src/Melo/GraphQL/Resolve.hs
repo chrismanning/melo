@@ -7,16 +7,16 @@ import Control.Lens (Contravariant, Optic', Profunctor, (^.), (.~), (&))
 import qualified Control.Lens as L
 import Control.Monad.Catch
 import qualified Data.Aeson as A
+import qualified Data.Aeson.Encoding as A
 import Data.Aeson as A (FromJSON(..), ToJSON(..), (.=))
 import Data.Barbie
+import Data.Foldable
 import Data.Generic.HKD
-import qualified Data.Map.Strict as Map
 import Data.Maybe
 import Data.Singletons
 import Data.Tagged
-import Data.Text as T
-import Data.Traversable
-import Data.Vector as V
+import Data.Text as T (Text)
+import Data.Vector as V (fromList)
 import GHC.Generics as G
 import GHC.TypeLits as TL
 import Language.GraphQL.AST.Core as QL hiding (Query)
@@ -51,6 +51,7 @@ data Response
 
 instance ToJSON Response where
   toJSON rs = A.object ["data" .= _data rs, "errors" .= errors rs]
+  toEncoding rs = A.pairs ("data" .= _data rs <> "errors" .= errors rs)
 
 fieldName' :: QL.Field -> Text
 fieldName' (Field _ name _ _) = name
@@ -81,7 +82,7 @@ getFieldNamed fn (f : fs) =
 class ObjectResolver (m :: * -> *) a where
   type ResolverContext a = r | r -> a
 
-  resolveFieldValue :: ResolverContext a -> QL.Field -> m A.Value
+  resolveFieldValue :: ResolverContext a -> QL.Field -> m A.Encoding
   default resolveFieldValue :: (
     Generic (GResolver m a),
     GenericResolver m a,
@@ -89,7 +90,7 @@ class ObjectResolver (m :: * -> *) a where
     GraphQLType a,
     MonadThrow m
     ) =>
-    ResolverContext a -> QL.Field -> m A.Value
+    ResolverContext a -> QL.Field -> m A.Encoding
   resolveFieldValue c f = case resolveFieldValue' (from $ genericResolver @m @a) c f of
     Just res -> res
     Nothing -> throwM FieldNotFound
@@ -97,10 +98,13 @@ class ObjectResolver (m :: * -> *) a where
         typeName = fromMaybe "" $ I.typeName @a
       }
 
-resolveFieldValues :: forall m a. (Monad m, ObjectResolver m a) => ResolverContext a -> [QL.Field] -> m A.Value
-resolveFieldValues ctx fields = do
-  resultMap <- for fields $ \field' -> (field' ^. responseKey,) <$> resolveFieldValue @m @a ctx field'
-  pure $ toJSON $ Map.fromList resultMap
+resolveFieldValues :: forall m a. (Monad m, ObjectResolver m a) => ResolverContext a -> [QL.Field] -> m A.Encoding
+resolveFieldValues ctx fields = A.pairs <$> foldlM resolveField' mempty fields
+  where
+    resolveField' :: A.Series -> QL.Field -> m A.Series
+    resolveField' s field' = do
+      v <- resolveFieldValue @m @a ctx field'
+      pure $ s <> A.pair (field' ^. responseKey) v
 
 class GenericResolver m a where
   type GResolver m a
@@ -108,7 +112,7 @@ class GenericResolver m a where
   genericResolver :: (GraphQLType a) => GResolver m a
 
 class GObjectResolver (m :: * -> *) (f :: * -> *) ctx where
-  resolveFieldValue' :: f a -> ctx -> QL.Field -> Maybe (m A.Value)
+  resolveFieldValue' :: f a -> ctx -> QL.Field -> Maybe (m A.Encoding)
 
 instance (GObjectResolver m f ctx) => GObjectResolver m (M1 D d f) ctx where
   resolveFieldValue' (M1 a) = resolveFieldValue' a
@@ -170,18 +174,18 @@ type family ResolveResultT a where
 
 pureResolver :: (ToJSON (ResolveResultT a), Monad m) =>
     ResolveResultT a -> Resolve m c a
-pureResolver a = Resolve (\_ _ _ -> pure $ toJSON a)
+pureResolver a = Resolve (\_ _ _ -> pure $ toEncoding a)
 
 pureCtxResolver :: (ToJSON (ResolveResultT a), Monad m) => (c -> ResolveResultT a) -> Resolve m c a
-pureCtxResolver a = Resolve (\c _ _ -> pure $ toJSON (a c))
+pureCtxResolver a = Resolve (\c _ _ -> pure $ toEncoding (a c))
 
 nullresolver :: (Applicative m) => Resolve m c a
-nullresolver = Resolve (\_ _ _ -> pure A.Null)
+nullresolver = Resolve (\_ _ _ -> pure (toEncoding A.Null))
 
 -- introspectionResolver :: GQLSchema -> Resolve m c a
 
 data Resolve m c a where
-  Resolve :: (c -> FieldArguments a -> [QL.Field] -> m A.Value) -> Resolve m c a
+  Resolve :: (c -> FieldArguments a -> [QL.Field] -> m A.Encoding) -> Resolve m c a
 
 type family UnwrapNull a where
   UnwrapNull (NonNull a) = a
