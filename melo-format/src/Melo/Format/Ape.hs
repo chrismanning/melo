@@ -22,7 +22,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BC
 import qualified Data.ByteString.Lazy as L
 import Data.Int
-import Data.Text (Text)
+import Data.Text (Text, pack)
 import Data.Text.Encoding
 import Data.Vector (Vector)
 import qualified Data.Vector as V
@@ -51,7 +51,7 @@ instance MetadataFormat APE where
 
   formatDesc = "APE"
 
-  formatDesc' ape = show $ version ape
+  formatDesc' ape = pack $ show $ version ape
 
 instance MetadataLocator APE where
 

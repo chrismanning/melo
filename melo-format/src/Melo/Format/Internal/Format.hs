@@ -2,9 +2,11 @@
 
 module Melo.Format.Internal.Format where
 
+import Data.Text (Text)
+
 class MetadataFormat a where
 
-  formatDesc :: String
+  formatDesc :: Text
 
-  formatDesc' :: a -> String
+  formatDesc' :: a -> Text
   formatDesc' _ = formatDesc @a

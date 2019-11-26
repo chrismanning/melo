@@ -43,7 +43,7 @@ instance MetadataFormat ID3v2 where
 
   formatDesc = "ID3v2"
 
-  formatDesc' id3 = show $ frameVersion id3
+  formatDesc' id3 = T.pack $ show $ frameVersion id3
 
 instance MetadataLocator ID3v2 where
 

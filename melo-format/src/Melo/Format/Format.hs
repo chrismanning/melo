@@ -13,7 +13,7 @@ import Data.Foldable
   ( concat,
     find,
   )
-import Data.Text (Text)
+import Data.Text (Text, unpack)
 import Debug.Trace
 import Melo.Format.Internal.Binary
 import Melo.Format.Internal.BinaryUtil
@@ -40,9 +40,9 @@ getTagByField (Tags ts) m = fmap snd . filter (matches m . fst) $ ts
 hGetMetadata :: forall a. MetadataLocator a => Handle -> IO a
 hGetMetadata h = do
   bs <- hLocate @a h >>= \case
-    Nothing -> F.fail $ "Unable to locate " ++ formatDesc @a
+    Nothing -> F.fail $ "Unable to locate " ++ unpack (formatDesc @a)
     Just i -> do
-      traceIO $ "Found " ++ formatDesc @a ++ " at " ++ show i
+      traceIO $ "Found " ++ unpack (formatDesc @a) ++ " at " ++ show i
       hIsClosed h >>= \c -> traceIO $ "h is " ++ if c then "closed" else "open"
       hSeek h AbsoluteSeek (fromIntegral i)
       hTell h >>= \p -> traceIO $ "h is at " ++ show p

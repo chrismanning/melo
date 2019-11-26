@@ -48,7 +48,7 @@ instance MetadataFormat WavPack where
 
   formatDesc = "WavPack"
 
-  formatDesc' wv = "WavPack with " ++ formatDesc' (wavPackTags wv)
+  formatDesc' wv = "WavPack with " <> formatDesc' (wavPackTags wv)
 
 instance TagReader WavPack where
   tags wv = tags $ wavPackTags wv
