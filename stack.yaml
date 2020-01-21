@@ -42,11 +42,15 @@ packages:
 # (e.g., acme-missiles-0.3)
 extra-deps:
   - github: tathougies/beam
-    commit: HEAD
+    commit: 8aed273fdfd82e6e890f518a3e993e3d1f5b29f1
     subdirs:
       - beam-core
       - beam-postgres
       - beam-migrate
+  - github: hasura/eff
+    commit: 61dfb24515b3d6f54f2ca148655bd7c6b7e8181c
+    subdirs:
+      - eff
   - bifunctors-5.5.5
   - conduit-audio-0.2.0.3
   - conduit-audio-lame-0.1.2.1
@@ -63,12 +67,12 @@ extra-deps:
   - hsndfile-0.8.0
   - hsndfile-vector-0.5.2
   - invariant-0.5.3
+  - linkedhashmap-0.4.0.0
   - network-uri-json-0.3.1.1
   - polysemy-1.2.1.0
   - polysemy-plugin-0.2.3.0
   - polysemy-zoo-0.6.0.1
   - process-1.6.6.0
-  - linkedhashmap-0.4.0.0
   - th-abstraction-0.3.1.0
   - time-1.9.3
   - time-compat-1.9.2.2

@@ -8,6 +8,8 @@ module Melo.Format.Ape
     getHeader,
     mkTextTagItem,
     pattern TextTagItem,
+    apeId,
+    apeTag,
   )
 where
 
@@ -28,11 +30,15 @@ import Data.Vector (Vector)
 import qualified Data.Vector as V
 import Melo.Format.Internal.BinaryUtil
 import Melo.Format.Internal.Encoding
-import Melo.Format.Internal.Format
+import Melo.Format.Internal.Metadata
 import Melo.Format.Internal.Locate
 import Melo.Format.Internal.Tag
+import Melo.Format.Mapping
 import System.IO
 import Prelude as P
+
+apeTag :: TagMapping -> TagLens
+apeTag = mappedTag ape
 
 data APE
   = APE
@@ -48,10 +54,14 @@ preamble :: BS.ByteString
 preamble = "APETAGEX"
 
 instance MetadataFormat APE where
+  metadataFormat ape = MetadataFormat {
+    formatId = apeId,
+    formatDesc = pack $ show $ version ape
+  }
+  metadataLens _ = apeTag
 
-  formatDesc = "APE"
-
-  formatDesc' ape = pack $ show $ version ape
+apeId :: MetadataId
+apeId = MetadataId "APE"
 
 instance MetadataLocator APE where
 
@@ -76,7 +86,7 @@ instance MetadataLocator APE where
     return $ locate @APE (L.fromStrict buf)
 
 instance TagReader APE where
-  tags a = Tags $ V.toList (items a >>= getTextItem)
+  readTags a = Tags $ V.toList (items a >>= getTextItem)
 
 getTextItem :: TagItem -> Vector (Text, Text)
 getTextItem t = case t of

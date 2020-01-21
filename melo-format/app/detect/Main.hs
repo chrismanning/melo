@@ -1,11 +1,18 @@
 module Main where
 
+import Control.Monad
+import Data.Foldable
+import Data.Generics.Labels ()
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import Data.Time.Format
+import GHC.OverloadedLabels
+import Lens.Micro ((^.))
 import Melo.Format.Info hiding (info)
+import Melo.Format.Internal.Metadata
+import Melo.Format.Internal.Tag
 import Melo.Format.Mapping
-import Melo.Format.Tag
+import Melo.Format.Metadata
 import Options.Applicative
 import Polysemy
 import System.IO
@@ -30,37 +37,41 @@ main = detectAppM =<< execParser opts
         )
 
 detectAppM :: Opts -> IO ()
-detectAppM o = withBinaryFile (path o) ReadMode $ \h ->
-  runM $ (hRunTagReadM h . hRunInfoReadM h) printTags
+detectAppM o = do
+  f <- openMetadataFile (path o)
+  printTags f
 
-printTags :: Members '[Embed IO, TagRead, InfoRead] effs => Sem effs ()
-printTags = do
+printTags :: MetadataFile -> IO ()
+printTags f = do
   putLine
   psl "Info"
   putLine
-  channels <- T.pack . show <$> readChannels
+  let info = f ^. #audioInfo
+  let channels = T.pack . show $ info ^. #channels
   psl $ "Channels: " <> channels
-  sampleRate <- T.pack . show . samplesPerSecond <$> readSampleRate
+  let sampleRate = T.pack . show . samplesPerSecond $ info ^. #sampleRate
   psl $ "Sample Rate: " <> sampleRate <> "Hz"
-  readBitsPerSample >>= \case
+  case info ^. #bitsPerSample of
     Nothing -> pure ()
     Just bps -> psl $ "Sample Size: " <> T.pack (show bps) <> " bits"
-  readAudioLength >>= \case
+  case audioLength info of
     Nothing -> pure ()
-    Just len ->
-      psl $ "Length: " <> T.pack (formatTime defaultTimeLocale "%-3Ess" len)
+    Just len -> psl $ "Length: " <> T.pack (formatTime defaultTimeLocale "%-3Ess" len)
   putLine
-  psl "Tags"
-  putLine
-  printTag "Track#" trackNumber
-  printTag "Track Title" trackTitle
-  printTag "Artist" artist
-  printTag "Album" album
-  printTag "Year" year
-  printTag "Album Artist" albumArtist
-  printTag "Genre" genre
+  forM_ (zip [1..] (toList (f ^. #metadata))) $ \(i, metadata) -> do
+    psl $ "Tags #" <> T.pack (show i)
+    let tags' = tags metadata
+    let tag = lens metadata
+    putLine
+    printTag "Track#" (tags' ^. tag trackNumber)
+    printTag "Track Title" (tags' ^. tag trackTitle)
+    printTag "Artist" (tags' ^. tag artist)
+    printTag "Album" (tags' ^. tag album)
+    printTag "Year" (tags' ^. tag year)
+    printTag "Album Artist" (tags' ^. tag albumArtist)
+    printTag "Genre" (tags' ^. tag genre)
   where
     putLine = psl (T.replicate 20 "-")
-    psl = embed . T.putStrLn
-    printTag lbl m = formatTag lbl <$> readTag m >>= psl
+    psl = T.putStrLn
+    printTag lbl t = psl $ formatTag lbl t
     formatTag l t = l <> T.pack ": " <> T.intercalate (T.pack " / ") t

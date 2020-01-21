@@ -6,6 +6,7 @@ where
 
 import Data.ByteString.Base16 as Hex
 import Data.Vector
+import Melo.Format.Error
 import Melo.Format.Flac
 import Melo.Format.Info
 import Melo.Format.Internal.Tag
@@ -66,8 +67,9 @@ spec = do
     $ it "reads flac file with ID3"
     $ do
       h <- openBinaryFile "test/Melo/silence-1s-id3v2.flac" ReadMode
-      flac@(FlacWithID3v2 id3 _) <- hReadFlac h
-      tags id3
+      (FlacWithID3v2 id3 fs) <- hReadFlac h
+      let Just v = vorbisComment fs
+      readTags id3
         `shouldBe` Tags
           [ ("TIT2", "В чащах юга жил бы цитрус? Да, но фальшивый экземпляр!"),
             ("TPE1", "κόσμε"),
@@ -79,7 +81,7 @@ spec = do
             ("WXXX;", "http://www.google.com"),
             ("TDRC", "2011")
           ]
-      tags flac
+      readTags v
         `shouldBe` Tags
           [ ("TITLE", "В чащах юга жил бы цитрус? Да, но фальшивый экземпляр!"),
             ("ARTIST", "κόσμε"),

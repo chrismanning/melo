@@ -1,6 +1,6 @@
 module Melo.Format.TestUtil where
 
-import Control.Exception
+import Control.Exception.Safe
 import Data.Conduit
 import Data.Conduit.Combinators
 import System.IO

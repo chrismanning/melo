@@ -45,6 +45,7 @@ library:
   - data-default
   - directory
   - directory-tree
+  - eff
   - exceptions
   - filepath
   - generic-aeson
@@ -60,12 +61,14 @@ library:
   - lens
   - network-uri
   - network-uri-json
+  - newtype-generics
   - path
   - path-io
   - polysemy
   - polysemy-plugin
   - postgresql-simple
   - resource-pool
+  - safe-exceptions
   - servant-server
   - singletons
   - string-combinators
@@ -74,6 +77,7 @@ library:
   - text-icu
   - time
   - transformers
+  - unordered-containers
   - uuid
   - vector
   - wai
@@ -87,7 +91,10 @@ executables:
     dependencies:
     - melo
     - melo-format
+    - beam-core
+    - beam-postgres
     - optparse-applicative
+    - postgresql-simple
     - text
     - time
 
@@ -136,6 +143,7 @@ default-extensions:
 - ApplicativeDo
 - BangPatterns
 - BinaryLiterals
+- BlockArguments
 - ConstraintKinds
 - DataKinds
 - DefaultSignatures

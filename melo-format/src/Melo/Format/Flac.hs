@@ -9,41 +9,36 @@ module Melo.Format.Flac
     hReadFlac,
     readFlacOrFail,
     removeID3,
+    flacFileId,
+    flac,
   )
 where
 
 import Control.Applicative
-import Control.Exception
+import Control.Exception.Safe
 import Control.Monad
 import qualified Control.Monad.Fail as Fail
 import Data.Binary
 import Data.Binary.Bits.Get ()
 import qualified Data.Binary.Bits.Get as BG
 import Data.Binary.Get
-import Data.ByteString
+import Data.ByteString hiding (unpack)
 import qualified Data.ByteString.Lazy as L
-import Data.Text as T
+import Data.Generics.Labels ()
+import qualified Data.HashMap.Strict as H
+import Data.Maybe
+import Data.Text (Text)
 import Data.Vector
 import GHC.Records
-import Melo.Format.Format
+import Lens.Micro
+import Melo.Format.Error
 import Melo.Format.ID3.ID3v2 hiding (Padding)
 import Melo.Format.Internal.Binary
 import Melo.Format.Internal.BinaryUtil
-import Melo.Format.Internal.Detect
 import Melo.Format.Internal.Info
 import Melo.Format.Internal.Locate
-import Melo.Format.Internal.Tag
-import Melo.Format.Mapping as M
-  ( FieldMappings
-      ( vorbis
-      ),
-  )
-import Melo.Format.Metadata
+import Melo.Format.Internal.Metadata
 import Melo.Format.Vorbis
-  ( VorbisComments (..),
-    getVorbisTags,
-  )
-import System.FilePath
 import System.IO
 import Text.Printf
 
@@ -78,21 +73,36 @@ pattern FlacWithID3v2 id3v2 flac = MkFlacWithID3v2 id3v2 flac
 
 {-# COMPLETE FlacWithID3v2, Flac #-}
 
-instance MetadataFormat Flac where
+flacFileId :: MetadataFileId
+flacFileId = MetadataFileId "Flac"
 
-  formatDesc = "Flac"
+flac :: MetadataFileFactory IO
+flac = MetadataFileFactory {
+  priority = 100,
+  fileId = flacFileId,
+  detectFile = \p -> withBinaryFile p ReadMode (fmap isJust . hFindFlac),
+  readMetadataFile = \p -> do
+    f <- withBinaryFile p ReadMode hReadFlac
+    pure MetadataFile {
+      metadata = flacMetadata f,
+      audioInfo = info f,
+      fileId = flacFileId,
+      filePath = p
+    }
+}
 
-  formatDesc' (FlacWithID3v2 _ _) = "Flac with ID3v2"
-  formatDesc' _ = formatDesc @Flac
-
-instance TagReader Flac where
-  tags f = case f of
-    Flac fs -> getTags fs
-    FlacWithID3v2 _ fs -> getTags fs
-    where
-      getTags fs = case vorbisComment fs of
-        Just vcs -> getVorbisTags vcs
-        Nothing -> Tags []
+flacMetadata :: Flac -> H.HashMap MetadataId Metadata
+flacMetadata (FlacWithID3v2 id3v2 f) = let id3v2fmt = metadataFormat id3v2
+                                           vc = vorbisComment f
+  in
+  H.fromList $ catMaybes [
+    Just (id3v2fmt ^. #formatId, extractMetadata id3v2),
+    vc <&> (vorbisCommentsId,) . extractMetadata
+  ]
+flacMetadata (Flac f) = let vc = vorbisComment f in
+  H.fromList $ catMaybes [
+    vc <&> (vorbisCommentsId,) . extractMetadata
+  ]
 
 instance InfoReader Flac where
   info f = case f of
@@ -111,18 +121,6 @@ instance InfoReader Flac where
                   _ -> MultiChannel ChannelMask,
                 totalSamples = fromIntegral <$> getField @"samples" si
               }
-
-instance Detector Flac where
-
-  pathDetectFormat p
-    | takeExtension p == ".flac" = Just detector
-    | otherwise = Nothing
-
-  hDetectFormat h = do
-    flacLoc <- hFindFlac h
-    pure $ case flacLoc of
-      Nothing -> Nothing
-      Just _ -> Just detector
 
 hFindFlac :: Handle -> IO (Maybe Integer)
 hFindFlac h = do
@@ -143,9 +141,6 @@ hFindFlac h = do
       pure $ case buf of
         "fLaC" -> Just (fromIntegral flacLoc)
         _ -> Nothing
-
-detector :: DetectedP
-detector = mkDetected hReadFlac M.vorbis
 
 data FlacStream
   = FlacStream

@@ -36,13 +36,18 @@ library:
     - data-default
     - filepath
     - generic-lens
+    - hashable
     - linkedhashmap
     - microlens
+    - microlens-th
+    - newtype-generics
     - polysemy
     - polysemy-plugin
     - range
+    - safe-exceptions
     - text
     - time
+    - unordered-containers
     - vector
 
 executables:
@@ -51,10 +56,13 @@ executables:
     main: Main.hs
     dependencies:
       - melo-format
+      - generic-lens
+      - microlens
       - optparse-applicative
       - polysemy
       - text
       - time
+      - unordered-containers
 
 tests:
   melo-format-test:
@@ -72,6 +80,7 @@ tests:
     - conduit
     - hspec
     - hspec-expectations-lifted
+    - safe-exceptions
     - temporary
     - text
     - vector
@@ -91,11 +100,13 @@ default-extensions:
   - ConstraintKinds
   - DataKinds
   - DefaultSignatures
+  - DeriveAnyClass
   - DeriveFoldable
   - DeriveFunctor
   - DeriveGeneric
   - DeriveLift
   - DeriveTraversable
+  - DerivingStrategies
   - DuplicateRecordFields
   - EmptyCase
   - ExistentialQuantification

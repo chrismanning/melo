@@ -5,7 +5,7 @@ module Melo.Format.Internal.Encoding
   )
 where
 
-import Control.Exception
+import Control.Exception.Safe
 import Control.Monad.Fail as Fail
 import Data.ByteString as BS
 import Data.Text
@@ -48,4 +48,4 @@ decodeUtf' ::
   (OnDecodeError -> ByteString -> Text) ->
   ByteString ->
   Either UnicodeException Text
-decodeUtf' f = unsafeDupablePerformIO . try . evaluate . f strictDecode
+decodeUtf' f = unsafePerformIO . tryDeep . pure . f strictDecode

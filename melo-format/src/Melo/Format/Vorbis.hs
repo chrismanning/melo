@@ -5,13 +5,16 @@ import Control.Monad.Fail as F
 import Data.Binary.Get
 import Data.Functor
 import Data.Int
-import Data.Text as T
+import Data.Text (Text)
+import qualified Data.Text as T (take, length, drop, findIndex)
 import Data.Vector (Vector)
 import qualified Data.Vector as V
 import Data.Word
 import Melo.Format.Internal.Binary
 import Melo.Format.Internal.BinaryUtil
+import Melo.Format.Internal.Metadata
 import Melo.Format.Internal.Tag
+import Melo.Format.Mapping
 
 data Header
   = IdentificationHeader !Identification
@@ -104,7 +107,7 @@ instance BinaryGet UserComment where
 
 splitOnce :: (Char -> Bool) -> Text -> Maybe (Text, Text)
 splitOnce p t = do
-  n <- findIndex p t
+  n <- T.findIndex p t
   pure (T.take n t, T.drop (min (T.length t) (n + 1)) t)
 
 getVorbisTags :: VorbisComments -> Tags
@@ -116,3 +119,19 @@ toUserComments (Tags ts) = fmap (uncurry UserComment) ts
 
 replaceUserComments :: VorbisComments -> [UserComment] -> VorbisComments
 replaceUserComments (VorbisComments ven _) = VorbisComments ven . V.fromList
+
+vorbisCommentsId :: MetadataId
+vorbisCommentsId = MetadataId "VorbisComments"
+
+instance MetadataFormat VorbisComments where
+  metadataFormat _ = MetadataFormat {
+    formatId = vorbisCommentsId,
+    formatDesc = "Vorbis Comments"
+  }
+  metadataLens _ = vorbisTag
+
+instance TagReader VorbisComments where
+  readTags = getVorbisTags
+
+vorbisTag :: TagMapping -> TagLens
+vorbisTag = mappedTag vorbis

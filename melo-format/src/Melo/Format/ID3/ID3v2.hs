@@ -19,15 +19,22 @@ import Data.Text.Encoding
 import Melo.Format.Internal.Binary
 import Melo.Format.Internal.BinaryUtil
 import Melo.Format.Internal.Encoding
-import Melo.Format.Internal.Format
+import Melo.Format.Internal.Metadata
 import Melo.Format.Internal.Locate
 import Melo.Format.Internal.Tag
+import Melo.Format.Mapping
 import System.IO
   ( SeekMode
       ( AbsoluteSeek
       ),
     hSeek,
   )
+
+id3v23Tag :: TagMapping -> TagLens
+id3v23Tag = mappedTag id3v2_3
+
+id3v24Tag :: TagMapping -> TagLens
+id3v24Tag = mappedTag id3v2_3
 
 data ID3v2
   = ID3v2
@@ -40,10 +47,16 @@ data ID3v2
 deriving instance Show ID3v2
 
 instance MetadataFormat ID3v2 where
+  metadataFormat id3 = MetadataFormat {
+    formatId = id3v2Id,
+    formatDesc = T.pack $ show $ frameVersion id3
+  }
+  metadataLens id3 = case frameVersion id3 of
+    ID3v23 -> id3v23Tag
+    ID3v24 -> id3v24Tag
 
-  formatDesc = "ID3v2"
-
-  formatDesc' id3 = T.pack $ show $ frameVersion id3
+id3v2Id :: MetadataId
+id3v2Id = MetadataId "ID3v2"
 
 instance MetadataLocator ID3v2 where
 
@@ -52,7 +65,7 @@ instance MetadataLocator ID3v2 where
   hLocate h = hSeek h AbsoluteSeek 0 >> locate @ID3v2 <$> hGetFileContents h
 
 instance TagReader ID3v2 where
-  tags id3 =
+  readTags id3 =
     let frames' = frames id3
         contents = foldlFrames accumFrames [] frames'
      in Tags $ fmap (first toTagKey) contents >>= \(a, bs) -> fmap (a,) bs

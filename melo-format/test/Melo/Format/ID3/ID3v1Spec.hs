@@ -9,7 +9,6 @@ import Data.Binary.Get
 import qualified Data.ByteString.Lazy as L
 import Data.Maybe
 import Data.Text ()
-import Melo.Format.Format
 import Melo.Format.ID3.ID3v1
 import Melo.Format.Internal.Binary
 import Melo.Format.Internal.Locate
@@ -250,7 +249,7 @@ spec =
                 track = Just 10,
                 genre = "Garage Rock"
               }
-        let tags' = tags tag
+        let tags' = readTags tag
         let getID3v1Tag = getMappedTag M.id3v1
         getID3v1Tag M.trackTitle tags' `shouldBe` ["title"]
         getID3v1Tag M.artist tags' `shouldBe` ["artist"]
