@@ -1,16 +1,22 @@
-module Melo.Format.Metadata
-  ( Metadata (..),
-    MetadataException (..),
-  )
-where
+{-# LANGUAGE AllowAmbiguousTypes #-}
 
-import Control.Exception
-import Data.Text
-import Melo.Format.Mapping
+module Melo.Format.Metadata where
 
-data Metadata = Tag TagMapping | AudioProperty
+import Control.Exception.Safe
+import Control.Monad
+import Data.Generics.Labels ()
+import Lens.Micro
+import Melo.Format.Error
+import Melo.Format.Internal.Metadata
+import Melo.Format.Flac (Flac, flac)
+import Melo.Format.OggVorbis (OggVorbis, oggVorbis)
+import Melo.Format.WavPack (WavPack, wavPack)
 
-data MetadataException = UnknownFormat | UnsupportedFormat | MetadataReadError Text
-  deriving (Eq, Show)
+type SupportedFormats = '[Flac, WavPack, OggVorbis]
 
-instance Exception MetadataException
+openMetadataFile :: FilePath -> IO MetadataFile
+openMetadataFile p = do
+  fs <- filterM (\factory -> factory ^. #detectFile $ p) [flac, oggVorbis, wavPack]
+  case fs of
+    [] -> throwIO UnknownFormat
+    (factory:_) -> factory ^. #readMetadataFile $ p

@@ -5,11 +5,8 @@
 
 module Melo.Library where
 
-import Control.Monad
 import Data.Text (Text)
-import Melo.Format.Detect
 import Polysemy
-import System.Directory
 
 data Stats
   = Stats
@@ -38,18 +35,3 @@ makeSem ''LibraryManagement
 
 data FileSource (m :: * -> *) a where
   GetEntries :: Text -> FileSource m [Text]
-
-scanPath :: FilePath -> IO ()
-scanPath root = do
-  isFile <- doesFileExist root
-  isDir <- doesDirectoryExist root
-  when isFile $
-    detect root >>= \case
-      Just d -> importDetected d
-      Nothing -> pure ()
-  when isDir $
-    mapM_ scanPath =<< listDirectory root
-
-importDetected :: DetectedP -> IO ()
-importDetected = do
-  undefined

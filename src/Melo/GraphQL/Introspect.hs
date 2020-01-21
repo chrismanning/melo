@@ -225,7 +225,7 @@ instance (Selector s, GraphQLType (FieldResultT a), SingI (IsFieldDeprecated a))
     args = [],
     isDeprecated = fromSing $ sing @(IsFieldDeprecated a),
     deprecationReason = Nothing
-  } in if not inclDep && (fromSing $ sing @(IsFieldDeprecated a)) then [] else [f]
+  } in if not inclDep && fromSing (sing @(IsFieldDeprecated a)) then [] else [f]
 
 instance (GGraphQLFields' f, GGraphQLFields' g) => GGraphQLFields' (f :*: g) where
   typeObjectFields' inclDep = typeObjectFields' @f inclDep <> typeObjectFields' @g inclDep
@@ -391,7 +391,7 @@ collectTypes t = runST s
       types <- H.foldM (\a (_, v) -> pure (v : a)) [] ts
       pure $ NE.fromList types
     collectTypes' :: GQLTypeTable s -> GQLType -> ST s ()
-    collectTypes' ts t' = case (t' ^. #name) of
+    collectTypes' ts t' = case t' ^. #name of
       Nothing -> wrapperOfType ts t'
       Just name' ->
         H.lookup ts name' >>= \case

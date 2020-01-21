@@ -1,25 +1,50 @@
 module Melo.Format.OggVorbis
   ( OggVorbis (..),
     hReadOggVorbis,
+    oggVorbisFileId,
+    oggVorbis,
   )
 where
 
 import Data.Binary.Get
-import Melo.Format.Format
+import qualified Data.HashMap.Strict as H
+import Lens.Micro
 import Melo.Format.Internal.Binary
 import Melo.Format.Internal.BinaryUtil
-import Melo.Format.Internal.Detect
 import Melo.Format.Internal.Info
 import Melo.Format.Internal.Locate
-import Melo.Format.Internal.Tag
-import Melo.Format.Mapping as M
-  ( FieldMappings
-      ( vorbis
-      ),
-  )
+import Melo.Format.Internal.Metadata
 import Melo.Format.Ogg
 import Melo.Format.Vorbis as V
 import System.IO
+
+oggVorbisFileId :: MetadataFileId
+oggVorbisFileId = MetadataFileId "OggVorbis"
+
+oggVorbis :: MetadataFileFactory IO
+oggVorbis = MetadataFileFactory {
+  priority = 100,
+  fileId = oggVorbisFileId,
+  readMetadataFile = \p -> do
+    ogg <- withBinaryFile p ReadMode hReadOggVorbis
+    pure MetadataFile {
+      audioInfo = info ogg,
+      fileId = oggVorbisFileId,
+      metadata = oggVorbisMetadata ogg,
+      filePath = p
+    },
+  detectFile = \p -> withBinaryFile p ReadMode $ \h -> do
+      hSeek h AbsoluteSeek 0
+      buf <- hGetFileContents h
+      pure $ case runGetOrFail bget buf of
+        Right (_, _, !(_ :: OggPage Header)) -> True
+        Left _ -> False
+}
+
+oggVorbisMetadata :: OggVorbis -> H.HashMap MetadataId Metadata
+oggVorbisMetadata (OggVorbis _ (FramedVorbisComments vc)) =
+  let fmt = metadataFormat vc in
+  H.singleton (fmt ^. #formatId) (extractMetadata vc)
 
 data OggVorbis = OggVorbis !Identification !FramedVorbisComments
   deriving (Eq, Show)
@@ -30,13 +55,10 @@ instance BinaryGet OggVorbis where
     OggPage (CommentsHeader vc) <- bget
     return $ OggVorbis ident vc
 
-instance MetadataFormat OggVorbis where
-  formatDesc = "OggVorbis"
-
 instance MetadataLocator OggVorbis
 
-instance TagReader OggVorbis where
-  tags (OggVorbis _ (FramedVorbisComments vc)) = getVorbisTags vc
+--instance TagReader OggVorbis where
+--  tags (OggVorbis _ (FramedVorbisComments vc)) = getVorbisTags vc
 
 instance InfoReader OggVorbis where
   info (OggVorbis ident _) = Info
@@ -48,21 +70,6 @@ instance InfoReader OggVorbis where
       totalSamples = Nothing, -- TODO ogg vorbis total samples
       bitsPerSample = Nothing
     }
-
-instance Detector OggVorbis where
-
-  -- file extension is not enough to identify vorbis inside ogg
-  pathDetectFormat _ = Nothing
-
-  hDetectFormat h = do
-    hSeek h AbsoluteSeek 0
-    buf <- hGetFileContents h
-    return $ case runGetOrFail bget buf of
-      Right (_, _, !(_ :: OggPage Header)) -> Just detector
-      Left _ -> Nothing
-
-detector :: DetectedP
-detector = mkDetected hReadOggVorbis M.vorbis
 
 hReadOggVorbis :: Handle -> IO OggVorbis
 hReadOggVorbis h = do

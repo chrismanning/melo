@@ -10,7 +10,7 @@ module Melo.Format.Internal.Binary
   )
 where
 
-import Control.Exception.Base
+import Control.Exception.Safe
 import qualified Data.Binary as Bin
 import qualified Data.Binary.Get as Bin
 import Data.Binary.Get (Decoder (..))
@@ -20,7 +20,7 @@ import qualified Data.ByteString.Lazy.Internal as L
   ( defaultChunkSize,
   )
 import qualified Data.Text as T
-import Melo.Format.Metadata
+import Melo.Format.Error (MetadataException(MetadataReadError))
 import System.IO
 
 class BinaryGet a where

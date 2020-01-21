@@ -11,7 +11,7 @@ module Melo.Format.Info
     readTotalSamples,
     readBitsPerSample,
     samplesPerSecond,
-    hRunInfoReadM,
+--    hRunInfoReadM,
     readLengthMilliseconds,
     lengthMilliseconds,
     audioLength,
@@ -19,13 +19,12 @@ module Melo.Format.Info
   )
 where
 
-import Control.Exception
+import Control.Exception.Safe
 import Data.Fixed
 import Data.Functor
 import Data.Time.Clock
-import Melo.Format.Detect
+import Melo.Format.Error
 import Melo.Format.Internal.Info
-import Melo.Format.Metadata
 import Polysemy
 import System.IO
 
@@ -67,19 +66,19 @@ lengthMilliseconds i =
       samplesPerSec = fromIntegral (samplesPerSecond $ sampleRate i)
    in samples <&> (/ samplesPerSec) <&> (* 1000)
 
-hRunInfoReadM ::
-  forall r a.
-  Member (Embed IO) r =>
-  Handle ->
-  Sem (InfoRead ': r) a ->
-  Sem r a
-hRunInfoReadM h a = embed (hDetect h) >>= \case
-  Nothing -> throw UnknownFormat
-  Just (DetectedP d) -> do
-    let hReadMetadata' = getHReadMetadata d
-    !i <- info <$> embed (hReadMetadata' h)
-    interpret
-      ( \case
-          ReadInfo -> pure i
-      )
-      a
+--hRunInfoReadM ::
+--  forall r a.
+--  Member (Embed IO) r =>
+--  Handle ->
+--  Sem (InfoRead ': r) a ->
+--  Sem r a
+--hRunInfoReadM h a = embed (hDetect h) >>= \case
+--  Nothing -> throw UnknownFormat
+--  Just (DetectedP d) -> do
+--    let hReadMetadata' = getHReadMetadata d
+--    !i <- info <$> embed (hReadMetadata' h)
+--    interpret
+--      ( \case
+--          ReadInfo -> pure i
+--      )
+--      a

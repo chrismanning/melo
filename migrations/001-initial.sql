@@ -56,13 +56,15 @@ create table metadata_source (
     id uuid not null primary key default uuid_generate_v4(),
     kind text not null,
     source text not null,
-    idx text
+    idx text,
+    scanned timestamp not null
 );
 
 create table track (
     id uuid not null primary key default uuid_generate_v4(),
     title text not null,
     track_number int,
+    disc_number int,
     comment text,
     album_id uuid references album,
     length interval not null,

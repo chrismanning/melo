@@ -3,6 +3,7 @@ module Melo.Format.ID3.ID3v1
     iD3v1Id,
     hReplaceID3v1,
     hRemoveID3v1,
+    id3v1Id,
   )
 where
 
@@ -27,8 +28,8 @@ import Data.Text.Encoding
 import GHC.Generics
 import Melo.Format.ID3.ID3v1Genre
 import Melo.Format.Internal.BinaryUtil
-import Melo.Format.Internal.Format
 import Melo.Format.Internal.Locate
+import Melo.Format.Internal.Metadata
 import Melo.Format.Internal.Tag
 import Melo.Format.Mapping
   ( FieldMapping
@@ -42,7 +43,7 @@ import Melo.Format.Mapping
     trackArtistTag,
     trackNumberTag,
     trackTitleTag,
-    yearTag,
+    yearTag
   )
 import System.IO
 import Text.Read
@@ -60,7 +61,14 @@ data ID3v1
   deriving (Show, Eq, Generic)
 
 instance MetadataFormat ID3v1 where
-  formatDesc = "ID3v1"
+  metadataFormat _ = MetadataFormat {
+    formatId = id3v1Id,
+    formatDesc = let (MetadataId k) = id3v1Id in k
+  }
+  metadataLens _ = mappedTag id3v1
+
+id3v1Id :: MetadataId
+id3v1Id = MetadataId "ID3v1"
 
 instance MetadataLocator ID3v1 where
   hLocate h = do
@@ -72,7 +80,7 @@ instance MetadataLocator ID3v1 where
       _ -> Nothing
 
 instance TagReader ID3v1 where
-  tags id3 =
+  readTags id3 =
     Tags $
       catMaybes
         [ tag trackTitleTag title,

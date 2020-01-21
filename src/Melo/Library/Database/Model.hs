@@ -10,19 +10,26 @@ import Data.Fixed
 import Data.Generics.Labels ()
 import Data.Generics.Product
 import Data.Generics.Sum ()
+import Data.Hashable
 import Data.Text
 import Data.Time.Clock
+import Data.Time.LocalTime
 import Data.UUID
 import Database.Beam hiding (char, double)
+import Database.Beam.Backend.SQL.SQL92 (HasSqlValueSyntax(..))
 import Database.Beam.Postgres
+import Database.Beam.Postgres.Syntax
 import Database.PostgreSQL.Simple.FromField
+import Database.PostgreSQL.Simple.ToField
 import Database.PostgreSQL.Simple.TypeInfo.Static (interval)
 import GHC.Generics ()
 import GHC.OverloadedLabels ()
 
 data LibraryDb f
   = LibraryDb
-      { genre :: f (TableEntity GenreT),
+      { audio_source :: f (TableEntity AudioSourceT),
+        metadata_source :: f (TableEntity MetadataSourceT),
+        genre :: f (TableEntity GenreT),
         artist :: f (TableEntity ArtistT),
         album :: f (TableEntity AlbumT),
         track :: f (TableEntity TrackT),
@@ -50,6 +57,8 @@ libraryDb =
           modifyTableFields
             ( tableModification
                 & (setField @"album_id" (AlbumKey $ fieldNamed "album_id"))
+                . (setField @"metadata_source_id" (MetadataSourceKey $ fieldNamed "metadata_source_id"))
+                . (setField @"audio_source_id" (AudioSourceKey $ fieldNamed "audio_source_id"))
             ),
         track_genre =
           modifyTableFields
@@ -221,9 +230,11 @@ data TrackT (f :: * -> *)
       { id :: Columnar f UUID,
         title :: Columnar f Text,
         album_id :: PrimaryKey AlbumT (Nullable f),
-        track_number :: Columnar f (Maybe Integer),
+        track_number :: Columnar f (Maybe Int),
+        disc_number :: Columnar f (Maybe Int),
         comment :: Columnar f (Maybe Text),
-        source :: Columnar f (Maybe Text),
+        audio_source_id :: PrimaryKey AudioSourceT (Nullable f),
+        metadata_source_id :: PrimaryKey MetadataSourceT f,
         length :: Columnar f Interval
       }
   deriving (Generic, Beamable)
@@ -277,16 +288,17 @@ deriving instance Show AudioSource
 
 deriving instance Eq AudioSource
 
-deriving instance Show AudioSourceKey
+deriving instance (Show (Columnar f UUID)) => Show (PrimaryKey AudioSourceT (f :: * -> *))
 
-deriving instance Eq AudioSourceKey
+deriving instance (Eq (Columnar f UUID)) => Eq (PrimaryKey AudioSourceT (f :: * -> *))
 
 data MetadataSourceT (f :: * -> *)
   = MetadataSource
       { id :: Columnar f UUID,
         kind :: Columnar f Text,
         source :: Columnar f Text,
-        idx :: Columnar f (Maybe Text)
+        idx :: Columnar f (Maybe Text),
+        scanned :: Columnar f LocalTime
       }
   deriving (Generic, Beamable)
 
@@ -302,13 +314,15 @@ type MetadataSource = MetadataSourceT Identity
 
 type MetadataSourceKey = PrimaryKey MetadataSourceT Identity
 
+instance Hashable MetadataSourceKey
+
 deriving instance Show MetadataSource
 
 deriving instance Eq MetadataSource
 
-deriving instance Show MetadataSourceKey
+deriving instance (Show (Columnar f UUID)) => Show (PrimaryKey MetadataSourceT (f :: * -> *))
 
-deriving instance Eq MetadataSourceKey
+deriving instance (Eq (Columnar f UUID)) => Eq (PrimaryKey MetadataSourceT (f :: * -> *))
 
 data ArtistGenreT (f :: * -> *)
   = ArtistGenre
@@ -374,7 +388,8 @@ newtype Interval = Interval NominalDiffTime
   deriving (Show, Eq)
 
 mkInterval :: NominalDiffTime -> Maybe Interval
-mkInterval = undefined
+-- TODO check if NominalDiffTime fits in Interval
+mkInterval = Just . Interval
 
 instance FromBackendRow Postgres Interval
 
@@ -387,6 +402,12 @@ instance FromField Interval where
         Just dat -> case parseOnly (Interval <$> nominalDiffTimeParser <* endOfInput) dat of
           Left msg -> returnError ConversionFailed f msg
           Right t -> return t
+
+instance ToField Interval where
+  toField (Interval i) = Many [toField i, Plain " :: INTERVAL"]
+
+instance HasSqlValueSyntax PgValueSyntax Interval where
+  sqlValueSyntax = defaultPgValueSyntax
 
 nominalDiffTimeParser :: Parser NominalDiffTime
 nominalDiffTimeParser = do

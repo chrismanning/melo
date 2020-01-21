@@ -2,6 +2,7 @@
 
 module Melo.Format.Internal.Locate where
 
+import Control.Monad.Fail as F
 import Data.Binary (Get)
 import Data.Binary.Get (runGetOrFail)
 import qualified Data.ByteString as BS
@@ -10,10 +11,9 @@ import Data.Either
 import Data.List as List
 import Melo.Format.Internal.Binary
 import Melo.Format.Internal.BinaryUtil
-import Melo.Format.Internal.Format
 import System.IO
 
-class (MetadataFormat a, BinaryGet a) => MetadataLocator a where
+class BinaryGet a => MetadataLocator a where
 
   locate :: L.ByteString -> Maybe Int
   locate = locateBinaryLazy @a
@@ -29,3 +29,12 @@ locateBinaryLazy bs = List.findIndex canGet (L.tails bs)
 
 locateBinary :: forall a. BinaryGet a => BS.ByteString -> Maybe Int
 locateBinary bs = locateBinaryLazy @a $ L.fromStrict bs
+
+hLocateGet :: forall a. (MetadataLocator a) => Handle -> IO a
+hLocateGet h = do
+  bs <- hLocate @a h >>= \case
+    Nothing -> F.fail "Could not locate metadata"
+    Just i -> do
+      hSeek h AbsoluteSeek (fromIntegral i)
+      hGetFileContents h
+  return $ bdecode bs

@@ -89,7 +89,7 @@ albumTitleTag =
         id3v2_3 = caseSensitiveMapping "TALB",
         id3v2_4 = caseSensitiveMapping "TALB",
         riff = caseSensitiveMapping "IPRD",
-        vorbis = caseSensitiveMapping "ALBUM"
+        vorbis = caseInsensitiveMapping "ALBUM"
       }
 
 albumTitleSortTag :: TagMapping
@@ -99,7 +99,7 @@ albumTitleSortTag =
       { ape = caseInsensitiveMapping "ALBUMSORT",
         id3v2_3 = caseSensitiveMapping "TSOA",
         id3v2_4 = caseSensitiveMapping "TSOA",
-        vorbis = caseSensitiveMapping "ALBUMSORT"
+        vorbis = caseInsensitiveMapping "ALBUMSORT"
       }
 
 trackTitleTag :: TagMapping
@@ -111,7 +111,7 @@ trackTitleTag =
         id3v2_3 = caseSensitiveMapping "TIT2",
         id3v2_4 = caseSensitiveMapping "TIT2",
         riff = caseSensitiveMapping "INAME",
-        vorbis = caseSensitiveMapping "TITLE"
+        vorbis = caseInsensitiveMapping "TITLE"
       }
 
 trackTitleSortTag :: TagMapping
@@ -121,7 +121,7 @@ trackTitleSortTag =
       { ape = caseInsensitiveMapping "TITLESORT",
         id3v2_3 = caseSensitiveMapping "TSOT",
         id3v2_4 = caseSensitiveMapping "TSOT",
-        vorbis = caseSensitiveMapping "TITLESORT"
+        vorbis = caseInsensitiveMapping "TITLESORT"
       }
 
 albumArtistTag :: TagMapping
@@ -131,7 +131,7 @@ albumArtistTag =
       { ape = caseInsensitiveMapping "Album Artist",
         id3v2_3 = caseSensitiveMapping "TPE2",
         id3v2_4 = caseSensitiveMapping "TPE2",
-        vorbis = caseSensitiveMapping "ALBUMARTIST"
+        vorbis = caseInsensitiveMapping "ALBUMARTIST"
       }
 
 albumArtistSortTag :: TagMapping
@@ -140,7 +140,7 @@ albumArtistSortTag =
     def
       { ape = caseInsensitiveMapping "ALBUMARTISTSORT",
         id3v2_3 = caseSensitiveMapping "TSO2",
-        vorbis = caseSensitiveMapping "ALBUMARTISTSORT"
+        vorbis = caseInsensitiveMapping "ALBUMARTISTSORT"
       }
 
 trackArtistTag :: TagMapping
@@ -152,7 +152,7 @@ trackArtistTag =
         id3v2_3 = caseSensitiveMapping "TPE1",
         id3v2_4 = caseSensitiveMapping "TPE1",
         riff = caseSensitiveMapping "IART",
-        vorbis = caseSensitiveMapping "ARTIST"
+        vorbis = caseInsensitiveMapping "ARTIST"
       }
 
 trackArtistSortTag :: TagMapping
@@ -162,7 +162,7 @@ trackArtistSortTag =
       { ape = caseInsensitiveMapping "ARTISTSORT",
         id3v2_3 = caseSensitiveMapping "TSOP",
         id3v2_4 = caseSensitiveMapping "TSOP",
-        vorbis = caseSensitiveMapping "ARTISTSORT"
+        vorbis = caseInsensitiveMapping "ARTISTSORT"
       }
 
 composerTag :: TagMapping
@@ -173,7 +173,7 @@ composerTag =
         id3v2_3 = caseSensitiveMapping "TCOM",
         id3v2_4 = caseSensitiveMapping "TCOM",
         riff = caseSensitiveMapping "IMUS",
-        vorbis = caseSensitiveMapping "COMPOSER"
+        vorbis = caseInsensitiveMapping "COMPOSER"
       }
 
 performerTag :: TagMapping
@@ -183,7 +183,7 @@ performerTag =
       { ape = caseInsensitiveMapping "Performer",
         id3v2_3 = caseSensitiveMapping "IPLS",
         id3v2_4 = caseSensitiveMapping "TMCL",
-        vorbis = caseSensitiveMapping "PERFORMER"
+        vorbis = caseInsensitiveMapping "PERFORMER"
       }
 
 yearTag :: TagMapping
@@ -194,7 +194,7 @@ yearTag =
         id3v1 = caseSensitiveMapping "TYER",
         id3v2_3 = caseSensitiveMapping "TYER",
         id3v2_4 = caseSensitiveMapping "TDRC",
-        vorbis = caseSensitiveMapping "DATE"
+        vorbis = caseInsensitiveMapping "DATE"
       }
 
 trackNumberTag :: TagMapping
@@ -205,7 +205,7 @@ trackNumberTag =
         id3v1 = caseSensitiveMapping "TRCK",
         id3v2_3 = caseSensitiveMapping "TRCK",
         id3v2_4 = caseSensitiveMapping "TRCK",
-        vorbis = caseSensitiveMapping "TRACKNUMBER"
+        vorbis = caseInsensitiveMapping "TRACKNUMBER"
       }
 
 genreTag :: TagMapping
@@ -227,5 +227,15 @@ commentTag =
         id3v1 = caseSensitiveMapping "COMM",
         id3v2_3 = caseSensitiveMapping "COMM",
         id3v2_4 = caseSensitiveMapping "COMM",
-        vorbis = caseSensitiveMapping "COMMENT"
+        vorbis = caseInsensitiveMapping "COMMENT"
+      }
+
+discNumberTag :: TagMapping
+discNumberTag =
+  singletonTagMapping
+    def
+      { ape = caseInsensitiveMapping "Disc",
+        id3v2_3 = caseSensitiveMapping "TPOS",
+        id3v2_4 = caseSensitiveMapping "TPOS",
+        vorbis = caseInsensitiveMapping "DISCNUMBER"
       }
