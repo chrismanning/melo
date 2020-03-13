@@ -31,7 +31,7 @@ library:
     - conduit
     - conduit-audio
     - conduit-extra
-    - conduit-vfs
+#    - conduit-vfs
     - containers
     - data-default
     - filepath

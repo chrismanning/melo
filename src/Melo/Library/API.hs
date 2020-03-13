@@ -9,13 +9,11 @@ import Data.Text as T hiding (null)
 import Data.Traversable
 import Data.UUID (toText)
 import Database.Beam hiding (C)
-import GHC.Generics (Generic)
 import GHC.OverloadedLabels ()
-import Melo.API.Haxl
 import Melo.GraphQL.Introspect
 import Melo.GraphQL.Resolve
-import qualified Melo.Library.Database.Model as BM
-import Melo.Library.Repo.Genre
+import qualified Melo.Library.Database.Model as DB
+import Melo.Library.Repo.Haxl
 
 import Debug.Trace
 
@@ -43,7 +41,7 @@ instance GenericResolver Haxl Library where
         hydratedGenres <- for genres $ \genre ->
           resolveFieldValues genre fs
         traceShowM hydratedGenres
-        pure $ A.list (\x -> x) hydratedGenres
+        pure $ A.list Prelude.id hydratedGenres
       )
       (nullresolver)
       (nullresolver)
@@ -61,7 +59,7 @@ instance GraphQLType Genre where
   type TypeKind Genre = 'ObjectKind
 
 instance ObjectResolver Haxl Genre where
-  type ResolverContext Genre = BM.Genre
+  type ResolverContext Genre = DB.Genre
 
 instance GenericResolver Haxl Genre where
   genericResolver = let g = build @Genre in
@@ -69,7 +67,7 @@ instance GenericResolver Haxl Genre where
       (pureCtxResolver (^. #name))
       (Resolve $ \ctx _ fields -> do
         tracks <- getGenreTracks (primaryKey ctx)
-        fmap (A.list (\x -> x)) $ forM tracks $ \track ->
+        fmap (A.list Prelude.id) $ forM tracks $ \track ->
           resolveFieldValues track fields
       )
 
@@ -89,7 +87,7 @@ instance GraphQLType Artist where
   type TypeKind Artist = 'ObjectKind
 
 instance ObjectResolver Haxl Artist where
-  type ResolverContext Artist = BM.Artist
+  type ResolverContext Artist = DB.Artist
 
 instance GenericResolver Haxl Artist where
   genericResolver = let a = build @Artist in
@@ -112,7 +110,7 @@ instance GraphQLType Album where
   type TypeKind Album = 'ObjectKind
 
 instance ObjectResolver Haxl Album where
-  type ResolverContext Album = BM.Album
+  type ResolverContext Album = DB.Album
 
 instance GenericResolver Haxl Album where
   genericResolver = let a = build @Album in
@@ -130,7 +128,7 @@ instance GraphQLType Track where
   type TypeKind Track = 'ObjectKind
 
 instance ObjectResolver Haxl Track where
-  type ResolverContext Track = BM.Track
+  type ResolverContext Track = DB.Track
 
 instance GenericResolver Haxl Track where
   genericResolver = let t = build @Track in

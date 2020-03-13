@@ -3,15 +3,16 @@
 module Melo.GraphQL.Resolve where
 
 import Control.Applicative
-import Control.Lens (Contravariant, Optic', Profunctor, (^.), (.~), (&))
+import Control.Lens (Contravariant, Optic', Profunctor, (^.))
 import qualified Control.Lens as L
 import Control.Monad.Catch
 import qualified Data.Aeson as A
 import qualified Data.Aeson.Encoding as A
 import Data.Aeson as A (FromJSON(..), ToJSON(..), (.=))
-import Data.Barbie
 import Data.Foldable
 import Data.Generic.HKD
+import Data.Kind
+import qualified Data.HashMap.Strict as H
 import Data.Maybe
 import Data.Singletons
 import Data.Tagged
@@ -19,10 +20,9 @@ import Data.Text as T (Text)
 import Data.Vector as V (fromList)
 import GHC.Generics as G
 import GHC.TypeLits as TL
-import Language.GraphQL.AST.Core as QL hiding (Query)
+import qualified Language.GraphQL.AST.Core as QL hiding (Query)
 
 import Melo.GraphQL.Introspect as I
-import Melo.API.Haxl
 
 data GraphQLException = FieldNotFound {fieldName :: Text, typeName :: Text}
   deriving (Show, Exception)
@@ -54,13 +54,13 @@ instance ToJSON Response where
   toEncoding rs = A.pairs ("data" .= _data rs <> "errors" .= errors rs)
 
 fieldName' :: QL.Field -> Text
-fieldName' (Field _ name _ _) = name
+fieldName' (QL.Field _ name _ _) = name
 
-fieldArgs' :: QL.Field -> [QL.Argument]
-fieldArgs' (Field _ _ as _) = as
+--fieldArgs' :: QL.Field -> [QLD.Argument]
+--fieldArgs' (QL.Field _ _ as _) = as
 
 fieldSelections' :: QL.Field -> [QL.Selection]
-fieldSelections' (Field _ _ _ fs) = fs
+fieldSelections' (QL.Field _ _ _ fs) = toList fs
 
 collectFields :: [QL.Field] -> [(Text, QL.Field)]
 collectFields = foldMap (\field' -> [(fieldName' field', field')])
@@ -74,12 +74,12 @@ responseKey = L.to responseKey_
 getFieldNamed :: Text -> [QL.Field] -> Maybe QL.Field
 getFieldNamed _ [] = Nothing
 getFieldNamed fn (f : fs) =
-  let (Field _ fn' _ _) = f
+  let (QL.Field _ fn' _ _) = f
     in if fn' == fn then Just f else getFieldNamed fn fs
 
 -----------------------
 
-class ObjectResolver (m :: * -> *) a where
+class ObjectResolver (m :: Type -> Type) a where
   type ResolverContext a = r | r -> a
 
   resolveFieldValue :: ResolverContext a -> QL.Field -> m A.Encoding
@@ -111,7 +111,7 @@ class GenericResolver m a where
   type GResolver m a = ResolverM m a
   genericResolver :: (GraphQLType a) => GResolver m a
 
-class GObjectResolver (m :: * -> *) (f :: * -> *) ctx where
+class GObjectResolver (m :: Type -> Type) (f :: Type -> Type) ctx where
   resolveFieldValue' :: f a -> ctx -> QL.Field -> Maybe (m A.Encoding)
 
 instance (GObjectResolver m f ctx) => GObjectResolver m (M1 D d f) ctx where
@@ -121,15 +121,15 @@ instance (GObjectResolver m f ctx) => GObjectResolver m (M1 C c f) ctx where
   resolveFieldValue' (M1 a) = resolveFieldValue' a
 
 instance (CoerceArgs (FieldArguments a), SingI n) => GObjectResolver m (M1 S ('MetaSel ('Just n) x y z) (Rec0 (Resolve m ctx a))) ctx where
-  resolveFieldValue' (M1 (K1 (Resolve r))) ctx (Field _ name args selections)
-    | name == fromSing (sing @n) = Just $ r ctx (coerceArgumentValues @(FieldArguments a) args) [s | SelectionField s <- selections]
+  resolveFieldValue' (M1 (K1 (Resolve r))) ctx (QL.Field _ name args selections)
+    | name == fromSing (sing @n) = Just $ r ctx (coerceArgumentValues @(FieldArguments a) args) [s | QL.SelectionField s <- toList selections]
     | otherwise = Nothing
 
 instance (GObjectResolver m f ctx, GObjectResolver m g ctx) => GObjectResolver m (f :*: g) ctx where
   resolveFieldValue' (f :*: g) c f' = resolveFieldValue' f c f' <|> resolveFieldValue' g c f'
 
 class CoerceArgs a where
-  coerceArgumentValues :: [Argument] -> a
+  coerceArgumentValues :: QL.Arguments -> a
 
 instance CoerceArgs () where
   coerceArgumentValues = const ()
@@ -145,22 +145,20 @@ type family FieldArguments a where
 newtype FieldArgument a = FieldArgument a
 
 instance FromJSON a => CoerceArgs (FieldArgument a) where
-  coerceArgumentValues args = case A.fromJSON $ A.object (fmap convertArg args) of
+  coerceArgumentValues (QL.Arguments args) = case A.fromJSON $ A.object (fmap (uncurry convertArg) (H.toList args)) of
     A.Error e -> error $ "Error coercing argument values: " <> e
     A.Success a -> FieldArgument a
     where
-    convertArg (Argument name val) = name .= convertVal val
-    convertVal val = val'
-      where
-        val' = case val of
-          ValueInt i -> toJSON i
-          ValueFloat f -> toJSON f
-          ValueString s -> toJSON s
-          ValueBoolean b -> toJSON b
-          ValueNull -> A.Null
-          ValueEnum n -> A.String n
-          ValueList l -> A.Array $ V.fromList $ fmap convertVal l
-          ValueObject o -> A.object (fmap (\(ObjectField name v) -> name .= convertVal v) o)
+    convertArg name val = name .= convertVal val
+    convertVal val = case val of
+      QL.Int i -> toJSON i
+      QL.Float f -> toJSON f
+      QL.String s -> toJSON s
+      QL.Boolean b -> toJSON b
+      QL.Null -> A.Null
+      QL.Enum n -> A.String n
+      QL.List l -> A.Array $ V.fromList $ fmap convertVal l
+      QL.Object o -> A.object (fmap (\(name, v) -> name .= convertVal v) (H.toList o))
 
 -----------------------
 
@@ -192,68 +190,68 @@ type family UnwrapNull a where
   UnwrapNull (Maybe a) = a
   UnwrapNull a = a
 
-type ExObjResolver = HaxlResolver ExObj
-
 type ResolverM m a = HKD a (Resolve m (ResolverContext a))
 
-type HaxlResolver a = ResolverM Haxl a
-
------------------------
-
-data IFace = IFace {
-  a :: Text
-} deriving (Generic)
-
-instance GraphQLType IFace where
-  type TypeKind IFace = 'InterfaceKind
-
-data ExEnum = ExA | ExB
-  deriving (Generic, ToJSON)
-
-instance GraphQLType ExEnum where
-  type TypeKind ExEnum = 'EnumKind
-
-data ExUnion = ExInt Int | ExStr Text
-  deriving (Generic)
-
-instance GraphQLType ExUnion where
-  type TypeKind ExUnion = 'UnionKind
-
-data ExObj = ExObj {
-  a :: Text,
-  b :: BArgs -> Text,
-  c :: ExEnum,
-  d :: Deprecated Int,
-  e :: Maybe Int
-} deriving (Generic)
-
-instance GraphQLType ExObj where
-  type TypeKind ExObj = 'ObjectKind
-
-data ExObj2 = ExObj2 {
-  ref :: ExObj
-} deriving (Generic)
-
-instance GraphQLType ExObj2 where
-  type TypeKind ExObj2 = 'ObjectKind
-
-data BArgs = BArgs {
-  i :: Int
-} deriving (Generic, FromJSON)
-
-instance GraphQLType BArgs where
-  type TypeKind BArgs = 'InputObjectKind
-
-type ExObjF f = HKD ExObj f
-
-instance ObjectResolver Maybe ExObj where
-  type ResolverContext ExObj = ()
-
-instance GenericResolver Maybe ExObj where
-  genericResolver =
-    buniq nullresolver
-      & field @"a" .~ (pureResolver "a value")
-      & field @"b" .~ (pureResolver "b value")
-      & field @"c" .~ (pureResolver ExA)
-      & field @"d" .~ (pureResolver 321)
-      & field @"e" .~ (pureResolver (Just 321))
+--type ExObjResolver = HaxlResolver ExObj
+--
+--type HaxlResolver a = ResolverM Haxl a
+--
+-------------------------
+--
+--data IFace = IFace {
+--  a :: Text
+--} deriving (Generic)
+--
+--instance GraphQLType IFace where
+--  type TypeKind IFace = 'InterfaceKind
+--
+--data ExEnum = ExA | ExB
+--  deriving (Generic, ToJSON)
+--
+--instance GraphQLType ExEnum where
+--  type TypeKind ExEnum = 'EnumKind
+--
+--data ExUnion = ExInt Int | ExStr Text
+--  deriving (Generic)
+--
+--instance GraphQLType ExUnion where
+--  type TypeKind ExUnion = 'UnionKind
+--
+--data ExObj = ExObj {
+--  a :: Text,
+--  b :: BArgs -> Text,
+--  c :: ExEnum,
+--  d :: Deprecated Int,
+--  e :: Maybe Int
+--} deriving (Generic)
+--
+--instance GraphQLType ExObj where
+--  type TypeKind ExObj = 'ObjectKind
+--
+--data ExObj2 = ExObj2 {
+--  ref :: ExObj
+--} deriving (Generic)
+--
+--instance GraphQLType ExObj2 where
+--  type TypeKind ExObj2 = 'ObjectKind
+--
+--data BArgs = BArgs {
+--  i :: Int
+--} deriving (Generic, FromJSON)
+--
+--instance GraphQLType BArgs where
+--  type TypeKind BArgs = 'InputObjectKind
+--
+--type ExObjF f = HKD ExObj f
+--
+--instance ObjectResolver Maybe ExObj where
+--  type ResolverContext ExObj = ()
+--
+--instance GenericResolver Maybe ExObj where
+--  genericResolver =
+--    bpure nullresolver
+--      & field @"a" .~ (pureResolver "a value")
+--      & field @"b" .~ (pureResolver "b value")
+--      & field @"c" .~ (pureResolver ExA)
+--      & field @"d" .~ (pureResolver 321)
+--      & field @"e" .~ (pureResolver (Just 321))

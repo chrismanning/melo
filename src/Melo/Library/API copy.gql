@@ -1,0 +1,22 @@
+type Query {
+    library: Library
+}
+
+type Library {
+    genres(nameFilter: String): [Genre!]!
+    tracks(titleFilter: String): [Track!]!
+}
+
+type Genre {
+    slug: String!
+    name: String!
+    description: String
+    tracks: [Track!]!
+}
+
+type Track {
+    slug: String!
+    title: String!
+    # trackNumber: Int
+    genre: [Genre!]
+}

@@ -22,13 +22,14 @@ where
 import Control.Exception.Safe
 import Data.Fixed
 import Data.Functor
+import Data.Kind
 import Data.Time.Clock
 import Melo.Format.Error
 import Melo.Format.Internal.Info
 import Polysemy
 import System.IO
 
-data InfoRead (m :: * -> *) a where
+data InfoRead (m :: Type -> Type) a where
   ReadInfo :: InfoRead m Info
 
 makeSem ''InfoRead

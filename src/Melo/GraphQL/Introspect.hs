@@ -7,6 +7,7 @@ import Control.Lens ((^.))
 import Control.Monad.ST
 import Data.Generics.Labels ()
 import qualified Data.HashTable.ST.Basic as H
+import Data.Kind
 import Data.List.NonEmpty as NE hiding (filter)
 import Data.Proxy
 import Data.Singletons
@@ -162,7 +163,7 @@ class GraphQLType a where
   default ofType :: Maybe GQLType
   ofType = Nothing
 
-data DatatypeProxy d (f :: * -> *) a = DatatypeProxy
+data DatatypeProxy d (f :: Type -> Type) a = DatatypeProxy
 type DatatypeProxy' d = DatatypeProxy d Proxy ()
 
 class GTypeName f where
@@ -204,7 +205,7 @@ type family IsFieldDeprecated a :: Bool where
   IsFieldDeprecated (Tagged x a) = IsFieldDeprecated a
   IsFieldDeprecated a = 'False
 
-data SelectorProxy s (f :: * -> *) a = SelectorProxy
+data SelectorProxy s (f :: Type -> Type) a = SelectorProxy
 type SelectorProxy' s = SelectorProxy s Proxy ()
 
 class GGraphQLFields' f where
@@ -298,7 +299,7 @@ instance Constructor c => GGraphQLEnumValue' (M1 C c U1) where
 instance (GGraphQLEnumValue' f, GGraphQLEnumValue' g) => GGraphQLEnumValue' (f :+: g) where
   enumValues' inclDep = enumValues' @f inclDep <> enumValues' @g inclDep
 
-data ConstructorProxy c (f :: * -> *) a = ConstructorProxy
+data ConstructorProxy c (f :: Type -> Type) a = ConstructorProxy
 type ConstructorProxy' c = ConstructorProxy c Proxy ()
 
 -----------------------------------

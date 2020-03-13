@@ -5,6 +5,7 @@
 
 module Melo.Library where
 
+import Data.Kind
 import Data.Text (Text)
 import Polysemy
 
@@ -23,7 +24,7 @@ data LibraryPath
   | LibraryFile FilePath
   deriving (Eq, Ord, Show)
 
-data LibraryManagement (m :: * -> *) a where
+data LibraryManagement (m :: Type -> Type) a where
   LibraryAddPath :: LibraryPath -> LibraryManagement m Stats
   LibraryUpdatePath :: LibraryPath -> LibraryManagement m Stats
   LibraryUpdateAll :: LibraryManagement m Stats
@@ -33,5 +34,5 @@ data LibraryManagement (m :: * -> *) a where
 
 makeSem ''LibraryManagement
 
-data FileSource (m :: * -> *) a where
+data FileSource (m :: Type -> Type) a where
   GetEntries :: Text -> FileSource m [Text]

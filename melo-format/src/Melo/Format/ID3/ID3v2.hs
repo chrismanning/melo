@@ -16,6 +16,7 @@ import Data.List.NonEmpty
 import Data.Maybe
 import Data.Text as T
 import Data.Text.Encoding
+import qualified Data.Vector as V
 import Melo.Format.Internal.Binary
 import Melo.Format.Internal.BinaryUtil
 import Melo.Format.Internal.Encoding
@@ -68,7 +69,7 @@ instance TagReader ID3v2 where
   readTags id3 =
     let frames' = frames id3
         contents = foldlFrames accumFrames [] frames'
-     in Tags $ fmap (first toTagKey) contents >>= \(a, bs) -> fmap (a,) bs
+     in Tags $ V.fromList $ fmap (first toTagKey) contents >>= \(a, bs) -> fmap (a,) bs
     where
       accumFrames acc frame = acc <> catMaybes [extractFrameContent frame]
 
@@ -122,7 +123,7 @@ instance BinaryGet ID3v2Version where
   bget = getWord16le >>= \case
     3 -> pure ID3v23
     4 -> pure ID3v24
-    a -> F.fail $ "Unknown ID3v2 version " ++ show a
+    a -> F.fail $ "Unknown ID3v2 version " <> show a
 
 class Version (v :: ID3v2Version) where
   id3v2Version :: ID3v2Version
@@ -317,7 +318,7 @@ instance GetEncoding 'ID3v23 where
   getEncoding = getWord8 >>= \case
     0 -> pure NullTerminated
     1 -> pure UCS2
-    x -> F.fail $ "Unrecognised ID3v2.3 encoding flag " ++ show x
+    x -> F.fail $ "Unrecognised ID3v2.3 encoding flag " <> show x
 
 instance GetEncoding 'ID3v24 where
   getEncoding = getWord8 >>= \case
@@ -325,7 +326,7 @@ instance GetEncoding 'ID3v24 where
     1 -> pure UTF16
     2 -> pure UTF16BE
     3 -> pure UTF8
-    x -> F.fail $ "Unrecognised ID3v2.4 encoding flag " ++ show x
+    x -> F.fail $ "Unrecognised ID3v2.4 encoding flag " <> show x
 
 terminator :: TextEncoding -> ByteString
 terminator NullTerminated = "\0"

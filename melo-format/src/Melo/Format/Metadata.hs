@@ -1,5 +1,3 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
-
 module Melo.Format.Metadata where
 
 import Control.Exception.Safe

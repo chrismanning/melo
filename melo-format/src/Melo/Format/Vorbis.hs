@@ -112,13 +112,13 @@ splitOnce p t = do
 
 getVorbisTags :: VorbisComments -> Tags
 getVorbisTags (VorbisComments _ cs) =
-  Tags $ V.toList $ fmap (\(UserComment k v) -> (k, v)) cs
+  Tags $ fmap (\(UserComment k v) -> (k, v)) cs
 
-toUserComments :: Tags -> [UserComment]
+toUserComments :: Tags -> Vector UserComment
 toUserComments (Tags ts) = fmap (uncurry UserComment) ts
 
-replaceUserComments :: VorbisComments -> [UserComment] -> VorbisComments
-replaceUserComments (VorbisComments ven _) = VorbisComments ven . V.fromList
+replaceUserComments :: VorbisComments -> Vector UserComment -> VorbisComments
+replaceUserComments (VorbisComments ven _) = VorbisComments ven
 
 vorbisCommentsId :: MetadataId
 vorbisCommentsId = MetadataId "VorbisComments"

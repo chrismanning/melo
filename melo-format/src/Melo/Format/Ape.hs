@@ -86,7 +86,7 @@ instance MetadataLocator APE where
     return $ locate @APE (L.fromStrict buf)
 
 instance TagReader APE where
-  readTags a = Tags $ V.toList (items a >>= getTextItem)
+  readTags a = Tags (items a >>= getTextItem)
 
 getTextItem :: TagItem -> Vector (Text, Text)
 getTextItem t = case t of
