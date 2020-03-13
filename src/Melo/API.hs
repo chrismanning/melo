@@ -4,10 +4,10 @@ module Melo.API where
 
 import Data.Generic.HKD
 import GHC.Generics
-import Melo.API.Haxl
 import Melo.GraphQL.Introspect
 import Melo.GraphQL.Resolve
 import Melo.Library.API
+import Melo.Library.Repo.Haxl
 
 data Query = Query {
   library :: Library

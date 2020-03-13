@@ -11,6 +11,7 @@ import Data.Generics.Labels ()
 import Data.Generics.Product
 import Data.Generics.Sum ()
 import Data.Hashable
+import Data.Kind
 import Data.Text
 import Data.Time.Clock
 import Data.Time.LocalTime
@@ -68,7 +69,7 @@ libraryDb =
             )
       }
 
-data GenreT (f :: * -> *)
+data GenreT (f :: Type -> Type)
   = Genre
       { id :: Columnar f UUID,
         name :: Columnar f Text,
@@ -99,7 +100,9 @@ deriving instance Eq GenreKey
 
 deriving instance Ord GenreKey
 
-data ArtistT (f :: * -> *)
+deriving instance Hashable GenreKey
+
+data ArtistT (f :: Type -> Type)
   = Artist
       { id :: Columnar f UUID,
         name :: Columnar f Text,
@@ -129,7 +132,7 @@ deriving instance Show ArtistKey
 
 deriving instance Eq ArtistKey
 
-data ArtistAliasT (f :: * -> *)
+data ArtistAliasT (f :: Type -> Type)
   = ArtistAlias
       { alias_id :: Columnar f UUID,
         artist_id :: PrimaryKey ArtistT f,
@@ -149,7 +152,7 @@ type ArtistAlias = ArtistAliasT Identity
 
 type ArtistAliasKey = PrimaryKey ArtistAliasT Identity
 
-data RelatedArtistT (f :: * -> *)
+data RelatedArtistT (f :: Type -> Type)
   = RelatedArtist
       { artist_id :: PrimaryKey ArtistT f,
         related_artist_id :: PrimaryKey ArtistT f
@@ -176,7 +179,7 @@ deriving instance Show RelatedArtistKey
 
 deriving instance Eq RelatedArtistKey
 
-data AlbumT (f :: * -> *)
+data AlbumT (f :: Type -> Type)
   = Album
       { id :: Columnar f UUID,
         title :: Columnar f Text,
@@ -202,11 +205,11 @@ deriving instance Show Album
 
 deriving instance Eq Album
 
-deriving instance (Show (Columnar f UUID)) => Show (PrimaryKey AlbumT (f :: * -> *))
+deriving instance (Show (Columnar f UUID)) => Show (PrimaryKey AlbumT (f :: Type -> Type))
 
-deriving instance (Eq (Columnar f UUID)) => Eq (PrimaryKey AlbumT (f :: * -> *))
+deriving instance (Eq (Columnar f UUID)) => Eq (PrimaryKey AlbumT (f :: Type -> Type))
 
-data AlbumArtistAliasT (f :: * -> *)
+data AlbumArtistAliasT (f :: Type -> Type)
   = AlbumArtistAlias
       { album_id :: PrimaryKey AlbumT f,
         artist_alias_id :: PrimaryKey ArtistAliasT f
@@ -225,7 +228,7 @@ albumArtistAliasRelationship :: ManyToMany be LibraryDb ArtistAliasT AlbumT
 albumArtistAliasRelationship =
   manyToMany_ (libraryDb ^. #album_artist_alias) (^. #artist_alias_id) (^. #album_id)
 
-data TrackT (f :: * -> *)
+data TrackT (f :: Type -> Type)
   = Track
       { id :: Columnar f UUID,
         title :: Columnar f Text,
@@ -259,7 +262,7 @@ deriving instance Show TrackKey
 
 deriving instance Eq TrackKey
 
-data AudioSourceT (f :: * -> *)
+data AudioSourceT (f :: Type -> Type)
   = AudioSource
       { id :: Columnar f UUID,
         kind :: Columnar f Text,
@@ -288,11 +291,11 @@ deriving instance Show AudioSource
 
 deriving instance Eq AudioSource
 
-deriving instance (Show (Columnar f UUID)) => Show (PrimaryKey AudioSourceT (f :: * -> *))
+deriving instance (Show (Columnar f UUID)) => Show (PrimaryKey AudioSourceT (f :: Type -> Type))
 
-deriving instance (Eq (Columnar f UUID)) => Eq (PrimaryKey AudioSourceT (f :: * -> *))
+deriving instance (Eq (Columnar f UUID)) => Eq (PrimaryKey AudioSourceT (f :: Type -> Type))
 
-data MetadataSourceT (f :: * -> *)
+data MetadataSourceT (f :: Type -> Type)
   = MetadataSource
       { id :: Columnar f UUID,
         kind :: Columnar f Text,
@@ -320,11 +323,11 @@ deriving instance Show MetadataSource
 
 deriving instance Eq MetadataSource
 
-deriving instance (Show (Columnar f UUID)) => Show (PrimaryKey MetadataSourceT (f :: * -> *))
+deriving instance (Show (Columnar f UUID)) => Show (PrimaryKey MetadataSourceT (f :: Type -> Type))
 
-deriving instance (Eq (Columnar f UUID)) => Eq (PrimaryKey MetadataSourceT (f :: * -> *))
+deriving instance (Eq (Columnar f UUID)) => Eq (PrimaryKey MetadataSourceT (f :: Type -> Type))
 
-data ArtistGenreT (f :: * -> *)
+data ArtistGenreT (f :: Type -> Type)
   = ArtistGenre
       { artist_id :: PrimaryKey ArtistT f,
         genre_id :: PrimaryKey GenreT f
@@ -339,7 +342,7 @@ instance Table ArtistGenreT where
 
   primaryKey = ArtistGenreKey <$> view #artist_id <*> view #genre_id
 
-data AlbumGenreT (f :: * -> *)
+data AlbumGenreT (f :: Type -> Type)
   = AlbumGenre
       { album_id :: PrimaryKey AlbumT f,
         genre_id :: PrimaryKey GenreT f
@@ -354,7 +357,7 @@ instance Table AlbumGenreT where
 
   primaryKey = AlbumGenreKey <$> view #album_id <*> view #genre_id
 
-data TrackArtistAliasT (f :: * -> *)
+data TrackArtistAliasT (f :: Type -> Type)
   = TrackArtistAlias
       { track_id :: PrimaryKey TrackT f,
         artist_id :: PrimaryKey ArtistT f
@@ -369,7 +372,7 @@ instance Table TrackArtistAliasT where
 
   primaryKey = TrackArtistAliasKey <$> view #track_id <*> view #artist_id
 
-data TrackGenreT (f :: * -> *)
+data TrackGenreT (f :: Type -> Type)
   = TrackGenre
       { track_id :: PrimaryKey TrackT f,
         genre_id :: PrimaryKey GenreT f

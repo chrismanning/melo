@@ -1,0 +1,113 @@
+type Query {
+    library: Library
+}
+
+type Library {
+    genres(nameFilter: StringFilter): [Genre!]!
+    artists(nameFilter: StringFilter): [Artist!]!
+    albums(titleFilter: StringFilter): [Album!]!
+    tracks(titleFilter: StringFilter): [Track!]!
+    genresBySlug(slugs: [String!]!): [Genre!]!
+    artistsBySlug(slugs: [String!]!): [Artist!]!
+    albumsBySlug(slugs: [String!]!): [Album!]!
+    tracksBySlug(slugs: [String!]!): [Track!]!
+    # search(filter: StringFilter!) : [SearchResult!]!
+}
+
+# union SearchResult = Genre | Artist | Album | Track
+
+type Genre {
+    slug: String!
+    name: String!
+    description: String
+    artists: [Artist!]!
+    albums: [Album!]!
+    tracks: [Track!]!
+    links: Links
+}
+
+type Artist {
+    slug: String!
+    name: String!
+    aliases: [String!]
+    albums: [Album!]
+    albumCount: Int
+    albumAppearances: [Album!]
+    albumAppearanceCount: Int
+    tracks: [Track!]
+    trackCount: Int
+    totalLength: Duration
+    shortBio: String
+    bio: String
+    genres: [Genre!]
+    links: Links
+}
+
+type Album {
+    slug: String!
+    title: String!
+    artists: [Artist!]
+    comment: String
+    yearReleased: String
+    yearRecorded: String
+    genre: [Genre!]
+    tracks: [Track!]
+    trackCount: Int
+    totalLength: Duration
+    links: Links
+}
+
+type Track {
+    slug: String!
+    title: String!
+    artist: [Artist!]
+    album: Album
+    trackNumber: Int
+    genre: [Genre!]
+    otherTags: [String!]
+    source: String!
+    length: Duration!
+    format: String!
+    bitRate: Int
+    bitDepth: Int
+    sampleRate: Int
+    links: Links
+}
+
+type Links {
+    wikipedia: String
+    lastfm: String
+    allmusic: String
+    rym: String
+    discogs: String
+    musicbrainz: String
+}
+
+type Duration {
+    hours: Int
+    minutes: Int
+    seconds: Int!
+    milliseconds: Int!
+}
+
+union StringFilter = StringContains | StringEquals | Regex | StringFilterAnd | StringFilterOr
+
+type StringContains {
+    contains: String!
+}
+
+type StringEquals {
+    equals: String!
+}
+
+type Regex {
+    regex: String!
+}
+
+type StringFilterAnd {
+    and: [StringFilter!]!
+}
+
+type StringFilterOr {
+    or: [StringFilter!]!
+}

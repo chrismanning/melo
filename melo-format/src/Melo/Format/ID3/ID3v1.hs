@@ -25,6 +25,7 @@ import Data.List
 import Data.Maybe
 import Data.Text as T
 import Data.Text.Encoding
+import qualified Data.Vector as V
 import GHC.Generics
 import Melo.Format.ID3.ID3v1Genre
 import Melo.Format.Internal.BinaryUtil
@@ -81,7 +82,7 @@ instance MetadataLocator ID3v1 where
 
 instance TagReader ID3v1 where
   readTags id3 =
-    Tags $
+    Tags $ V.fromList $
       catMaybes
         [ tag trackTitleTag title,
           tag trackArtistTag artist,

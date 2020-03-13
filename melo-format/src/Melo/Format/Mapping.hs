@@ -1,5 +1,3 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
-
 module Melo.Format.Mapping where
 
 import Data.Default

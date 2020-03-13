@@ -2,11 +2,13 @@ module Melo.Format.Internal.Tag where
 
 import Data.Foldable
 import Data.Text (Text)
+import Data.Vector (Vector)
+import qualified Data.Vector as V
 import GHC.Generics
 import Lens.Micro
 import Melo.Format.Mapping
 
-newtype Tags = Tags [(Text, Text)]
+newtype Tags = Tags (Vector (Text, Text))
   deriving (Show, Eq, Generic)
 
 class TagReader a where
@@ -16,12 +18,7 @@ class TagWriter a where
   saveTags :: a -> Tags -> a
 
 lookupTag :: Text -> Tags -> [Text]
-lookupTag n (Tags ts) = linearLookup n ts
-  where
-    linearLookup _ [] = []
-    linearLookup n' ((k, v) : ts')
-      | n' == k = v : linearLookup n' ts'
-      | otherwise = linearLookup n' ts'
+lookupTag n (Tags ts) = V.toList $ fmap snd . V.filter ((== n) . fst) $ ts
 
 getMappedTag :: FieldMappingSelector -> TagMapping -> Tags -> [Text]
 getMappedTag _ (TagMapping []) _ = []
@@ -30,8 +27,7 @@ getMappedTag s (TagMapping ms) t =
    in concat $ find (not . null) (fmap (getTagByField t) ms')
 
 getTagByField :: Tags -> FieldMapping -> [Text]
-getTagByField (Tags []) _ = []
-getTagByField (Tags ts) m = fmap snd . filter (matches m . fst) $ ts
+getTagByField (Tags ts) m = V.toList $ fmap snd . V.filter (matches m . fst) $ ts
   where
     matches :: FieldMapping -> Text -> Bool
     matches NoFieldMapping _ = False
@@ -45,14 +41,3 @@ mappedTag :: FieldMappingSelector -> TagMapping -> TagLens
 mappedTag s m f tags = (\vs -> setMappedTag s m vs tags) <$> f (getMappedTag s m tags)
 
 type TagLens = Lens' Tags [Text]
-
---type Age     = Int
---type City    = String
---type Country = String
---
---data Person = Person Age City Country
---
----- This lens lets you access all location-related information about a person.
---location :: Lens' Person (City, Country)
---location f (Person age city country) =
---  (\(city', country') -> Person age city' country') <$> f (city, country)
