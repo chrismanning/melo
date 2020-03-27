@@ -1,0 +1,5 @@
+termSeveritiesOut: All
+printOutput: true
+showTime: true
+loggerTree:
+  severity: All

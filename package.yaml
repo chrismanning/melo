@@ -27,6 +27,7 @@ library:
   dependencies:
   - melo-format
   - aeson
+  - aeson-casing
   - attoparsec
   - authenticate-oauth
   - barbies
@@ -35,6 +36,7 @@ library:
   - binary
   - binary-bits
   - bytestring
+  - clock
   - conduit
   - conduit-audio
   - conduit-audio-lame
@@ -60,7 +62,9 @@ library:
   - http-client-tls
   - http-types
   - lens
+  - log-warper
   - monad-control
+  - monad-logger
   - mtl
   - network-uri
   - network-uri-json
@@ -74,11 +78,14 @@ library:
   - safe-exceptions
   - servant-server
   - singletons
+  - stm
   - string-combinators
   - tagged
+  - template-haskell
   - text
   - text-icu
   - time
+  - token-limiter
   - transformers
   - transformers-base
   - unordered-containers

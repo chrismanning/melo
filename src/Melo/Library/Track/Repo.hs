@@ -5,12 +5,13 @@ module Melo.Library.Track.Repo where
 import Control.Algebra
 import Control.Carrier.Reader
 import Control.Lens ((^.))
+import Data.Functor
 import Data.Text (Text)
 import Data.Time (NominalDiffTime)
 import Database.Beam
 import Database.Beam.Postgres
 import Database.Beam.Postgres.Full
-import GHC.Generics (Generic1)
+import Melo.Common.Effect
 import qualified Melo.Library.Database.Model as DB
 import Melo.Library.Database.Query
 
@@ -26,40 +27,39 @@ data NewTrack
       }
   deriving (Generic, Eq, Show)
 
-data TrackRepository m k
-  = GetAllTracks ([DB.Track] -> m k)
-  | GetTracksById [DB.TrackKey] ([DB.Track] -> m k)
-  | GetTrackMetadataSource DB.TrackKey ([DB.MetadataSource] -> m k)
-  | GetTrackArtists DB.TrackKey ([DB.Artist] -> m k)
-  | GetTrackAlbum DB.TrackKey (Maybe DB.Album -> m k)
-  | SearchTracks Text ([DB.Track] -> m k)
-  | InsertTracks [NewTrack] ([DB.TrackKey] -> m k)
-  | DeleteTracks [DB.TrackKey] (m k)
-  deriving (Functor, Generic1, HFunctor, Effect)
+data TrackRepository :: Effect where
+  GetAllTracks :: TrackRepository m [DB.Track]
+  GetTracksById :: [DB.TrackKey] -> TrackRepository m [DB.Track]
+  GetTrackMetadataSource :: DB.TrackKey -> TrackRepository m [DB.MetadataSource]
+  GetTrackArtists :: DB.TrackKey -> TrackRepository m [DB.Artist]
+  GetTrackAlbum :: DB.TrackKey -> TrackRepository m (Maybe DB.Album)
+  SearchTracks :: Text -> TrackRepository m [DB.Track]
+  InsertTracks :: [NewTrack] -> TrackRepository m [DB.TrackKey]
+  DeleteTracks :: [DB.TrackKey] -> TrackRepository m ()
 
 getAllTracks :: Has TrackRepository sig m => m [DB.Track]
-getAllTracks = send (GetAllTracks pure)
+getAllTracks = send GetAllTracks
 
 getTracksById :: Has TrackRepository sig m => [DB.TrackKey] -> m [DB.Track]
-getTracksById ks = send (GetTracksById ks pure)
+getTracksById ks = send (GetTracksById ks)
 
 getTrackMetadataSource :: Has TrackRepository sig m => DB.TrackKey -> m [DB.MetadataSource]
-getTrackMetadataSource k = send (GetTrackMetadataSource k pure)
+getTrackMetadataSource k = send (GetTrackMetadataSource k)
 
 getTrackArtists :: Has TrackRepository sig m => DB.TrackKey -> m [DB.Artist]
-getTrackArtists k = send (GetTrackArtists k pure)
+getTrackArtists k = send (GetTrackArtists k)
 
 getTrackAlbum :: Has TrackRepository sig m => DB.TrackKey -> m (Maybe DB.Album)
-getTrackAlbum k = send (GetTrackAlbum k pure)
+getTrackAlbum k = send (GetTrackAlbum k)
 
 searchTracks :: Has TrackRepository sig m => Text -> m [DB.Track]
-searchTracks t = send (SearchTracks t pure)
+searchTracks t = send (SearchTracks t)
 
 insertTracks :: Has TrackRepository sig m => [NewTrack] -> m [DB.TrackKey]
-insertTracks ts = send (InsertTracks ts pure)
+insertTracks ts = send (InsertTracks ts)
 
 deleteTracks :: Has TrackRepository sig m => [DB.TrackKey] -> m ()
-deleteTracks ks = send (DeleteTracks ks (pure ()))
+deleteTracks ks = send (DeleteTracks ks)
 
 newtype TrackRepositoryIOC m a
   = TrackRepositoryIOC
@@ -68,11 +68,11 @@ newtype TrackRepositoryIOC m a
   deriving newtype (Applicative, Functor, Monad, MonadIO)
 
 instance
-  (MonadIO m, Algebra sig m, Effect sig) =>
+  (MonadIO m, Algebra sig m) =>
   Algebra (TrackRepository :+: sig) (TrackRepositoryIOC m)
   where
-  alg = \case
-    L (InsertTracks ts k) -> TrackRepositoryIOC $ do
+  alg hdl sig ctx = case sig of
+    L (InsertTracks ts) -> TrackRepositoryIOC $ do
       conn <- ask
       let q =
             runPgInsertReturningList $
@@ -83,8 +83,8 @@ instance
                 )
                 onConflictDefault
                 (Just primaryKey)
-      runTrackRepositoryIOC $ runPgDebug conn q >>= k
-    R other -> TrackRepositoryIOC (alg (R (handleCoercible other)))
+      (ctx $>) <$> runTrackRepositoryIOC (runPgDebug conn q)
+    R other -> TrackRepositoryIOC (alg (runTrackRepositoryIOC . hdl) (R other) ctx)
 
 newTrack :: NewTrack -> DB.TrackT (QExpr Postgres s)
 newTrack t = DB.Track

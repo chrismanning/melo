@@ -3,21 +3,27 @@
 module Melo.Library.Artist.Service where
 
 import Control.Algebra
-import Control.Effect.Sum
 import Control.Effect.Reader
+import Control.Effect.Sum
 import Control.Lens hiding (lens)
 import Control.Monad.IO.Class
 import Data.ByteString
+import Data.Default
+import Data.Functor
 import qualified Data.HashMap.Strict as H
+import Data.Kind (Type)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding
 import GHC.Generics (Generic, Generic1)
+import Melo.Common.Effect
+import Melo.Common.Logging
 import Melo.Format.Internal.Metadata
 import qualified Melo.Format.Mapping as M
 import Melo.Format.Metadata
 import qualified Melo.Library.Database.Model as DB
 import Melo.Library.Metadata.Service
+import qualified Melo.Lookup.MusicBrainz as MB
 --import Network.HTTP.Client
 import Network.HTTP.Types
 import Network.Wreq
@@ -34,7 +40,7 @@ data Artist
 
 data ArtistId
   = MusicBrainzArtistId
-      { musicBrainzArtistId :: Text
+      { musicBrainzArtistId :: MB.MusicBrainzId
       }
   | DiscogsArtistId
       { discogsArtistId :: Text
@@ -45,12 +51,11 @@ data ArtistId
   deriving (Show, Eq)
 
 -- TODO ArtistService - identify artists -- spotify, discogs, musicbrainz
-data ArtistService m k
-  = IdentifyArtists MetadataFile ([Artist] -> m k)
-  deriving (Functor, Generic1, HFunctor, Effect)
+data ArtistService :: Effect where
+  IdentifyArtists :: MetadataFile -> ArtistService m [Artist]
 
 identifyArtists :: Has ArtistService sig m => MetadataFile -> m [Artist]
-identifyArtists f = send (IdentifyArtists f pure)
+identifyArtists f = send (IdentifyArtists f)
 
 newtype ArtistServiceIOC m a
   = ArtistServiceIOC
@@ -59,37 +64,44 @@ newtype ArtistServiceIOC m a
   deriving newtype (Applicative, Functor, Monad, MonadIO)
 
 instance
-  (MonadIO m, Algebra sig m, Effect sig,
-    Has MetadataService sig m, Has (Reader Session) sig m) =>
+  ( MonadIO m,
+    Algebra sig m,
+    Has MetadataService sig m,
+    Has MB.MusicBrainzService sig m,
+    Has Logging sig m
+  ) =>
   Algebra (ArtistService :+: sig) (ArtistServiceIOC m)
   where
-  alg = \case
-    L (IdentifyArtists f k) -> do
+  alg hdl sig ctx = case sig of
+    L (IdentifyArtists f) -> do
       m' <- chooseMetadata (H.elems $ f ^. #metadata)
       case m' of
         Just m -> do
           let tag = lens m
           let ts = m ^. #tags
-          let (albumArtist : _) = ts ^. tag M.albumArtist
-          let (trackArtist : _) = ts ^. tag M.artist
-          let (albumTitle : _) = ts ^. tag M.album
-          -- "http://musicbrainz.org/ws/2/release/?query=release%3A%22De%E2%80%90Loused%20in%20the%20Comatorium%22&fmt=json"
-          let opts = defaults
-                & header "User-Agent" .~ ["melo/0.1.0.0 ( https://github.com/chrismanning/melo )"]
-                & header "Accept" .~ ["application/json"]
-                & param "query" .~
-                  ["artist:\"" <> albumArtist <> "\" AND release:\"" <> albumTitle <> "\""]
-          let url = "http://musicbrainz.org/ws/2/release-group/"
-          s <- ask
-          r <- liftIO $ Sess.getWith opts s url
-          liftIO $ print (r ^. responseBody)
+          let albumArtist = ts ^. tag M.albumArtist ^? _head
+          let trackArtist = ts ^. tag M.artist ^? _head
+          let trackTitle = ts ^. tag M.trackTitle ^? _head
+          --          let albumTitle = ts ^. tag M.album ^? _head
+          -- first try identifying the artist via the album
+          case ts ^. tag M.album ^? _head of
+            Just albumTitle -> do
+              releases <- MB.searchReleases def {MB.albumArtist = albumArtist, MB.albumTitle = Just albumTitle}
+              $(logDebugShow) releases
+              pure ()
+            Nothing ->
+              case trackArtist of
+                Just a -> do
+                  artists <- MB.searchArtists MB.ArtistSearch {MB.artist = a}
+                  $(logDebugShow) artists
+                Nothing -> pure ()
           -- TODO search MusicBrainz (https://musicbrainz.org/doc/Development/XML_Web_Service/Version_2/Search)
           -- TODO search Discogs (https://www.discogs.com/developers/#page:database)
           -- TODO search Spotify (https://developer.spotify.com/documentation/web-api/reference/search/search/)
           -- TODO search Rovi (http://developer.rovicorp.com/docs)
-          k []
-        Nothing -> k []
-    R other -> ArtistServiceIOC (alg (handleCoercible other))
+          (ctx $>) <$> pure []
+        Nothing -> (ctx $>) <$> pure []
+    R other -> ArtistServiceIOC (alg (runArtistServiceIOC . hdl) other ctx)
 
 runArtistServiceIO :: ArtistServiceIOC m a -> m a
 runArtistServiceIO = runArtistServiceIOC
