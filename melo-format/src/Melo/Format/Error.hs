@@ -4,7 +4,8 @@ import Control.Exception.Safe
 import Data.Text
 import Melo.Format.Internal.Metadata
 
-data MetadataException = UnknownFormat
+data MetadataException
+  = UnknownFormat
   | UnsupportedFormat
   | MetadataReadError Text
   | MetadataNotFound MetadataId

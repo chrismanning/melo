@@ -36,7 +36,8 @@ data MetadataFile
         audioInfo :: !Info,
         fileId :: !MetadataFileId,
         filePath :: !FilePath
-      } deriving (Generic, Eq, Show)
+      }
+  deriving (Generic, Eq, Show)
 
 newtype MetadataId = MetadataId Text
   deriving (Generic, Show)
@@ -52,23 +53,27 @@ data Metadata
       }
 
 instance Show Metadata where
-  showsPrec d Metadata{..} = showString "Metadata {formatId = " <> showsPrec d (show formatId) <>
-    showString ", formatDesc = " <> showsPrec d (show formatDesc) <> showString ", tags = " <>
-    showsPrec d tags
+  showsPrec d Metadata {..} =
+    showString "Metadata {formatId = " <> showsPrec d (show formatId)
+      <> showString ", formatDesc = "
+      <> showsPrec d (show formatDesc)
+      <> showString ", tags = "
+      <> showsPrec d tags
 
-instance IsLabel "formatId" (Getting MetadataId Metadata MetadataId) where
+instance IsLabel "formatId" (Getting MetadataId Metadata MetadataId) where
   fromLabel = to (formatId :: Metadata -> MetadataId)
 
-instance IsLabel "formatDesc" (Getting Text Metadata Text) where
+instance IsLabel "formatDesc" (Getting Text Metadata Text) where
   fromLabel = to (formatDesc :: Metadata -> Text)
 
-instance IsLabel "tags" (Getting Tags Metadata Tags) where
+instance IsLabel "tags" (Getting Tags Metadata Tags) where
   fromLabel = to (tags :: Metadata -> Tags)
 
 instance Eq Metadata where
-  a == b = (a ^. #formatId :: MetadataId) == b ^. #formatId &&
-    (a ^. #formatDesc :: Text) == b ^. #formatDesc &&
-    (a ^. #tags :: Tags) == b ^. #tags
+  a == b =
+    (a ^. #formatId :: MetadataId) == b ^. #formatId
+      && (a ^. #formatDesc :: Text) == b ^. #formatDesc
+      && (a ^. #tags :: Tags) == b ^. #tags
 
 class MetadataFormat a where
   metadataFormat :: a -> MetadataFormatDesc
@@ -82,9 +87,10 @@ data MetadataFormatDesc
   deriving (Generic, Hashable)
 
 extractMetadata :: (TagReader a, MetadataFormat a) => a -> Metadata
-extractMetadata a = Metadata
-  { formatId = metadataFormat a ^. #formatId,
-    formatDesc = metadataFormat a ^. #formatDesc,
-    tags = readTags a,
-    lens = metadataLens a
-  }
+extractMetadata a =
+  Metadata
+    { formatId = metadataFormat a ^. #formatId,
+      formatDesc = metadataFormat a ^. #formatDesc,
+      tags = readTags a,
+      lens = metadataLens a
+    }

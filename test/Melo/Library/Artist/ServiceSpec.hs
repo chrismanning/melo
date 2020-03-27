@@ -10,7 +10,6 @@ import Melo.Library.Metadata.Service
 import Melo.Lookup.MusicBrainz
 import qualified Network.Wreq.Session as Sess
 import Network.Wreq.Session (Session)
-
 import Test.Hspec
 
 main :: IO ()
@@ -23,7 +22,7 @@ spec = do
       initLogging
       sess <- Sess.newSession
       f <- openMetadataFile "/home/chris/Music/01 Web.flac"
-      
-      runStdoutLogging $ runHttpSession sess $ runMusicBrainzServiceIO $ runMetadataService $ runArtistServiceIO $
-        replicateM_ 3 $ identifyArtists f
+      runStdoutLogging $ runHttpSession sess $ runMusicBrainzServiceIO $ runMetadataService $ runArtistServiceIO
+        $ replicateM_ 3
+        $ identifyArtists f
       pending

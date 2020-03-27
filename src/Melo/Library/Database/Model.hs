@@ -17,7 +17,7 @@ import Data.Time.Clock
 import Data.Time.LocalTime
 import Data.UUID
 import Database.Beam hiding (char, double)
-import Database.Beam.Backend.SQL.SQL92 (HasSqlValueSyntax(..))
+import Database.Beam.Backend.SQL.SQL92 (HasSqlValueSyntax (..))
 import Database.Beam.Postgres
 import Database.Beam.Postgres.Syntax
 import Database.PostgreSQL.Simple.FromField
@@ -79,7 +79,6 @@ data GenreT (f :: Type -> Type)
   deriving (Generic, Beamable)
 
 instance Table GenreT where
-
   data PrimaryKey GenreT f
     = GenreKey (Columnar f UUID)
     deriving (Generic, Beamable)
@@ -113,7 +112,6 @@ data ArtistT (f :: Type -> Type)
   deriving (Generic, Beamable)
 
 instance Table ArtistT where
-
   data PrimaryKey ArtistT f
     = ArtistKey (Columnar f UUID)
     deriving (Generic, Beamable)
@@ -141,7 +139,6 @@ data ArtistAliasT (f :: Type -> Type)
   deriving (Generic, Beamable)
 
 instance Table ArtistAliasT where
-
   data PrimaryKey ArtistAliasT f
     = ArtistAliasKey (Columnar f UUID)
     deriving (Generic, Beamable)
@@ -160,7 +157,6 @@ data RelatedArtistT (f :: Type -> Type)
   deriving (Generic, Beamable)
 
 instance Table RelatedArtistT where
-
   data PrimaryKey RelatedArtistT f
     = RelatedArtistKey (PrimaryKey ArtistT f) (PrimaryKey ArtistT f)
     deriving (Generic, Beamable)
@@ -190,7 +186,6 @@ data AlbumT (f :: Type -> Type)
   deriving (Generic, Beamable)
 
 instance Table AlbumT where
-
   data PrimaryKey AlbumT f
     = AlbumKey (Columnar f UUID)
     deriving (Generic, Beamable)
@@ -217,7 +212,6 @@ data AlbumArtistAliasT (f :: Type -> Type)
   deriving (Generic, Beamable)
 
 instance Table AlbumArtistAliasT where
-
   data PrimaryKey AlbumArtistAliasT f
     = AlbumArtistAliasKey (PrimaryKey AlbumT f) (PrimaryKey ArtistAliasT f)
     deriving (Generic, Beamable)
@@ -243,7 +237,6 @@ data TrackT (f :: Type -> Type)
   deriving (Generic, Beamable)
 
 instance Table TrackT where
-
   data PrimaryKey TrackT f
     = TrackKey (Columnar f UUID)
     deriving (Generic, Beamable)
@@ -276,7 +269,6 @@ data AudioSourceT (f :: Type -> Type)
   deriving (Generic, Beamable)
 
 instance Table AudioSourceT where
-
   data PrimaryKey AudioSourceT f
     = AudioSourceKey (Columnar f UUID)
     deriving (Generic, Beamable)
@@ -306,7 +298,6 @@ data MetadataSourceT (f :: Type -> Type)
   deriving (Generic, Beamable)
 
 instance Table MetadataSourceT where
-
   data PrimaryKey MetadataSourceT f
     = MetadataSourceKey (Columnar f UUID)
     deriving (Generic, Beamable)
@@ -335,7 +326,6 @@ data ArtistGenreT (f :: Type -> Type)
   deriving (Generic, Beamable)
 
 instance Table ArtistGenreT where
-
   data PrimaryKey ArtistGenreT f
     = ArtistGenreKey (PrimaryKey ArtistT f) (PrimaryKey GenreT f)
     deriving (Generic, Beamable)
@@ -350,7 +340,6 @@ data AlbumGenreT (f :: Type -> Type)
   deriving (Generic, Beamable)
 
 instance Table AlbumGenreT where
-
   data PrimaryKey AlbumGenreT f
     = AlbumGenreKey (PrimaryKey AlbumT f) (PrimaryKey GenreT f)
     deriving (Generic, Beamable)
@@ -365,7 +354,6 @@ data TrackArtistAliasT (f :: Type -> Type)
   deriving (Generic, Beamable)
 
 instance Table TrackArtistAliasT where
-
   data PrimaryKey TrackArtistAliasT f
     = TrackArtistAliasKey (PrimaryKey TrackT f) (PrimaryKey ArtistT f)
     deriving (Generic, Beamable)
@@ -380,7 +368,6 @@ data TrackGenreT (f :: Type -> Type)
   deriving (Generic, Beamable)
 
 instance Table TrackGenreT where
-
   data PrimaryKey TrackGenreT f
     = TrackGenreKey (PrimaryKey TrackT f) (PrimaryKey GenreT f)
     deriving (Generic, Beamable)

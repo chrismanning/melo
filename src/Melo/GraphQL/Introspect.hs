@@ -1,6 +1,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE UndecidableInstances #-}
+
 module Melo.GraphQL.Introspect where
 
 import Control.Lens ((^.))
@@ -19,14 +20,15 @@ import GHC.Generics
 import GHC.OverloadedLabels ()
 import GHC.TypeLits as TL
 
-data GQLTypeKind = ScalarKind |
-  ObjectKind |
-  InterfaceKind |
-  UnionKind |
-  EnumKind |
-  InputObjectKind |
-  ListKind |
-  NonNullKind
+data GQLTypeKind
+  = ScalarKind
+  | ObjectKind
+  | InterfaceKind
+  | UnionKind
+  | EnumKind
+  | InputObjectKind
+  | ListKind
+  | NonNullKind
   deriving (Show, Eq, Generic, Enum)
 
 $(genSingletons [''GQLTypeKind])
@@ -36,73 +38,87 @@ instance GraphQLType GQLTypeKind where
 
 newtype NonNull a = NonNull a
 
-data GQLSchema = GQLSchema {
-  types :: NonEmpty GQLType,
-  queryType :: GQLType,
-  mutationType :: Maybe GQLType,
-  subscriptionType :: Maybe GQLType
-} deriving (Generic)
+data GQLSchema
+  = GQLSchema
+      { types :: NonEmpty GQLType,
+        queryType :: GQLType,
+        mutationType :: Maybe GQLType,
+        subscriptionType :: Maybe GQLType
+      }
+  deriving (Generic)
 
 instance GraphQLType GQLSchema where
   type TypeKind GQLSchema = 'ObjectKind
 
-data FieldsArgs = FieldsArgs {
-  includeDeprecated :: Bool
-} deriving (Generic)
+data FieldsArgs
+  = FieldsArgs
+      { includeDeprecated :: Bool
+      }
+  deriving (Generic)
 
 instance GraphQLType FieldsArgs where
   type TypeKind FieldsArgs = 'InputObjectKind
 
-data EnumValuesArgs = EnumValuesArgs {
-  includeDeprecated :: Bool
-} deriving (Generic)
+data EnumValuesArgs
+  = EnumValuesArgs
+      { includeDeprecated :: Bool
+      }
+  deriving (Generic)
 
 instance GraphQLType EnumValuesArgs where
   type TypeKind EnumValuesArgs = 'InputObjectKind
 
-data GQLType = GQLType {
-  kind :: GQLTypeKind,
-  name :: Maybe Text,
-  description :: Maybe Text,
-  fields :: FieldsArgs -> Maybe [GQLField],
-  interfaces :: Maybe [GQLType],
-  possibleTypes :: Maybe [GQLType],
-  enumValues :: EnumValuesArgs -> Maybe [GQLEnumValue],
-  inputFields :: Maybe [GQLInputValue],
-  ofType :: Maybe GQLType
-} deriving (Generic)
+data GQLType
+  = GQLType
+      { kind :: GQLTypeKind,
+        name :: Maybe Text,
+        description :: Maybe Text,
+        fields :: FieldsArgs -> Maybe [GQLField],
+        interfaces :: Maybe [GQLType],
+        possibleTypes :: Maybe [GQLType],
+        enumValues :: EnumValuesArgs -> Maybe [GQLEnumValue],
+        inputFields :: Maybe [GQLInputValue],
+        ofType :: Maybe GQLType
+      }
+  deriving (Generic)
 
 instance GraphQLType GQLType where
   type TypeKind GQLType = 'ObjectKind
 
-data GQLField = GQLField {
-  name :: Text,
-  description :: Maybe Text,
-  args :: [GQLInputValue],
-  fieldType :: GQLType,
-  isDeprecated :: Bool,
-  deprecationReason :: Maybe Text
-} deriving (Generic)
+data GQLField
+  = GQLField
+      { name :: Text,
+        description :: Maybe Text,
+        args :: [GQLInputValue],
+        fieldType :: GQLType,
+        isDeprecated :: Bool,
+        deprecationReason :: Maybe Text
+      }
+  deriving (Generic)
 
 instance GraphQLType GQLField where
   type TypeKind GQLField = 'ObjectKind
 
-data GQLInputValue = GQLInputValue {
-  name :: Text,
-  description :: Maybe Text,
-  inputValueType :: GQLType,
-  defaultValue :: Maybe Text
-} deriving (Generic)
+data GQLInputValue
+  = GQLInputValue
+      { name :: Text,
+        description :: Maybe Text,
+        inputValueType :: GQLType,
+        defaultValue :: Maybe Text
+      }
+  deriving (Generic)
 
 instance GraphQLType GQLInputValue where
   type TypeKind GQLInputValue = 'ObjectKind
 
-data GQLEnumValue = GQLEnumValue {
-  name :: Text,
-  description :: Maybe Text,
-  isDeprecated :: Bool,
-  deprecationReason :: Maybe Text
-} deriving (Show, Eq, Generic)
+data GQLEnumValue
+  = GQLEnumValue
+      { name :: Text,
+        description :: Maybe Text,
+        isDeprecated :: Bool,
+        deprecationReason :: Maybe Text
+      }
+  deriving (Show, Eq, Generic)
 
 instance GraphQLType GQLEnumValue where
   type TypeKind GQLEnumValue = 'ObjectKind
@@ -112,20 +128,21 @@ class GraphQLType a where
 
   gqlType :: GQLType
   default gqlType :: GQLType
-  gqlType = GQLType {
-    kind = typeKind @a,
-    name = typeName @a,
-    description = description @a,
-    fields = \(FieldsArgs inclDep) -> case typeKind @a of
-      ObjectKind -> typeFields @a inclDep
-      InterfaceKind -> typeFields @a inclDep
-      _ -> Nothing,
-    interfaces = interfaces @a,
-    possibleTypes = possibleTypes @a,
-    enumValues = \(EnumValuesArgs inclDep) -> typeEnumValues @a inclDep,
-    inputFields = typeInputFields @a,
-    ofType = ofType @a
-  }
+  gqlType =
+    GQLType
+      { kind = typeKind @a,
+        name = typeName @a,
+        description = description @a,
+        fields = \(FieldsArgs inclDep) -> case typeKind @a of
+          ObjectKind -> typeFields @a inclDep
+          InterfaceKind -> typeFields @a inclDep
+          _ -> Nothing,
+        interfaces = interfaces @a,
+        possibleTypes = possibleTypes @a,
+        enumValues = \(EnumValuesArgs inclDep) -> typeEnumValues @a inclDep,
+        inputFields = typeInputFields @a,
+        ofType = ofType @a
+      }
 
   typeKind :: GQLTypeKind
   default typeKind :: SingI (TypeKind a) => GQLTypeKind
@@ -164,6 +181,7 @@ class GraphQLType a where
   ofType = Nothing
 
 data DatatypeProxy d (f :: Type -> Type) a = DatatypeProxy
+
 type DatatypeProxy' d = DatatypeProxy d Proxy ()
 
 class GTypeName f where
@@ -190,14 +208,17 @@ instance GGraphQLFields a 'False where
 
 type family FieldResultT a where
   FieldResultT (Tagged _ a) = FieldResultT a
-  FieldResultT (a -> b -> c) = TypeError
-    ('TL.Text "GraphQL methods may only have a single argument"
-      ':<>: 'TL.Text "This argument must be a record defining named query arguments")
+  FieldResultT (a -> b -> c) =
+    TypeError
+      ( 'TL.Text "GraphQL methods may only have a single argument"
+          ':<>: 'TL.Text "This argument must be a record defining named query arguments"
+      )
   FieldResultT (a -> b) = FieldResultT b
   FieldResultT (Maybe a) = a
   FieldResultT a = NonNull a
 
 data DeprecatedTag
+
 type Deprecated a = Tagged DeprecatedTag a
 
 type family IsFieldDeprecated a :: Bool where
@@ -206,6 +227,7 @@ type family IsFieldDeprecated a :: Bool where
   IsFieldDeprecated a = 'False
 
 data SelectorProxy s (f :: Type -> Type) a = SelectorProxy
+
 type SelectorProxy' s = SelectorProxy s Proxy ()
 
 class GGraphQLFields' f where
@@ -217,16 +239,21 @@ instance GGraphQLFields' f => GGraphQLFields' (M1 D p (M1 C c f)) where
 instance GGraphQLFields' f => GGraphQLFields' (M1 C c f) where
   typeObjectFields' = typeObjectFields' @f
 
-instance (Selector s, GraphQLType (FieldResultT a), SingI (IsFieldDeprecated a)) =>
-  GGraphQLFields' (M1 S s (Rec0 a)) where
-  typeObjectFields' inclDep = let f = GQLField {
-    name = T.pack $ selName (SelectorProxy :: SelectorProxy' s),
-    fieldType = gqlType @(FieldResultT a),
-    description = Nothing,
-    args = [],
-    isDeprecated = fromSing $ sing @(IsFieldDeprecated a),
-    deprecationReason = Nothing
-  } in if not inclDep && fromSing (sing @(IsFieldDeprecated a)) then [] else [f]
+instance
+  (Selector s, GraphQLType (FieldResultT a), SingI (IsFieldDeprecated a)) =>
+  GGraphQLFields' (M1 S s (Rec0 a))
+  where
+  typeObjectFields' inclDep =
+    let f =
+          GQLField
+            { name = T.pack $ selName (SelectorProxy :: SelectorProxy' s),
+              fieldType = gqlType @(FieldResultT a),
+              description = Nothing,
+              args = [],
+              isDeprecated = fromSing $ sing @(IsFieldDeprecated a),
+              deprecationReason = Nothing
+            }
+     in if not inclDep && fromSing (sing @(IsFieldDeprecated a)) then [] else [f]
 
 instance (GGraphQLFields' f, GGraphQLFields' g) => GGraphQLFields' (f :*: g) where
   typeObjectFields' inclDep = typeObjectFields' @f inclDep <> typeObjectFields' @g inclDep
@@ -254,12 +281,15 @@ instance GGraphQLInputFields' f => GGraphQLInputFields' (M1 D p f) where
   inputFields' = inputFields' @f
 
 instance (Selector s, GraphQLType (FieldResultT a)) => GGraphQLInputFields' (M1 S s (Rec0 a)) where
-  inputFields' = let f = GQLInputValue {
-    name = T.pack $ selName (SelectorProxy :: SelectorProxy' s),
-    description = Nothing,
-    inputValueType = gqlType @(FieldResultT a),
-    defaultValue = Nothing
-  } in [f]
+  inputFields' =
+    let f =
+          GQLInputValue
+            { name = T.pack $ selName (SelectorProxy :: SelectorProxy' s),
+              description = Nothing,
+              inputValueType = gqlType @(FieldResultT a),
+              defaultValue = Nothing
+            }
+     in [f]
 
 instance (GGraphQLInputFields' f, GGraphQLInputFields' g) => GGraphQLInputFields' (f :*: g) where
   inputFields' = inputFields' @f <> inputFields' @g
@@ -289,17 +319,21 @@ instance GGraphQLEnumValue' f => GGraphQLEnumValue' (M1 D p f) where
   enumValues' = enumValues' @f
 
 instance Constructor c => GGraphQLEnumValue' (M1 C c U1) where
-  enumValues' inclDep = let v = GQLEnumValue {
-    name = T.pack $ conName (ConstructorProxy :: ConstructorProxy' c),
-    description = Nothing,
-    isDeprecated = False,
-    deprecationReason = Nothing
-  } in filter (\x -> inclDep || not (x ^. #isDeprecated)) [v]
+  enumValues' inclDep =
+    let v =
+          GQLEnumValue
+            { name = T.pack $ conName (ConstructorProxy :: ConstructorProxy' c),
+              description = Nothing,
+              isDeprecated = False,
+              deprecationReason = Nothing
+            }
+     in filter (\x -> inclDep || not (x ^. #isDeprecated)) [v]
 
 instance (GGraphQLEnumValue' f, GGraphQLEnumValue' g) => GGraphQLEnumValue' (f :+: g) where
   enumValues' inclDep = enumValues' @f inclDep <> enumValues' @g inclDep
 
 data ConstructorProxy c (f :: Type -> Type) a = ConstructorProxy
+
 type ConstructorProxy' c = ConstructorProxy c Proxy ()
 
 -----------------------------------
@@ -366,19 +400,22 @@ instance GraphQLType a => GraphQLType (Maybe a) where
 class SchemaIntrospection s where
   introspectSchema :: s -> GQLSchema
 
-data Schema q m s = Schema {
-  query :: q,
-  mutation :: m,
-  schema :: s
-}
+data Schema q m s
+  = Schema
+      { query :: q,
+        mutation :: m,
+        schema :: s
+      }
 
 instance (GraphQLType q) => SchemaIntrospection (Schema q m s) where
-  introspectSchema _ = let types = collectTypes (gqlType @q) in GQLSchema {
-    types = types,
-    queryType = gqlType @q,
-    mutationType = Nothing,
-    subscriptionType = Nothing
-  }
+  introspectSchema _ =
+    let types = collectTypes (gqlType @q)
+     in GQLSchema
+          { types = types,
+            queryType = gqlType @q,
+            mutationType = Nothing,
+            subscriptionType = Nothing
+          }
 
 type GQLTypeTable s = H.HashTable s Text GQLType
 
@@ -404,7 +441,7 @@ collectTypes t = runST s
             inputTypes' ts t'
           Just _ -> wrapperOfType ts t'
     fields' :: GQLTypeTable s -> GQLType -> ST s ()
-    fields' ts GQLType{fields} =
+    fields' ts GQLType {fields} =
       case fields (FieldsArgs True) of
         Nothing -> pure ()
         Just fs -> mapM_ (\f -> collectTypes' ts (f ^. #fieldType)) fs

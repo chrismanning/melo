@@ -15,5 +15,5 @@ type ReusableQL = ReusableQ Postgres LibraryDb
 
 type WithL = With Postgres LibraryDb
 
-runPgDebug :: MonadIO m => Connection -> Pg a -> m a
-runPgDebug conn q = liftIO $ runBeamPostgresDebug putStrLn conn q 
+runPgDebug :: MonadIO m => Connection -> Pg a -> m a
+runPgDebug conn q = liftIO $ runBeamPostgresDebug putStrLn conn q

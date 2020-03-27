@@ -20,7 +20,7 @@ import qualified Data.ByteString.Lazy.Internal as L
   ( defaultChunkSize,
   )
 import qualified Data.Text as T
-import Melo.Format.Error (MetadataException(MetadataReadError))
+import Melo.Format.Error (MetadataException (MetadataReadError))
 import System.IO
 
 class BinaryGet a where

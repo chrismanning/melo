@@ -6,7 +6,7 @@ import Data.Binary.Get
 import Data.Functor
 import Data.Int
 import Data.Text (Text)
-import qualified Data.Text as T (take, length, drop, findIndex)
+import qualified Data.Text as T (drop, findIndex, length, take)
 import Data.Vector (Vector)
 import qualified Data.Vector as V
 import Data.Word
@@ -62,14 +62,15 @@ instance BinaryGet Identification where
     bitrateMin <- getInt32le
     _blockSize <- getWord8
     expectGetEq getWord8 1 "Expected vorbis framing bit"
-    return Identification
-      { vorbisVersion,
-        channels,
-        sampleRate,
-        bitrateMax = mfilter (> 0) $ Just bitrateMax,
-        bitrateNominal = mfilter (> 0) $ Just bitrateNominal,
-        bitrateMin = mfilter (> 0) $ Just bitrateMin
-      }
+    return
+      Identification
+        { vorbisVersion,
+          channels,
+          sampleRate,
+          bitrateMax = mfilter (> 0) $ Just bitrateMax,
+          bitrateNominal = mfilter (> 0) $ Just bitrateNominal,
+          bitrateMin = mfilter (> 0) $ Just bitrateMin
+        }
 
 newtype FramedVorbisComments
   = FramedVorbisComments VorbisComments
@@ -124,10 +125,11 @@ vorbisCommentsId :: MetadataId
 vorbisCommentsId = MetadataId "VorbisComments"
 
 instance MetadataFormat VorbisComments where
-  metadataFormat _ = MetadataFormat {
-    formatId = vorbisCommentsId,
-    formatDesc = "Vorbis Comments"
-  }
+  metadataFormat _ =
+    MetadataFormat
+      { formatId = vorbisCommentsId,
+        formatDesc = "Vorbis Comments"
+      }
   metadataLens _ = vorbisTag
 
 instance TagReader VorbisComments where

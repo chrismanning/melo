@@ -34,8 +34,9 @@ instance
       sendM $ waitDebit lc rl 1
       pure ctx
     R other ->
-      RateLimitIOC $
-        ReaderC $ \lc ->
+      RateLimitIOC
+        $ ReaderC
+        $ \lc ->
           ReaderC $ \rl ->
             alg (runReader rl . runReader lc . runRateLimitIOC . hdl) other ctx
 

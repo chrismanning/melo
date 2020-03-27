@@ -1,5 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE UndecidableInstances #-}
+
 module Melo.GraphQL.Resolve where
 
 import Control.Applicative
@@ -7,12 +8,12 @@ import Control.Lens (Contravariant, Optic', Profunctor, (^.))
 import qualified Control.Lens as L
 import Control.Monad.Catch
 import qualified Data.Aeson as A
+import Data.Aeson as A ((.=), FromJSON (..), ToJSON (..))
 import qualified Data.Aeson.Encoding as A
-import Data.Aeson as A (FromJSON(..), ToJSON(..), (.=))
 import Data.Foldable
 import Data.Generic.HKD
-import Data.Kind
 import qualified Data.HashMap.Strict as H
+import Data.Kind
 import Data.Maybe
 import Data.Singletons
 import Data.Tagged
@@ -21,7 +22,6 @@ import Data.Vector as V (fromList)
 import GHC.Generics as G
 import GHC.TypeLits as TL
 import qualified Language.GraphQL.AST.Core as QL hiding (Query)
-
 import Melo.GraphQL.Introspect as I
 
 data GraphQLException = FieldNotFound {fieldName :: Text, typeName :: Text}
@@ -75,7 +75,7 @@ getFieldNamed :: Text -> [QL.Field] -> Maybe QL.Field
 getFieldNamed _ [] = Nothing
 getFieldNamed fn (f : fs) =
   let (QL.Field _ fn' _ _) = f
-    in if fn' == fn then Just f else getFieldNamed fn fs
+   in if fn' == fn then Just f else getFieldNamed fn fs
 
 -----------------------
 
@@ -83,20 +83,24 @@ class ObjectResolver (m :: Type -> Type) a where
   type ResolverContext a = r | r -> a
 
   resolveFieldValue :: ResolverContext a -> QL.Field -> m A.Encoding
-  default resolveFieldValue :: (
-    Generic (GResolver m a),
-    GenericResolver m a,
-    GObjectResolver m (Rep (GResolver m a)) (ResolverContext a),
-    GraphQLType a,
-    MonadThrow m
+  default resolveFieldValue ::
+    ( Generic (GResolver m a),
+      GenericResolver m a,
+      GObjectResolver m (Rep (GResolver m a)) (ResolverContext a),
+      GraphQLType a,
+      MonadThrow m
     ) =>
-    ResolverContext a -> QL.Field -> m A.Encoding
+    ResolverContext a ->
+    QL.Field ->
+    m A.Encoding
   resolveFieldValue c f = case resolveFieldValue' (from $ genericResolver @m @a) c f of
     Just res -> res
-    Nothing -> throwM FieldNotFound
-      { fieldName = fieldName' f,
-        typeName = fromMaybe "" $ I.typeName @a
-      }
+    Nothing ->
+      throwM
+        FieldNotFound
+          { fieldName = fieldName' f,
+            typeName = fromMaybe "" $ I.typeName @a
+          }
 
 resolveFieldValues :: forall m a. (Monad m, ObjectResolver m a) => ResolverContext a -> [QL.Field] -> m A.Encoding
 resolveFieldValues ctx fields = A.pairs <$> foldlM resolveField' mempty fields
@@ -136,9 +140,11 @@ instance CoerceArgs () where
 
 type family FieldArguments a where
   FieldArguments (Tagged _ a) = FieldArguments a
-  FieldArguments (a -> b -> c) = TypeError
-    ('TL.Text "GraphQL methods may only have a single argument"
-      ':<>: 'TL.Text "This argument must be a record defining named query arguments")
+  FieldArguments (a -> b -> c) =
+    TypeError
+      ( 'TL.Text "GraphQL methods may only have a single argument"
+          ':<>: 'TL.Text "This argument must be a record defining named query arguments"
+      )
   FieldArguments (a -> b) = FieldArgument a
   FieldArguments a = ()
 
@@ -149,29 +155,33 @@ instance FromJSON a => CoerceArgs (FieldArgument a) where
     A.Error e -> error $ "Error coercing argument values: " <> e
     A.Success a -> FieldArgument a
     where
-    convertArg name val = name .= convertVal val
-    convertVal val = case val of
-      QL.Int i -> toJSON i
-      QL.Float f -> toJSON f
-      QL.String s -> toJSON s
-      QL.Boolean b -> toJSON b
-      QL.Null -> A.Null
-      QL.Enum n -> A.String n
-      QL.List l -> A.Array $ V.fromList $ fmap convertVal l
-      QL.Object o -> A.object (fmap (\(name, v) -> name .= convertVal v) (H.toList o))
+      convertArg name val = name .= convertVal val
+      convertVal val = case val of
+        QL.Int i -> toJSON i
+        QL.Float f -> toJSON f
+        QL.String s -> toJSON s
+        QL.Boolean b -> toJSON b
+        QL.Null -> A.Null
+        QL.Enum n -> A.String n
+        QL.List l -> A.Array $ V.fromList $ fmap convertVal l
+        QL.Object o -> A.object (fmap (\(name, v) -> name .= convertVal v) (H.toList o))
 
 -----------------------
 
 type family ResolveResultT a where
   ResolveResultT (Tagged _ a) = ResolveResultT a
-  ResolveResultT (a -> b -> c) = TypeError
-    ('TL.Text "GraphQL methods may only have a single argument"
-      ':<>: 'TL.Text "This argument must be a record defining named query arguments")
+  ResolveResultT (a -> b -> c) =
+    TypeError
+      ( 'TL.Text "GraphQL methods may only have a single argument"
+          ':<>: 'TL.Text "This argument must be a record defining named query arguments"
+      )
   ResolveResultT (a -> b) = ResolveResultT b
   ResolveResultT a = a
 
-pureResolver :: (ToJSON (ResolveResultT a), Monad m) =>
-    ResolveResultT a -> Resolve m c a
+pureResolver ::
+  (ToJSON (ResolveResultT a), Monad m) =>
+  ResolveResultT a ->
+  Resolve m c a
 pureResolver a = Resolve (\_ _ _ -> pure $ toEncoding a)
 
 pureCtxResolver :: (ToJSON (ResolveResultT a), Monad m) => (c -> ResolveResultT a) -> Resolve m c a
@@ -191,7 +201,6 @@ type family UnwrapNull a where
   UnwrapNull a = a
 
 type ResolverM m a = HKD a (Resolve m (ResolverContext a))
-
 --type ExObjResolver = HaxlResolver ExObj
 --
 --type HaxlResolver a = ResolverM Haxl a

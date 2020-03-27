@@ -12,5 +12,5 @@ main = do
             connectDatabase = "melo"
           }
   conn <- connect connInfo
---  scanPath conn "/home/chris/Music"
+  --  scanPath conn "/home/chris/Music"
   pure ()

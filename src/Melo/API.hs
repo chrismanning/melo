@@ -9,9 +9,11 @@ import Melo.GraphQL.Resolve
 import Melo.Library.API
 import Melo.Library.Repo.Haxl
 
-data Query = Query {
-  library :: Library
-} deriving (Generic)
+data Query
+  = Query
+      { library :: Library
+      }
+  deriving (Generic)
 
 instance GraphQLType Query where
   type TypeKind Query = 'ObjectKind
@@ -22,5 +24,6 @@ instance ObjectResolver Haxl Query where
   type ResolverContext Query = QueryCtx
 
 instance GenericResolver Haxl Query where
-  genericResolver = let g = build @Query in
-    g (Resolve $ \_ _ fs -> resolveFieldValues LibraryCtx fs)
+  genericResolver =
+    let g = build @Query
+     in g (Resolve $ \_ _ fs -> resolveFieldValues LibraryCtx fs)

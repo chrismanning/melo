@@ -11,7 +11,7 @@ module Melo.Format.Info
     readTotalSamples,
     readBitsPerSample,
     samplesPerSecond,
---    hRunInfoReadM,
+    --    hRunInfoReadM,
     readLengthMilliseconds,
     lengthMilliseconds,
     audioLength,
@@ -66,7 +66,6 @@ lengthMilliseconds i =
   let samples :: Maybe Double = fromIntegral <$> totalSamples i
       samplesPerSec = fromIntegral (samplesPerSecond $ sampleRate i)
    in samples <&> (/ samplesPerSec) <&> (* 1000)
-
 --hRunInfoReadM ::
 --  forall r a.
 --  Member (Embed IO) r =>
