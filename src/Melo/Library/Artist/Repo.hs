@@ -9,7 +9,7 @@ import Data.Text (Text)
 import Database.Beam
 import Database.Beam.Postgres
 import Database.Beam.Postgres.Full
-import GHC.Generics (Generic1)
+import Melo.Common.Effect
 import qualified Melo.Library.Database.Model as DB
 import Melo.Library.Database.Query
 
@@ -19,36 +19,35 @@ data NewArtist
       }
   deriving (Generic, Eq, Show)
 
-data ArtistRepository m k
-  = GetAllArtists ([DB.Artist] -> m k)
-  | GetArtists [DB.ArtistKey] ([DB.Artist] -> m k)
-  | GetArtistAlbums DB.ArtistKey ([DB.Album] -> m k)
-  | GetArtistTracks DB.ArtistKey ([DB.Track] -> m k)
-  | SearchArtists Text ([DB.Artist] -> m k)
-  | InsertArtists [NewArtist] ([DB.ArtistKey] -> m k)
-  | DeleteArtists [DB.ArtistKey] (m k)
-  deriving (Functor, Generic1, HFunctor, Effect)
+data ArtistRepository :: Effect where
+  GetAllArtists :: ArtistRepository m [DB.Artist]
+  GetArtists :: [DB.ArtistKey] -> ArtistRepository m [DB.Artist]
+  GetArtistAlbums :: DB.ArtistKey -> ArtistRepository m [DB.Album]
+  GetArtistTracks :: DB.ArtistKey -> ArtistRepository m [DB.Track]
+  SearchArtists :: Text -> ArtistRepository m [DB.Artist]
+  InsertArtists :: [NewArtist] -> ArtistRepository m [DB.ArtistKey]
+  DeleteArtists :: [DB.ArtistKey] -> ArtistRepository m ()
 
 getAllArtists :: Has ArtistRepository sig m => m [DB.Artist]
-getAllArtists = send (GetAllArtists pure)
+getAllArtists = send GetAllArtists
 
 getArtists :: Has ArtistRepository sig m => [DB.ArtistKey] -> m [DB.Artist]
-getArtists ks = send (GetArtists ks pure)
+getArtists ks = send (GetArtists ks)
 
 getArtistAlbums :: Has ArtistRepository sig m => DB.ArtistKey -> m [DB.Album]
-getArtistAlbums k = send (GetArtistAlbums k pure)
+getArtistAlbums k = send (GetArtistAlbums k)
 
 getArtistTracks :: Has ArtistRepository sig m => DB.ArtistKey -> m [DB.Track]
-getArtistTracks k = send (GetArtistTracks k pure)
+getArtistTracks k = send (GetArtistTracks k)
 
 searchArtists :: Has ArtistRepository sig m => Text -> m [DB.Artist]
-searchArtists t = send (SearchArtists t pure)
+searchArtists t = send (SearchArtists t)
 
 insertArtists :: Has ArtistRepository sig m => [NewArtist] -> m [DB.ArtistKey]
-insertArtists as = send (InsertArtists as pure)
+insertArtists as = send (InsertArtists as)
 
 deleteArtists :: Has ArtistRepository sig m => [DB.ArtistKey] -> m ()
-deleteArtists ks = send (DeleteArtists ks (pure ()))
+deleteArtists ks = send (DeleteArtists ks)
 
 newtype ArtistRepositoryIOC m a
   = ArtistRepositoryIOC
@@ -57,11 +56,11 @@ newtype ArtistRepositoryIOC m a
   deriving newtype (Applicative, Functor, Monad, MonadIO)
 
 instance
-  (MonadIO m, Algebra sig m, Effect sig) =>
+  (MonadIO m, Algebra sig m) =>
   Algebra (ArtistRepository :+: sig) (ArtistRepositoryIOC m)
   where
-  alg = \case
-    R other -> ArtistRepositoryIOC (alg (R (handleCoercible other)))
+  alg hdl sig ctx = case sig of
+    R other -> ArtistRepositoryIOC (alg (runArtistRepositoryIOC . hdl) (R other) ctx)
 
 runArtistRepositoryIO :: Connection -> ArtistRepositoryIOC m a -> m a
 runArtistRepositoryIO conn = runReader conn . runArtistRepositoryIOC

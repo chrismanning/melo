@@ -49,7 +49,6 @@ headTagMapping (TagMapping [m]) = Just m
 headTagMapping _ = Nothing
 
 instance Monoid TagMapping where
-
   mempty = TagMapping []
 
   mappend = (<>)

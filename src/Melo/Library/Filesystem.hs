@@ -27,6 +27,9 @@ import Database.PostgreSQL.Simple
 import Debug.Trace
 import GHC.Records
 import Haxl.Core
+import Melo.Common.Http
+import Melo.Common.Logging
+import Melo.Common.RateLimit
 import Melo.Format.Ape
 import Melo.Format.ID3.ID3v1
 import Melo.Format.ID3.ID3v2
@@ -35,7 +38,6 @@ import Melo.Format.Internal.Metadata
 import qualified Melo.Format.Mapping as M
 import Melo.Format.Metadata
 import Melo.Format.Vorbis
-import Melo.Http.Client
 import Melo.Library.Album.Repo
 import Melo.Library.Artist.Repo
 import Melo.Library.Artist.Service
@@ -44,43 +46,53 @@ import Melo.Library.Genre.Repo
 import Melo.Library.Metadata.Repo
 import Melo.Library.Metadata.Service
 import Melo.Library.Track.Repo
+import Melo.Lookup.MusicBrainz
 import Network.URI
 import qualified Network.Wreq.Session as Sess
 import Network.Wreq.Session (Session)
 import System.Directory
 import System.FilePath.Posix
+import Control.Monad.Logger (LoggingT)
 
 importDeep :: Pool Connection -> FilePath -> IO ()
 importDeep pool root = do
   isDir <- doesDirectoryExist root
   isFile <- doesFileExist root
+  sess <- Sess.newSession
   if isDir
-    then withResource pool \conn -> importDirectory conn root
+    then withResource pool \conn -> importDirectory conn sess root
     else
       when isFile $
         catchAny
           ( withResource pool $ \conn -> do
               f <- openMetadataFile root
-              runImporter conn $ importMetadataFile f
+              runImporter conn sess $ importMetadataFile f
           )
           print
 
 type Importer sig m =
-  ( Effect sig,
-    Monad m,
-    Has (Reader Session) sig m,
+  ( Monad m,
+--    MonadThrow m,
+    Has MusicBrainzService sig m,
     Has MetadataSourceRepository sig m,
     Has AlbumRepository sig m,
     Has ArtistRepository sig m,
     Has ArtistService sig m,
     Has MetadataService sig m,
     Has GenreRepository sig m,
-    Has TrackRepository sig m
+    Has TrackRepository sig m,
+    Has Logging sig m,
+    Has (Reader Session) sig m,
+    Has Http sig m
   )
 
-runImporter :: Connection -> ArtistServiceIOC (MetadataServiceC (TrackRepositoryIOC (GenreRepositoryIOC (ArtistRepositoryIOC (AlbumRepositoryIOC (MetadataSourceRepositoryIOC (ReaderC Session IO))))))) a -> IO a
-runImporter conn =
-  runHttpSession
+--runImporter :: Importer sig m => Connection -> Session -> m a -> IO a
+--runImporter :: (MonadIO m) => Connection -> r -> ArtistServiceIOC (MetadataServiceC (TrackRepositoryIOC (GenreRepositoryIOC (ArtistRepositoryIOC (AlbumRepositoryIOC (MetadataSourceRepositoryIOC (MusicBrainzServiceIOC (HttpSessionIOC (ReaderC r (LoggingC m)))))))))) a -> m a
+runImporter conn sess =
+      runStdoutLogging
+    . runReader sess
+    . runHttpSessionIOC
+    . runMusicBrainzServiceIO
     . runMetadataSourceRepositoryIO conn
     . runAlbumRepositoryIO conn
     . runArtistRepositoryIO conn
@@ -89,23 +101,23 @@ runImporter conn =
     . runMetadataService
     . runArtistServiceIO
 
-importDirectory :: Connection -> FilePath -> IO ()
-importDirectory conn dir = do
+importDirectory :: Connection -> Session -> FilePath -> IO ()
+importDirectory conn sess dir = do
   fs <- filterM doesFileExist =<< listDirectory dir
   metadataFiles <- mapM openMetadataFile fs
-  withTransaction conn $ runImporter conn $
+  withTransaction conn $ runImporter conn sess $
     mapM_ importMetadataFile metadataFiles
 
 importMetadataFile :: Importer sig m => MetadataFile -> m ()
 importMetadataFile f = do
   ks <- insertMetadataSources [FileMetadataSource f]
-  insertTracks =<< fileTracks f
+  insertTracks =<< newTracks f
   insertArtists =<< newArtists f
   insertAlbums =<< newAlbums f
   pure ()
 
-fileTracks :: Monad m => MetadataFile -> m [NewTrack]
-fileTracks f = pure case chooseMetadataFormat $ fromList (H.elems $ f ^. #metadata) of
+newTracks :: Monad m => MetadataFile -> m [NewTrack]
+newTracks f = pure case chooseMetadataFormat $ fromList (H.elems $ f ^. #metadata) of
   Nothing -> []
   Just metadata -> catMaybes [metadataTrack metadata (f ^. #audioInfo) (f ^. #filePath)]
 

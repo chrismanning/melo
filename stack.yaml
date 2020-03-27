@@ -53,6 +53,8 @@ extra-deps:
     commit: 587ac10827b28327f03c89081d9797b8953780fc
   - github: caraus-ecms/graphql
     commit: 613e929d91dfc46ecfc5e28479098ce52aeb56f6
+  - github: fused-effects/fused-effects
+    commit: 40cf33031576f179c9e4ba3f9e8a33ba642fcc91
   - barbies-2.0.0.0
   - conduit-audio-0.2.0.3
   - conduit-audio-lame-0.1.2.1
@@ -63,6 +65,7 @@ extra-deps:
   - country-0.2
   - dependent-map-0.3
   - dependent-sum-0.6.2.0
+  - fmt-0.6.1
   - generic-aeson-0.2.0.10
 #  - graphql-0.5.1.0
   - haskell-src-exts-1.23.0
@@ -71,11 +74,13 @@ extra-deps:
   - hsndfile-0.8.0
   - hsndfile-vector-0.5.2
   - linkedhashmap-0.4.0.0
+  - log-warper-1.9.0
   - named-0.3.0.1
   - network-uri-json-0.3.1.1
   - polysemy-1.2.1.0
   - polysemy-plugin-0.2.3.0
   - polysemy-zoo-0.6.0.1
+  - token-limiter-0.2.0.3
 
 allow-newer: true
 
