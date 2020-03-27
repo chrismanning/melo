@@ -14,7 +14,6 @@ import Melo.Format.Internal.BinaryUtil
 import System.IO
 
 class BinaryGet a => MetadataLocator a where
-
   locate :: L.ByteString -> Maybe Int
   locate = locateBinaryLazy @a
 

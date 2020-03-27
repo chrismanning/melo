@@ -38,22 +38,24 @@ import Melo.Format.Internal.Metadata
 import System.IO
 
 wavPack :: MetadataFileFactory IO
-wavPack = MetadataFileFactory {
-  priority = 100,
-  fileId = wavPackFileKind,
-  readMetadataFile = \p -> do
-    wv <- withBinaryFile p ReadMode hReadWavPack
-    pure MetadataFile {
-      metadata = wavPackMetadata wv,
-      audioInfo = info wv,
+wavPack =
+  MetadataFileFactory
+    { priority = 100,
       fileId = wavPackFileKind,
-      filePath = p
-    },
-  detectFile = \p -> withBinaryFile p ReadMode $ \h -> do
-    hSeek h AbsoluteSeek 0
-    buf <- BS.hGet h 4
-    pure $ buf == ckId
-}
+      readMetadataFile = \p -> do
+        wv <- withBinaryFile p ReadMode hReadWavPack
+        pure
+          MetadataFile
+            { metadata = wavPackMetadata wv,
+              audioInfo = info wv,
+              fileId = wavPackFileKind,
+              filePath = p
+            },
+      detectFile = \p -> withBinaryFile p ReadMode $ \h -> do
+        hSeek h AbsoluteSeek 0
+        buf <- BS.hGet h 4
+        pure $ buf == ckId
+    }
 
 wavPackFileKind :: MetadataFileId
 wavPackFileKind = MetadataFileId "WavPack"
@@ -63,10 +65,11 @@ wavPackMetadata wv = case wavPackTags wv of
   NoTags -> H.empty
   JustAPE ape -> H.singleton (metadataFormat ape ^. #formatId) (extractMetadata ape)
   JustID3v1 id3v1 -> H.singleton (metadataFormat id3v1 ^. #formatId) (extractMetadata id3v1)
-  Both ape id3v1 -> H.fromList [
-      (metadataFormat ape ^. #formatId, extractMetadata ape),
-      (metadataFormat id3v1 ^. #formatId, extractMetadata id3v1)
-    ]
+  Both ape id3v1 ->
+    H.fromList
+      [ (metadataFormat ape ^. #formatId, extractMetadata ape),
+        (metadataFormat id3v1 ^. #formatId, extractMetadata id3v1)
+      ]
 
 data WavPack
   = WavPack
@@ -146,23 +149,24 @@ getChannels flags
   | otherwise = Stereo
 
 sampleRates :: Vector Word32
-sampleRates = fromList
-  [ 6000,
-    8000,
-    9600,
-    11025,
-    12000,
-    16000,
-    22050,
-    24000,
-    32000,
-    44100,
-    48000,
-    64000,
-    88200,
-    96000,
-    192000
-  ]
+sampleRates =
+  fromList
+    [ 6000,
+      8000,
+      9600,
+      11025,
+      12000,
+      16000,
+      22050,
+      24000,
+      32000,
+      44100,
+      48000,
+      64000,
+      88200,
+      96000,
+      192000
+    ]
 
 getSampleRate :: Word32 -> Maybe Word32
 getSampleRate flags =

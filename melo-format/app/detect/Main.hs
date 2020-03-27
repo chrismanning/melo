@@ -58,7 +58,7 @@ printTags f = do
     Nothing -> pure ()
     Just len -> psl $ "Length: " <> T.pack (formatTime defaultTimeLocale "%-3Ess" len)
   putLine
-  forM_ (zip [1..] (toList (f ^. #metadata))) $ \(i, metadata) -> do
+  forM_ (zip [1 ..] (toList (f ^. #metadata))) $ \(i, metadata) -> do
     psl $ "Tags #" <> T.pack (show i)
     let tags' = tags metadata
     let tag = lens metadata

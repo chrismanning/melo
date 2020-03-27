@@ -20,8 +20,8 @@ import qualified Data.Vector as V
 import Melo.Format.Internal.Binary
 import Melo.Format.Internal.BinaryUtil
 import Melo.Format.Internal.Encoding
-import Melo.Format.Internal.Metadata
 import Melo.Format.Internal.Locate
+import Melo.Format.Internal.Metadata
 import Melo.Format.Internal.Tag
 import Melo.Format.Mapping
 import System.IO
@@ -48,10 +48,11 @@ data ID3v2
 deriving instance Show ID3v2
 
 instance MetadataFormat ID3v2 where
-  metadataFormat id3 = MetadataFormat {
-    formatId = id3v2Id,
-    formatDesc = T.pack $ show $ frameVersion id3
-  }
+  metadataFormat id3 =
+    MetadataFormat
+      { formatId = id3v2Id,
+        formatDesc = T.pack $ show $ frameVersion id3
+      }
   metadataLens id3 = case frameVersion id3 of
     ID3v23 -> id3v23Tag
     ID3v24 -> id3v24Tag
@@ -60,7 +61,6 @@ id3v2Id :: MetadataId
 id3v2Id = MetadataId "ID3v2"
 
 instance MetadataLocator ID3v2 where
-
   locate bs = if L.isPrefixOf "ID3" bs then Just 0 else Nothing
 
   hLocate h = hSeek h AbsoluteSeek 0 >> locate @ID3v2 <$> hGetFileContents h
@@ -138,7 +138,6 @@ newtype HeaderFlags = HeaderFlags Word8
   deriving (Eq, Show)
 
 instance Binary HeaderFlags where
-
   get = HeaderFlags <$> getWord8
 
   put (HeaderFlags f) = putWord8 f
@@ -356,7 +355,6 @@ isSyncSafe :: ByteString -> Bool
 isSyncSafe bs = not $ BS.any (`testBit` 7) bs
 
 instance Binary SyncSafe where
-
   get = do
     expectGet_ (lookAhead $ getByteString 4) isSyncSafe "Invalid sync safe integer"
     SyncSafe <$> getByteString 4

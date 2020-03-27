@@ -32,10 +32,10 @@ import Control.Algebra
 import Control.Carrier.Lift
 import Control.Carrier.Reader
 import Control.Concurrent.TokenLimiter
+import Control.Effect.Error
 import Control.Effect.Lift
 import Control.Effect.Reader
 import Control.Effect.Sum
-import Control.Effect.Error
 import Control.Lens hiding (lens)
 import Control.Monad.Catch
 import Control.Monad.IO.Class
@@ -243,8 +243,9 @@ instance
         (ctx $>) <$> pure (r ^. Wr.responseBody . #artists)
       GetArtist artistId -> do
         undefined
-  alg hdl (R other) ctx = MusicBrainzServiceIOC $
-    alg (runMusicBrainzServiceIOC . hdl) (R other) ctx
+  alg hdl (R other) ctx =
+    MusicBrainzServiceIOC $
+      alg (runMusicBrainzServiceIOC . hdl) (R other) ctx
 
 mbWreqDefaults :: Wr.Options
 mbWreqDefaults =

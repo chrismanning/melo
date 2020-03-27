@@ -30,8 +30,8 @@ import Data.Vector (Vector)
 import qualified Data.Vector as V
 import Melo.Format.Internal.BinaryUtil
 import Melo.Format.Internal.Encoding
-import Melo.Format.Internal.Metadata
 import Melo.Format.Internal.Locate
+import Melo.Format.Internal.Metadata
 import Melo.Format.Internal.Tag
 import Melo.Format.Mapping
 import System.IO
@@ -54,17 +54,17 @@ preamble :: BS.ByteString
 preamble = "APETAGEX"
 
 instance MetadataFormat APE where
-  metadataFormat ape = MetadataFormat {
-    formatId = apeId,
-    formatDesc = pack $ show $ version ape
-  }
+  metadataFormat ape =
+    MetadataFormat
+      { formatId = apeId,
+        formatDesc = pack $ show $ version ape
+      }
   metadataLens _ = apeTag
 
 apeId :: MetadataId
 apeId = MetadataId "APE"
 
 instance MetadataLocator APE where
-
   locate bs =
     case locateBinaryLazy @Header bs of
       Nothing -> Nothing
@@ -94,7 +94,6 @@ getTextItem t = case t of
   _ -> V.empty
 
 instance Binary APE where
-
   put a = do
     let bs = runPut $ V.forM_ (items a) put
     case version a of
@@ -132,7 +131,6 @@ data Header
 type Footer = Header
 
 instance Binary Header where
-
   put = putHeader
 
   get = getHeader
@@ -154,12 +152,13 @@ mkFooter :: APE -> Word32 -> Footer
 mkFooter a n = mkHeader_ a n $ Flags True False False TextItemType False
 
 mkHeader_ :: APE -> Word32 -> Flags -> Header
-mkHeader_ a n f = Header
-  { headerVersion = version a,
-    numBytes = n + headerSize,
-    numItems = fromIntegral (P.length $ items a),
-    flags = f
-  }
+mkHeader_ a n f =
+  Header
+    { headerVersion = version a,
+      numBytes = n + headerSize,
+      numItems = fromIntegral (P.length $ items a),
+      flags = f
+    }
 
 putHeader :: Header -> Put
 putHeader h = do
@@ -186,7 +185,6 @@ data Version
   deriving (Show, Eq)
 
 instance Binary Version where
-
   put v =
     case v of
       APEv1 -> putWord32le 1000
@@ -211,7 +209,6 @@ data Flags
   deriving (Show, Eq)
 
 instance Binary Flags where
-
   put f =
     BP.runBitPut $ do
       BP.putWord8 5 0
@@ -242,7 +239,6 @@ data TagItemType
   deriving (Show, Eq, Enum)
 
 instance BinaryBit TagItemType where
-
   putBits 2 t = BP.putWord8 2 (fromIntegral . fromEnum $ t)
   putBits _ _ = fail "Invalid tag item type size"
 
@@ -267,7 +263,6 @@ pattern TextTagItem ::
 pattern TextTagItem k vs = TagItem k (TagItemValue (TextTag vs))
 
 instance Binary TagItem where
-
   put (TagItem key val) = do
     let bs = runPut $ putTagItemValue val
     putWord32le $ fromIntegral . L.length $ bs

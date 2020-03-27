@@ -87,17 +87,18 @@ instance
     R other -> TrackRepositoryIOC (alg (runTrackRepositoryIOC . hdl) (R other) ctx)
 
 newTrack :: NewTrack -> DB.TrackT (QExpr Postgres s)
-newTrack t = DB.Track
-  { id = default_,
-    title = val_ $ t ^. #title,
-    track_number = val_ $ t ^. #trackNumber,
-    comment = val_ $ t ^. #comment,
-    album_id = nothing_,
-    disc_number = val_ $ t ^. #discNumber,
-    audio_source_id = nothing_,
-    metadata_source_id = val_ $ t ^. #metadataSourceId,
-    length = fromMaybe_ (val_ (DB.Interval 0)) (val_ (DB.Interval <$> t ^. #length))
-  }
+newTrack t =
+  DB.Track
+    { id = default_,
+      title = val_ $ t ^. #title,
+      track_number = val_ $ t ^. #trackNumber,
+      comment = val_ $ t ^. #comment,
+      album_id = nothing_,
+      disc_number = val_ $ t ^. #discNumber,
+      audio_source_id = nothing_,
+      metadata_source_id = val_ $ t ^. #metadataSourceId,
+      length = fromMaybe_ (val_ (DB.Interval 0)) (val_ (DB.Interval <$> t ^. #length))
+    }
 
 runTrackRepositoryIO :: Connection -> TrackRepositoryIOC m a -> m a
 runTrackRepositoryIO conn = runReader conn . runTrackRepositoryIOC

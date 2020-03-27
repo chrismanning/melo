@@ -9,6 +9,7 @@ import Control.Effect.Sum
 import Control.Exception.Safe
 import Control.Lens ((^.))
 import Control.Monad
+import Control.Monad.Logger (LoggingT)
 import Data.Attoparsec.Text
 import Data.Foldable
 import qualified Data.HashMap.Strict as H
@@ -52,7 +53,6 @@ import qualified Network.Wreq.Session as Sess
 import Network.Wreq.Session (Session)
 import System.Directory
 import System.FilePath.Posix
-import Control.Monad.Logger (LoggingT)
 
 importDeep :: Pool Connection -> FilePath -> IO ()
 importDeep pool root = do
@@ -72,7 +72,7 @@ importDeep pool root = do
 
 type Importer sig m =
   ( Monad m,
---    MonadThrow m,
+    --    MonadThrow m,
     Has MusicBrainzService sig m,
     Has MetadataSourceRepository sig m,
     Has AlbumRepository sig m,
@@ -89,7 +89,7 @@ type Importer sig m =
 --runImporter :: Importer sig m => Connection -> Session -> m a -> IO a
 --runImporter :: (MonadIO m) => Connection -> r -> ArtistServiceIOC (MetadataServiceC (TrackRepositoryIOC (GenreRepositoryIOC (ArtistRepositoryIOC (AlbumRepositoryIOC (MetadataSourceRepositoryIOC (MusicBrainzServiceIOC (HttpSessionIOC (ReaderC r (LoggingC m)))))))))) a -> m a
 runImporter conn sess =
-      runStdoutLogging
+  runStdoutLogging
     . runReader sess
     . runHttpSessionIOC
     . runMusicBrainzServiceIO

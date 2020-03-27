@@ -22,29 +22,31 @@ oggVorbisFileId :: MetadataFileId
 oggVorbisFileId = MetadataFileId "OggVorbis"
 
 oggVorbis :: MetadataFileFactory IO
-oggVorbis = MetadataFileFactory {
-  priority = 100,
-  fileId = oggVorbisFileId,
-  readMetadataFile = \p -> do
-    ogg <- withBinaryFile p ReadMode hReadOggVorbis
-    pure MetadataFile {
-      audioInfo = info ogg,
+oggVorbis =
+  MetadataFileFactory
+    { priority = 100,
       fileId = oggVorbisFileId,
-      metadata = oggVorbisMetadata ogg,
-      filePath = p
-    },
-  detectFile = \p -> withBinaryFile p ReadMode $ \h -> do
-      hSeek h AbsoluteSeek 0
-      buf <- hGetFileContents h
-      pure $ case runGetOrFail bget buf of
-        Right (_, _, !(_ :: OggPage Header)) -> True
-        Left _ -> False
-}
+      readMetadataFile = \p -> do
+        ogg <- withBinaryFile p ReadMode hReadOggVorbis
+        pure
+          MetadataFile
+            { audioInfo = info ogg,
+              fileId = oggVorbisFileId,
+              metadata = oggVorbisMetadata ogg,
+              filePath = p
+            },
+      detectFile = \p -> withBinaryFile p ReadMode $ \h -> do
+        hSeek h AbsoluteSeek 0
+        buf <- hGetFileContents h
+        pure $ case runGetOrFail bget buf of
+          Right (_, _, !(_ :: OggPage Header)) -> True
+          Left _ -> False
+    }
 
 oggVorbisMetadata :: OggVorbis -> H.HashMap MetadataId Metadata
 oggVorbisMetadata (OggVorbis _ (FramedVorbisComments vc)) =
-  let fmt = metadataFormat vc in
-  H.singleton (fmt ^. #formatId) (extractMetadata vc)
+  let fmt = metadataFormat vc
+   in H.singleton (fmt ^. #formatId) (extractMetadata vc)
 
 data OggVorbis = OggVorbis !Identification !FramedVorbisComments
   deriving (Eq, Show)
@@ -61,15 +63,16 @@ instance MetadataLocator OggVorbis
 --  tags (OggVorbis _ (FramedVorbisComments vc)) = getVorbisTags vc
 
 instance InfoReader OggVorbis where
-  info (OggVorbis ident _) = Info
-    { sampleRate = SampleRate $ fromIntegral $ V.sampleRate ident,
-      channels = case V.channels ident of
-        1 -> Mono
-        2 -> Stereo
-        _ -> MultiChannel ChannelMask,
-      totalSamples = Nothing, -- TODO ogg vorbis total samples
-      bitsPerSample = Nothing
-    }
+  info (OggVorbis ident _) =
+    Info
+      { sampleRate = SampleRate $ fromIntegral $ V.sampleRate ident,
+        channels = case V.channels ident of
+          1 -> Mono
+          2 -> Stereo
+          _ -> MultiChannel ChannelMask,
+        totalSamples = Nothing, -- TODO ogg vorbis total samples
+        bitsPerSample = Nothing
+      }
 
 hReadOggVorbis :: Handle -> IO OggVorbis
 hReadOggVorbis h = do

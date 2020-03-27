@@ -30,11 +30,12 @@ import qualified Language.GraphQL.AST.Core as QL
 import Language.Haskell.TH
 import qualified Melo.API as API
 --import qualified Melo.API.Haxl as API
-import Melo.Library.Repo.Haxl as API
+
 import qualified Melo.GraphQL.Resolve as API
 import Melo.Library
 import qualified Melo.Library.API as API
 import Melo.Library.Database.Query
+import Melo.Library.Repo.Haxl as API
 import System.IO
 import Test.Hspec
 import Text.RawString.QQ (r)
@@ -79,7 +80,7 @@ spec = do
                 connectDatabase = "melo"
               }
       conn <- connect connInfo
---      connPool <- createPool (connect connInfo) close 1 (fromInteger 10) 10
+      --      connPool <- createPool (connect connInfo) close 1 (fromInteger 10) 10
       -- expr <- runQ (defineByDocumentFile "src/Melo/Library/API copy.gql"
       --   [gql|
       --     query GetGenres {
@@ -98,26 +99,29 @@ spec = do
             API.resolveFieldValues @API.Haxl @API.Library
               (API.LibraryCtx)
               -- [ Field
-                  -- Nothing
-                  -- "library"
-                  -- []
-                  [ QL.Field
-                      Nothing
-                      "genres"
-                      (QL.Arguments $ H.singleton "name" (QL.String "prog")) $
-                      Seq.fromList [ QL.SelectionField $ QL.Field Nothing "slug" (QL.Arguments H.empty) Seq.empty,
-                        QL.SelectionField $ QL.Field Nothing "name" (QL.Arguments H.empty) Seq.empty,
-                        QL.SelectionField $ QL.Field
+              -- Nothing
+              -- "library"
+              -- []
+              [ QL.Field
+                  Nothing
+                  "genres"
+                  (QL.Arguments $ H.singleton "name" (QL.String "prog"))
+                  $ Seq.fromList
+                    [ QL.SelectionField $ QL.Field Nothing "slug" (QL.Arguments H.empty) Seq.empty,
+                      QL.SelectionField $ QL.Field Nothing "name" (QL.Arguments H.empty) Seq.empty,
+                      QL.SelectionField
+                        $ QL.Field
                           Nothing
                           "tracks"
-                          (QL.Arguments H.empty) $
-                          Seq.fromList [ QL.SelectionField $ QL.Field Nothing "slug" (QL.Arguments H.empty) Seq.empty,
+                          (QL.Arguments H.empty)
+                        $ Seq.fromList
+                          [ QL.SelectionField $ QL.Field Nothing "slug" (QL.Arguments H.empty) Seq.empty,
                             QL.SelectionField $ QL.Field Nothing "title" (QL.Arguments H.empty) Seq.empty
                           ]
-                      ]
-                  ]
-              -- ]
-      let stateStore = stateSet API.GenreState { conn } stateEmpty
+                    ]
+              ]
+      -- ]
+      let stateStore = stateSet API.GenreState {conn} stateEmpty
       e <- initEnv stateStore ()
       rs <- runHaxl e x
       L8.putStrLn $ A.encodingToLazyByteString rs

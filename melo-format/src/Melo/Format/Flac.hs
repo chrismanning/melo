@@ -77,32 +77,37 @@ flacFileId :: MetadataFileId
 flacFileId = MetadataFileId "Flac"
 
 flac :: MetadataFileFactory IO
-flac = MetadataFileFactory {
-  priority = 100,
-  fileId = flacFileId,
-  detectFile = \p -> withBinaryFile p ReadMode (fmap isJust . hFindFlac),
-  readMetadataFile = \p -> do
-    f <- withBinaryFile p ReadMode hReadFlac
-    pure MetadataFile {
-      metadata = flacMetadata f,
-      audioInfo = info f,
+flac =
+  MetadataFileFactory
+    { priority = 100,
       fileId = flacFileId,
-      filePath = p
+      detectFile = \p -> withBinaryFile p ReadMode (fmap isJust . hFindFlac),
+      readMetadataFile = \p -> do
+        f <- withBinaryFile p ReadMode hReadFlac
+        pure
+          MetadataFile
+            { metadata = flacMetadata f,
+              audioInfo = info f,
+              fileId = flacFileId,
+              filePath = p
+            }
     }
-}
 
-flacMetadata :: Flac -> H.HashMap MetadataId Metadata
-flacMetadata (FlacWithID3v2 id3v2 f) = let id3v2fmt = metadataFormat id3v2
-                                           vc = vorbisComment f
-  in
-  H.fromList $ catMaybes [
-    Just (id3v2fmt ^. #formatId, extractMetadata id3v2),
-    vc <&> (vorbisCommentsId,) . extractMetadata
-  ]
-flacMetadata (Flac f) = let vc = vorbisComment f in
-  H.fromList $ catMaybes [
-    vc <&> (vorbisCommentsId,) . extractMetadata
-  ]
+flacMetadata :: Flac -> H.HashMap MetadataId Metadata
+flacMetadata (FlacWithID3v2 id3v2 f) =
+  let id3v2fmt = metadataFormat id3v2
+      vc = vorbisComment f
+   in H.fromList $
+        catMaybes
+          [ Just (id3v2fmt ^. #formatId, extractMetadata id3v2),
+            vc <&> (vorbisCommentsId,) . extractMetadata
+          ]
+flacMetadata (Flac f) =
+  let vc = vorbisComment f
+   in H.fromList $
+        catMaybes
+          [ vc <&> (vorbisCommentsId,) . extractMetadata
+          ]
 
 instance InfoReader Flac where
   info f = case f of
@@ -245,17 +250,18 @@ instance BinaryGet StreamInfo where
         return (sampleRate, channels, bps, samples)
     expect (sampleRate > 0) ("Invalid sample rate" <> show sampleRate)
     md5 <- getByteString 16
-    return StreamInfo
-      { minBlockSize,
-        maxBlockSize,
-        minFrameSize = mfilter (> 0) $ Just minFrameSize,
-        maxFrameSize = mfilter (> 0) $ Just maxFrameSize,
-        sampleRate,
-        channels,
-        bps,
-        samples = mfilter (> 0) $ Just samples,
-        md5
-      }
+    return
+      StreamInfo
+        { minBlockSize,
+          maxBlockSize,
+          minFrameSize = mfilter (> 0) $ Just minFrameSize,
+          maxFrameSize = mfilter (> 0) $ Just maxFrameSize,
+          sampleRate,
+          channels,
+          bps,
+          samples = mfilter (> 0) $ Just samples,
+          md5
+        }
 
 newtype Padding = Padding Word32
   deriving (Show)

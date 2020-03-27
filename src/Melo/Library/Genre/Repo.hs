@@ -163,11 +163,12 @@ instance
     R other -> GenreRepositoryIOC (alg (runGenreRepositoryIOC . hdl) (R other) ctx)
 
 newGenres :: NewGenre -> DB.GenreT (QExpr Postgres s)
-newGenres g = DB.Genre
-  { id = default_,
-    name = val_ $ g ^. #name,
-    description = val_ $ g ^. #description
-  }
+newGenres g =
+  DB.Genre
+    { id = default_,
+      name = val_ $ g ^. #name,
+      description = val_ $ g ^. #description
+    }
 
 runGenreRepositoryIO :: Connection -> GenreRepositoryIOC m a -> m a
 runGenreRepositoryIO conn = runReader conn . runGenreRepositoryIOC

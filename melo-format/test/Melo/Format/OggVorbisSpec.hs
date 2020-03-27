@@ -21,14 +21,15 @@ spec = do
       OggVorbis ident (FramedVorbisComments vc) <-
         bdecode
           <$> L.readFile "test/Melo/silence-1s.ogg"
-      ident `shouldBe` Identification
-        { vorbisVersion = 0,
-          channels = 1,
-          sampleRate = 44100,
-          bitrateMax = Nothing,
-          bitrateNominal = Just 80000,
-          bitrateMin = Nothing
-        }
+      ident
+        `shouldBe` Identification
+          { vorbisVersion = 0,
+            channels = 1,
+            sampleRate = 44100,
+            bitrateMax = Nothing,
+            bitrateNominal = Just 80000,
+            bitrateMin = Nothing
+          }
       vc
         `shouldBe` VorbisComments
           "Lavf57.83.100"

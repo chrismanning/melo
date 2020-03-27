@@ -44,7 +44,7 @@ import Melo.Format.Mapping
     trackArtistTag,
     trackNumberTag,
     trackTitleTag,
-    yearTag
+    yearTag,
   )
 import System.IO
 import Text.Read
@@ -62,10 +62,11 @@ data ID3v1
   deriving (Show, Eq, Generic)
 
 instance MetadataFormat ID3v1 where
-  metadataFormat _ = MetadataFormat {
-    formatId = id3v1Id,
-    formatDesc = let (MetadataId k) = id3v1Id in k
-  }
+  metadataFormat _ =
+    MetadataFormat
+      { formatId = id3v1Id,
+        formatDesc = let (MetadataId k) = id3v1Id in k
+      }
   metadataLens _ = mappedTag id3v1
 
 id3v1Id :: MetadataId
@@ -119,7 +120,6 @@ instance TagWriter ID3v1 where
           )
 
 instance Binary ID3v1 where
-
   get = isolate 128 getID3v1
 
   put = putID3v1
@@ -144,15 +144,16 @@ getID3v1 = do
   when
     (genreIndex > genericLength genres)
     (F.fail $ "Unknown genre index " ++ show genreIndex)
-  return $ ID3v1
-    { title,
-      artist,
-      album,
-      year,
-      comment,
-      track,
-      genre = genres `genericIndex` genreIndex
-    }
+  return $
+    ID3v1
+      { title,
+        artist,
+        album,
+        year,
+        comment,
+        track,
+        genre = genres `genericIndex` genreIndex
+      }
 
 getTag :: Int -> Get Text
 getTag n = decodeLatin1 . BS.takeWhile (/= 0) <$> getByteString n
