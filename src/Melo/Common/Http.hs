@@ -3,14 +3,18 @@
 module Melo.Common.Http where
 
 import Control.Algebra
+import Control.Applicative
 import Control.Carrier.Reader
 import Control.Effect.Lift
+import Control.Effect.Error
+import Control.Lens
 import Control.Monad.IO.Class
 import Data.Aeson as A
 import qualified Data.ByteString.Lazy as L
 import Data.Functor
 import Data.String (IsString)
-import Data.Text as T
+import Data.Text (Text)
+import qualified Data.Text as T
 import Melo.Common.Effect
 import Melo.Common.Logging
 import Network.HTTP.Client
@@ -35,6 +39,23 @@ getWithJson ::
 getWithJson opts url = do
   r <- getWith opts url
   sendM @IO $ Wr.asJSON r
+
+getWithJsonA ::
+  ( Alternative r,
+    FromJSON a,
+    Has Http sig m,
+    Has (Lift IO) sig m
+  ) =>
+  Wr.Options ->
+  Text ->
+  m (Response (r a))
+getWithJsonA opts url = do
+  r <- getWith opts url
+  if statusIsSuccessful (r ^. Wr.responseStatus)
+    then do
+      r' <- sendM @IO $ Wr.asJSON r
+      pure (r' & Wr.responseBody %~ pure)
+    else pure $ empty <$ r
 
 newtype HttpIOC m a
   = HttpIOC

@@ -23,6 +23,6 @@ spec = do
       sess <- Sess.newSession
       f <- openMetadataFile "/home/chris/Music/01 Web.flac"
       runStdoutLogging $ runHttpSession sess $ runMusicBrainzServiceIO $ runMetadataService $ runArtistServiceIO
-        $ replicateM_ 3
+        $ replicateM_ 1
         $ identifyArtists f
       pending
