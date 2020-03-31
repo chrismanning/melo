@@ -7,6 +7,7 @@ module Melo.Lookup.MusicBrainz
     runMusicBrainzServiceIO,
     MusicBrainzService (..),
     MusicBrainzServiceIOC (..),
+    getArtist,
     searchArtists,
     Artist (..),
     ArtistCredit (..),
@@ -65,7 +66,7 @@ newtype MusicBrainzId
   = MusicBrainzId
       { mbid :: Text
       }
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq, Ord, Generic)
   deriving newtype (FromJSON, ToJSON)
 
 newtype ArtistSearch
@@ -113,7 +114,8 @@ data Release
       { id :: MusicBrainzId,
         title :: Text,
         artistCredit :: [ArtistCredit],
-        date :: Maybe Text
+        date :: Maybe Text,
+        score :: Maybe Int
       }
   deriving (Show, Generic)
 
@@ -190,6 +192,9 @@ searchArtists s = send (SearchArtists s)
 searchRecordings :: Has MusicBrainzService sig m => RecordingSearch -> m [Recording]
 searchRecordings s = send (SearchRecordings s)
 
+getArtist :: Has MusicBrainzService sig m => MusicBrainzId -> m (Maybe Artist)
+getArtist mbid = send (GetArtist mbid)
+
 newtype MusicBrainzServiceIOC m a
   = MusicBrainzServiceIOC
       { runMusicBrainzServiceIOC :: RateLimitIOC m a
@@ -240,9 +245,13 @@ instance
                 & Wr.param "query" .~ ["artist:\"" <> search ^. #artist <> "\""]
         let url = baseUrl <> "/artist"
         r :: Wr.Response ArtistSearchResult <- getWithJson opts url
+        -- TODO handle errors
         (ctx $>) <$> pure (r ^. Wr.responseBody . #artists)
       GetArtist artistId -> do
-        undefined
+        let opts = mbWreqDefaults
+        let url = baseUrl <> "/artist/" <> artistId ^. #mbid
+        r <- getWithJsonA opts url
+        (ctx $>) <$> pure (r ^. Wr.responseBody)
   alg hdl (R other) ctx =
     MusicBrainzServiceIOC $
       alg (runMusicBrainzServiceIOC . hdl) (R other) ctx
