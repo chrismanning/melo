@@ -3,6 +3,7 @@
 module Melo.Library.Metadata.Repo where
 
 import Control.Algebra
+import Control.Carrier.Lift
 import Control.Carrier.Reader
 import Control.Lens ((^.))
 import Data.Functor
@@ -43,10 +44,10 @@ newtype MetadataSourceRepositoryIOC m a
   = MetadataSourceRepositoryIOC
       { runMetadataSourceRepositoryIOC :: ReaderC Connection m a
       }
-  deriving newtype (Functor, Applicative, Monad, MonadIO)
+  deriving newtype (Functor, Applicative, Monad)
 
 instance
-  (MonadIO m, Algebra sig m) =>
+  (Has (Lift IO) sig m) =>
   Algebra (MetadataSourceRepository :+: sig) (MetadataSourceRepositoryIOC m)
   where
   alg hdl sig ctx = case sig of
@@ -55,12 +56,12 @@ instance
       conn <- ask
       let ids = fmap (\(DB.MetadataSourceKey k') -> val_ k') ks
       let q = filter_ (\m -> m ^. #id `in_` ids) $ all_ (DB.libraryDb ^. #metadata_source)
-      (ctx $>) <$> runMetadataSourceRepositoryIOC (runPgDebug conn (runSelectReturningList (select q)))
+      (ctx $>) <$> runMetadataSourceRepositoryIOC (sendIO $ runPgDebug conn (runSelectReturningList (select q)))
     L (GetMetadataSourcesBySrc []) -> (ctx $>) <$> pure []
     L (GetMetadataSourcesBySrc fs) -> MetadataSourceRepositoryIOC $ do
       conn <- ask
       let q = filter_ (\m -> m ^. #source `in_` fmap (val_ . T.pack . show) fs) (all_ $ DB.libraryDb ^. #metadata_source)
-      (ctx $>) <$> runMetadataSourceRepositoryIOC (runPgDebug conn (runSelectReturningList (select q)))
+      (ctx $>) <$> runMetadataSourceRepositoryIOC (sendIO $ runPgDebug conn (runSelectReturningList (select q)))
     L (InsertMetadataSources []) -> (ctx $>) <$> pure []
     L (InsertMetadataSources ms) -> MetadataSourceRepositoryIOC $ do
       conn <- ask
@@ -75,12 +76,12 @@ instance
                   )
               )
               (Just (\m -> (primaryKey m, m ^. #source)))
-      (ctx $>) <$> runMetadataSourceRepositoryIOC (runPgDebug conn (Pg.runPgInsertReturningList q))
+      (ctx $>) <$> runMetadataSourceRepositoryIOC (sendIO $ runPgDebug conn (Pg.runPgInsertReturningList q))
     L (DeleteMetadataSources []) -> pure ctx
     L (DeleteMetadataSources ks) -> MetadataSourceRepositoryIOC $ do
       conn <- ask
       let q = delete (DB.libraryDb ^. #metadata_source) (\m -> m ^. #id `in_` fmap (\(DB.MetadataSourceKey k') -> val_ k') ks)
-      (ctx $>) <$> runMetadataSourceRepositoryIOC (runPgDebug conn (runDelete q))
+      (ctx $>) <$> runMetadataSourceRepositoryIOC (sendIO $ runPgDebug conn (runDelete q))
     R other -> MetadataSourceRepositoryIOC (alg (runMetadataSourceRepositoryIOC . hdl) (R other) ctx)
 
 runMetadataSourceRepositoryIO :: Connection -> MetadataSourceRepositoryIOC m a -> m a
