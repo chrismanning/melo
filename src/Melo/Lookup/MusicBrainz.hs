@@ -1,5 +1,4 @@
 {-# LANGUAGE PartialTypeSignatures #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Lookup.MusicBrainz
@@ -16,9 +15,11 @@ module Melo.Lookup.MusicBrainz
     Recording (..),
     RecordingSearch (..),
     searchReleases,
+    getArtistReleases,
     Release (..),
     ReleaseSearch (..),
     searchReleaseGroups,
+    getArtistReleaseGroups,
     ReleaseGroup (..),
     artistIdTag,
     originalArtistIdTag,
@@ -30,37 +31,28 @@ module Melo.Lookup.MusicBrainz
 where
 
 import Control.Algebra
+import Control.Carrier.Empty.Church as E
 import Control.Carrier.Lift
 import Control.Carrier.Reader
 import Control.Concurrent.TokenLimiter
-import Control.Effect.Error
-import Control.Effect.Lift
-import Control.Effect.Reader
-import Control.Effect.Sum
 import Control.Lens hiding (lens)
-import Control.Monad.Catch
-import Control.Monad.IO.Class
-import Control.Monad.Logger (LoggingT)
-import Country
 import Data.Aeson as A
 import Data.Aeson.Casing (trainCase)
-import Data.Aeson.Types as A
 import Data.Default
 import Data.Functor
-import Data.Generics.Labels
+import Data.Generics.Labels ()
 import Data.Kind (Type)
 import Data.Maybe (catMaybes)
 import Data.String (IsString)
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Time.Clock as Clock
-import GHC.Generics (Generic, Generic1)
+import GHC.Generics (Generic)
 import Melo.Common.Http
 import Melo.Common.Logging
 import Melo.Common.RateLimit
 import Melo.Format.Mapping
-import Network.HTTP.Types
 import qualified Network.Wreq as Wr
+import qualified Network.Wreq.Session as WrS
 
 newtype MusicBrainzId
   = MusicBrainzId
@@ -152,8 +144,11 @@ instance FromJSON ReleaseGroup where
 
 data RecordingSearch
   = RecordingSearch
-      {
+      { title :: Maybe Text,
+        artist :: Maybe Text,
+        album :: Maybe Text
       }
+  deriving (Show, Generic)
 
 newtype RecordingSearchResult
   = RecordingSearchResult
@@ -164,7 +159,11 @@ newtype RecordingSearchResult
 
 data Recording
   = Recording
-      {
+      { id :: MusicBrainzId,
+        score :: Int,
+        title :: Text,
+        artistCredit :: [ArtistCredit],
+        releases :: [Release]
       }
   deriving (Show, Generic)
 
@@ -179,6 +178,7 @@ data MusicBrainzService (m :: Type -> Type) k where
   GetArtist :: MusicBrainzId -> MusicBrainzService m (Maybe Artist)
   GetArtistReleaseGroups :: MusicBrainzId -> MusicBrainzService m [ReleaseGroup]
   GetArtistReleases :: MusicBrainzId -> MusicBrainzService m [Release]
+  GetArtistRecordings :: MusicBrainzId -> MusicBrainzService m [Recording]
 
 searchReleases :: Has MusicBrainzService sig m => ReleaseSearch -> m [Release]
 searchReleases s = send (SearchReleases s)
@@ -195,17 +195,21 @@ searchRecordings s = send (SearchRecordings s)
 getArtist :: Has MusicBrainzService sig m => MusicBrainzId -> m (Maybe Artist)
 getArtist mbid = send (GetArtist mbid)
 
+getArtistReleaseGroups :: Has MusicBrainzService sig m => MusicBrainzId -> m [ReleaseGroup]
+getArtistReleaseGroups mbid = send (GetArtistReleaseGroups mbid)
+
+getArtistReleases :: Has MusicBrainzService sig m => MusicBrainzId -> m [Release]
+getArtistReleases mbid = send (GetArtistReleases mbid)
+
 newtype MusicBrainzServiceIOC m a
   = MusicBrainzServiceIOC
-      { runMusicBrainzServiceIOC :: RateLimitIOC m a
+      { runMusicBrainzServiceIOC :: HttpSessionIOC (RateLimitIOC m) a
       }
-  deriving newtype (Applicative, Functor, Monad, MonadIO)
+  deriving newtype (Applicative, Functor, Monad)
 
 instance
   ( Has (Lift IO) sig m,
-    Has Http sig m,
-    Has Logging sig m,
-    Algebra sig m
+    Has Logging sig m
   ) =>
   Algebra (MusicBrainzService :+: sig) (MusicBrainzServiceIOC m)
   where
@@ -223,8 +227,10 @@ instance
             let q = T.intercalate " AND " ts
             let opts = mbWreqDefaults & Wr.param "query" .~ [q]
             let url = baseUrl <> "/release"
-            r' :: Wr.Response ReleaseSearchResult <- getWithJson opts url
-            (ctx $>) <$> pure (r' ^. Wr.responseBody . #releases)
+            r <- do
+              r' :: Wr.Response ReleaseSearchResult <- getWithJson opts url
+              pure (r' ^. Wr.responseBody . #releases)
+            (ctx $>) <$> pure r
       SearchReleaseGroups search -> do
         let qterms =
               catMaybes
@@ -237,24 +243,68 @@ instance
             let q = T.intercalate " AND " ts
             let opts = mbWreqDefaults & Wr.param "query" .~ [q]
             let url = baseUrl <> "/release-group"
-            r' :: Wr.Response ReleaseGroupSearchResult <- getWithJson opts url
-            (ctx $>) <$> pure (r' ^. Wr.responseBody . #releaseGroups)
+            r <- do
+              r' :: Wr.Response ReleaseGroupSearchResult <- getWithJson opts url
+              pure (r' ^. Wr.responseBody . #releaseGroups)
+            (ctx $>) <$> pure r
       SearchArtists search -> do
         let opts =
               mbWreqDefaults
                 & Wr.param "query" .~ ["artist:\"" <> search ^. #artist <> "\""]
         let url = baseUrl <> "/artist"
-        r :: Wr.Response ArtistSearchResult <- getWithJson opts url
-        -- TODO handle errors
-        (ctx $>) <$> pure (r ^. Wr.responseBody . #artists)
+        r <- do
+          r' :: Wr.Response ArtistSearchResult <- getWithJson opts url
+          pure (r' ^. Wr.responseBody . #artists)
+        (ctx $>) <$> pure r
+      SearchRecordings search -> do
+        let qterms =
+              catMaybes
+                [ fmap (\a -> "artist:\"" <> a <> "\"") $ search ^. #artist,
+                  fmap (\a -> "release:\"" <> a <> "\"") $ search ^. #album,
+                  fmap (\a -> "recording:\"" <> a <> "\"") $ search ^. #title
+                ]
+        case qterms of
+          [] -> (ctx $>) <$> pure []
+          ts -> do
+            let q = T.intercalate " AND " ts
+            let opts = mbWreqDefaults & Wr.param "query" .~ [q]
+            let url = baseUrl <> "/recording"
+            r <- do
+              r' :: Wr.Response RecordingSearchResult <- getWithJson opts url
+              pure (r' ^. Wr.responseBody . #recordings)
+            (ctx $>) <$> pure r
       GetArtist artistId -> do
         let opts = mbWreqDefaults
         let url = baseUrl <> "/artist/" <> artistId ^. #mbid
-        r <- getWithJsonA opts url
-        (ctx $>) <$> pure (r ^. Wr.responseBody)
+        r <- getWithJson opts url <&> view Wr.responseBody
+        (ctx $>) <$> pure r
+      GetArtistReleaseGroups artistId -> do
+        let opts =
+              mbWreqDefaults
+                & Wr.param "artist" .~ [artistId ^. #mbid]
+                & Wr.param "limit" .~ ["100"]
+        let url = baseUrl <> "/release-group/"
+        r <- getWithJson opts url <&> view Wr.responseBody
+        (ctx $>) <$> pure r
+      GetArtistReleases artistId -> do
+        let opts =
+              mbWreqDefaults
+                & Wr.param "artist" .~ [artistId ^. #mbid]
+                & Wr.param "limit" .~ ["100"]
+        let url = baseUrl <> "/release/"
+        r <- getWithJson opts url <&> view Wr.responseBody
+        (ctx $>) <$> pure r
+      GetArtistRecordings artistId -> do
+        let opts =
+              mbWreqDefaults
+                & Wr.param "artist" .~ [artistId ^. #mbid]
+                & Wr.param "limit" .~ ["100"]
+        let url = baseUrl <> "/recording/"
+        r <- getWithJson opts url <&> view Wr.responseBody
+        (ctx $>) <$> pure r
   alg hdl (R other) ctx =
     MusicBrainzServiceIOC $
-      alg (runMusicBrainzServiceIOC . hdl) (R other) ctx
+      alg (runMusicBrainzServiceIOC . hdl) (R (R other)) ctx
 
 mbWreqDefaults :: Wr.Options
 mbWreqDefaults =
@@ -265,8 +315,19 @@ mbWreqDefaults =
 baseUrl :: IsString s => s
 baseUrl = "http://musicbrainz.org/ws/2"
 
-runMusicBrainzServiceIO :: (Has (Lift IO) sig m) => MusicBrainzServiceIOC m a -> m a
-runMusicBrainzServiceIO m = runRateLimitIO mbRateLimitConfig $ runMusicBrainzServiceIOC m
+runMusicBrainzServiceIO ::
+  ( Has Logging sig m,
+    Has (Lift IO) sig m,
+    Has Empty sig m
+  ) =>
+  WrS.Session ->
+  MusicBrainzServiceIOC m a ->
+  m a
+runMusicBrainzServiceIO sess =
+  runRateLimitIO mbRateLimitConfig
+    . runHttpEmpty
+    . runHttpSession sess
+    . runMusicBrainzServiceIOC
 
 mbRateLimitConfig :: LimitConfig
 mbRateLimitConfig =

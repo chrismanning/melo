@@ -6,7 +6,6 @@ import Control.Algebra
 import Control.Carrier.Reader
 import Control.Concurrent.TokenLimiter
 import Control.Effect.Lift
-import Control.Monad.IO.Class
 import Melo.Common.Effect
 
 waitReady :: Has RateLimit sig m => m ()
@@ -19,7 +18,7 @@ newtype RateLimitIOC m a
   = RateLimitIOC
       { runRateLimitIOC :: (ReaderC LimitConfig (ReaderC RateLimiter m)) a
       }
-  deriving newtype (Applicative, Functor, Monad, MonadIO)
+  deriving newtype (Applicative, Functor, Monad)
 
 instance
   ( Has (Lift IO) sig m,

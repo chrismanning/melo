@@ -3,6 +3,7 @@ module Melo.Library.Filesystem where
 import Conduit
 import Control.Algebra
 import Control.Applicative
+import Control.Carrier.Empty.Church
 import Control.Carrier.Reader
 import Control.Effect.Reader
 import Control.Effect.Sum
@@ -72,7 +73,6 @@ importDeep pool root = do
 
 type Importer sig m =
   ( Monad m,
-    --    MonadThrow m,
     Has MusicBrainzService sig m,
     Has MetadataSourceRepository sig m,
     Has AlbumRepository sig m,
@@ -82,17 +82,13 @@ type Importer sig m =
     Has GenreRepository sig m,
     Has TrackRepository sig m,
     Has Logging sig m,
-    Has (Reader Session) sig m,
-    Has Http sig m
+    Has Empty sig m
   )
 
---runImporter :: Importer sig m => Connection -> Session -> m a -> IO a
---runImporter :: (MonadIO m) => Connection -> r -> ArtistServiceIOC (MetadataServiceC (TrackRepositoryIOC (GenreRepositoryIOC (ArtistRepositoryIOC (AlbumRepositoryIOC (MetadataSourceRepositoryIOC (MusicBrainzServiceIOC (HttpSessionIOC (ReaderC r (LoggingC m)))))))))) a -> m a
 runImporter conn sess =
-  runStdoutLogging
-    . runReader sess
-    . runHttpSessionIOC
-    . runMusicBrainzServiceIO
+  evalEmpty
+    . runStdoutLogging
+    . runMusicBrainzServiceIO sess
     . runMetadataSourceRepositoryIO conn
     . runAlbumRepositoryIO conn
     . runArtistRepositoryIO conn
@@ -116,23 +112,26 @@ importMetadataFile f = do
   insertAlbums =<< newAlbums f
   pure ()
 
-newTracks :: Monad m => MetadataFile -> m [NewTrack]
-newTracks f = pure case chooseMetadataFormat $ fromList (H.elems $ f ^. #metadata) of
-  Nothing -> []
-  Just metadata -> catMaybes [metadataTrack metadata (f ^. #audioInfo) (f ^. #filePath)]
+newTracks :: (Monad m, Has MetadataService sig m) => MetadataFile -> m [NewTrack]
+newTracks f = chooseMetadata (H.elems $ f ^. #metadata) >>= \case
+  Nothing -> pure []
+  Just metadata -> pure $ catMaybes [metadataTrack metadata (f ^. #audioInfo) (f ^. #filePath)]
 
-newArtists :: (Monad m, Has ArtistService sig m) => MetadataFile -> m [NewArtist]
-newArtists f = case chooseMetadataFormat $ fromList (H.elems $ f ^. #metadata) of
+newArtists ::
+  (Monad m, Has ArtistService sig m, Has MetadataService sig m) =>
+  MetadataFile ->
+  m [NewArtist]
+newArtists f = chooseMetadata (H.elems $ f ^. #metadata) >>= \case
   Nothing -> pure []
   Just m -> do
-    --    let t = m ^. #tags
-    --    let tag = lens m
-    albumArtists <- identifyArtists f
+    -- let t = m ^. #tags
+    -- let tag = lens m
+    albumArtists <- identifyArtists m
     --    _newArtists
     undefined
 
 newAlbums :: (Monad m, Has MetadataService sig m) => MetadataFile -> m [NewAlbum]
-newAlbums f = case chooseMetadataFormat $ fromList (H.elems $ f ^. #metadata) of
+newAlbums f = chooseMetadata (H.elems $ f ^. #metadata) >>= \case
   Nothing -> pure []
   Just m -> do
     let t = m ^. #tags
@@ -167,13 +166,6 @@ metadataTrack m i p = do
         comment = trackComment,
         length = audioLength i
       }
-
-chooseMetadataFormat :: NonEmpty Metadata -> Maybe Metadata
-chooseMetadataFormat ms =
-  find (\Metadata {..} -> formatId == vorbisCommentsId) ms
-    <|> find (\Metadata {..} -> formatId == apeId) ms
-    <|> find (\Metadata {..} -> formatId == id3v2Id) ms
-    <|> find (\Metadata {..} -> formatId == id3v1Id) ms
 
 data TrackNumber
   = TrackNumber

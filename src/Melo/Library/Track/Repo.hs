@@ -3,6 +3,7 @@
 module Melo.Library.Track.Repo where
 
 import Control.Algebra
+import Control.Carrier.Lift
 import Control.Carrier.Reader
 import Control.Lens ((^.))
 import Data.Functor
@@ -65,10 +66,10 @@ newtype TrackRepositoryIOC m a
   = TrackRepositoryIOC
       { runTrackRepositoryIOC :: ReaderC Connection m a
       }
-  deriving newtype (Applicative, Functor, Monad, MonadIO)
+  deriving newtype (Applicative, Functor, Monad)
 
 instance
-  (MonadIO m, Algebra sig m) =>
+  (Has (Lift IO) sig m, Algebra sig m) =>
   Algebra (TrackRepository :+: sig) (TrackRepositoryIOC m)
   where
   alg hdl sig ctx = case sig of
@@ -83,7 +84,7 @@ instance
                 )
                 onConflictDefault
                 (Just primaryKey)
-      (ctx $>) <$> runTrackRepositoryIOC (runPgDebug conn q)
+      (ctx $>) <$> runTrackRepositoryIOC (sendIO $ runPgDebug conn q)
     R other -> TrackRepositoryIOC (alg (runTrackRepositoryIOC . hdl) (R other) ctx)
 
 newTrack :: NewTrack -> DB.TrackT (QExpr Postgres s)

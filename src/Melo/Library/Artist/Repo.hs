@@ -3,6 +3,7 @@
 module Melo.Library.Artist.Repo where
 
 import Control.Algebra
+import Control.Carrier.Lift
 import Control.Carrier.Reader
 import Control.Lens ((^.))
 import Data.Text (Text)
@@ -53,10 +54,10 @@ newtype ArtistRepositoryIOC m a
   = ArtistRepositoryIOC
       { runArtistRepositoryIOC :: ReaderC Connection m a
       }
-  deriving newtype (Applicative, Functor, Monad, MonadIO)
+  deriving newtype (Applicative, Functor, Monad)
 
 instance
-  (MonadIO m, Algebra sig m) =>
+  (Has (Lift IO) sig m, Algebra sig m) =>
   Algebra (ArtistRepository :+: sig) (ArtistRepositoryIOC m)
   where
   alg hdl sig ctx = case sig of

@@ -28,10 +28,10 @@ newtype MetadataServiceC m a
   = MetadataServiceC
       { runMetadataServiceC :: m a
       }
-  deriving newtype (Applicative, Functor, Monad, MonadIO)
+  deriving newtype (Applicative, Functor, Monad)
 
 instance
-  (MonadIO m, Algebra sig m) =>
+  (Algebra sig m) =>
   Algebra (MetadataService :+: sig) (MetadataServiceC m)
   where
   alg hdl sig ctx = case sig of
