@@ -14,6 +14,7 @@ import Control.Effect.Sum
 import Control.Lens hiding (from, lens)
 import Control.Monad
 import Control.Monad.IO.Class
+import Country
 import Data.Default
 import Data.Foldable
 import Data.Functor
@@ -33,17 +34,12 @@ import Melo.Format.Metadata
 import qualified Melo.Library.Database.Model as DB
 import Melo.Library.Metadata.Service
 import qualified Melo.Lookup.MusicBrainz as MB
---import Network.HTTP.Client
-import Network.HTTP.Types
-import Network.Wreq
-import Network.Wreq.Cache
-import qualified Network.Wreq.Session as Sess
-import Network.Wreq.Session (Session)
 
 data Artist
   = Artist
-      { artistId :: [ArtistId],
-        name :: Text
+      { artistIds :: [ArtistId],
+        name :: Text,
+        country :: Maybe Country
       }
   deriving (Generic, Show)
 
@@ -60,7 +56,12 @@ data ArtistId
   deriving (Show, Eq)
 
 instance From MB.Artist Artist where
-  from artist = Artist [MusicBrainzArtistId (artist ^. #id)] (artist ^. #name)
+  from artist =
+    Artist
+      { artistIds = [MusicBrainzArtistId (artist ^. #id)],
+        name = artist ^. #name,
+        country = artist ^. #country >>= decodeAlphaTwo
+      }
 
 data ArtistService :: Effect where
   IdentifyArtists :: Metadata -> ArtistService m [Artist]
@@ -86,9 +87,9 @@ instance
   ) =>
   Algebra (ArtistService :+: sig) (ArtistServiceIOC m)
   where
-  alg hdl sig ctx =
+  alg _hdl (L sig) ctx =
     case sig of
-      L (IdentifyArtists m) -> do
+      IdentifyArtists m -> do
         let tag = lens m
         let ts = m ^. #tags
         r <-
@@ -101,12 +102,12 @@ instance
       -- TODO search Discogs (https://www.discogs.com/developers/#page:database)
       -- TODO search Spotify (https://developer.spotify.com/documentation/web-api/reference/search/search/)
       -- TODO search Rovi (http://developer.rovicorp.com/docs)
-      L (SetArtists m a) -> do
+      SetArtists m a -> do
         let tag = lens m
         let ts = m ^. #tags
         let m' = m {tags = ts & tag M.trackArtistTag .~ (a <&> (^. #name))}
         (ctx $>) <$> pure m'
-      R other -> ArtistServiceIOC (alg (runArtistServiceIOC . hdl) other ctx)
+  alg hdl (R other) ctx = ArtistServiceIOC (alg (runArtistServiceIOC . hdl) other ctx)
 
 getArtistByMusicBrainzId ::
   ( Has MB.MusicBrainzService sig m,
@@ -136,10 +137,8 @@ getArtistByAlbum albumTitle albumArtist = do
   releases <- MB.searchReleases def {MB.albumArtist = albumArtist, MB.albumTitle = albumTitle}
   $(logDebugShow) releases
   let releases' = filter (\release -> release ^. #score == Just 100) releases
-  let artists = releases' ^.. traverse . #artistCredit . traverse . #artist
-  case artists of
-    [] -> E.empty
-    _ -> pure $ fmap from artists
+  let artists = releases' ^.. traverse . #artistCredit . traverse . #artist . #id . #mbid
+  getArtistByMusicBrainzId artists
 
 getArtistByTrackArtistName ::
   ( Has MB.MusicBrainzService sig m,

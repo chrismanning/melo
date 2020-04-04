@@ -4,19 +4,14 @@ module Melo.Library.Metadata.Service where
 
 import Control.Algebra
 import Control.Applicative
-import Control.Carrier.Reader
-import Control.Monad.IO.Class
 import Data.Foldable
 import Data.Functor
-import Data.Text (Text)
-import qualified Data.Text as T
 import Melo.Common.Effect
 import Melo.Format.Ape
 import Melo.Format.ID3.ID3v1
 import Melo.Format.ID3.ID3v2
 import Melo.Format.Internal.Metadata
 import Melo.Format.Vorbis
-import Melo.Library.Metadata.Repo
 
 data MetadataService :: Effect where
   ChooseMetadata :: [Metadata] -> MetadataService m (Maybe Metadata)

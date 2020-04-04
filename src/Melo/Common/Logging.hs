@@ -22,11 +22,11 @@ import Basement.From
 import Control.Algebra
 import Control.Carrier.Lift
 import Control.Monad.IO.Class
+import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Char8 as C8
 import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString.Builder as BB
-import qualified Data.Text.Encoding as TE
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Lazy as LT
 import Data.Time.Format
 import Language.Haskell.TH.Syntax (Exp, Loc (..), Q, liftString, qLocation)
@@ -37,7 +37,7 @@ import qualified System.Wlog as Wlog
 data Logging :: Effect where
   Log :: From s LogMessage => Wlog.LoggerName -> Wlog.Severity -> s -> Logging m ()
 
-newtype LogMessage = LogMessage { msg :: T.Text }
+newtype LogMessage = LogMessage {msg :: T.Text}
 
 instance From T.Text LogMessage where
   from = LogMessage
@@ -52,7 +52,7 @@ instance From C8.ByteString LogMessage where
   from = from . TE.decodeUtf8
 
 instance From BB.Builder LogMessage where
-  from = from . BL.toStrict. BB.toLazyByteString
+  from = from . BL.toStrict . BB.toLazyByteString
 
 newtype LoggingC m a
   = LoggingC
