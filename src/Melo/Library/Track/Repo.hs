@@ -3,8 +3,8 @@
 module Melo.Library.Track.Repo where
 
 import Control.Algebra
-import Control.Carrier.Lift
-import Control.Carrier.Reader
+import Control.Effect.Lift
+import Control.Effect.Reader
 import Control.Lens ((^.))
 import Data.Functor
 import Data.Text (Text)
@@ -13,6 +13,7 @@ import Database.Beam
 import Database.Beam.Postgres
 import Database.Beam.Postgres.Full
 import Melo.Common.Effect
+import Melo.Common.Logging
 import qualified Melo.Library.Database.Model as DB
 import Melo.Library.Database.Query
 
@@ -64,16 +65,19 @@ deleteTracks ks = send (DeleteTracks ks)
 
 newtype TrackRepositoryIOC m a
   = TrackRepositoryIOC
-      { runTrackRepositoryIOC :: ReaderC Connection m a
+      { runTrackRepositoryIOC :: m a
       }
   deriving newtype (Applicative, Functor, Monad)
 
 instance
-  (Has (Lift IO) sig m, Algebra sig m) =>
+  ( Has (Lift IO) sig m,
+    Has Logging sig m,
+    Has (Reader Connection) sig m
+  ) =>
   Algebra (TrackRepository :+: sig) (TrackRepositoryIOC m)
   where
-  alg hdl sig ctx = case sig of
-    L (InsertTracks ts) -> TrackRepositoryIOC $ do
+  alg _hdl (L sig) ctx = case sig of
+    InsertTracks ts -> do
       conn <- ask
       let q =
             runPgInsertReturningList $
@@ -84,8 +88,8 @@ instance
                 )
                 onConflictDefault
                 (Just primaryKey)
-      (ctx $>) <$> runTrackRepositoryIOC (sendIO $ runPgDebug conn q)
-    R other -> TrackRepositoryIOC (alg (runTrackRepositoryIOC . hdl) (R other) ctx)
+      (ctx $>) <$> $(runPgDebug') conn q
+  alg hdl (R other) ctx = TrackRepositoryIOC (alg (runTrackRepositoryIOC . hdl) other ctx)
 
 newTrack :: NewTrack -> DB.TrackT (QExpr Postgres s)
 newTrack t =
@@ -101,5 +105,5 @@ newTrack t =
       length = fromMaybe_ (val_ (DB.Interval 0)) (val_ (DB.Interval <$> t ^. #length))
     }
 
-runTrackRepositoryIO :: Connection -> TrackRepositoryIOC m a -> m a
-runTrackRepositoryIO conn = runReader conn . runTrackRepositoryIOC
+runTrackRepositoryIO :: TrackRepositoryIOC m a -> m a
+runTrackRepositoryIO = runTrackRepositoryIOC

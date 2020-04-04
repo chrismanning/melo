@@ -40,7 +40,7 @@ import qualified Network.Wreq.Session as WrS
 
 data Http :: Effect where
   GetWith :: Wr.Options -> Text -> Http m (Response L.ByteString)
-  GetWithJson :: FromJSON a => Wr.Options -> Text -> Http m (Response a)
+  GetWithJson :: (Show a, FromJSON a) => Wr.Options -> Text -> Http m (Response a)
 
 getWith ::
   Has Http sig m =>
@@ -50,7 +50,7 @@ getWith ::
 getWith opts url = send (GetWith opts url)
 
 getWithJson ::
-  (FromJSON a, Has Http sig m) =>
+  (Show a, FromJSON a, Has Http sig m) =>
   Wr.Options ->
   Text ->
   m (Response a)
@@ -101,6 +101,7 @@ instance
   alg _ (L http) ctx =
     case http of
       GetWith opts url -> HttpSessionIOC $ do
+        $(logDebugShow) url
         $(logDebugShow) opts
         sess <- ask @WrS.Session
         r <- sendM $ catchAny (Right <$> WrS.getWith opts sess (T.unpack url)) (pure . Left)
@@ -113,7 +114,9 @@ instance
         r <- getWith opts url
         case Wr.asJSON r of
           Left e -> HttpSessionIOC $ ReaderC $ \_ -> throwError (into @HttpClientException e)
-          Right r' -> (ctx $>) <$> pure r'
+          Right r' -> do
+            $(logDebugShow) r'
+            (ctx $>) <$> pure r'
   alg hdl (R other) ctx = HttpSessionIOC $ alg (runHttpSessionIOC . hdl) (R (R other)) ctx
 
 runNewHttpSession :: Has (Lift IO) sig m => HttpSessionIOC m a -> ErrorC HttpClientException m a

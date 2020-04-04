@@ -71,7 +71,7 @@ newtype ArtistSearchResult
   = ArtistSearchResult
       { artists :: [Artist]
       }
-  deriving (Generic)
+  deriving (Show, Generic)
   deriving anyclass (FromJSON)
 
 data Artist
@@ -98,7 +98,7 @@ newtype ReleaseSearchResult
   = ReleaseSearchResult
       { releases :: [Release]
       }
-  deriving (Generic)
+  deriving (Show, Generic)
   deriving anyclass (FromJSON)
 
 data Release
@@ -128,7 +128,7 @@ newtype ReleaseGroupSearchResult
   = ReleaseGroupSearchResult
       { releaseGroups :: [ReleaseGroup]
       }
-  deriving (Generic)
+  deriving (Show, Generic)
   deriving anyclass (FromJSON)
 
 data ReleaseGroup
@@ -154,7 +154,7 @@ newtype RecordingSearchResult
   = RecordingSearchResult
       { recordings :: [Recording]
       }
-  deriving (Generic)
+  deriving (Show, Generic)
   deriving anyclass (FromJSON)
 
 data Recording
@@ -267,7 +267,8 @@ instance
           [] -> (ctx $>) <$> pure []
           ts -> do
             let q = T.intercalate " AND " ts
-            let opts = mbWreqDefaults & Wr.param "query" .~ [q]
+            let opts =
+                  mbWreqDefaults & Wr.param "query" .~ [q]
             let url = baseUrl <> "/recording"
             r <- do
               r' :: Wr.Response RecordingSearchResult <- getWithJson opts url
@@ -311,6 +312,7 @@ mbWreqDefaults =
   Wr.defaults
     & Wr.header "User-Agent" .~ [meloUserAgent]
     & Wr.header "Accept" .~ ["application/json"]
+    & Wr.param "fmt" .~ ["json"]
 
 baseUrl :: IsString s => s
 baseUrl = "http://musicbrainz.org/ws/2"

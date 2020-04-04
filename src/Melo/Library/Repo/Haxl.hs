@@ -1,5 +1,6 @@
 module Melo.Library.Repo.Haxl where
 
+import Control.Carrier.Reader
 import Control.Lens ((^.))
 import Control.Monad
 import Data.Bifunctor
@@ -64,7 +65,7 @@ instance DataSource () MetadataSourceDataSource where
       getMetadataSource' vs = unless (null vs) $
         do
           allMetadataSources <-
-            Metadata.runMetadataSourceRepositoryIO conn $
+            runReader conn $ Metadata.runMetadataSourceRepositoryIO $
               Metadata.getMetadataSources (fmap fst vs)
           let ms = H.fromList $ fmap (\m -> (DB.MetadataSourceKey $ m ^. #id, m)) allMetadataSources
           forM_ vs $ \(k, v) ->
@@ -75,7 +76,7 @@ instance DataSource () MetadataSourceDataSource where
       getFileMetadataSourcesBySrc' vs = unless (null vs) $
         do
           allMetadataSources <-
-            Metadata.runMetadataSourceRepositoryIO conn $
+            runReader conn $ Metadata.runMetadataSourceRepositoryIO $
               Metadata.getMetadataSourcesBySrc (fmap fst vs)
           let msm = H.fromListWith (++) $ fmap (\ms -> (T.unpack (ms ^. #source), [ms])) allMetadataSources
           forM_ vs $ \(s, v) ->
@@ -144,14 +145,14 @@ instance DataSource () GenreDataSource where
     where
       getAllGenres' vs = unless (null vs) $
         do
-          allGenres <- Genre.runGenreRepositoryIO conn Genre.getAllGenres
+          allGenres <- runReader conn $ Genre.runGenreRepositoryIO Genre.getAllGenres
           mapM_ (`putSuccess` allGenres) vs
       searchGenres' vs = unless (null vs)
         $ forM_ (H.toList vs)
-        $ \(t, r) -> putSuccess r =<< Genre.runGenreRepositoryIO conn (Genre.searchGenres t)
+        $ \(t, r) -> putSuccess r =<< runReader conn (Genre.runGenreRepositoryIO (Genre.searchGenres t))
       getGenreTracks' vs = unless (null vs) $
         do
-          genreTracks <- Genre.runGenreRepositoryIO conn $ Genre.getGenreTracks (H.keys vs)
+          genreTracks <- runReader conn (Genre.runGenreRepositoryIO $ Genre.getGenreTracks (H.keys vs))
           let genreTracks' = H.fromListWith (++) (second (: []) <$> genreTracks)
           mapM_
             ( \(k, r) ->

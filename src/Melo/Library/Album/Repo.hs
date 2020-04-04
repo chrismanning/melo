@@ -3,8 +3,8 @@
 module Melo.Library.Album.Repo where
 
 import Control.Algebra
-import Control.Carrier.Lift
-import Control.Carrier.Reader
+import Control.Effect.Lift
+import Control.Effect.Reader
 import Control.Lens ((^.))
 import Data.Text (Text)
 import Database.Beam
@@ -52,7 +52,7 @@ deleteAlbums ks = send (DeleteAlbums ks)
 
 newtype AlbumRepositoryIOC m a
   = AlbumRepositoryIOC
-      { runAlbumRepositoryIOC :: ReaderC Connection m a
+      { runAlbumRepositoryIOC :: m a
       }
   deriving newtype (Applicative, Functor, Monad)
 
@@ -61,7 +61,7 @@ instance
   Algebra (AlbumRepository :+: sig) (AlbumRepositoryIOC m)
   where
   alg hdl sig ctx = case sig of
-    R other -> AlbumRepositoryIOC (alg (runAlbumRepositoryIOC . hdl) (R other) ctx)
+    R other -> AlbumRepositoryIOC (alg (runAlbumRepositoryIOC . hdl) other ctx)
 
-runAlbumRepositoryIO :: Connection -> AlbumRepositoryIOC m a -> m a
-runAlbumRepositoryIO conn = runReader conn . runAlbumRepositoryIOC
+runAlbumRepositoryIO :: AlbumRepositoryIOC m a -> m a
+runAlbumRepositoryIO = runAlbumRepositoryIOC

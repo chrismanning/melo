@@ -1,5 +1,6 @@
 module Melo.Library.Filesystem where
 
+import Basement.From
 import Conduit
 import Control.Algebra
 import Control.Applicative
@@ -8,7 +9,7 @@ import Control.Carrier.Reader
 import Control.Effect.Reader
 import Control.Effect.Sum
 import Control.Exception.Safe
-import Control.Lens ((^.))
+import Control.Lens hiding (lens)
 import Control.Monad
 import Control.Monad.Logger (LoggingT)
 import Data.Attoparsec.Text
@@ -25,7 +26,7 @@ import Database.Beam as B hiding (char, insert)
 import Database.Beam.Backend.SQL.BeamExtensions as B
 import Database.Beam.Postgres as Pg
 import Database.Beam.Postgres.Full as Pg
-import Database.PostgreSQL.Simple
+import qualified Database.PostgreSQL.Simple as Pg
 import Debug.Trace
 import GHC.Records
 import Haxl.Core
@@ -44,6 +45,7 @@ import Melo.Library.Album.Repo
 import Melo.Library.Artist.Repo
 import Melo.Library.Artist.Service
 import Melo.Library.Database.Model as BM
+import Melo.Library.Database.Transaction as Tr
 import Melo.Library.Genre.Repo
 import Melo.Library.Metadata.Repo
 import Melo.Library.Metadata.Service
@@ -61,13 +63,15 @@ importDeep pool root = do
   isFile <- doesFileExist root
   sess <- Sess.newSession
   if isDir
-    then withResource pool \conn -> importDirectory conn sess root
+    then importDirectory pool sess root
     else
       when isFile $
         catchAny
-          ( withResource pool $ \conn -> do
+          ( do
               f <- openMetadataFile root
-              runImporter conn sess $ importMetadataFile f
+              runTransaction pool $ withTransaction
+                $ runImporter sess
+                $ importMetadataFile f
           )
           print
 
@@ -85,23 +89,23 @@ type Importer sig m =
     Has Empty sig m
   )
 
-runImporter conn sess =
+runImporter sess =
   evalEmpty
     . runStdoutLogging
     . runMusicBrainzServiceIO sess
-    . runMetadataSourceRepositoryIO conn
-    . runAlbumRepositoryIO conn
-    . runArtistRepositoryIO conn
-    . runGenreRepositoryIO conn
-    . runTrackRepositoryIO conn
+    . runMetadataSourceRepositoryIO
+    . runAlbumRepositoryIO
+    . runArtistRepositoryIO
+    . runGenreRepositoryIO
+    . runTrackRepositoryIO
     . runMetadataService
     . runArtistServiceIO
 
-importDirectory :: Connection -> Session -> FilePath -> IO ()
-importDirectory conn sess dir = do
+importDirectory :: Pool Connection -> Session -> FilePath -> IO ()
+importDirectory pool sess dir = do
   fs <- filterM doesFileExist =<< listDirectory dir
   metadataFiles <- mapM openMetadataFile fs
-  withTransaction conn $ runImporter conn sess $
+  Tr.runTransaction pool $ Tr.withTransaction $ runImporter sess $
     mapM_ importMetadataFile metadataFiles
 
 importMetadataFile :: Importer sig m => MetadataFile -> m ()
@@ -126,8 +130,9 @@ newArtists f = chooseMetadata (H.elems $ f ^. #metadata) >>= \case
   Just m -> do
     -- let t = m ^. #tags
     -- let tag = lens m
-    albumArtists <- identifyArtists m
-    --    _newArtists
+    artists <- identifyArtists m
+    --    let x = artists ^.. #country
+    -- _newArtists
     undefined
 
 newAlbums :: (Monad m, Has MetadataService sig m) => MetadataFile -> m [NewAlbum]
