@@ -7,6 +7,7 @@ where
 import Data.Binary.Get
 import qualified Data.ByteString.Lazy as L
 import Data.Maybe
+import Data.Vector
 import Melo.Format.ID3.ID3v2
 import Melo.Format.Internal.Binary
 import Melo.Format.Internal.Locate
@@ -63,7 +64,7 @@ spec =
         $ do
           id3 <- readID3v2Tags "test/Melo/silence-1s-id3v23.mp3"
           readTags id3
-            `shouldBe` Tags
+            `shouldBe` Tags (fromList
               [ ("TALB", "イロハニホヘト チリヌルヲ ワカヨタレソ ツネナラム ウヰノオクヤマ ケフコエテ アサキユメミシ ヱヒモセスン"),
                 ("TPE1", "κόσμε"),
                 ("TENC", "lame"),
@@ -73,7 +74,7 @@ spec =
                 ("TRCK", "04"),
                 ("TYER", "2011"),
                 ("WXXX;", "http://google.com")
-              ]
+              ])
 
 readID3v2Tags :: FilePath -> IO ID3v2
 readID3v2Tags p = do
