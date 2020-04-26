@@ -1,7 +1,8 @@
 module Melo.Format.Flac
   ( Flac,
     pattern Flac,
-    pattern FlacWithID3v2,
+    pattern FlacWithID3v2_3,
+    pattern FlacWithID3v2_4,
     FlacStream,
     StreamInfo (..),
     streamInfoBlock,
@@ -55,23 +56,41 @@ hReadFlac h = do
         0 -> MkFlac <$> bdecodeOrThrowIO buf
         _ -> do
           let (id3buf, flacbuf) = L.splitAt (fromIntegral x) buf
-          id3 <- bdecodeOrThrowIO id3buf
+          id3v23loc <- hLocate @ID3v2_3 h
+          hSeek h AbsoluteSeek 0
+          id3v24loc <- hLocate @ID3v2_4 h
+          hSeek h AbsoluteSeek 0
           flac <- bdecodeOrThrowIO flacbuf
-          pure $ MkFlacWithID3v2 id3 flac
+          if isJust id3v23loc
+            then do
+              id3 <- bdecodeOrThrowIO id3buf
+              pure $ MkFlacWithID3v2_3 id3 flac
+            else
+              if isJust id3v24loc
+                then do
+                  id3 <- bdecodeOrThrowIO id3buf
+                  pure $ MkFlacWithID3v2_4 id3 flac
+                else error "ID3v2 detected but couldn't be read"
 
 readFlacOrFail :: FilePath -> IO (Either (ByteOffset, String) Flac)
 readFlacOrFail p = fmap MkFlac <$> bdecodeFileOrFail p
 
-data Flac = MkFlac !FlacStream | MkFlacWithID3v2 !ID3v2 !FlacStream
+data Flac
+  = MkFlac !FlacStream
+  | MkFlacWithID3v2_3 !ID3v2_3 !FlacStream
+  | MkFlacWithID3v2_4 !ID3v2_4 !FlacStream
   deriving (Show)
 
 pattern Flac :: FlacStream -> Flac
 pattern Flac flac = MkFlac flac
 
-pattern FlacWithID3v2 :: ID3v2 -> FlacStream -> Flac
-pattern FlacWithID3v2 id3v2 flac = MkFlacWithID3v2 id3v2 flac
+pattern FlacWithID3v2_3 :: ID3v2_3 -> FlacStream -> Flac
+pattern FlacWithID3v2_3 id3v2 flac = MkFlacWithID3v2_3 id3v2 flac
 
-{-# COMPLETE FlacWithID3v2, Flac #-}
+pattern FlacWithID3v2_4 :: ID3v2_4 -> FlacStream -> Flac
+pattern FlacWithID3v2_4 id3v2 flac = MkFlacWithID3v2_4 id3v2 flac
+
+{-# COMPLETE Flac, FlacWithID3v2_3, FlacWithID3v2_4 #-}
 
 flacFileId :: MetadataFileId
 flacFileId = MetadataFileId "Flac"
@@ -94,8 +113,16 @@ flac =
     }
 
 flacMetadata :: Flac -> H.HashMap MetadataId Metadata
-flacMetadata (FlacWithID3v2 id3v2 f) =
-  let id3v2fmt = metadataFormat id3v2
+flacMetadata (FlacWithID3v2_3 id3v2 f) =
+  let id3v2fmt = metadataFormat @ID3v2_3
+      vc = vorbisComment f
+   in H.fromList $
+        catMaybes
+          [ Just (id3v2fmt ^. #formatId, extractMetadata id3v2),
+            vc <&> (vorbisCommentsId,) . extractMetadata
+          ]
+flacMetadata (FlacWithID3v2_4 id3v2 f) =
+  let id3v2fmt = metadataFormat @ID3v2_4
       vc = vorbisComment f
    in H.fromList $
         catMaybes
@@ -112,7 +139,8 @@ flacMetadata (Flac f) =
 instance InfoReader Flac where
   info f = case f of
     Flac fs -> getInfo fs
-    FlacWithID3v2 _ fs -> getInfo fs
+    FlacWithID3v2_3 _ fs -> getInfo fs
+    FlacWithID3v2_4 _ fs -> getInfo fs
     where
       getInfo :: FlacStream -> Info
       getInfo fs =
@@ -129,29 +157,40 @@ instance InfoReader Flac where
 
 hFindFlac :: Handle -> IO (Maybe Integer)
 hFindFlac h = do
-  id3loc <- hLocate @ID3v2 h
+  id3v24loc <- hLocate @ID3v2_4 h
   hSeek h AbsoluteSeek 0
-  case id3loc of
-    Nothing -> do
+  id3v23loc <- hLocate @ID3v2_3 h
+  hSeek h AbsoluteSeek 0
+  case (id3v23loc, id3v24loc) of
+    (Nothing, Nothing) -> do
       buf <- hGet h 4
       pure $ case buf of
         "fLaC" -> Just 0
         _ -> Nothing
-    Just id3loc' -> do
-      hSeek h AbsoluteSeek (fromIntegral id3loc')
-      id3 <- bdecode <$> hGetFileContents h
-      hSeek h AbsoluteSeek $ id3v2size id3 + fromIntegral headerSize
+    (Just id3v23loc', Nothing) -> do
+      hSeek h AbsoluteSeek (fromIntegral id3v23loc')
+      id3 <- bdecode @ID3v2_3 <$> hGetFileContents h
+      hSeek h AbsoluteSeek $ id3 ^. #id3v2size + fromIntegral headerSize
       flacLoc <- hTell h
       buf <- hGet h 4
       pure $ case buf of
         "fLaC" -> Just (fromIntegral flacLoc)
         _ -> Nothing
+    (Nothing, Just id3v24loc') -> do
+      hSeek h AbsoluteSeek (fromIntegral id3v24loc')
+      id3 <- bdecode @ID3v2_4 <$> hGetFileContents h
+      hSeek h AbsoluteSeek $ id3 ^. #id3v2size + fromIntegral headerSize
+      flacLoc <- hTell h
+      buf <- hGet h 4
+      pure $ case buf of
+        "fLaC" -> Just (fromIntegral flacLoc)
+        _ -> Nothing
+    (Just _, Just _) -> error "Cannot have both ID3v2.3 and ID3v2.4"
 
-data FlacStream
-  = FlacStream
-      { streamInfoBlock :: !StreamInfo,
-        metadataBlocks :: !(Vector MetadataBlock)
-      }
+data FlacStream = FlacStream
+  { streamInfoBlock :: !StreamInfo,
+    metadataBlocks :: !(Vector MetadataBlock)
+  }
   deriving (Show)
 
 vorbisComment :: FlacStream -> Maybe VorbisComments
@@ -202,12 +241,11 @@ instance BinaryGet MetadataBlock where
         skip $ fromIntegral len
         pure $ OtherBlock bt len
 
-data MetadataBlockHeader
-  = MetadataBlockHeader
-      { blockType :: !Word8,
-        blockLength :: !Word32,
-        isLast :: !Bool
-      }
+data MetadataBlockHeader = MetadataBlockHeader
+  { blockType :: !Word8,
+    blockLength :: !Word32,
+    isLast :: !Bool
+  }
   deriving (Show)
 
 instance BinaryGet MetadataBlockHeader where
@@ -217,18 +255,17 @@ instance BinaryGet MetadataBlockHeader where
     blockLength <- get24Bits
     return MetadataBlockHeader {blockType, blockLength, isLast}
 
-data StreamInfo
-  = StreamInfo
-      { minBlockSize :: !Word16,
-        maxBlockSize :: !Word16,
-        minFrameSize :: !(Maybe Word32),
-        maxFrameSize :: !(Maybe Word32),
-        sampleRate :: !Word32,
-        channels :: !Word8,
-        bps :: !Word8,
-        samples :: !(Maybe Word64),
-        md5 :: !ByteString
-      }
+data StreamInfo = StreamInfo
+  { minBlockSize :: !Word16,
+    maxBlockSize :: !Word16,
+    minFrameSize :: !(Maybe Word32),
+    maxFrameSize :: !(Maybe Word32),
+    sampleRate :: !Word32,
+    channels :: !Word8,
+    bps :: !Word8,
+    samples :: !(Maybe Word64),
+    md5 :: !ByteString
+  }
   deriving (Show)
 
 instance BinaryGet StreamInfo where
@@ -284,17 +321,16 @@ instance BinaryGet FlacTags where
     expect (blockType header == 4) (printf "Unexpected block type %d; expected 4 (VORBIS_COMMENT)" $ blockType header)
     FlacTags <$> bget
 
-data Picture
-  = Picture
-      { pictureType :: !Word32,
-        mimeType :: !Text,
-        description :: !Text,
-        width :: !Word32,
-        height :: !Word32,
-        depth :: !Word32,
-        numColours :: !(Maybe Word32),
-        pictureData :: !ByteString
-      }
+data Picture = Picture
+  { pictureType :: !Word32,
+    mimeType :: !Text,
+    description :: !Text,
+    width :: !Word32,
+    height :: !Word32,
+    depth :: !Word32,
+    numColours :: !(Maybe Word32),
+    pictureData :: !ByteString
+  }
   deriving (Show)
 
 numColors :: Picture -> Maybe Word32
@@ -326,4 +362,5 @@ instance BinaryGet Picture where
 
 removeID3 :: Flac -> Flac
 removeID3 f@(Flac _) = f
-removeID3 (FlacWithID3v2 _ fs) = Flac fs
+removeID3 (FlacWithID3v2_3 _ fs) = Flac fs
+removeID3 (FlacWithID3v2_4 _ fs) = Flac fs

@@ -38,86 +38,79 @@ instance GraphQLType GQLTypeKind where
 
 newtype NonNull a = NonNull a
 
-data GQLSchema
-  = GQLSchema
-      { types :: NonEmpty GQLType,
-        queryType :: GQLType,
-        mutationType :: Maybe GQLType,
-        subscriptionType :: Maybe GQLType
-      }
+data GQLSchema = GQLSchema
+  { types :: NonEmpty GQLType,
+    queryType :: GQLType,
+    mutationType :: Maybe GQLType,
+    subscriptionType :: Maybe GQLType
+  }
   deriving (Generic)
 
 instance GraphQLType GQLSchema where
   type TypeKind GQLSchema = 'ObjectKind
 
-data FieldsArgs
-  = FieldsArgs
-      { includeDeprecated :: Bool
-      }
+data FieldsArgs = FieldsArgs
+  { includeDeprecated :: Bool
+  }
   deriving (Generic)
 
 instance GraphQLType FieldsArgs where
   type TypeKind FieldsArgs = 'InputObjectKind
 
-data EnumValuesArgs
-  = EnumValuesArgs
-      { includeDeprecated :: Bool
-      }
+data EnumValuesArgs = EnumValuesArgs
+  { includeDeprecated :: Bool
+  }
   deriving (Generic)
 
 instance GraphQLType EnumValuesArgs where
   type TypeKind EnumValuesArgs = 'InputObjectKind
 
-data GQLType
-  = GQLType
-      { kind :: GQLTypeKind,
-        name :: Maybe Text,
-        description :: Maybe Text,
-        fields :: FieldsArgs -> Maybe [GQLField],
-        interfaces :: Maybe [GQLType],
-        possibleTypes :: Maybe [GQLType],
-        enumValues :: EnumValuesArgs -> Maybe [GQLEnumValue],
-        inputFields :: Maybe [GQLInputValue],
-        ofType :: Maybe GQLType
-      }
+data GQLType = GQLType
+  { kind :: GQLTypeKind,
+    name :: Maybe Text,
+    description :: Maybe Text,
+    fields :: FieldsArgs -> Maybe [GQLField],
+    interfaces :: Maybe [GQLType],
+    possibleTypes :: Maybe [GQLType],
+    enumValues :: EnumValuesArgs -> Maybe [GQLEnumValue],
+    inputFields :: Maybe [GQLInputValue],
+    ofType :: Maybe GQLType
+  }
   deriving (Generic)
 
 instance GraphQLType GQLType where
   type TypeKind GQLType = 'ObjectKind
 
-data GQLField
-  = GQLField
-      { name :: Text,
-        description :: Maybe Text,
-        args :: [GQLInputValue],
-        fieldType :: GQLType,
-        isDeprecated :: Bool,
-        deprecationReason :: Maybe Text
-      }
+data GQLField = GQLField
+  { name :: Text,
+    description :: Maybe Text,
+    args :: [GQLInputValue],
+    fieldType :: GQLType,
+    isDeprecated :: Bool,
+    deprecationReason :: Maybe Text
+  }
   deriving (Generic)
 
 instance GraphQLType GQLField where
   type TypeKind GQLField = 'ObjectKind
 
-data GQLInputValue
-  = GQLInputValue
-      { name :: Text,
-        description :: Maybe Text,
-        inputValueType :: GQLType,
-        defaultValue :: Maybe Text
-      }
+data GQLInputValue = GQLInputValue
+  { name :: Text,
+    description :: Maybe Text,
+    inputValueType :: GQLType,
+    defaultValue :: Maybe Text
+  }
   deriving (Generic)
 
 instance GraphQLType GQLInputValue where
   type TypeKind GQLInputValue = 'ObjectKind
 
-data GQLEnumValue
-  = GQLEnumValue
-      { name :: Text,
-        description :: Maybe Text,
-        isDeprecated :: Bool,
-        deprecationReason :: Maybe Text
-      }
+data GQLEnumValue = GQLEnumValue
+  { name :: Text,
+    description :: Maybe Text,
+    isDeprecated :: Bool,
+    deprecationReason :: Maybe Text
+  }
   deriving (Show, Eq, Generic)
 
 instance GraphQLType GQLEnumValue where
@@ -400,12 +393,11 @@ instance GraphQLType a => GraphQLType (Maybe a) where
 class SchemaIntrospection s where
   introspectSchema :: s -> GQLSchema
 
-data Schema q m s
-  = Schema
-      { query :: q,
-        mutation :: m,
-        schema :: s
-      }
+data Schema q m s = Schema
+  { query :: q,
+    mutation :: m,
+    schema :: s
+  }
 
 instance (GraphQLType q) => SchemaIntrospection (Schema q m s) where
   introspectSchema _ =

@@ -9,10 +9,9 @@ import Melo.GraphQL.Resolve
 import Melo.Library.API
 import Melo.Library.Repo.Haxl
 
-data Query
-  = Query
-      { library :: Library
-      }
+data Query = Query
+  { library :: Library
+  }
   deriving (Generic)
 
 instance GraphQLType Query where

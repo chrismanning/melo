@@ -80,16 +80,14 @@ runHttpAlt = runHttpError (\e -> $(logErrorShow) e >> pure empty) pure
 runHttpEmpty :: (Has Logging sig m, Has E.Empty sig m) => ErrorC HttpClientException m a -> m a
 runHttpEmpty = runHttpError (\e -> $(logErrorShow) e >> E.empty) pure
 
-newtype HttpIOC m a
-  = HttpIOC
-      { runHttpIOC :: m a
-      }
+newtype HttpIOC m a = HttpIOC
+  { runHttpIOC :: m a
+  }
   deriving newtype (Applicative, Functor, Monad)
 
-newtype HttpSessionIOC m a
-  = HttpSessionIOC
-      { runHttpSessionIOC :: ReaderC WrS.Session (ErrorC HttpClientException m) a
-      }
+newtype HttpSessionIOC m a = HttpSessionIOC
+  { runHttpSessionIOC :: ReaderC WrS.Session (ErrorC HttpClientException m) a
+  }
   deriving newtype (Applicative, Functor, Monad)
 
 instance
@@ -109,14 +107,14 @@ instance
           Left e -> throwError (into @HttpClientException e)
           Right r' -> do
             $(logDebugShow) r'
-            (ctx $>) <$> pure r'
+            pure $ ctx $> r'
       GetWithJson opts url -> do
         r <- getWith opts url
         case Wr.asJSON r of
           Left e -> HttpSessionIOC $ ReaderC $ \_ -> throwError (into @HttpClientException e)
           Right r' -> do
             $(logDebugShow) r'
-            (ctx $>) <$> pure r'
+            pure $ ctx $> r'
   alg hdl (R other) ctx = HttpSessionIOC $ alg (runHttpSessionIOC . hdl) (R (R other)) ctx
 
 runNewHttpSession :: Has (Lift IO) sig m => HttpSessionIOC m a -> ErrorC HttpClientException m a

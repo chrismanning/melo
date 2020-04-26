@@ -45,7 +45,7 @@ oggVorbis =
 
 oggVorbisMetadata :: OggVorbis -> H.HashMap MetadataId Metadata
 oggVorbisMetadata (OggVorbis _ (FramedVorbisComments vc)) =
-  let fmt = metadataFormat vc
+  let fmt = metadataFormat @VorbisComments
    in H.singleton (fmt ^. #formatId) (extractMetadata vc)
 
 data OggVorbis = OggVorbis !Identification !FramedVorbisComments

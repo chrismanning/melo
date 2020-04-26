@@ -14,10 +14,9 @@ waitReady = send WaitReady
 data RateLimit :: Effect where
   WaitReady :: RateLimit m ()
 
-newtype RateLimitIOC m a
-  = RateLimitIOC
-      { runRateLimitIOC :: (ReaderC LimitConfig (ReaderC RateLimiter m)) a
-      }
+newtype RateLimitIOC m a = RateLimitIOC
+  { runRateLimitIOC :: (ReaderC LimitConfig (ReaderC RateLimiter m)) a
+  }
   deriving newtype (Applicative, Functor, Monad)
 
 instance

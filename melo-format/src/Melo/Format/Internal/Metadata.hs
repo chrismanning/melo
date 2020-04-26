@@ -15,14 +15,13 @@ import Melo.Format.Internal.Info
 import Melo.Format.Internal.Tag
 import Melo.Format.Mapping
 
-data MetadataFileFactory m
-  = MetadataFileFactory
-      { priority :: !Int,
-        fileId :: !MetadataFileId,
-        readMetadataFile :: FilePath -> m MetadataFile,
-        writeMetadataFile :: FilePath -> MetadataFile -> m (),
-        detectFile :: FilePath -> IO Bool
-      }
+data MetadataFileFactory m = MetadataFileFactory
+  { priority :: !Int,
+    fileId :: !MetadataFileId,
+    readMetadataFile :: FilePath -> m MetadataFile,
+    writeMetadataFile :: FilePath -> MetadataFile -> m (),
+    detectFile :: FilePath -> m Bool
+  }
   deriving (Generic)
 
 newtype MetadataFileId = MetadataFileId Text
@@ -30,35 +29,36 @@ newtype MetadataFileId = MetadataFileId Text
   deriving anyclass (Newtype)
   deriving newtype (Hashable, Eq, Ord)
 
-data MetadataFile
-  = MetadataFile
-      { metadata :: !(HashMap MetadataId Metadata),
-        audioInfo :: !Info,
-        fileId :: !MetadataFileId,
-        filePath :: !FilePath
-      }
+data MetadataFile = MetadataFile
+  { metadata :: !(HashMap MetadataId Metadata),
+    audioInfo :: !Info,
+    fileId :: !MetadataFileId,
+    filePath :: !FilePath
+  }
   deriving (Generic, Eq, Show)
 
-newtype MetadataId = MetadataId Text
+newtype MetadataId = MetadataId
+  { unMetadataId :: Text
+  }
   deriving (Generic, Show)
   deriving anyclass (Newtype)
   deriving newtype (Hashable, Eq, Ord)
 
-data Metadata
-  = Metadata
-      { formatId :: !MetadataId,
-        formatDesc :: !Text,
-        tags :: !Tags,
-        lens :: !(TagMapping -> TagLens)
-      }
+data Metadata = Metadata
+  { formatId :: !MetadataId,
+    formatDesc :: !Text,
+    tags :: !Tags,
+    lens :: !(TagMapping -> TagLens)
+  }
 
 instance Show Metadata where
   showsPrec d Metadata {..} =
-    showString "Metadata {formatId = " <> showsPrec d (show formatId)
-      <> showString ", formatDesc = "
-      <> showsPrec d (show formatDesc)
-      <> showString ", tags = "
-      <> showsPrec d tags
+    showString "Metadata {formatId = " . showsPrec d formatId
+      . showString ", formatDesc = "
+      . showsPrec d formatDesc
+      . showString ", tags = "
+      . showsPrec d tags
+      . showString "}"
 
 instance IsLabel "formatId" (Getting MetadataId Metadata MetadataId) where
   fromLabel = to (formatId :: Metadata -> MetadataId)
@@ -76,21 +76,34 @@ instance Eq Metadata where
       && (a ^. #tags :: Tags) == b ^. #tags
 
 class MetadataFormat a where
-  metadataFormat :: a -> MetadataFormatDesc
-  metadataLens :: a -> (TagMapping -> TagLens)
+  metadataFormat :: MetadataFormatDesc
+  metadataLens :: TagMapping -> TagLens
+  metadataFactory :: MetadataId -> Tags -> Maybe Metadata
+  default metadataFactory :: MetadataId -> Tags -> Maybe Metadata
+  metadataFactory mid tags =
+    let MetadataFormat {..} = metadataFormat @a
+     in if mid == formatId
+          then
+            Just
+              Metadata
+                { formatId,
+                  formatDesc,
+                  tags,
+                  lens = metadataLens @a
+                }
+          else Nothing
 
-data MetadataFormatDesc
-  = MetadataFormat
-      { formatId :: !MetadataId,
-        formatDesc :: !Text
-      }
+data MetadataFormatDesc = MetadataFormat
+  { formatId :: !MetadataId,
+    formatDesc :: !Text
+  }
   deriving (Generic, Hashable)
 
-extractMetadata :: (TagReader a, MetadataFormat a) => a -> Metadata
+extractMetadata :: forall a. (TagReader a, MetadataFormat a) => a -> Metadata
 extractMetadata a =
   Metadata
-    { formatId = metadataFormat a ^. #formatId,
-      formatDesc = metadataFormat a ^. #formatDesc,
+    { formatId = metadataFormat @a ^. #formatId,
+      formatDesc = metadataFormat @a ^. #formatDesc,
       tags = readTags a,
-      lens = metadataLens a
+      lens = metadataLens @a
     }

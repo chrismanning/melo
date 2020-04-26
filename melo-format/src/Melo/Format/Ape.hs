@@ -1,5 +1,6 @@
 module Melo.Format.Ape
-  ( APE (..),
+  ( APEv1 (..),
+    APEv2 (..),
     Header (..),
     Flags (..),
     Version (..),
@@ -8,7 +9,8 @@ module Melo.Format.Ape
     getHeader,
     mkTextTagItem,
     pattern TextTagItem,
-    apeId,
+    apeV1Id,
+    apeV2Id,
     apeTag,
   )
 where
@@ -23,8 +25,9 @@ import Data.Binary.Put
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BC
 import qualified Data.ByteString.Lazy as L
+import Data.Coerce
 import Data.Int
-import Data.Text (Text, pack)
+import Data.Text (Text)
 import Data.Text.Encoding
 import Data.Vector (Vector)
 import qualified Data.Vector as V
@@ -40,29 +43,72 @@ import Prelude as P
 apeTag :: TagMapping -> TagLens
 apeTag = mappedTag ape
 
-data APE
-  = APE
-      { version :: !Version,
-        items :: !(Vector TagItem)
-      }
+newtype APEv1 = APEv1 (Vector TagItem)
   deriving (Show, Eq)
 
-headerSize :: Integral a => a
-headerSize = 32
-
-preamble :: BS.ByteString
-preamble = "APETAGEX"
-
-instance MetadataFormat APE where
-  metadataFormat ape =
+instance MetadataFormat APEv1 where
+  metadataFormat =
     MetadataFormat
-      { formatId = apeId,
-        formatDesc = pack $ show $ version ape
+      { formatId = apeV1Id,
+        formatDesc = "APEv1"
       }
-  metadataLens _ = apeTag
+  metadataLens = apeTag
 
-apeId :: MetadataId
-apeId = MetadataId "APE"
+apeV1Id :: MetadataId
+apeV1Id = MetadataId "APEv1"
+
+instance TagReader APEv1 where
+  readTags a = Tags (coerce a >>= getTextItem)
+
+instance Binary APEv1 where
+  get = do
+    ape <- get @APE
+    pure $ APEv1 (items ape)
+  put a =
+    put $
+      APE
+        { version = V1,
+          items = coerce a
+        }
+
+newtype APEv2 = APEv2 (Vector TagItem)
+  deriving (Show, Eq)
+
+instance MetadataFormat APEv2 where
+  metadataFormat =
+    MetadataFormat
+      { formatId = apeV2Id,
+        formatDesc = "APEv2"
+      }
+  metadataLens = apeTag
+
+apeV2Id :: MetadataId
+apeV2Id = MetadataId "APEv2"
+
+instance TagReader APEv2 where
+  readTags a = Tags (coerce a >>= getTextItem)
+
+getTextItem :: TagItem -> Vector (Text, Text)
+getTextItem t = case t of
+  TagItem k (TagItemValue (TextTag vs)) -> fmap (k,) vs
+  _ -> V.empty
+
+instance Binary APEv2 where
+  get = do
+    ape <- get @APE
+    pure $ APEv2 (items ape)
+  put a =
+    put $
+      APE
+        { version = V2,
+          items = coerce a
+        }
+
+data APE = APE
+  { version :: !Version,
+    items :: !(Vector TagItem)
+  }
+  deriving (Show, Eq)
 
 instance MetadataLocator APE where
   locate bs =
@@ -85,19 +131,17 @@ instance MetadataLocator APE where
     buf <- BS.hGet h (fromIntegral $ hs - n)
     return $ locate @APE (L.fromStrict buf)
 
-instance TagReader APE where
-  readTags a = Tags (items a >>= getTextItem)
+headerSize :: Integral a => a
+headerSize = 32
 
-getTextItem :: TagItem -> Vector (Text, Text)
-getTextItem t = case t of
-  TagItem k (TagItemValue (TextTag vs)) -> fmap (k,) vs
-  _ -> V.empty
+preamble :: BS.ByteString
+preamble = "APETAGEX"
 
 instance Binary APE where
   put a = do
     let bs = runPut $ V.forM_ (items a) put
     case version a of
-      APEv2 -> put $ mkHeader a $ fromIntegral . L.length $ bs
+      V2 -> put $ mkHeader a $ fromIntegral . L.length $ bs
       _ -> return ()
     putLazyByteString bs
     put $ mkFooter a $ fromIntegral . L.length $ bs
@@ -119,13 +163,12 @@ instance Binary APE where
         return items
     return $ APE {items, version = headerVersion header}
 
-data Header
-  = Header
-      { headerVersion :: !Version,
-        numBytes :: !Word32,
-        numItems :: !Word32,
-        flags :: !Flags
-      }
+data Header = Header
+  { headerVersion :: !Version,
+    numBytes :: !Word32,
+    numItems :: !Word32,
+    flags :: !Flags
+  }
   deriving (Show, Eq)
 
 type Footer = Header
@@ -180,32 +223,31 @@ getHeader = do
   return h
 
 data Version
-  = APEv1
-  | APEv2
+  = V1
+  | V2
   deriving (Show, Eq)
 
 instance Binary Version where
   put v =
     case v of
-      APEv1 -> putWord32le 1000
-      APEv2 -> putWord32le 2000
+      V1 -> putWord32le 1000
+      V2 -> putWord32le 2000
 
   get = getVersion
 
 getVersion :: Get Version
 getVersion = getWord32le >>= \case
-  1000 -> return APEv1
-  2000 -> return APEv2
+  1000 -> return V1
+  2000 -> return V2
   x -> fail $ "Invalid APE tag version " <> show x
 
-data Flags
-  = Flags
-      { hasHeader :: !Bool,
-        hasFooter :: !Bool,
-        isHeader :: !Bool,
-        itemType :: !TagItemType,
-        readOnly :: !Bool
-      }
+data Flags = Flags
+  { hasHeader :: !Bool,
+    hasFooter :: !Bool,
+    isHeader :: !Bool,
+    itemType :: !TagItemType,
+    readOnly :: !Bool
+  }
   deriving (Show, Eq)
 
 instance Binary Flags where

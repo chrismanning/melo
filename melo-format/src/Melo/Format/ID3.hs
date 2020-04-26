@@ -1,6 +1,6 @@
 module Melo.Format.ID3
-  ( ID3v1 (..),
-    ID3v2 (..),
+  ( module Melo.Format.ID3.ID3v1,
+    module Melo.Format.ID3.ID3v2,
   )
 where
 

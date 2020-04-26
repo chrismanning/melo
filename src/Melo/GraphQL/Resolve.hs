@@ -27,27 +27,24 @@ import Melo.GraphQL.Introspect as I
 data GraphQLException = FieldNotFound {fieldName :: Text, typeName :: Text}
   deriving (Show, Exception)
 
-data Location
-  = Location
-      { line :: Int,
-        column :: Int
-      }
+data Location = Location
+  { line :: Int,
+    column :: Int
+  }
   deriving (Eq, Show, Generic, ToJSON)
 
-data Error
-  = Error
-      { message :: Text,
-        locations :: [Location],
-        path :: [Text],
-        extensions :: Maybe A.Value
-      }
+data Error = Error
+  { message :: Text,
+    locations :: [Location],
+    path :: [Text],
+    extensions :: Maybe A.Value
+  }
   deriving (Eq, Show, Generic, ToJSON)
 
-data Response
-  = Response
-      { _data :: A.Value,
-        errors :: [Error]
-      }
+data Response = Response
+  { _data :: A.Value,
+    errors :: [Error]
+  }
 
 instance ToJSON Response where
   toJSON rs = A.object ["data" .= _data rs, "errors" .= errors rs]

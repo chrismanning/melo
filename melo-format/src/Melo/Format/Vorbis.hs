@@ -41,15 +41,14 @@ getPacketType = getWord8 <&> \case
   3 -> Just CommentsHeaderType
   _ -> Nothing
 
-data Identification
-  = Identification
-      { vorbisVersion :: !Word32,
-        channels :: !Word8,
-        sampleRate :: !Word32,
-        bitrateMax :: !(Maybe Int32),
-        bitrateNominal :: !(Maybe Int32),
-        bitrateMin :: !(Maybe Int32)
-      }
+data Identification = Identification
+  { vorbisVersion :: !Word32,
+    channels :: !Word8,
+    sampleRate :: !Word32,
+    bitrateMax :: !(Maybe Int32),
+    bitrateNominal :: !(Maybe Int32),
+    bitrateMin :: !(Maybe Int32)
+  }
   deriving (Eq, Show)
 
 instance BinaryGet Identification where
@@ -82,11 +81,10 @@ instance BinaryGet FramedVorbisComments where
     expectGetEq getWord8 1 "Expected vorbis framing bit"
     return $ FramedVorbisComments vc
 
-data VorbisComments
-  = VorbisComments
-      { vendorString :: !Text,
-        userComments :: !(Vector UserComment)
-      }
+data VorbisComments = VorbisComments
+  { vendorString :: !Text,
+    userComments :: !(Vector UserComment)
+  }
   deriving (Show, Eq)
 
 instance BinaryGet VorbisComments where
@@ -125,12 +123,12 @@ vorbisCommentsId :: MetadataId
 vorbisCommentsId = MetadataId "VorbisComments"
 
 instance MetadataFormat VorbisComments where
-  metadataFormat _ =
+  metadataFormat =
     MetadataFormat
       { formatId = vorbisCommentsId,
         formatDesc = "Vorbis Comments"
       }
-  metadataLens _ = vorbisTag
+  metadataLens = vorbisTag
 
 instance TagReader VorbisComments where
   readTags = getVorbisTags
