@@ -1,6 +1,15 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 
-module Melo.Format.ID3.ID3v2 where
+module Melo.Format.ID3.ID3v2
+  ( ID3v2_3 (..),
+    id3v23Tag,
+    id3v23Id,
+    ID3v2_4 (..),
+    id3v24Tag,
+    id3v24Id,
+    headerSize,
+  )
+where
 
 import Control.Monad
 import Control.Monad.Fail as F
@@ -9,7 +18,6 @@ import Data.Binary
 import Data.Binary.Get
 import Data.Bits
 import Data.ByteString as BS
-import qualified Data.ByteString.Lazy as L
 import Data.Foldable as F
 import Data.Functor
 import Data.List.NonEmpty
@@ -17,6 +25,8 @@ import Data.Maybe
 import Data.Text as T
 import Data.Text.Encoding
 import qualified Data.Vector as V
+import GHC.Generics
+import Lens.Micro
 import Melo.Format.Internal.Binary
 import Melo.Format.Internal.BinaryUtil
 import Melo.Format.Internal.Encoding
@@ -35,58 +45,105 @@ id3v23Tag :: TagMapping -> TagLens
 id3v23Tag = mappedTag id3v2_3
 
 id3v24Tag :: TagMapping -> TagLens
-id3v24Tag = mappedTag id3v2_3
+id3v24Tag = mappedTag id3v2_4
 
-data ID3v2
-  = ID3v2
-      { frameVersion :: !ID3v2Version,
-        headerFlags :: !HeaderFlags,
-        id3v2size :: !Integer,
-        frames :: !Frames
-      }
+data ID3v2_3 = ID3v2_3
+  { headerFlags :: !HeaderFlags,
+    id3v2size :: !Integer,
+    frames :: !Frames
+  }
+  deriving (Generic)
 
-deriving instance Show ID3v2
+deriving instance Show ID3v2_3
 
-instance MetadataFormat ID3v2 where
-  metadataFormat id3 =
+id3v23Id :: MetadataId
+id3v23Id = MetadataId "ID3v2_3"
+
+instance MetadataFormat ID3v2_3 where
+  metadataFormat =
     MetadataFormat
-      { formatId = id3v2Id,
-        formatDesc = T.pack $ show $ frameVersion id3
+      { formatId = id3v23Id,
+        formatDesc = "ID3v2.3"
       }
-  metadataLens id3 = case frameVersion id3 of
-    ID3v23 -> id3v23Tag
-    ID3v24 -> id3v24Tag
+  metadataLens = id3v23Tag
 
-id3v2Id :: MetadataId
-id3v2Id = MetadataId "ID3v2"
+instance MetadataLocator ID3v2_3 where
+  locate bs =
+    case runGetOrFail getHeader bs of
+      Left _ -> Nothing
+      Right (_, _, header) -> case version header of
+        ID3v23 -> pure 0
+        _ -> Nothing
 
-instance MetadataLocator ID3v2 where
-  locate bs = if L.isPrefixOf "ID3" bs then Just 0 else Nothing
+  hLocate h = hSeek h AbsoluteSeek 0 >> locate @ID3v2_4 <$> hGetFileContents h
 
-  hLocate h = hSeek h AbsoluteSeek 0 >> locate @ID3v2 <$> hGetFileContents h
-
-instance TagReader ID3v2 where
+instance TagReader ID3v2_3 where
   readTags id3 =
-    let frames' = frames id3
+    let frames' = id3 ^. #frames
         contents = foldlFrames accumFrames [] frames'
      in Tags $ V.fromList $ fmap (first toTagKey) contents >>= \(a, bs) -> fmap (a,) bs
     where
       accumFrames acc frame = acc <> catMaybes [extractFrameContent frame]
 
-instance BinaryGet ID3v2 where
+instance BinaryGet ID3v2_3 where
   bget = do
     header <- getHeader
     when (hasExtendedHeader (flags header)) skipExtendedHeader
-    ID3v2 (version header) (flags header) (fromSyncSafe $ totalSize header) <$> getFrames header
+    ID3v2_3 (flags header) (fromSyncSafe $ totalSize header) <$> getFrames header
     where
       skipExtendedHeader = skip =<< lookAhead (fromSyncSafe <$> bget)
 
-data Header
-  = Header
-      { version :: !ID3v2Version,
-        flags :: !HeaderFlags,
-        totalSize :: !SyncSafe
+data ID3v2_4 = ID3v2_4
+  { headerFlags :: !HeaderFlags,
+    id3v2size :: !Integer,
+    frames :: !Frames
+  }
+  deriving (Generic)
+
+deriving instance Show ID3v2_4
+
+id3v24Id :: MetadataId
+id3v24Id = MetadataId "ID3v2_4"
+
+instance MetadataFormat ID3v2_4 where
+  metadataFormat =
+    MetadataFormat
+      { formatId = id3v24Id,
+        formatDesc = "ID3v2.4"
       }
+  metadataLens = id3v24Tag
+
+instance MetadataLocator ID3v2_4 where
+  locate bs =
+    case runGetOrFail getHeader bs of
+      Left _ -> Nothing
+      Right (_, _, header) -> case version header of
+        ID3v24 -> pure 0
+        _ -> Nothing
+
+  hLocate h = hSeek h AbsoluteSeek 0 >> locate @ID3v2_4 <$> hGetFileContents h
+
+instance TagReader ID3v2_4 where
+  readTags id3 =
+    let frames' = id3 ^. #frames
+        contents = foldlFrames accumFrames [] frames'
+     in Tags $ V.fromList $ fmap (first toTagKey) contents >>= \(a, bs) -> fmap (a,) bs
+    where
+      accumFrames acc frame = acc <> catMaybes [extractFrameContent frame]
+
+instance BinaryGet ID3v2_4 where
+  bget = do
+    header <- getHeader
+    when (hasExtendedHeader (flags header)) skipExtendedHeader
+    ID3v2_4 (flags header) (fromSyncSafe $ totalSize header) <$> getFrames header
+    where
+      skipExtendedHeader = skip =<< lookAhead (fromSyncSafe <$> bget)
+
+data Header = Header
+  { version :: !ID3v2Version,
+    flags :: !HeaderFlags,
+    totalSize :: !SyncSafe
+  }
   deriving (Eq, Show)
 
 headerSize :: Int
@@ -226,12 +283,11 @@ toTagKey :: FrameId -> Text
 toTagKey (PreDefinedId fid) = fid
 toTagKey (UserDefinedId fid1 fid2) = fid1 <> ";" <> fid2
 
-data FrameHeader (v :: ID3v2Version)
-  = FrameHeader
-      { frameId :: !Text,
-        frameSize :: !Word32,
-        frameFlags :: !FrameHeaderFlags
-      }
+data FrameHeader (v :: ID3v2Version) = FrameHeader
+  { frameId :: !Text,
+    frameSize :: !Word32,
+    frameFlags :: !FrameHeaderFlags
+  }
 
 deriving instance Eq (FrameHeader v)
 
@@ -341,10 +397,9 @@ decodeID3Text UTF16BE bs = decodeUtf16BEOrFail bs
 decodeID3Text UTF16 bs = decodeUtf16WithBOMOrFail bs
 decodeID3Text UCS2 bs = decodeUtf16WithBOMOrFail bs
 
-newtype SyncSafe
-  = SyncSafe
-      { syncSafe :: ByteString
-      }
+newtype SyncSafe = SyncSafe
+  { syncSafe :: ByteString
+  }
   deriving (Eq, Show)
 
 fromSyncSafe :: (Num a, Bits a) => SyncSafe -> a

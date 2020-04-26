@@ -16,13 +16,12 @@ import Melo.GraphQL.Resolve
 import qualified Melo.Library.Database.Model as DB
 import Melo.Library.Repo.Haxl
 
-data Library
-  = Library
-      { genres :: [Genre],
-        artists :: [Artist],
-        albums :: [Album],
-        tracks :: [Track]
-      }
+data Library = Library
+  { genres :: [Genre],
+    artists :: [Artist],
+    albums :: [Album],
+    tracks :: [Track]
+  }
   deriving (Generic)
 
 instance GraphQLType Library where
@@ -48,12 +47,11 @@ instance GenericResolver Haxl Library where
           (nullresolver)
           (nullresolver)
 
-data Genre
-  = Genre
-      { id :: Text,
-        name :: Text,
-        tracks :: [Track]
-      }
+data Genre = Genre
+  { id :: Text,
+    name :: Text,
+    tracks :: [Track]
+  }
   deriving (Generic)
 
 instance GraphQLType Genre where
@@ -74,17 +72,16 @@ instance GenericResolver Haxl Genre where
                 resolveFieldValues track fields
           )
 
-data Artist
-  = Artist
-      { id :: Text,
-        name :: Text,
-        biography :: Maybe Text,
-        shortBio :: Maybe Text,
-        country :: Maybe Text,
-        genres :: [Genre],
-        albums :: [Album],
-        tracks :: [Track]
-      }
+data Artist = Artist
+  { id :: Text,
+    name :: Text,
+    biography :: Maybe Text,
+    shortBio :: Maybe Text,
+    country :: Maybe Text,
+    genres :: [Genre],
+    albums :: [Album],
+    tracks :: [Track]
+  }
   deriving (Generic)
 
 instance GraphQLType Artist where
@@ -106,11 +103,10 @@ instance GenericResolver Haxl Artist where
           (nullresolver)
           (nullresolver)
 
-data Album
-  = Album
-      { id :: Text,
-        title :: Text
-      }
+data Album = Album
+  { id :: Text,
+    title :: Text
+  }
   deriving (Generic, ToJSON)
 
 instance GraphQLType Album where
@@ -126,11 +122,10 @@ instance GenericResolver Haxl Album where
           (pureCtxResolver (toText . (^. #id)))
           (pureCtxResolver (^. #title))
 
-data Track
-  = Track
-      { id :: Text,
-        title :: Text
-      }
+data Track = Track
+  { id :: Text,
+    title :: Text
+  }
   deriving (Generic, ToJSON)
 
 instance GraphQLType Track where

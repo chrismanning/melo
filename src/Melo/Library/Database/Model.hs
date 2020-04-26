@@ -4,6 +4,7 @@
 module Melo.Library.Database.Model where
 
 import Control.Lens as L
+import Data.Aeson
 import Data.Attoparsec.ByteString.Char8
 import Data.Char
 import Data.Fixed
@@ -11,6 +12,7 @@ import Data.Generics.Labels ()
 import Data.Generics.Product
 import Data.Generics.Sum ()
 import Data.Hashable
+import Data.Int (Int64)
 import Data.Kind
 import Data.Text
 import Data.Time.Clock
@@ -23,43 +25,41 @@ import Database.Beam.Postgres.Syntax
 import Database.PostgreSQL.Simple.FromField
 import Database.PostgreSQL.Simple.ToField
 import Database.PostgreSQL.Simple.TypeInfo.Static (interval)
+import Debug.Trace
 import GHC.Generics ()
 import GHC.OverloadedLabels ()
 
-data LibraryDb f
-  = LibraryDb
-      { audio_source :: f (TableEntity AudioSourceT),
-        metadata_source :: f (TableEntity MetadataSourceT),
-        genre :: f (TableEntity GenreT),
-        artist :: f (TableEntity ArtistT),
-        album :: f (TableEntity AlbumT),
-        track :: f (TableEntity TrackT),
-        related_artist :: f (TableEntity RelatedArtistT),
-        track_genre :: f (TableEntity TrackGenreT),
-        album_genre :: f (TableEntity AlbumGenreT),
-        artist_genre :: f (TableEntity ArtistGenreT),
-        track_artist :: f (TableEntity TrackArtistAliasT),
-        album_artist_alias :: f (TableEntity AlbumArtistAliasT),
-        artist_alias :: f (TableEntity ArtistAliasT)
-      }
+data LibraryDb f = LibraryDb
+  { source :: f (TableEntity SourceT),
+    genre :: f (TableEntity GenreT),
+    artist :: f (TableEntity ArtistT),
+    album :: f (TableEntity AlbumT),
+    track :: f (TableEntity TrackT),
+    related_artist :: f (TableEntity RelatedArtistT),
+    track_genre :: f (TableEntity TrackGenreT),
+    album_genre :: f (TableEntity AlbumGenreT),
+    artist_genre :: f (TableEntity ArtistGenreT),
+    track_artist :: f (TableEntity TrackArtistNameT),
+    album_artist_name :: f (TableEntity AlbumArtistNameT),
+    artist_name :: f (TableEntity ArtistNameT)
+  }
   deriving (Generic, Database be)
 
 libraryDb :: DatabaseSettings be LibraryDb
 libraryDb =
   defaultDbSettings
     `withDbModification` dbModification
-      { album_artist_alias =
+      { album_artist_name =
           modifyTableFields
             ( tableModification
                 & (setField @"album_id" (AlbumKey $ fieldNamed "album_id"))
-                . (setField @"artist_alias_id" (ArtistAliasKey $ fieldNamed "artist_alias_id"))
+                . (setField @"artist_name_id" (ArtistNameKey $ fieldNamed "artist_name_id"))
             ),
         track =
           modifyTableFields
             ( tableModification
                 & (setField @"album_id" (AlbumKey $ fieldNamed "album_id"))
-                . (setField @"metadata_source_id" (MetadataSourceKey $ fieldNamed "metadata_source_id"))
-                . (setField @"audio_source_id" (AudioSourceKey $ fieldNamed "audio_source_id"))
+                . (setField @"source_id" (SourceKey $ fieldNamed "source_id"))
             ),
         track_genre =
           modifyTableFields
@@ -69,13 +69,12 @@ libraryDb =
             )
       }
 
-data GenreT (f :: Type -> Type)
-  = Genre
-      { id :: Columnar f UUID,
-        name :: Columnar f Text,
-        description :: Columnar f (Maybe Text)
-        -- , links :: Columnar f (Maybe (PgJSONB Links))
-      }
+data GenreT (f :: Type -> Type) = Genre
+  { id :: Columnar f UUID,
+    name :: Columnar f Text,
+    description :: Columnar f (Maybe Text)
+    -- , links :: Columnar f (Maybe (PgJSONB Links))
+  }
   deriving (Generic, Beamable)
 
 instance Table GenreT where
@@ -101,14 +100,14 @@ deriving instance Ord GenreKey
 
 deriving instance Hashable GenreKey
 
-data ArtistT (f :: Type -> Type)
-  = Artist
-      { id :: Columnar f UUID,
-        name :: Columnar f Text,
-        short_bio :: Columnar f (Maybe Text),
-        bio :: Columnar f (Maybe Text),
-        country :: Columnar f (Maybe Text)
-      }
+data ArtistT (f :: Type -> Type) = Artist
+  { id :: Columnar f UUID,
+    name :: Columnar f Text,
+    disambiguation :: Columnar f (Maybe Text),
+    short_bio :: Columnar f (Maybe Text),
+    bio :: Columnar f (Maybe Text),
+    country :: Columnar f (Maybe Text)
+  }
   deriving (Generic, Beamable)
 
 instance Table ArtistT where
@@ -130,30 +129,44 @@ deriving instance Show ArtistKey
 
 deriving instance Eq ArtistKey
 
-data ArtistAliasT (f :: Type -> Type)
-  = ArtistAlias
-      { alias_id :: Columnar f UUID,
-        artist_id :: PrimaryKey ArtistT f,
-        alias :: Columnar f Text
-      }
+deriving instance Ord ArtistKey
+
+deriving instance Hashable ArtistKey
+
+data ArtistNameT (f :: Type -> Type) = ArtistName
+  { artist_name_id :: Columnar f UUID,
+    artist_id :: PrimaryKey ArtistT f,
+    name :: Columnar f Text
+  }
   deriving (Generic, Beamable)
 
-instance Table ArtistAliasT where
-  data PrimaryKey ArtistAliasT f
-    = ArtistAliasKey (Columnar f UUID)
+instance Table ArtistNameT where
+  data PrimaryKey ArtistNameT f
+    = ArtistNameKey (Columnar f UUID)
     deriving (Generic, Beamable)
 
-  primaryKey = ArtistAliasKey <$> view #alias_id
+  primaryKey = ArtistNameKey <$> view #artist_name_id
 
-type ArtistAlias = ArtistAliasT Identity
+type ArtistName = ArtistNameT Identity
 
-type ArtistAliasKey = PrimaryKey ArtistAliasT Identity
+type ArtistNameKey = PrimaryKey ArtistNameT Identity
 
-data RelatedArtistT (f :: Type -> Type)
-  = RelatedArtist
-      { artist_id :: PrimaryKey ArtistT f,
-        related_artist_id :: PrimaryKey ArtistT f
-      }
+deriving instance Show ArtistName
+
+deriving instance Eq ArtistName
+
+deriving instance Show ArtistNameKey
+
+deriving instance Eq ArtistNameKey
+
+deriving instance Ord ArtistNameKey
+
+deriving instance Hashable ArtistNameKey
+
+data RelatedArtistT (f :: Type -> Type) = RelatedArtist
+  { artist_id :: PrimaryKey ArtistT f,
+    related_artist_id :: PrimaryKey ArtistT f
+  }
   deriving (Generic, Beamable)
 
 instance Table RelatedArtistT where
@@ -175,14 +188,17 @@ deriving instance Show RelatedArtistKey
 
 deriving instance Eq RelatedArtistKey
 
-data AlbumT (f :: Type -> Type)
-  = Album
-      { id :: Columnar f UUID,
-        title :: Columnar f Text,
-        comment :: Columnar f (Maybe Text),
-        year_released :: Columnar f (Maybe Text),
-        length :: Columnar f Interval
-      }
+deriving instance Ord RelatedArtistKey
+
+deriving instance Hashable RelatedArtistKey
+
+data AlbumT (f :: Type -> Type) = Album
+  { id :: Columnar f UUID,
+    title :: Columnar f Text,
+    comment :: Columnar f (Maybe Text),
+    year_released :: Columnar f (Maybe Text),
+    length :: Columnar f Interval
+  }
   deriving (Generic, Beamable)
 
 instance Table AlbumT where
@@ -204,36 +220,53 @@ deriving instance (Show (Columnar f UUID)) => Show (PrimaryKey AlbumT (f :: Type
 
 deriving instance (Eq (Columnar f UUID)) => Eq (PrimaryKey AlbumT (f :: Type -> Type))
 
-data AlbumArtistAliasT (f :: Type -> Type)
-  = AlbumArtistAlias
-      { album_id :: PrimaryKey AlbumT f,
-        artist_alias_id :: PrimaryKey ArtistAliasT f
-      }
+deriving instance Ord AlbumKey
+
+deriving instance Hashable AlbumKey
+
+data AlbumArtistNameT (f :: Type -> Type) = AlbumArtistName
+  { album_id :: PrimaryKey AlbumT f,
+    artist_name_id :: PrimaryKey ArtistNameT f
+  }
   deriving (Generic, Beamable)
 
-instance Table AlbumArtistAliasT where
-  data PrimaryKey AlbumArtistAliasT f
-    = AlbumArtistAliasKey (PrimaryKey AlbumT f) (PrimaryKey ArtistAliasT f)
+instance Table AlbumArtistNameT where
+  data PrimaryKey AlbumArtistNameT f
+    = AlbumArtistNameKey (PrimaryKey AlbumT f) (PrimaryKey ArtistNameT f)
     deriving (Generic, Beamable)
 
-  primaryKey = AlbumArtistAliasKey <$> view #album_id <*> view #artist_alias_id
+  primaryKey = AlbumArtistNameKey <$> view #album_id <*> view #artist_name_id
 
-albumArtistAliasRelationship :: ManyToMany be LibraryDb ArtistAliasT AlbumT
-albumArtistAliasRelationship =
-  manyToMany_ (libraryDb ^. #album_artist_alias) (^. #artist_alias_id) (^. #album_id)
+type AlbumArtistName = AlbumArtistNameT Identity
 
-data TrackT (f :: Type -> Type)
-  = Track
-      { id :: Columnar f UUID,
-        title :: Columnar f Text,
-        album_id :: PrimaryKey AlbumT (Nullable f),
-        track_number :: Columnar f (Maybe Int),
-        disc_number :: Columnar f (Maybe Int),
-        comment :: Columnar f (Maybe Text),
-        audio_source_id :: PrimaryKey AudioSourceT (Nullable f),
-        metadata_source_id :: PrimaryKey MetadataSourceT f,
-        length :: Columnar f Interval
-      }
+type AlbumArtistNameKey = PrimaryKey AlbumArtistNameT Identity
+
+deriving instance Show AlbumArtistName
+
+deriving instance Eq AlbumArtistName
+
+deriving instance Show AlbumArtistNameKey
+
+deriving instance Eq AlbumArtistNameKey
+
+deriving instance Ord AlbumArtistNameKey
+
+deriving instance Hashable AlbumArtistNameKey
+
+albumArtistNameRelationship :: ManyToMany be LibraryDb ArtistNameT AlbumT
+albumArtistNameRelationship =
+  manyToMany_ (libraryDb ^. #album_artist_name) (^. #artist_name_id) (^. #album_id)
+
+data TrackT (f :: Type -> Type) = Track
+  { id :: Columnar f UUID,
+    title :: Columnar f Text,
+    album_id :: PrimaryKey AlbumT f,
+    track_number :: Columnar f (Maybe Int),
+    disc_number :: Columnar f (Maybe Int),
+    comment :: Columnar f (Maybe Text),
+    source_id :: PrimaryKey SourceT f,
+    length :: Columnar f Interval
+  }
   deriving (Generic, Beamable)
 
 instance Table TrackT where
@@ -255,74 +288,48 @@ deriving instance Show TrackKey
 
 deriving instance Eq TrackKey
 
-data AudioSourceT (f :: Type -> Type)
-  = AudioSource
-      { id :: Columnar f UUID,
-        kind :: Columnar f Text,
-        source :: Columnar f Text,
-        format :: Columnar f Text,
-        sample_rate :: Columnar f Int,
-        bits_per_sample :: Columnar f Int,
-        channels :: Columnar f Int,
-        total_samples :: Columnar f Integer
-      }
+deriving instance Ord TrackKey
+
+deriving instance Hashable TrackKey
+
+data SourceT (f :: Type -> Type) = Source
+  { id :: Columnar f UUID,
+    kind :: Columnar f Text,
+    metadata_format :: Columnar f Text,
+    metadata :: Columnar f (PgJSONB Value),
+    source_uri :: Columnar f Text,
+    idx :: Columnar f Int,
+    time_range :: Columnar f (Maybe (PgRange IntervalRange Interval)),
+    sample_range :: Columnar f (Maybe (PgRange PgInt8Range Int64)),
+    scanned :: Columnar f LocalTime
+  }
   deriving (Generic, Beamable)
 
-instance Table AudioSourceT where
-  data PrimaryKey AudioSourceT f
-    = AudioSourceKey (Columnar f UUID)
+instance Table SourceT where
+  data PrimaryKey SourceT f
+    = SourceKey (Columnar f UUID)
     deriving (Generic, Beamable)
 
-  primaryKey = AudioSourceKey . view #id
+  primaryKey = SourceKey . view #id
 
-type AudioSource = AudioSourceT Identity
+type Source = SourceT Identity
 
-type AudioSourceKey = PrimaryKey AudioSourceT Identity
+type SourceKey = PrimaryKey SourceT Identity
 
-deriving instance Show AudioSource
+deriving instance Show Source
 
-deriving instance Eq AudioSource
+deriving instance (Show (Columnar f UUID)) => Show (PrimaryKey SourceT (f :: Type -> Type))
 
-deriving instance (Show (Columnar f UUID)) => Show (PrimaryKey AudioSourceT (f :: Type -> Type))
+deriving instance (Eq (Columnar f UUID)) => Eq (PrimaryKey SourceT (f :: Type -> Type))
 
-deriving instance (Eq (Columnar f UUID)) => Eq (PrimaryKey AudioSourceT (f :: Type -> Type))
+deriving instance Ord SourceKey
 
-data MetadataSourceT (f :: Type -> Type)
-  = MetadataSource
-      { id :: Columnar f UUID,
-        kind :: Columnar f Text,
-        source :: Columnar f Text,
-        idx :: Columnar f (Maybe Text),
-        scanned :: Columnar f LocalTime
-      }
-  deriving (Generic, Beamable)
+deriving instance Hashable SourceKey
 
-instance Table MetadataSourceT where
-  data PrimaryKey MetadataSourceT f
-    = MetadataSourceKey (Columnar f UUID)
-    deriving (Generic, Beamable)
-
-  primaryKey = MetadataSourceKey . view #id
-
-type MetadataSource = MetadataSourceT Identity
-
-type MetadataSourceKey = PrimaryKey MetadataSourceT Identity
-
-instance Hashable MetadataSourceKey
-
-deriving instance Show MetadataSource
-
-deriving instance Eq MetadataSource
-
-deriving instance (Show (Columnar f UUID)) => Show (PrimaryKey MetadataSourceT (f :: Type -> Type))
-
-deriving instance (Eq (Columnar f UUID)) => Eq (PrimaryKey MetadataSourceT (f :: Type -> Type))
-
-data ArtistGenreT (f :: Type -> Type)
-  = ArtistGenre
-      { artist_id :: PrimaryKey ArtistT f,
-        genre_id :: PrimaryKey GenreT f
-      }
+data ArtistGenreT (f :: Type -> Type) = ArtistGenre
+  { artist_id :: PrimaryKey ArtistT f,
+    genre_id :: PrimaryKey GenreT f
+  }
   deriving (Generic, Beamable)
 
 instance Table ArtistGenreT where
@@ -332,11 +339,26 @@ instance Table ArtistGenreT where
 
   primaryKey = ArtistGenreKey <$> view #artist_id <*> view #genre_id
 
-data AlbumGenreT (f :: Type -> Type)
-  = AlbumGenre
-      { album_id :: PrimaryKey AlbumT f,
-        genre_id :: PrimaryKey GenreT f
-      }
+type ArtistGenre = ArtistGenreT Identity
+
+type ArtistGenreKey = PrimaryKey ArtistGenreT Identity
+
+deriving instance Show ArtistGenre
+
+deriving instance Eq ArtistGenre
+
+deriving instance Show ArtistGenreKey
+
+deriving instance Eq ArtistGenreKey
+
+deriving instance Ord ArtistGenreKey
+
+deriving instance Hashable ArtistGenreKey
+
+data AlbumGenreT (f :: Type -> Type) = AlbumGenre
+  { album_id :: PrimaryKey AlbumT f,
+    genre_id :: PrimaryKey GenreT f
+  }
   deriving (Generic, Beamable)
 
 instance Table AlbumGenreT where
@@ -346,25 +368,55 @@ instance Table AlbumGenreT where
 
   primaryKey = AlbumGenreKey <$> view #album_id <*> view #genre_id
 
-data TrackArtistAliasT (f :: Type -> Type)
-  = TrackArtistAlias
-      { track_id :: PrimaryKey TrackT f,
-        artist_id :: PrimaryKey ArtistT f
-      }
+type AlbumGenre = AlbumGenreT Identity
+
+type AlbumGenreKey = PrimaryKey AlbumGenreT Identity
+
+deriving instance Show AlbumGenre
+
+deriving instance Eq AlbumGenre
+
+deriving instance Show AlbumGenreKey
+
+deriving instance Eq AlbumGenreKey
+
+deriving instance Ord AlbumGenreKey
+
+deriving instance Hashable AlbumGenreKey
+
+data TrackArtistNameT (f :: Type -> Type) = TrackArtistName
+  { track_id :: PrimaryKey TrackT f,
+    artist_id :: PrimaryKey ArtistT f
+  }
   deriving (Generic, Beamable)
 
-instance Table TrackArtistAliasT where
-  data PrimaryKey TrackArtistAliasT f
-    = TrackArtistAliasKey (PrimaryKey TrackT f) (PrimaryKey ArtistT f)
+instance Table TrackArtistNameT where
+  data PrimaryKey TrackArtistNameT f
+    = TrackArtistNameKey (PrimaryKey TrackT f) (PrimaryKey ArtistT f)
     deriving (Generic, Beamable)
 
-  primaryKey = TrackArtistAliasKey <$> view #track_id <*> view #artist_id
+  primaryKey = TrackArtistNameKey <$> view #track_id <*> view #artist_id
 
-data TrackGenreT (f :: Type -> Type)
-  = TrackGenre
-      { track_id :: PrimaryKey TrackT f,
-        genre_id :: PrimaryKey GenreT f
-      }
+type TrackArtistName = TrackArtistNameT Identity
+
+type TrackArtistNameKey = PrimaryKey TrackArtistNameT Identity
+
+deriving instance Show TrackArtistName
+
+deriving instance Eq TrackArtistName
+
+deriving instance Show TrackArtistNameKey
+
+deriving instance Eq TrackArtistNameKey
+
+deriving instance Ord TrackArtistNameKey
+
+deriving instance Hashable TrackArtistNameKey
+
+data TrackGenreT (f :: Type -> Type) = TrackGenre
+  { track_id :: PrimaryKey TrackT f,
+    genre_id :: PrimaryKey GenreT f
+  }
   deriving (Generic, Beamable)
 
 instance Table TrackGenreT where
@@ -374,8 +426,29 @@ instance Table TrackGenreT where
 
   primaryKey = TrackGenreKey <$> view #track_id <*> view #genre_id
 
+type TrackGenre = TrackGenreT Identity
+
+type TrackGenreKey = PrimaryKey TrackGenreT Identity
+
+deriving instance Show TrackGenre
+
+deriving instance Eq TrackGenre
+
+deriving instance Show TrackGenreKey
+
+deriving instance Eq TrackGenreKey
+
+deriving instance Ord TrackGenreKey
+
+deriving instance Hashable TrackGenreKey
+
+data IntervalRange
+
+instance PgIsRange IntervalRange where
+  rangeName = "intervalrange"
+
 newtype Interval = Interval NominalDiffTime
-  deriving (Show, Eq)
+  deriving (Show, Eq, Ord)
 
 mkInterval :: NominalDiffTime -> Maybe Interval
 -- TODO check if NominalDiffTime fits in Interval
@@ -410,6 +483,7 @@ intervalParser = do
   h <- signed decimal <* char ':'
   m <- twoDigits <* char ':'
   s <- rational
+  traceM $ "h: " <> show h <> "; m: " <> show m <> "; s: " <> show s
   if m < 60 && s <= 60
     then return (h, m, s)
     else fail "invalid interval"

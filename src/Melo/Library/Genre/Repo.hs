@@ -15,11 +15,10 @@ import Melo.Common.Effect
 import qualified Melo.Library.Database.Model as DB
 import Melo.Library.Database.Query
 
-data NewGenre
-  = NewGenre
-      { name :: Text,
-        description :: Maybe Text
-      }
+data NewGenre = NewGenre
+  { name :: Text,
+    description :: Maybe Text
+  }
   deriving (Generic, Eq, Show)
 
 data GenreRepository :: Effect where
@@ -60,10 +59,9 @@ insertGenres gs = send (InsertGenres gs)
 deleteGenres :: Has GenreRepository sig m => [DB.GenreKey] -> m ()
 deleteGenres ks = send (DeleteGenres ks)
 
-newtype GenreRepositoryIOC m a
-  = GenreRepositoryIOC
-      { runGenreRepositoryIOC :: m a
-      }
+newtype GenreRepositoryIOC m a = GenreRepositoryIOC
+  { runGenreRepositoryIOC :: m a
+  }
   deriving newtype (Applicative, Functor, Monad)
 
 instance
@@ -75,19 +73,19 @@ instance
       conn <- ask
       let q = select (all_ (DB.libraryDb ^. #genre))
       (ctx $>) <$> runGenreRepositoryIOC ($(runPgDebug') conn (runSelectReturningList q))
-    L (GetGenresById []) -> (ctx $>) <$> pure []
+    L (GetGenresById []) -> pure $ ctx $> []
     L (GetGenresById ks) -> GenreRepositoryIOC $ do
       conn <- ask
       let genreIds = fmap (\(DB.GenreKey gk) -> val_ gk) ks
       let q = select $ filter_ (\g -> g ^. #id `in_` genreIds) (all_ (DB.libraryDb ^. #genre))
       (ctx $>) <$> runGenreRepositoryIOC ($(runPgDebug') conn (runSelectReturningList q))
-    L (GetGenresByName []) -> (ctx $>) <$> pure []
+    L (GetGenresByName []) -> pure $ ctx $> []
     L (GetGenresByName ns) -> GenreRepositoryIOC $ do
       conn <- ask
       let names = fmap val_ ns
       let q = select $ filter_ (\g -> g ^. #name `in_` names) (all_ (DB.libraryDb ^. #genre))
       (ctx $>) <$> runGenreRepositoryIOC ($(runPgDebug') conn (runSelectReturningList q))
-    L (SearchGenres "") -> (ctx $>) <$> pure []
+    L (SearchGenres "") -> pure $ ctx $> []
     L (SearchGenres t) -> GenreRepositoryIOC $ do
       conn <- ask
       let q = select $ do
@@ -95,7 +93,7 @@ instance
             guard_ (toTsVector Nothing (genre ^. #name) @@ toTsQuery Nothing (val_ (t <> "|" <> t <> ":*")))
             pure genre
       (ctx $>) <$> runGenreRepositoryIOC ($(runPgDebug') conn (runSelectReturningList q))
-    L (GetGenreArtists []) -> (ctx $>) <$> pure []
+    L (GetGenreArtists []) -> pure $ ctx $> []
     L (GetGenreArtists ks) -> GenreRepositoryIOC $ do
       conn <- ask
       let q = select $ do
@@ -112,7 +110,7 @@ instance
                 (all_ (DB.libraryDb ^. #artist))
             pure (primaryKey g, a)
       (ctx $>) <$> runGenreRepositoryIOC ($(runPgDebug') conn (runSelectReturningList q))
-    L (GetGenreAlbums []) -> (ctx $>) <$> pure []
+    L (GetGenreAlbums []) -> pure $ ctx $> []
     L (GetGenreAlbums ks) -> GenreRepositoryIOC $ do
       conn <- ask
       let q = select $ do
@@ -129,7 +127,7 @@ instance
                 (all_ (DB.libraryDb ^. #album))
             pure (primaryKey g, a)
       (ctx $>) <$> runGenreRepositoryIOC ($(runPgDebug') conn (runSelectReturningList q))
-    L (GetGenreTracks []) -> (ctx $>) <$> pure []
+    L (GetGenreTracks []) -> pure $ ctx $> []
     L (GetGenreTracks ks) -> GenreRepositoryIOC $ do
       conn <- ask
       let q = select $ do

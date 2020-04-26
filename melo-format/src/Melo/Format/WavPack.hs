@@ -1,11 +1,5 @@
 module Melo.Format.WavPack
   ( WavPack (..),
-    WavPackInfo (..),
-    WavPackTags (..),
-    AudioType (..),
-    Channels (..),
-    ChannelMask (..),
-    hReadWavPack,
     wavPackFileKind,
     wavPack,
   )
@@ -63,19 +57,18 @@ wavPackFileKind = MetadataFileId "WavPack"
 wavPackMetadata :: WavPack -> H.HashMap MetadataId Metadata
 wavPackMetadata wv = case wavPackTags wv of
   NoTags -> H.empty
-  JustAPE ape -> H.singleton (metadataFormat ape ^. #formatId) (extractMetadata ape)
-  JustID3v1 id3v1 -> H.singleton (metadataFormat id3v1 ^. #formatId) (extractMetadata id3v1)
+  JustAPE ape -> H.singleton (metadataFormat @Ape.APEv2 ^. #formatId) (extractMetadata ape)
+  JustID3v1 id3v1 -> H.singleton (metadataFormat @ID3.ID3v1 ^. #formatId) (extractMetadata id3v1)
   Both ape id3v1 ->
     H.fromList
-      [ (metadataFormat ape ^. #formatId, extractMetadata ape),
-        (metadataFormat id3v1 ^. #formatId, extractMetadata id3v1)
+      [ (metadataFormat @Ape.APEv2 ^. #formatId, extractMetadata ape),
+        (metadataFormat @ID3.ID3v1 ^. #formatId, extractMetadata id3v1)
       ]
 
-data WavPack
-  = WavPack
-      { wavPackInfo :: !WavPackInfo,
-        wavPackTags :: !WavPackTags
-      }
+data WavPack = WavPack
+  { wavPackInfo :: !WavPackInfo,
+    wavPackTags :: !WavPackTags
+  }
   deriving (Show)
 
 instance InfoReader WavPack where
@@ -92,14 +85,13 @@ instance InfoReader WavPack where
             bitsPerSample = Just $ fromIntegral $ sampleSize wi
           }
 
-data WavPackInfo
-  = WavPackInfo
-      { totalSamples :: !(Maybe Word64),
-        sampleSize :: !Word8,
-        channels :: !Channels,
-        sampleRate :: !(Maybe Word32),
-        audioType :: !AudioType
-      }
+data WavPackInfo = WavPackInfo
+  { totalSamples :: !(Maybe Word64),
+    sampleSize :: !Word8,
+    channels :: !Channels,
+    sampleRate :: !(Maybe Word32),
+    audioType :: !AudioType
+  }
   deriving (Show, Eq)
 
 instance MetadataLocator WavPackInfo where
@@ -204,9 +196,9 @@ deriving instance Eq ChannelMask
 
 data WavPackTags
   = NoTags
-  | JustAPE !Ape.APE
+  | JustAPE !Ape.APEv2
   | JustID3v1 !ID3.ID3v1
-  | Both Ape.APE !ID3.ID3v1
+  | Both Ape.APEv2 !ID3.ID3v1
   deriving (Show, Eq)
 
 instance BinaryGet WavPackTags where
@@ -214,7 +206,7 @@ instance BinaryGet WavPackTags where
     what <- lookAhead $ getByteString 8
     if BS.isPrefixOf Ape.preamble what
       then do
-        ape <- bget :: Get Ape.APE
+        ape <- bget :: Get Ape.APEv2
         isEmpty >>= \case
           True -> return $ JustAPE ape
           False -> Both ape <$> bget

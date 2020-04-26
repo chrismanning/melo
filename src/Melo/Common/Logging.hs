@@ -13,7 +13,7 @@ module Melo.Common.Logging
     logError,
     logErrorShow,
     runStdoutLogging,
-    LoggingC (..),
+    LoggingIOC (..),
     initLogging,
   )
 where
@@ -54,21 +54,20 @@ instance From C8.ByteString LogMessage where
 instance From BB.Builder LogMessage where
   from = from . BL.toStrict . BB.toLazyByteString
 
-newtype LoggingC m a
-  = LoggingC
-      { runLoggingC :: m a
-      }
-  deriving newtype (Applicative, Functor, Monad, MonadIO)
+newtype LoggingIOC m a = LoggingIOC
+  { runLoggingIOC :: m a
+  }
+  deriving newtype (Applicative, Functor, Monad)
 
 instance
   (Has (Lift IO) sig m, Algebra sig m) =>
-  Algebra (Logging :+: sig) (LoggingC m)
+  Algebra (Logging :+: sig) (LoggingIOC m)
   where
   alg _ (L (Log ln severity msg)) ctx = do
     let LogMessage msg' = from msg
     sendIO $ Wlog.logM ln severity msg'
     pure ctx
-  alg hdl (R other) ctx = LoggingC $ alg (runLoggingC . hdl) other ctx
+  alg hdl (R other) ctx = LoggingIOC $ alg (runLoggingIOC . hdl) other ctx
 
 logImpl :: (From s LogMessage, Has Logging sig m) => String -> Int -> s -> m ()
 logImpl ln severity msg = send (Log (Wlog.LoggerName $ T.pack ln) (toEnum severity) msg)
@@ -105,8 +104,8 @@ logError = log_ Wlog.Error
 logErrorShow :: Q Exp
 logErrorShow = logShow Wlog.Error
 
-runStdoutLogging :: LoggingC m a -> m a
-runStdoutLogging = runLoggingC
+runStdoutLogging :: LoggingIOC m a -> m a
+runStdoutLogging = runLoggingIOC
 
 initLogging :: MonadIO m => m ()
 initLogging = do

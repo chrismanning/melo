@@ -15,7 +15,7 @@
 # resolver:
 #  name: custom-snapshot
 #  location: "./custom-snapshot.yaml"
-resolver: lts-15.1
+resolver: lts-15.6
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -55,6 +55,8 @@ extra-deps:
     commit: 613e929d91dfc46ecfc5e28479098ce52aeb56f6
   - github: fused-effects/fused-effects
     commit: 40cf33031576f179c9e4ba3f9e8a33ba642fcc91
+  - github: aycanirican/hweblib
+    commit: aeda1f04c292bcd4648f395a6d2494685d2ca402
   - barbies-2.0.0.0
   - conduit-audio-0.2.0.3
   - conduit-audio-lame-0.1.2.1
@@ -68,6 +70,7 @@ extra-deps:
   - fmt-0.6.1
   - generic-aeson-0.2.0.10
 #  - graphql-0.5.1.0
+  - harg-0.4.2.0
   - haskell-src-exts-1.23.0
 #  - haxl-2.1.2.0
   - higgledy-0.3.1.0
@@ -75,6 +78,7 @@ extra-deps:
   - hsndfile-vector-0.5.2
   - linkedhashmap-0.4.0.0
   - log-warper-1.9.0
+  - mime-0.4.0.2
   - named-0.3.0.1
   - network-uri-json-0.3.1.1
   - polysemy-1.2.1.0

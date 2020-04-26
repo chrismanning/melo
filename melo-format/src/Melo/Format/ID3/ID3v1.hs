@@ -4,6 +4,7 @@ module Melo.Format.ID3.ID3v1
     hReplaceID3v1,
     hRemoveID3v1,
     id3v1Id,
+    id3v1Tag,
   )
 where
 
@@ -37,6 +38,7 @@ import Melo.Format.Mapping
       ( toCanonicalForm
       ),
     FieldMappings (id3v1),
+    TagMapping (..),
     albumTitleTag,
     commentTag,
     genreTag,
@@ -49,28 +51,30 @@ import Melo.Format.Mapping
 import System.IO
 import Text.Read
 
-data ID3v1
-  = ID3v1
-      { title :: !Text,
-        artist :: !Text,
-        album :: !Text,
-        year :: !Text,
-        comment :: !Text,
-        track :: !(Maybe Word8),
-        genre :: !Text
-      }
+data ID3v1 = ID3v1
+  { title :: !Text,
+    artist :: !Text,
+    album :: !Text,
+    year :: !Text,
+    comment :: !Text,
+    track :: !(Maybe Word8),
+    genre :: !Text
+  }
   deriving (Show, Eq, Generic)
 
 instance MetadataFormat ID3v1 where
-  metadataFormat _ =
+  metadataFormat =
     MetadataFormat
       { formatId = id3v1Id,
         formatDesc = let (MetadataId k) = id3v1Id in k
       }
-  metadataLens _ = mappedTag id3v1
+  metadataLens = mappedTag id3v1
 
 id3v1Id :: MetadataId
 id3v1Id = MetadataId "ID3v1"
+
+id3v1Tag :: TagMapping -> TagLens
+id3v1Tag = mappedTag id3v1
 
 instance MetadataLocator ID3v1 where
   hLocate h = do

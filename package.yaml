@@ -37,6 +37,7 @@ library:
   - binary
   - binary-bits
   - bytestring
+  - cache
   - clock
   - conduit
   - conduit-audio
@@ -44,6 +45,7 @@ library:
   - conduit-audio-samplerate
   - conduit-audio-sndfile
   - containers
+  - control-bool
   - country
   - cue-sheet
   - data-default
@@ -75,6 +77,7 @@ library:
   - polysemy
   - polysemy-plugin
   - postgresql-simple
+  - range
   - resource-pool
   - safe-exceptions
   - servant-server
@@ -108,8 +111,26 @@ executables:
     - beam-postgres
     - optparse-applicative
     - postgresql-simple
+    - resource-pool
     - text
     - time
+  bandcamp-dl:
+    source-dirs: app/bandcamp-dl
+    main: Main.hs
+    dependencies:
+      - attoparsec
+      - barbies
+      - bytestring
+      - directory
+      - filepath
+      - harg
+      - higgledy
+      - http-client
+      - http-types
+      - hweblib
+      - lens
+      - wreq
+      - zip
 
 tests:
   melo-test:

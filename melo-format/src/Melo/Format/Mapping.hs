@@ -3,15 +3,14 @@ module Melo.Format.Mapping where
 import Data.Default
 import Data.Text
 
-data FieldMappings
-  = FieldMappings
-      { ape :: FieldMapping,
-        id3v1 :: FieldMapping,
-        id3v2_3 :: FieldMapping,
-        id3v2_4 :: FieldMapping,
-        riff :: FieldMapping,
-        vorbis :: FieldMapping
-      }
+data FieldMappings = FieldMappings
+  { ape :: FieldMapping,
+    id3v1 :: FieldMapping,
+    id3v2_3 :: FieldMapping,
+    id3v2_4 :: FieldMapping,
+    riff :: FieldMapping,
+    vorbis :: FieldMapping
+  }
 
 instance Default FieldMappings where
   def =

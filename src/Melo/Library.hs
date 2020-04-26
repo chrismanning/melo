@@ -9,13 +9,12 @@ import Data.Kind
 import Data.Text (Text)
 import Polysemy
 
-data Stats
-  = Stats
-      { totalTracks :: Integer,
-        tracksAdded :: Integer,
-        tracksRemoved :: Integer,
-        tracksUpdated :: Integer
-      }
+data Stats = Stats
+  { totalTracks :: Integer,
+    tracksAdded :: Integer,
+    tracksRemoved :: Integer,
+    tracksUpdated :: Integer
+  }
 
 data LibraryRoot
 

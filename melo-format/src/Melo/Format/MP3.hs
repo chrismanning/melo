@@ -23,21 +23,19 @@ import Melo.Format.Internal.Metadata
 import Melo.Format.Internal.Tag
 import System.IO
 
-data MP3
-  = MP3
-      { bitrate :: BitRate,
-        sampleRate :: Integer,
-        channels :: Channels
-      }
+data MP3 = MP3
+  { bitrate :: BitRate,
+    sampleRate :: Integer,
+    channels :: Channels
+  }
 
 data BitRate = VBR Integer | CBR Integer
 
 data Channels = Stereo | JointStereo | DualChannel | Mono
 
-data FrameHeader
-  = FrameHeader
-      {
-      }
+data FrameHeader = FrameHeader
+  {
+  }
   deriving (Show, Eq)
 
 instance BinaryGet FrameHeader where

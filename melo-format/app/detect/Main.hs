@@ -17,10 +17,9 @@ import Options.Applicative
 import Polysemy
 import System.IO
 
-data Opts
-  = Opts
-      { path :: FilePath
-      }
+data Opts = Opts
+  { path :: FilePath
+  }
 
 detectOpts :: Parser Opts
 detectOpts = Opts <$> strArgument (metavar "<audio file>")
@@ -74,4 +73,4 @@ printTags f = do
     putLine = psl (T.replicate 20 "-")
     psl = T.putStrLn
     printTag lbl t = psl $ formatTag lbl t
-    formatTag l t = l <> T.pack ": " <> T.intercalate (T.pack " / ") t
+    formatTag l t = l <> T.pack ": " <> T.intercalate (T.pack " / ") (toList t)
