@@ -152,7 +152,8 @@ instance InfoReader Flac where
                   1 -> Mono
                   2 -> Stereo
                   _ -> MultiChannel ChannelMask,
-                totalSamples = fromIntegral <$> getField @"samples" si
+                totalSamples = fromIntegral <$> getField @"samples" si,
+                quality = Nothing -- TODO flac quality
               }
 
 hFindFlac :: Handle -> IO (Maybe Integer)

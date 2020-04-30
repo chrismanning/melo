@@ -39,6 +39,7 @@ import Melo.Format.Internal.Tag
 import Melo.Format.Mapping
 import System.IO
 import Prelude as P
+import Numeric.Natural (Natural)
 
 apeTag :: TagMapping -> TagLens
 apeTag = mappedTag ape
@@ -70,6 +71,10 @@ instance Binary APEv1 where
         { version = V1,
           items = coerce a
         }
+
+instance MetadataLocator APEv1 where
+  locate = locate @APE
+  hLocate = hLocate @APE
 
 newtype APEv2 = APEv2 (Vector TagItem)
   deriving (Show, Eq)
@@ -104,6 +109,10 @@ instance Binary APEv2 where
           items = coerce a
         }
 
+instance MetadataLocator APEv2 where
+  locate = locate @APE
+  hLocate = hLocate @APE
+
 data APE = APE
   { version :: !Version,
     items :: !(Vector TagItem)
@@ -115,11 +124,11 @@ instance MetadataLocator APE where
     case locateBinaryLazy @Header bs of
       Nothing -> Nothing
       Just i -> do
-        let header = runGet (lookAhead $ skip i >> getHeader) bs
+        let header = runGet (lookAhead $ skip (fromIntegral i) >> getHeader) bs
         Just $
           if isHeader (flags header)
             then i
-            else i - fromIntegral (numBytes header) + headerSize
+            else i - fromIntegral (numBytes header) - headerSize
 
   hLocate h = do
     hs <-
@@ -129,7 +138,9 @@ instance MetadataLocator APE where
     let n = hs - fromIntegral (min (headerSize * 10) hs)
     hSeek h AbsoluteSeek n
     buf <- BS.hGet h (fromIntegral $ hs - n)
-    return $ locate @APE (L.fromStrict buf)
+    case fromIntegral <$> locate @APE (L.fromStrict buf) of
+      Just loc -> pure $ Just (fromIntegral (loc + n))
+      Nothing -> pure Nothing
 
 headerSize :: Integral a => a
 headerSize = 32
@@ -150,7 +161,7 @@ instance Binary APE where
     i <-
       findHeader >>= \case
         Nothing -> fail "APE tags not found"
-        Just i -> return i
+        Just i -> fromIntegral <$> return i
     header <- lookAhead (skip i >> getHeader)
     let bytes = fromIntegral (numBytes header)
     if isHeader (flags header)
@@ -178,15 +189,15 @@ instance Binary Header where
 
   get = getHeader
 
-findHeader :: Get (Maybe Int)
+findHeader :: Get (Maybe Natural)
 findHeader = lookAhead $ findByChunk 1024 0
   where
-    findByChunk :: Int -> Int -> Get (Maybe Int)
+    findByChunk :: Int -> Int -> Get (Maybe Natural)
     findByChunk c i = do
       bs <- mfilter (not . L.null) $ getLazyByteStringUpTo c
       case locateBinaryLazy @Header bs of
         Nothing -> findByChunk c (i + (c `div` 2))
-        Just x -> return $ Just (x + i)
+        Just x -> return $ Just $ fromIntegral (x + i)
 
 mkHeader :: APE -> Word32 -> Header
 mkHeader a n = mkHeader_ a n $ Flags True False True TextItemType False

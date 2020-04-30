@@ -28,15 +28,16 @@ import Melo.Format.Flac (Flac, flac)
 import Melo.Format.ID3
 import Melo.Format.Internal.Metadata
 import Melo.Format.Internal.Tag
+import Melo.Format.MP3 (MP3, mp3)
 import Melo.Format.OggVorbis (OggVorbis, oggVorbis)
 import Melo.Format.Vorbis
 import Melo.Format.WavPack (WavPack, wavPack)
 
-type SupportedFormats = '[Flac, WavPack, OggVorbis]
+type SupportedFormats = '[Flac, MP3, OggVorbis, WavPack]
 
 openMetadataFile :: FilePath -> IO MetadataFile
 openMetadataFile p = do
-  let fmts = sortOn (Down . (^. #priority)) [flac, oggVorbis, wavPack]
+  let fmts = sortOn (Down . (^. #priority)) [flac, mp3, oggVorbis, wavPack]
   fs <- filterM (\factory -> factory ^. #detectFile $ p) fmts
   case fs of
     [] -> throwIO UnknownFormat

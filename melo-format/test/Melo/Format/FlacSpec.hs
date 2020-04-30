@@ -64,7 +64,7 @@ spec = do
     $ it "reads flac file with ID3"
     $ do
       h <- openBinaryFile "test/Melo/silence-1s-id3v2.flac" ReadMode
-      (FlacWithID3v2 id3 fs) <- hReadFlac h
+      (FlacWithID3v2_4 id3 fs) <- hReadFlac h
       let Just v = vorbisComment fs
       readTags id3
         `shouldBe` Tags

@@ -1,0 +1,133 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.31.2.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: 2e6007fe9403ac5169e96e94a83402a8433105d279224e9733a203f0424dc65d
+
+name:           melo-format
+version:        0.1.0.0
+description:    Please see the README on Github at <https://github.com/chrismanning/melo#readme>
+homepage:       https://github.com/chrismanning/melo#readme
+bug-reports:    https://github.com/chrismanning/melo/issues
+author:         Chris Manning
+maintainer:     cmanning999@gmail.com
+copyright:      2019 Chris Manning
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+    ChangeLog.md
+
+source-repository head
+  type: git
+  location: https://github.com/chrismanning/melo
+
+library
+  exposed-modules:
+      Melo.Format
+      Melo.Format.Ape
+      Melo.Format.Error
+      Melo.Format.Flac
+      Melo.Format.ID3
+      Melo.Format.ID3.ID3v1
+      Melo.Format.ID3.ID3v1Genre
+      Melo.Format.ID3.ID3v2
+      Melo.Format.Info
+      Melo.Format.Internal.Binary
+      Melo.Format.Internal.BinaryUtil
+      Melo.Format.Internal.Encoding
+      Melo.Format.Internal.Info
+      Melo.Format.Internal.Locate
+      Melo.Format.Internal.Metadata
+      Melo.Format.Internal.Tag
+      Melo.Format.Mapping
+      Melo.Format.Metadata
+      Melo.Format.MP3
+      Melo.Format.Ogg
+      Melo.Format.OggVorbis
+      Melo.Format.RIFF
+      Melo.Format.Vorbis
+      Melo.Format.Wav
+      Melo.Format.WavPack
+  other-modules:
+      Paths_melo_format
+  hs-source-dirs:
+      src
+  default-extensions: ApplicativeDo BangPatterns BinaryLiterals ConstraintKinds DataKinds DefaultSignatures DeriveAnyClass DeriveFoldable DeriveFunctor DeriveGeneric DeriveLift DeriveTraversable DerivingStrategies DuplicateRecordFields EmptyCase ExistentialQuantification FlexibleContexts FlexibleInstances FunctionalDependencies GADTs GeneralizedNewtypeDeriving InstanceSigs KindSignatures LambdaCase MultiParamTypeClasses MultiWayIf NamedFieldPuns OverloadedLabels OverloadedStrings PatternSynonyms RankNTypes RecordWildCards ScopedTypeVariables StandaloneDeriving TemplateHaskell TupleSections TypeApplications TypeFamilies TypeFamilyDependencies TypeOperators ViewPatterns
+  ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wnoncanonical-monad-instances
+  build-depends:
+      base >=4.7 && <5
+    , binary
+    , binary-bits
+    , bytestring
+    , containers
+    , data-default
+    , filepath
+    , generic-lens
+    , hashable
+    , microlens
+    , microlens-th
+    , polysemy
+    , polysemy-plugin
+    , range
+    , safe-exceptions
+    , text
+    , time
+    , unordered-containers
+    , vector
+  default-language: Haskell2010
+
+executable melo-detect
+  main-is: Main.hs
+  other-modules:
+      Paths_melo_format
+  hs-source-dirs:
+      app/detect
+  default-extensions: ApplicativeDo BangPatterns BinaryLiterals ConstraintKinds DataKinds DefaultSignatures DeriveAnyClass DeriveFoldable DeriveFunctor DeriveGeneric DeriveLift DeriveTraversable DerivingStrategies DuplicateRecordFields EmptyCase ExistentialQuantification FlexibleContexts FlexibleInstances FunctionalDependencies GADTs GeneralizedNewtypeDeriving InstanceSigs KindSignatures LambdaCase MultiParamTypeClasses MultiWayIf NamedFieldPuns OverloadedLabels OverloadedStrings PatternSynonyms RankNTypes RecordWildCards ScopedTypeVariables StandaloneDeriving TemplateHaskell TupleSections TypeApplications TypeFamilies TypeFamilyDependencies TypeOperators ViewPatterns
+  ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wnoncanonical-monad-instances
+  build-depends:
+      base >=4.7 && <5
+    , generic-lens
+    , melo-format
+    , microlens
+    , optparse-applicative
+    , polysemy
+    , text
+    , time
+    , unordered-containers
+  default-language: Haskell2010
+
+test-suite melo-format-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Melo.Format.ApeSpec
+      Melo.Format.FlacSpec
+      Melo.Format.ID3.ID3v1Spec
+      Melo.Format.ID3.ID3v2Spec
+      Melo.Format.OggVorbisSpec
+      Melo.Format.TestUtil
+      Melo.Format.VorbisSpec
+      Melo.Format.WavPackSpec
+      Paths_melo_format
+  hs-source-dirs:
+      test
+  default-extensions: ApplicativeDo BangPatterns BinaryLiterals ConstraintKinds DataKinds DefaultSignatures DeriveAnyClass DeriveFoldable DeriveFunctor DeriveGeneric DeriveLift DeriveTraversable DerivingStrategies DuplicateRecordFields EmptyCase ExistentialQuantification FlexibleContexts FlexibleInstances FunctionalDependencies GADTs GeneralizedNewtypeDeriving InstanceSigs KindSignatures LambdaCase MultiParamTypeClasses MultiWayIf NamedFieldPuns OverloadedLabels OverloadedStrings PatternSynonyms RankNTypes RecordWildCards ScopedTypeVariables StandaloneDeriving TemplateHaskell TupleSections TypeApplications TypeFamilies TypeFamilyDependencies TypeOperators ViewPatterns
+  ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wnoncanonical-monad-instances -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      base >=4.7 && <5
+    , base16-bytestring
+    , binary
+    , bytestring
+    , conduit
+    , hspec
+    , hspec-expectations-lifted
+    , melo-format
+    , safe-exceptions
+    , temporary
+    , text
+    , vector
+  default-language: Haskell2010

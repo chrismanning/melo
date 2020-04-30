@@ -1,12 +1,14 @@
 module Melo.Format.Internal.Info where
 
+import Data.Text (Text)
 import GHC.Generics
 
 data Info = Info
   { sampleRate :: !SampleRate,
     channels :: !Channels,
     totalSamples :: !(Maybe Integer),
-    bitsPerSample :: !(Maybe Int)
+    bitsPerSample :: !(Maybe Int),
+    quality :: !(Maybe Text)
   }
   deriving (Show, Eq, Generic)
 
