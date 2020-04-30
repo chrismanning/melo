@@ -3,7 +3,6 @@
 
 module Melo.Format.Internal.Metadata where
 
-import Control.Newtype.Generics
 import Data.Generics.Labels ()
 import Data.HashMap.Strict
 import Data.Hashable
@@ -26,7 +25,6 @@ data MetadataFileFactory m = MetadataFileFactory
 
 newtype MetadataFileId = MetadataFileId Text
   deriving (Generic, Show)
-  deriving anyclass (Newtype)
   deriving newtype (Hashable, Eq, Ord)
 
 data MetadataFile = MetadataFile
@@ -41,7 +39,6 @@ newtype MetadataId = MetadataId
   { unMetadataId :: Text
   }
   deriving (Generic, Show)
-  deriving anyclass (Newtype)
   deriving newtype (Hashable, Eq, Ord)
 
 data Metadata = Metadata

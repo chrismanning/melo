@@ -1,12 +1,15 @@
 module Melo.Format.WavPack
   ( WavPack (..),
+    WavPackInfo(..),
+    WavPackTags (..),
+    AudioType (..),
+    Channels(..),
     wavPackFileKind,
     wavPack,
+    hReadWavPack,
   )
 where
 
-import Control.Exception.Safe
-import Control.Monad
 import Data.Binary.Get
 import Data.Bits
 import qualified Data.ByteString as BS
@@ -19,7 +22,6 @@ import GHC.Records
 import Lens.Micro
 import qualified Melo.Format.Ape as Ape
 import qualified Melo.Format.ID3 as ID3
-import qualified Melo.Format.ID3.ID3v1 as ID3
 import Melo.Format.Internal.Binary
 import Melo.Format.Internal.BinaryUtil
 import qualified Melo.Format.Internal.Info as I
@@ -30,6 +32,7 @@ import Melo.Format.Internal.Info
 import Melo.Format.Internal.Locate
 import Melo.Format.Internal.Metadata
 import System.IO
+import Numeric.Natural (Natural)
 
 wavPack :: MetadataFileFactory IO
 wavPack =
@@ -82,7 +85,8 @@ instance InfoReader WavPack where
               JointStereo -> I.JointStereo
               MultiChannel _ -> I.MultiChannel I.ChannelMask,
             totalSamples = fromIntegral <$> getField @"totalSamples" wi,
-            bitsPerSample = Just $ fromIntegral $ sampleSize wi
+            bitsPerSample = Just $ fromIntegral $ sampleSize wi,
+            quality = Nothing -- TODO wavpack quality
           }
 
 data WavPackInfo = WavPackInfo
@@ -239,7 +243,7 @@ instance MetadataLocator WavPackTags where
 --    Both ape _ -> readTags ape
 --    NoTags -> Tags []
 
-findApe :: Handle -> IO (Maybe Int)
+findApe :: Handle -> IO (Maybe Natural)
 findApe h = do
   footerpos <- findAt h (- Ape.headerSize) Ape.preamble
   case footerpos of
@@ -249,14 +253,14 @@ findApe h = do
       let footer = runGet Ape.getHeader (L.fromStrict bs)
       return $ Just $
         if Ape.isHeader (Ape.flags footer)
-          then n
-          else n - fromIntegral (Ape.numBytes footer)
+          then fromIntegral n
+          else fromIntegral n - fromIntegral (Ape.numBytes footer)
     Nothing -> return Nothing
 
-findID3 :: Handle -> IO (Maybe Int)
+findID3 :: Handle -> IO (Maybe Natural)
 findID3 h = findAt h (-128) ID3.iD3v1Id
 
-findAt :: Handle -> Integer -> BS.ByteString -> IO (Maybe Int)
+findAt :: Handle -> Integer -> BS.ByteString -> IO (Maybe Natural)
 findAt h p s = do
   hSeek h RelativeSeek p
   pos <- hTell h

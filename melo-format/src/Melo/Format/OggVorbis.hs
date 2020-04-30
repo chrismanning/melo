@@ -71,7 +71,8 @@ instance InfoReader OggVorbis where
           2 -> Stereo
           _ -> MultiChannel ChannelMask,
         totalSamples = Nothing, -- TODO ogg vorbis total samples
-        bitsPerSample = Nothing
+        bitsPerSample = Nothing,
+        quality = Nothing -- TODO ogg vorbis quality
       }
 
 hReadOggVorbis :: Handle -> IO OggVorbis

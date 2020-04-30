@@ -33,36 +33,36 @@ spec =
       $ do
         it "finds tags" $ do
           h <- openBinaryFile "test/Melo/vbr-id3v24.mp3" ReadMode
-          id3pos <- hLocate @ID3v2 h
+          id3pos <- hLocate @ID3v2_4 h
           id3pos `shouldSatisfy` isJust
         it "parses ID3v2.4" $ do
-          id3 <- readID3v2Tags "test/Melo/vbr-id3v24.mp3"
+          id3 <- readID3v2_4Tags "test/Melo/vbr-id3v24.mp3"
           let t = readTags id3
-          getMappedTag M.id3v2_4 artist t `shouldBe` ["κόσμε"]
+          getMappedTag M.id3v2_4 artist t `shouldBe` fromList ["κόσμε"]
           getMappedTag M.id3v2_4 trackTitle t
-            `shouldBe` ["В чащах юга жил бы цитрус? Да, но фальшивый экземпляр!"]
+            `shouldBe` fromList ["В чащах юга жил бы цитрус? Да, но фальшивый экземпляр!"]
           getMappedTag M.id3v2_4 album t
-            `shouldBe` ["イロハニホヘト チリヌルヲ ワカヨタレソ ツネナラム ウヰノオクヤマ ケフコエテ アサキユメミシ ヱヒモセスン"]
-          getMappedTag M.id3v2_4 genre t `shouldBe` ["Psychedelic Rock"]
+            `shouldBe` fromList ["イロハニホヘト チリヌルヲ ワカヨタレソ ツネナラム ウヰノオクヤマ ケフコエテ アサキユメミシ ヱヒモセスン"]
+          getMappedTag M.id3v2_4 genre t `shouldBe` fromList ["Psychedelic Rock"]
     context "ID3v2.3" $ do
       context "with valid input" $ do
         it "finds tags" $ do
           h <- openBinaryFile "test/Melo/vbr-id3v23.mp3" ReadMode
-          id3pos <- hLocate @ID3v2 h
+          id3pos <- hLocate @ID3v2_3 h
           id3pos `shouldSatisfy` isJust
         it "parses ID3v2.3" $ do
-          id3 <- readID3v2Tags "test/Melo/vbr-id3v23.mp3"
+          id3 <- readID3v2_3Tags "test/Melo/vbr-id3v23.mp3"
           let t = readTags id3
-          getMappedTag M.id3v2_3 artist t `shouldBe` ["κόσμε"]
+          getMappedTag M.id3v2_3 artist t `shouldBe` fromList ["κόσμε"]
           getMappedTag M.id3v2_3 trackTitle t
-            `shouldBe` ["В чащах юга жил бы цитрус? Да, но фальшивый экземпляр!"]
+            `shouldBe` fromList ["В чащах юга жил бы цитрус? Да, но фальшивый экземпляр!"]
           getMappedTag M.id3v2_3 album t
-            `shouldBe` ["イロハニホヘト チリヌルヲ ワカヨタレソ ツネナラム ウヰノオクヤマ ケフコエテ アサキユメミシ ヱヒモセスン"]
-          getMappedTag M.id3v2_3 genre t `shouldBe` ["Psychedelic Rock"]
+            `shouldBe` fromList ["イロハニホヘト チリヌルヲ ワカヨタレソ ツネナラム ウヰノオクヤマ ケフコエテ アサキユメミシ ヱヒモセスン"]
+          getMappedTag M.id3v2_3 genre t `shouldBe` fromList ["Psychedelic Rock"]
       context "with UTF-16 text"
         $ it "parses ID3v2.3"
         $ do
-          id3 <- readID3v2Tags "test/Melo/silence-1s-id3v23.mp3"
+          id3 <- readID3v2_3Tags "test/Melo/silence-1s-id3v23.mp3"
           readTags id3
             `shouldBe` Tags
               ( fromList
@@ -78,9 +78,16 @@ spec =
                   ]
               )
 
-readID3v2Tags :: FilePath -> IO ID3v2
-readID3v2Tags p = do
+readID3v2_4Tags :: FilePath -> IO ID3v2_4
+readID3v2_4Tags p = do
   h <- openBinaryFile p ReadMode
-  Just id3loc <- hLocate @ID3v2 h
+  Just id3loc <- hLocate @ID3v2_4 h
+  hSeek h AbsoluteSeek (fromIntegral id3loc)
+  runGet bget <$> L.hGetContents h
+
+readID3v2_3Tags :: FilePath -> IO ID3v2_3
+readID3v2_3Tags p = do
+  h <- openBinaryFile p ReadMode
+  Just id3loc <- hLocate @ID3v2_3 h
   hSeek h AbsoluteSeek (fromIntegral id3loc)
   runGet bget <$> L.hGetContents h

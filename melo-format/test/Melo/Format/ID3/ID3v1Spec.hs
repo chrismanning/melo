@@ -9,6 +9,7 @@ import Data.Binary.Get
 import qualified Data.ByteString.Lazy as L
 import Data.Maybe
 import Data.Text ()
+import Data.Vector (fromList)
 import Melo.Format.ID3.ID3v1
 import Melo.Format.Internal.Binary
 import Melo.Format.Internal.Locate
@@ -263,13 +264,13 @@ spec =
                 }
         let tags' = readTags tag
         let getID3v1Tag = getMappedTag M.id3v1
-        getID3v1Tag M.trackTitle tags' `shouldBe` ["title"]
-        getID3v1Tag M.artist tags' `shouldBe` ["artist"]
-        getID3v1Tag M.album tags' `shouldBe` ["album"]
-        getID3v1Tag M.year tags' `shouldBe` ["2018"]
-        getID3v1Tag M.commentTag tags' `shouldBe` ["comment"]
-        getID3v1Tag M.trackNumber tags' `shouldBe` ["10"]
-        getID3v1Tag M.genre tags' `shouldBe` ["Garage Rock"]
+        getID3v1Tag M.trackTitle tags' `shouldBe` fromList ["title"]
+        getID3v1Tag M.artist tags' `shouldBe` fromList ["artist"]
+        getID3v1Tag M.album tags' `shouldBe` fromList ["album"]
+        getID3v1Tag M.year tags' `shouldBe` fromList ["2018"]
+        getID3v1Tag M.commentTag tags' `shouldBe` fromList ["comment"]
+        getID3v1Tag M.trackNumber tags' `shouldBe` fromList ["10"]
+        getID3v1Tag M.genre tags' `shouldBe` fromList ["Garage Rock"]
 
 shouldReplaceWith :: Handle -> ID3v1 -> IO ()
 shouldReplaceWith h tag = do

@@ -75,7 +75,10 @@ instance MetadataLocator ID3v2_3 where
         ID3v23 -> pure 0
         _ -> Nothing
 
-  hLocate h = hSeek h AbsoluteSeek 0 >> locate @ID3v2_4 <$> hGetFileContents h
+  hLocate h = do
+    hSeek h AbsoluteSeek 0
+    bs <- hGetFileContents h
+    pure $ fromIntegral <$> locate @ID3v2_3 bs
 
 instance TagReader ID3v2_3 where
   readTags id3 =
@@ -121,7 +124,10 @@ instance MetadataLocator ID3v2_4 where
         ID3v24 -> pure 0
         _ -> Nothing
 
-  hLocate h = hSeek h AbsoluteSeek 0 >> locate @ID3v2_4 <$> hGetFileContents h
+  hLocate h = do
+    hSeek h AbsoluteSeek 0
+    bs <- hGetFileContents h
+    pure $ fromIntegral <$> locate @ID3v2_4 bs
 
 instance TagReader ID3v2_4 where
   readTags id3 =
