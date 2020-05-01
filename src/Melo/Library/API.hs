@@ -11,10 +11,11 @@ import Data.UUID (toText)
 import Database.Beam hiding (C)
 import Debug.Trace
 import GHC.OverloadedLabels ()
+import Melo.Common.Haxl
 import Melo.GraphQL.Introspect
 import Melo.GraphQL.Resolve
 import qualified Melo.Library.Database.Model as DB
-import Melo.Library.Repo.Haxl
+import Melo.Library.Genre.Haxl
 
 data Library = Library
   { genres :: [Genre],

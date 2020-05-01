@@ -1,28 +1,20 @@
-module Melo.Library.Repo.Haxl where
+module Melo.Library.Genre.Haxl where
 
 import Control.Carrier.Reader
-import Control.Lens ((^.))
+import Control.Lens
 import Control.Monad
-import Data.Bifunctor
-import qualified Data.HashMap.Strict as H
 import Data.Hashable
+import qualified Data.HashMap.Strict as H
 import Data.Maybe
 import Data.Text (Text)
-import qualified Data.Text as T
 import Data.Typeable
-import Database.PostgreSQL.Simple
-import GHC.Generics
 import Haxl.Core
-import qualified Melo.Library.Album.Repo as Album
-import qualified Melo.Library.Artist.Repo as Artist
+import Melo.Common.Haxl
 import qualified Melo.Library.Database.Model as DB
-import qualified Melo.Library.Genre.Repo as Genre
-import qualified Melo.Library.Track.Repo as Track
-import Network.URI
-
-type Haxl = GenHaxl () ()
-
--- Genre
+import Database.Beam.Postgres (Connection)
+import GHC.Generics (Generic)
+import qualified Melo.Library.Genre.Repo as Repo
+import Data.Bifunctor (second)
 
 getAllGenres :: Haxl [DB.Genre]
 getAllGenres = dataFetch GetAllGenres
@@ -81,14 +73,14 @@ instance DataSource () GenreDataSource where
     where
       getAllGenres' vs = unless (null vs) $
         do
-          allGenres <- runReader conn $ Genre.runGenreRepositoryIO Genre.getAllGenres
+          allGenres <- runReader conn $ Repo.runGenreRepositoryIO Repo.getAllGenres
           mapM_ (`putSuccess` allGenres) vs
       searchGenres' vs = unless (null vs)
         $ forM_ (H.toList vs)
-        $ \(t, r) -> putSuccess r =<< runReader conn (Genre.runGenreRepositoryIO (Genre.searchGenres t))
+        $ \(t, r) -> putSuccess r =<< runReader conn (Repo.runGenreRepositoryIO (Repo.searchGenres t))
       getGenreTracks' vs = unless (null vs) $
         do
-          genreTracks <- runReader conn (Genre.runGenreRepositoryIO $ Genre.getGenreTracks (H.keys vs))
+          genreTracks <- runReader conn (Repo.runGenreRepositoryIO $ Repo.getGenreTracks (H.keys vs))
           let genreTracks' = H.fromListWith (++) (second (: []) <$> genreTracks)
           mapM_
             ( \(k, r) ->
@@ -96,43 +88,3 @@ instance DataSource () GenreDataSource where
             )
             $ H.toList vs
       conn = state ^. #conn
-
--- Track
-
-getTrack :: DB.TrackKey -> Haxl (Maybe DB.Track)
-getTrack = dataFetch . GetTrack
-
-getTrackByTitle :: Text -> Haxl [DB.Track]
-getTrackByTitle = dataFetch . GetTrackByTitle
-
-searchTracks :: Text -> Haxl [DB.Track]
-searchTracks = dataFetch . SearchTracks
-
-data TrackRepo a where
-  GetTrack :: DB.TrackKey -> TrackRepo (Maybe DB.Track)
-  GetTrackByTitle :: Text -> TrackRepo [DB.Track]
-  SearchTracks :: Text -> TrackRepo [DB.Track]
-
-deriving instance Eq (TrackRepo a)
-
-instance Hashable (TrackRepo a) where
-  hashWithSalt s (GetTrack _) = hashWithSalt s (0 :: Int)
-  hashWithSalt s (GetTrackByTitle _) = hashWithSalt s (1 :: Int)
-  hashWithSalt s (SearchTracks _) = hashWithSalt s (2 :: Int)
-
-deriving instance Show (TrackRepo a)
-
-instance ShowP TrackRepo where showp = show
-
-instance StateKey TrackRepo where
-  data State TrackRepo = TrackRepoState
-    { conn :: Connection
-    }
-    deriving (Generic)
-
-instance DataSourceName TrackRepo where
-  dataSourceName = const "TrackDataSource"
-
-instance DataSource () TrackRepo where
-  fetch state _flags _ = BackgroundFetch $ \blockedFetches -> do
-    undefined
