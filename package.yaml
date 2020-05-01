@@ -171,8 +171,10 @@ tests:
     - wreq
 
 ghc-options:
+- -O2
 - -Wall
 - -Wcompat
+- -fno-warn-name-shadowing
 - -Wincomplete-record-updates
 - -Wincomplete-uni-patterns
 - -Wredundant-constraints
