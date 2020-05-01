@@ -7,15 +7,12 @@ import Data.Generics.Labels ()
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import Data.Time.Format
-import GHC.OverloadedLabels
 import Lens.Micro ((^.))
 import Melo.Format.Info hiding (info)
-import Melo.Format.Internal.Tag
 import Melo.Format.Mapping
 import Melo.Format.Metadata
 import Options.Applicative
-import Polysemy
-import System.IO
+import Control.Monad.Extra (whenJust)
 
 data Opts = Opts
   { path :: FilePath
@@ -52,19 +49,15 @@ printTags f = do
   psl $ "Channels: " <> channels
   let sampleRate = T.pack . show . samplesPerSecond $ info ^. #sampleRate
   psl $ "Sample Rate: " <> sampleRate <> "Hz"
-  case info ^. #quality of
-    Nothing -> pure ()
-    Just quality -> psl $ "Quality: " <> quality
-  case info ^. #bitsPerSample of
-    Nothing -> pure ()
-    Just bps -> psl $ "Sample Size: " <> T.pack (show bps) <> " bits"
-  case audioLength info of
-    Nothing -> pure ()
-    Just len -> psl $ "Length: " <> T.pack (formatTime defaultTimeLocale "%-3Ess" len)
-  forM_ (zip [1 ..] (toList (f ^. #metadata))) $ \(i, metadata) -> do
+  whenJust (info ^. #quality) $ \quality ->
+    psl $ "Quality: " <> quality
+  whenJust (info ^. #bitsPerSample) $ \bps ->
+    psl $ "Sample Size: " <> T.pack (show bps) <> " bits"
+  whenJust (audioLength info) $ \len ->
+    psl $ "Length: " <> T.pack (formatTime defaultTimeLocale "%-3Ess" len)
+  forM_ (toList (f ^. #metadata)) $ \metadata -> do
     putLine
-    psl $ "Tags #" <> T.pack (show i)
-    psl $ formatDesc metadata
+    psl $ "Tags - " <> formatDesc metadata
     putLine
     let tags' = tags metadata
     let tag = lens metadata

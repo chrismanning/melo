@@ -31,6 +31,7 @@ import Data.Text (Text)
 import Data.Text.Encoding
 import Data.Vector (Vector)
 import qualified Data.Vector as V
+import qualified Melo.Format.ID3 as ID3
 import Melo.Format.Internal.BinaryUtil
 import Melo.Format.Internal.Encoding
 import Melo.Format.Internal.Locate
@@ -73,8 +74,35 @@ instance Binary APEv1 where
         }
 
 instance MetadataLocator APEv1 where
-  locate = locate @APE
-  hLocate = hLocate @APE
+  locate bs = locateApe bs V1
+  hLocate h = hLocateApe h V1
+
+locateApe :: L.ByteString -> Version -> Maybe Int
+locateApe bs v =
+  case locateBinaryLazy @Header bs of
+    Nothing -> Nothing
+    Just i -> do
+      let header = runGet (lookAhead $ skip (fromIntegral i) >> getHeader) bs
+      if headerVersion header /= v then
+        Nothing
+        else
+        Just $
+          if isHeader (flags header)
+            then i
+            else i - fromIntegral (numBytes header) - headerSize
+
+hLocateApe :: Num a => Handle -> Version -> IO (Maybe a)
+hLocateApe h v = do
+  hs <-
+    do
+      hSeek h SeekFromEnd (fromIntegral ID3.headerSize + headerSize)
+      hTell h
+  let n = hs - fromIntegral (min (headerSize * 10) hs)
+  hSeek h AbsoluteSeek n
+  buf <- BS.hGet h (fromIntegral $ hs - n)
+  case fromIntegral <$> locateApe (L.fromStrict buf) v of
+    Just loc -> pure $ Just (fromIntegral (loc + n))
+    Nothing -> pure Nothing
 
 newtype APEv2 = APEv2 (Vector TagItem)
   deriving (Show, Eq)
@@ -110,37 +138,14 @@ instance Binary APEv2 where
         }
 
 instance MetadataLocator APEv2 where
-  locate = locate @APE
-  hLocate = hLocate @APE
+  locate bs = locateApe bs V2
+  hLocate h = hLocateApe h V2
 
 data APE = APE
   { version :: !Version,
     items :: !(Vector TagItem)
   }
   deriving (Show, Eq)
-
-instance MetadataLocator APE where
-  locate bs =
-    case locateBinaryLazy @Header bs of
-      Nothing -> Nothing
-      Just i -> do
-        let header = runGet (lookAhead $ skip (fromIntegral i) >> getHeader) bs
-        Just $
-          if isHeader (flags header)
-            then i
-            else i - fromIntegral (numBytes header) - headerSize
-
-  hLocate h = do
-    hs <-
-      do
-        hSeek h SeekFromEnd 0
-        hTell h
-    let n = hs - fromIntegral (min (headerSize * 10) hs)
-    hSeek h AbsoluteSeek n
-    buf <- BS.hGet h (fromIntegral $ hs - n)
-    case fromIntegral <$> locate @APE (L.fromStrict buf) of
-      Just loc -> pure $ Just (fromIntegral (loc + n))
-      Nothing -> pure Nothing
 
 headerSize :: Integral a => a
 headerSize = 32
