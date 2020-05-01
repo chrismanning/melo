@@ -5,6 +5,7 @@
 module Melo.GraphQL.Introspect where
 
 import Control.Lens ((^.))
+import Control.Monad.Extra (whenJust)
 import Control.Monad.ST
 import Data.Generics.Labels ()
 import qualified Data.HashTable.ST.Basic as H
@@ -438,17 +439,11 @@ collectTypes t = runST s
         Nothing -> pure ()
         Just fs -> mapM_ (\f -> collectTypes' ts (f ^. #fieldType)) fs
     interfaces' :: GQLTypeTable s -> GQLType -> ST s ()
-    interfaces' ts t' = case t' ^. #interfaces of
-      Nothing -> pure ()
-      Just is -> mapM_ (collectTypes' ts) is
+    interfaces' ts t' = whenJust (t' ^. #interfaces) $ mapM_ (collectTypes' ts)
     possibleTypes' :: GQLTypeTable s -> GQLType -> ST s ()
-    possibleTypes' ts t' = case t' ^. #possibleTypes of
-      Nothing -> pure ()
-      Just is -> mapM_ (collectTypes' ts) is
+    possibleTypes' ts t' = whenJust (t' ^. #possibleTypes) $ mapM_ (collectTypes' ts)
     wrapperOfType :: GQLTypeTable s -> GQLType -> ST s ()
-    wrapperOfType ts t' = case t' ^. #ofType of
-      Nothing -> pure ()
-      Just t'' -> collectTypes' ts t''
+    wrapperOfType ts t' = whenJust (t' ^. #ofType) $ collectTypes' ts
     inputTypes' :: GQLTypeTable s -> GQLType -> ST s ()
     inputTypes' ts t' =
       case t' ^. #inputFields of

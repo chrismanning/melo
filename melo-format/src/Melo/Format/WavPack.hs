@@ -1,9 +1,9 @@
 module Melo.Format.WavPack
   ( WavPack (..),
-    WavPackInfo(..),
+    WavPackInfo (..),
     WavPackTags (..),
     AudioType (..),
-    Channels(..),
+    Channels (..),
     wavPackFileKind,
     wavPack,
     hReadWavPack,
@@ -31,8 +31,8 @@ import Melo.Format.Internal.Info
   )
 import Melo.Format.Internal.Locate
 import Melo.Format.Internal.Metadata
-import System.IO
 import Numeric.Natural (Natural)
+import System.IO
 
 wavPack :: MetadataFileFactory IO
 wavPack =

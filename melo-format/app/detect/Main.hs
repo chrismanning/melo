@@ -1,6 +1,7 @@
 module Main where
 
 import Control.Monad
+import Control.Monad.Extra (whenJust)
 import Data.Coerce
 import Data.Foldable
 import Data.Generics.Labels ()
@@ -12,7 +13,6 @@ import Melo.Format.Info hiding (info)
 import Melo.Format.Mapping
 import Melo.Format.Metadata
 import Options.Applicative
-import Control.Monad.Extra (whenJust)
 
 data Opts = Opts
   { path :: FilePath

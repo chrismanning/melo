@@ -38,9 +38,9 @@ import Melo.Format.Internal.Locate
 import Melo.Format.Internal.Metadata
 import Melo.Format.Internal.Tag
 import Melo.Format.Mapping
+import Numeric.Natural (Natural)
 import System.IO
 import Prelude as P
-import Numeric.Natural (Natural)
 
 apeTag :: TagMapping -> TagLens
 apeTag = mappedTag ape
@@ -83,13 +83,13 @@ locateApe bs v =
     Nothing -> Nothing
     Just i -> do
       let header = runGet (lookAhead $ skip (fromIntegral i) >> getHeader) bs
-      if headerVersion header /= v then
-        Nothing
+      if headerVersion header /= v
+        then Nothing
         else
-        Just $
-          if isHeader (flags header)
-            then i
-            else i - fromIntegral (numBytes header) - headerSize
+          Just $
+            if isHeader (flags header)
+              then i
+              else i - fromIntegral (numBytes header) - headerSize
 
 hLocateApe :: Num a => Handle -> Version -> IO (Maybe a)
 hLocateApe h v = do

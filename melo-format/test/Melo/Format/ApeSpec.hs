@@ -21,8 +21,8 @@ spec = do
   describe "APEv2" $ do
     it "reads APEv2 tags" $
       readApeV2Tags "test/Melo/test.apev2"
-        `shouldReturn` ( APEv2
-                           $ fromList
+        `shouldReturn` ( APEv2 $
+                           fromList
                              [ mkTextTagItem "ALBUM" "Aqualung",
                                mkTextTagItem "ARTIST" "Jethro Tull",
                                mkTextTagItem "COMMENT" "CDP 32 1044 2",
@@ -34,8 +34,8 @@ spec = do
                        )
     it "writes APEv2 tags" $ do
       let a =
-            APEv2
-              $ fromList
+            APEv2 $
+              fromList
                 [ mkTextTagItem "ALBUM" "Aqualung",
                   mkTextTagItem "ARTIST" "Jethro Tull",
                   mkTextTagItem "COMMENT" "CDP 32 1044 2",
@@ -50,8 +50,8 @@ spec = do
   describe "APEv1" $ do
     it "reads APEv1 tags" $
       readApeV1Tags "test/Melo/test.apev1"
-        `shouldReturn` ( APEv1
-                           $ fromList
+        `shouldReturn` ( APEv1 $
+                           fromList
                              [ mkTextTagItem "ALBUM" "Aqualung",
                                mkTextTagItem "ARTIST" "Jethro Tull",
                                mkTextTagItem "COMMENT" "CDP 32 1044 2",
@@ -63,8 +63,8 @@ spec = do
                        )
     it "writes APEv1 tags" $ do
       let a =
-            APEv1
-              $ fromList
+            APEv1 $
+              fromList
                 [ mkTextTagItem "ALBUM" "Aqualung",
                   mkTextTagItem "ARTIST" "Jethro Tull",
                   mkTextTagItem "COMMENT" "CDP 32 1044 2",

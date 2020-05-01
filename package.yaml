@@ -52,6 +52,7 @@ library:
   - directory
   - directory-tree
   - exceptions
+  - extra
   - filepath
   - fused-effects
   - generic-aeson
