@@ -115,23 +115,6 @@ executables:
     - resource-pool
     - text
     - time
-  bandcamp-dl:
-    source-dirs: app/bandcamp-dl
-    main: Main.hs
-    dependencies:
-      - attoparsec
-      - barbies
-      - bytestring
-      - directory
-      - filepath
-      - harg
-      - higgledy
-      - http-client
-      - http-types
-      - hweblib
-      - lens
-      - wreq
-      - zip
 
 tests:
   melo-test:
