@@ -56,6 +56,7 @@ newtype LibraryServiceIOC m a = LibraryServiceIOC
 instance
   ( Has (Lift IO) sig m,
     Has SourceService sig m,
+    Has ArtistService sig m,
     Has Logging sig m
   ) =>
   Algebra (LibraryService :+: sig) (LibraryServiceIOC m)
@@ -82,7 +83,7 @@ instance
               mfs <- catMaybes <$> mapM openMetadataFile files
               $(logDebug) $ "Opened " <> show mfs
               srcs <- importSources (FileSource <$> mfs)
-              let artists = [] --importArtists metadataSources
+              artists <- importArtists srcs
               let albums = [] --importAlbums metadataSources
               let tracks = [] --importTracks metadataSources
               pure

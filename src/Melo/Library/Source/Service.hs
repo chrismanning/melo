@@ -36,7 +36,7 @@ import Melo.Library.Artist.Repo
 import Melo.Library.Artist.Service
 import qualified Melo.Library.Database.Model as DB
 import Melo.Library.Database.Query
-import Melo.Library.Source.Repo
+import qualified Melo.Library.Source.Repo as Repo
 import Melo.Library.Source.Types
 import Melo.Library.Track.Service
 import Network.URI
@@ -47,8 +47,9 @@ importSources ss = send (ImportSources ss)
 
 data SourceService :: Effect where
   ImportSources :: [NewImportSource] -> SourceService m [Source]
-
---  ResolveSources :: [NewImportSource] -> SourceService m ()
+  UpdateSources :: [Source] -> SourceService m ()
+  DeleteSources :: [Source] -> SourceService m ()
+  SearchSourcesByUri :: Text -> SourceService m [Source]
 
 newtype SourceServiceIOC m a = SourceServiceIOC
   { runSourceServiceIOC :: m a
@@ -56,7 +57,7 @@ newtype SourceServiceIOC m a = SourceServiceIOC
   deriving newtype (Functor, Applicative, Monad)
 
 instance
-  ( Has SourceRepository sig m,
+  ( Has Repo.SourceRepository sig m,
     Has AlbumService sig m,
     Has ArtistService sig m,
     Has TrackService sig m,
@@ -64,12 +65,19 @@ instance
   ) =>
   Algebra (SourceService :+: sig) (SourceServiceIOC m)
   where
-  alg _ (L (ImportSources ss)) ctx = do
-    $(logDebug) $ "Importing sources: " <> show ss
-    let metadataSources :: [MetadataImportSource] = mapMaybe tryFrom ss
-    $(logDebug) $ "Importing metadata sources: " <> show metadataSources
-    srcs <- insertSources (fmap from metadataSources)
-    pure (ctx $> catMaybes (fmap tryFrom srcs))
+  alg _ (L sig) ctx = case sig of
+    ImportSources ss -> do
+      $(logDebug) $ "Importing sources: " <> show ss
+      let metadataSources :: [MetadataImportSource] = mapMaybe tryFrom ss
+      $(logDebug) $ "Importing metadata sources: " <> show metadataSources
+      srcs <- Repo.insertSources (fmap from metadataSources)
+      pure (ctx $> mapMaybe tryFrom srcs)
+    UpdateSources ss -> do
+      undefined
+    DeleteSources ss -> do
+      undefined
+    SearchSourcesByUri t -> do
+      undefined
   alg hdl (R other) ctx = SourceServiceIOC (alg (runSourceServiceIOC . hdl) other ctx)
 
 length' :: (Foldable f, Num a) => f b -> a

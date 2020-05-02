@@ -8,25 +8,16 @@ import Control.Effect.Lift
 import Control.Effect.Reader
 import Control.Lens hiding (from)
 import Data.Functor
-import qualified Data.HashMap.Strict as H
-import Data.Int
-import Data.Maybe
-import Data.Range as R
-import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Time
 import Database.Beam as B hiding (char, insert)
 import Database.Beam.Backend.SQL.BeamExtensions as B
 import Database.Beam.Postgres as Pg
 import Database.Beam.Postgres.Full as Pg
 import Melo.Common.Effect
-import Melo.Format.Info (Info)
-import Melo.Format.Internal.Metadata
 import qualified Melo.Library.Database.Model as DB
 import Melo.Library.Database.Query
 import Melo.Library.Source.Types
 import Network.URI
-import System.Directory
 
 getSources :: Has SourceRepository sig m => [DB.SourceKey] -> m [DB.Source]
 getSources ks = send (GetSources ks)

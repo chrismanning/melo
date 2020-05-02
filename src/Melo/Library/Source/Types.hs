@@ -13,8 +13,6 @@ where
 
 import Basement.From
 import Control.Lens hiding ((.=))
-import Data.Aeson ((.=))
-import qualified Data.Aeson as A
 import Data.Aeson.Types as A
 import Data.Coerce
 import qualified Data.HashMap.Strict as H
@@ -26,8 +24,6 @@ import qualified Data.Text as T
 import qualified Data.Vector as V
 import Database.Beam
 import Database.Beam.Postgres as Pg
-import Database.Beam.Query
-import GHC.Generics
 import Melo.Common.Metadata
 import Melo.Format.Info
 import Melo.Format.Internal.Tag
@@ -171,7 +167,7 @@ data Source = Source
     metadata :: Metadata,
     source :: URI,
     range :: Maybe AudioRange
-  }
+  } deriving (Generic)
 
 instance TryFrom DB.Source Source where
   tryFrom s = do

@@ -38,11 +38,11 @@ import Melo.Library.Source.Types
 import qualified Melo.Lookup.MusicBrainz as MB
 
 data ArtistService :: Effect where
-  ImportArtists :: [MetadataImportSource] -> ArtistService m [Artist]
+  ImportArtists :: [Source] -> ArtistService m [Artist]
 
 --  SetArtists :: Metadata -> [Artist] -> ArtistService m Metadata
 
-importArtists :: Has ArtistService sig m => [MetadataImportSource] -> m [Artist]
+importArtists :: Has ArtistService sig m => [Source] -> m [Artist]
 importArtists m = send (ImportArtists m)
 
 newtype ArtistServiceIOC m a = ArtistServiceIOC

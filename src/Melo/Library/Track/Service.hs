@@ -47,9 +47,9 @@ instance From DB.Track Track where
   from = undefined
 
 data TrackService :: Effect where
-  ImportTracks :: [MetadataImportSource] -> TrackService m [Track]
+  ImportTracks :: [Source] -> TrackService m [Track]
 
-importTracks :: Has TrackService sig m => [MetadataImportSource] -> m [Track]
+importTracks :: Has TrackService sig m => [Source] -> m [Track]
 importTracks = send . ImportTracks
 
 newtype TrackServiceIOC m a = TrackServiceIOC
@@ -74,7 +74,7 @@ instance
     pure (ctx $> fmap from tracks)
   alg hdl (R other) ctx = TrackServiceIOC (alg (runTrackServiceIOC . hdl) other ctx)
 
-newTracks :: MetadataImportSource -> NewTrack
+newTracks :: Source -> NewTrack
 newTracks ms = undefined
 
 --newTracks :: [(DB.TrackSourceKey, MetadataId, Text)] -> [NewTrackSource] -> [NewTrack]

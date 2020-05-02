@@ -38,9 +38,9 @@ import Melo.Library.Source.Types
 import qualified Melo.Lookup.MusicBrainz as MB
 
 data AlbumService :: Effect where
-  ImportAlbums :: [MetadataImportSource] -> AlbumService m [Album]
+  ImportAlbums :: [Source] -> AlbumService m [Album]
 
-importAlbums :: Has AlbumService sig m => [MetadataImportSource] -> m [Album]
+importAlbums :: Has AlbumService sig m => [Source] -> m [Album]
 importAlbums m = send (ImportAlbums m)
 
 newtype AlbumServiceIOC m a = AlbumServiceIOC
