@@ -6,7 +6,6 @@ import Control.Algebra
 import Control.Effect.Lift
 import Control.Effect.Reader
 import Control.Lens ((^.))
-import Data.Functor
 import Data.List
 import Data.Text (Text)
 import Data.Time (NominalDiffTime)
@@ -31,10 +30,11 @@ data NewTrack = NewTrack
 
 data TrackRepository :: Effect where
   GetAllTracks :: TrackRepository m [DB.Track]
-  GetTracksById :: [DB.TrackKey] -> TrackRepository m [DB.Track]
+  GetTracks :: [DB.TrackKey] -> TrackRepository m [DB.Track]
   GetTrackSource :: DB.TrackKey -> TrackRepository m DB.Source
   GetTrackArtists :: DB.TrackKey -> TrackRepository m [DB.Artist]
   GetTrackAlbum :: DB.TrackKey -> TrackRepository m DB.Album
+  GetTrackGenres :: DB.TrackKey -> TrackRepository m [DB.Genre]
   SearchTracks :: Text -> TrackRepository m [DB.Track]
   InsertTracks :: [NewTrack] -> TrackRepository m [DB.TrackKey]
   DeleteTracks :: [DB.TrackKey] -> TrackRepository m ()
@@ -42,8 +42,8 @@ data TrackRepository :: Effect where
 getAllTracks :: Has TrackRepository sig m => m [DB.Track]
 getAllTracks = send GetAllTracks
 
-getTracksById :: Has TrackRepository sig m => [DB.TrackKey] -> m [DB.Track]
-getTracksById ks = send (GetTracksById ks)
+getTracks :: Has TrackRepository sig m => [DB.TrackKey] -> m [DB.Track]
+getTracks ks = send (GetTracks ks)
 
 getTrackSource :: Has TrackRepository sig m => DB.TrackKey -> m DB.Source
 getTrackSource k = send (GetTrackSource k)
@@ -53,6 +53,9 @@ getTrackArtists k = send (GetTrackArtists k)
 
 getTrackAlbum :: Has TrackRepository sig m => DB.TrackKey -> m DB.Album
 getTrackAlbum k = send (GetTrackAlbum k)
+
+getTrackGenres :: Has TrackRepository sig m => DB.TrackKey -> m [DB.Genre]
+getTrackGenres k = send (GetTrackGenres k)
 
 searchTracks :: Has TrackRepository sig m => Text -> m [DB.Track]
 searchTracks t = send (SearchTracks t)
@@ -68,6 +71,9 @@ newtype TrackRepositoryIOC m a = TrackRepositoryIOC
   }
   deriving newtype (Applicative, Functor, Monad)
 
+tbl :: DatabaseEntity Postgres DB.LibraryDb (TableEntity DB.TrackT)
+tbl = DB.libraryDb ^. #track
+
 instance
   ( Has (Lift IO) sig m,
     Has Logging sig m,
@@ -76,24 +82,27 @@ instance
   Algebra (TrackRepository :+: sig) (TrackRepositoryIOC m)
   where
   alg _hdl (L sig) ctx = case sig of
-    GetTracksById ks -> do
-      conn <- ask
-      let ids = fmap (\(DB.TrackKey k') -> val_ k') ks
-      let q = filter_ (\m -> m ^. #id `in_` ids) $ all_ (DB.libraryDb ^. #track)
-      (ctx $>) <$> $(runPgDebug') conn (runSelectReturningList (select q))
+    GetAllTracks -> ctx $$> getAll tbl
+    GetTracks ks -> ctx $$> getByKeys tbl ks
+    DeleteTracks ks -> ctx $$> deleteByKeys tbl ks
+    GetTrackSource k -> undefined
+    GetTrackArtists k -> undefined
+    GetTrackAlbum k -> undefined
+    GetTrackGenres k -> undefined
+    SearchTracks t -> undefined
     InsertTracks ts' -> do
       let !ts = nub ts'
       conn <- ask
       let q =
             runPgInsertReturningList $
               insertReturning
-                (DB.libraryDb ^. #track)
+                tbl
                 ( insertExpressions
                     (fmap newTrack ts)
                 )
                 onConflictDefault
                 (Just primaryKey)
-      (ctx $>) <$> $(runPgDebug') conn q
+      ctx $$> $(runPgDebug') conn q
   alg hdl (R other) ctx = TrackRepositoryIOC (alg (runTrackRepositoryIOC . hdl) other ctx)
 
 newTrack :: NewTrack -> DB.TrackT (QExpr Postgres s)

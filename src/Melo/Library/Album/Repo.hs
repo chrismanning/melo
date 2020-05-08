@@ -21,6 +21,7 @@ import Melo.Library.Database.Query
 data AlbumRepository :: Effect where
   GetAllAlbums :: AlbumRepository m [DB.Album]
   GetAlbums :: [DB.AlbumKey] -> AlbumRepository m [DB.Album]
+  GetAlbumGenres :: DB.AlbumKey -> AlbumRepository m [DB.Genre]
   GetAlbumArtists :: DB.AlbumKey -> AlbumRepository m [DB.Artist]
   GetAlbumTracks :: DB.AlbumKey -> AlbumRepository m [DB.Track]
   SearchAlbums :: Text -> AlbumRepository m [DB.Album]
@@ -32,6 +33,9 @@ getAllAlbums = send GetAllAlbums
 
 getAlbums :: Has AlbumRepository sig m => [DB.AlbumKey] -> m [DB.Album]
 getAlbums ks = send (GetAlbums ks)
+
+getAlbumGenres :: Has AlbumRepository sig m => DB.AlbumKey -> m [DB.Genre]
+getAlbumGenres k = send (GetAlbumGenres k)
 
 getAlbumArtists :: Has AlbumRepository sig m => DB.AlbumKey -> m [DB.Artist]
 getAlbumArtists k = send (GetAlbumArtists k)
@@ -53,6 +57,9 @@ newtype AlbumRepositoryIOC m a = AlbumRepositoryIOC
   }
   deriving newtype (Applicative, Functor, Monad)
 
+tbl :: DatabaseEntity Postgres DB.LibraryDb (TableEntity DB.AlbumT)
+tbl = DB.libraryDb ^. #album
+
 instance
   ( Has (Lift IO) sig m,
     Has (Reader Connection) sig m
@@ -60,14 +67,16 @@ instance
   Algebra (AlbumRepository :+: sig) (AlbumRepositoryIOC m)
   where
   alg _ (L sig) ctx = case sig of
-    GetAlbums ks -> do
-      conn <- ask
-      let ids = fmap (\(DB.AlbumKey k') -> val_ k') ks
-      let q = filter_ (\m -> m ^. #id `in_` ids) $ all_ (DB.libraryDb ^. #album)
-      (ctx $>) <$> $(runPgDebug') conn (runSelectReturningList (select q))
+    GetAllAlbums -> ctx $$> getAll tbl
+    GetAlbums ks -> ctx $$> getByKeys tbl ks
+    DeleteAlbums ks -> ctx $$> deleteByKeys tbl ks
+    GetAlbumGenres k -> undefined
+    GetAlbumArtists k -> undefined
+    GetAlbumTracks k -> undefined
+    SearchAlbums k -> undefined
     InsertAlbums as' -> do
-      let !as = nub as'
       conn <- ask
+      let !as = nub as'
       let q =
             runPgInsertReturningList $
               insertReturning
@@ -77,7 +86,7 @@ instance
                 )
                 Pg.onConflictDefault
                 (Just primaryKey)
-      (ctx $>) <$> $(runPgDebug') conn q
+      ctx $$> $(runPgDebug') conn q
   alg hdl (R other) ctx = AlbumRepositoryIOC (alg (runAlbumRepositoryIOC . hdl) other ctx)
 
 runAlbumRepositoryIO :: AlbumRepositoryIOC m a -> m a

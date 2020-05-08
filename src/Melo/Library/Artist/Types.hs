@@ -10,6 +10,10 @@ import GHC.Generics
 import qualified Melo.Library.Database.Model as DB
 import qualified Melo.Lookup.MusicBrainz as MB
 
+--newtype Staging a = Staging {
+--  unStage :: a
+--}
+
 data Artist = Artist
   { dbId :: DB.ArtistKey,
     artistIds :: [ArtistId],

@@ -3,18 +3,18 @@ module Melo.Library.Genre.Haxl where
 import Control.Carrier.Reader
 import Control.Lens
 import Control.Monad
-import Data.Hashable
+import Data.Bifunctor (second)
 import qualified Data.HashMap.Strict as H
+import Data.Hashable
 import Data.Maybe
 import Data.Text (Text)
 import Data.Typeable
+import Database.Beam.Postgres (Connection)
+import GHC.Generics (Generic)
 import Haxl.Core
 import Melo.Common.Haxl
 import qualified Melo.Library.Database.Model as DB
-import Database.Beam.Postgres (Connection)
-import GHC.Generics (Generic)
 import qualified Melo.Library.Genre.Repo as Repo
-import Data.Bifunctor (second)
 
 getAllGenres :: Haxl [DB.Genre]
 getAllGenres = dataFetch GetAllGenres

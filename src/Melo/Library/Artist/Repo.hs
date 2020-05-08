@@ -7,7 +7,6 @@ import Control.Algebra
 import Control.Effect.Lift
 import Control.Effect.Reader
 import Control.Lens ((^.))
-import Data.Functor
 import Data.List
 import Data.Text (Text)
 import Database.Beam
@@ -53,6 +52,9 @@ newtype ArtistRepositoryIOC m a = ArtistRepositoryIOC
   }
   deriving newtype (Applicative, Functor, Monad)
 
+tbl :: DatabaseEntity Postgres DB.LibraryDb (TableEntity DB.ArtistT)
+tbl = DB.libraryDb ^. #artist
+
 instance
   ( Has (Lift IO) sig m,
     Has (Reader Connection) sig m
@@ -60,12 +62,9 @@ instance
   Algebra (ArtistRepository :+: sig) (ArtistRepositoryIOC m)
   where
   alg _ (L sig) ctx = case sig of
-    GetAllArtists -> undefined
-    GetArtists ks -> do
-      conn <- ask
-      let ids = fmap (\(DB.ArtistKey k') -> val_ k') ks
-      let q = filter_ (\m -> m ^. #id `in_` ids) $ all_ (DB.libraryDb ^. #artist)
-      (ctx $>) <$> $(runPgDebug') conn (runSelectReturningList (select q))
+    GetAllArtists -> ctx $$> getAll tbl
+    GetArtists ks -> ctx $$> getByKeys tbl ks
+    DeleteArtists ks -> ctx $$> deleteByKeys tbl ks
     GetArtistAlbums k -> undefined
     GetArtistTracks k -> undefined
     SearchArtists t -> undefined
@@ -86,8 +85,7 @@ instance
                     )
                 )
                 (Just primaryKey)
-      (ctx $>) <$> $(runPgDebug') conn q
-    DeleteArtists ks -> undefined
+      ctx $$> $(runPgDebug') conn q
   alg hdl (R other) ctx = ArtistRepositoryIOC (alg (runArtistRepositoryIOC . hdl) other ctx)
 
 runArtistRepositoryIO :: ArtistRepositoryIOC m a -> m a

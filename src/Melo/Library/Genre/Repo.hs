@@ -23,7 +23,7 @@ data NewGenre = NewGenre
 
 data GenreRepository :: Effect where
   GetAllGenres :: GenreRepository m [DB.Genre]
-  GetGenresById :: [DB.GenreKey] -> GenreRepository m [DB.Genre]
+  GetGenres :: [DB.GenreKey] -> GenreRepository m [DB.Genre]
   GetGenresByName :: [Text] -> GenreRepository m [DB.Genre]
   SearchGenres :: Text -> GenreRepository m [DB.Genre]
   GetGenreArtists :: [DB.GenreKey] -> GenreRepository m [(DB.GenreKey, DB.Artist)]
@@ -35,8 +35,8 @@ data GenreRepository :: Effect where
 getAllGenres :: Has GenreRepository sig m => m [DB.Genre]
 getAllGenres = send GetAllGenres
 
-getGenresById :: Has GenreRepository sig m => [DB.GenreKey] -> m [DB.Genre]
-getGenresById ks = send (GetGenresById ks)
+getGenres :: Has GenreRepository sig m => [DB.GenreKey] -> m [DB.Genre]
+getGenres ks = send (GetGenres ks)
 
 getGenresByName :: Has GenreRepository sig m => [Text] -> m [DB.Genre]
 getGenresByName ns = send (GetGenresByName ns)
@@ -64,86 +64,70 @@ newtype GenreRepositoryIOC m a = GenreRepositoryIOC
   }
   deriving newtype (Applicative, Functor, Monad)
 
+tbl :: DatabaseEntity Postgres DB.LibraryDb (TableEntity DB.GenreT)
+tbl = DB.libraryDb ^. #genre
+
 instance
   (Has (Lift IO) sig m, Has (Reader Connection) sig m, Algebra sig m) =>
   Algebra (GenreRepository :+: sig) (GenreRepositoryIOC m)
   where
   alg hdl sig ctx = case sig of
-    L GetAllGenres -> GenreRepositoryIOC $ do
-      conn <- ask
-      let q = select (all_ (DB.libraryDb ^. #genre))
-      (ctx $>) <$> runGenreRepositoryIOC ($(runPgDebug') conn (runSelectReturningList q))
-    L (GetGenresById []) -> pure $ ctx $> []
-    L (GetGenresById ks) -> GenreRepositoryIOC $ do
-      conn <- ask
-      let genreIds = fmap (\(DB.GenreKey gk) -> val_ gk) ks
-      let q = select $ filter_ (\g -> g ^. #id `in_` genreIds) (all_ (DB.libraryDb ^. #genre))
-      (ctx $>) <$> runGenreRepositoryIOC ($(runPgDebug') conn (runSelectReturningList q))
-    L (GetGenresByName []) -> pure $ ctx $> []
+    L GetAllGenres -> GenreRepositoryIOC $ ctx $$> getAll tbl
+    L (GetGenres ks) -> GenreRepositoryIOC $ ctx $$> getByKeys tbl ks
+    L (DeleteGenres ks) -> ctx $$> deleteByKeys tbl ks
+    L (GetGenresByName []) -> ctx $$> pure []
     L (GetGenresByName ns) -> GenreRepositoryIOC $ do
       conn <- ask
-      let names = fmap val_ ns
-      let q = select $ filter_ (\g -> g ^. #name `in_` names) (all_ (DB.libraryDb ^. #genre))
-      (ctx $>) <$> runGenreRepositoryIOC ($(runPgDebug') conn (runSelectReturningList q))
-    L (SearchGenres "") -> pure $ ctx $> []
+      let names = val_ <$> ns
+      let q = select $ filter_ (\g -> g ^. #name `in_` names) (all_ tbl)
+      ctx $$> runGenreRepositoryIOC ($(runPgDebug') conn (runSelectReturningList q))
+    L (SearchGenres "") -> ctx $$> pure []
     L (SearchGenres t) -> GenreRepositoryIOC $ do
       conn <- ask
       let q = select $ do
             genre <- all_ (DB.libraryDb ^. #genre)
             guard_ (toTsVector Nothing (genre ^. #name) @@ toTsQuery Nothing (val_ (t <> "|" <> t <> ":*")))
             pure genre
-      (ctx $>) <$> runGenreRepositoryIOC ($(runPgDebug') conn (runSelectReturningList q))
-    L (GetGenreArtists []) -> pure $ ctx $> []
+      ctx $$> $(runPgDebug') conn (runSelectReturningList q)
+    L (GetGenreArtists []) -> ctx $$> pure []
     L (GetGenreArtists ks) -> GenreRepositoryIOC $ do
       conn <- ask
       let q = select $ do
-            let genreIds = fmap (\(DB.GenreKey gk) -> val_ gk) ks
             (g, a) <-
               manyToMany_
                 (DB.libraryDb ^. #artist_genre)
                 (^. #genre_id)
                 (^. #artist_id)
-                ( filter_
-                    (\g -> g ^. #id `in_` genreIds)
-                    (all_ (DB.libraryDb ^. #genre))
-                )
+                (byKeys tbl ks)
                 (all_ (DB.libraryDb ^. #artist))
             pure (primaryKey g, a)
-      (ctx $>) <$> runGenreRepositoryIOC ($(runPgDebug') conn (runSelectReturningList q))
+      ctx $$> runGenreRepositoryIOC ($(runPgDebug') conn (runSelectReturningList q))
     L (GetGenreAlbums []) -> pure $ ctx $> []
     L (GetGenreAlbums ks) -> GenreRepositoryIOC $ do
       conn <- ask
       let q = select $ do
-            let genreIds = fmap (\(DB.GenreKey gk) -> val_ gk) ks
             (g, a) <-
               manyToMany_
                 (DB.libraryDb ^. #album_genre)
                 (^. #genre_id)
                 (^. #album_id)
-                ( filter_
-                    (\g -> g ^. #id `in_` genreIds)
-                    (all_ (DB.libraryDb ^. #genre))
-                )
+                (byKeys tbl ks)
                 (all_ (DB.libraryDb ^. #album))
             pure (primaryKey g, a)
-      (ctx $>) <$> runGenreRepositoryIOC ($(runPgDebug') conn (runSelectReturningList q))
+      ctx $$> runGenreRepositoryIOC ($(runPgDebug') conn (runSelectReturningList q))
     L (GetGenreTracks []) -> pure $ ctx $> []
     L (GetGenreTracks ks) -> GenreRepositoryIOC $ do
       conn <- ask
       let q = select $ do
-            let genreIds = fmap (\(DB.GenreKey gk) -> val_ gk) ks
             (g, t) <-
               manyToMany_
                 (DB.libraryDb ^. #track_genre)
                 (^. #genre_id)
                 (^. #track_id)
-                ( filter_
-                    (\g -> g ^. #id `in_` genreIds)
-                    (all_ (DB.libraryDb ^. #genre))
-                )
+                (byKeys tbl ks)
                 (all_ (DB.libraryDb ^. #track))
             pure (primaryKey g, t)
-      (ctx $>) <$> runGenreRepositoryIOC ($(runPgDebug') conn (runSelectReturningList q))
+      ctx $$> runGenreRepositoryIOC ($(runPgDebug') conn (runSelectReturningList q))
     L (InsertGenres []) -> pure $ ctx $> []
     L (InsertGenres gs) -> GenreRepositoryIOC $ do
       conn <- ask
@@ -153,12 +137,7 @@ instance
               (insertExpressions (newGenres <$> gs))
               (onConflict (conflictingFields (^. #name)) onConflictDoNothing)
               (Just primaryKey)
-      (ctx $>) <$> runGenreRepositoryIOC ($(runPgDebug') conn (runPgInsertReturningList q))
-    L (DeleteGenres []) -> ctx <$ pure ()
-    L (DeleteGenres ks) -> GenreRepositoryIOC $ do
-      conn <- ask
-      let q = delete (DB.libraryDb ^. #genre) (\g -> g ^. #id `in_` fmap (\(DB.GenreKey gk) -> val_ gk) ks)
-      (ctx $>) <$> runGenreRepositoryIOC ($(runPgDebug') conn (runDelete q))
+      ctx $$> runGenreRepositoryIOC ($(runPgDebug') conn (runPgInsertReturningList q))
     R other -> GenreRepositoryIOC (alg (runGenreRepositoryIOC . hdl) other ctx)
 
 newGenres :: NewGenre -> DB.GenreT (QExpr Postgres s)

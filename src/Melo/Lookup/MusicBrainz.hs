@@ -45,17 +45,21 @@ import Control.Lens hiding (from, lens)
 import Control.Monad
 import Data.Aeson as A
 import Data.Aeson.Casing (trainCase)
+import Data.ByteString.Char8 (ByteString)
 import Data.Default
 import Data.Functor
 import Data.Generics.Labels ()
+import Data.Hashable
 import Data.Kind (Type)
 import Data.Maybe
 import Data.String (IsString)
 import Data.Text (Text)
 import qualified Data.Text as T
+import Data.Typeable
 import Data.Vector (Vector)
 import qualified Data.Vector as V
 import GHC.Generics (Generic)
+import Melo.Common.Cache
 import Melo.Common.Http
 import Melo.Common.Logging
 import Melo.Common.RateLimit
@@ -74,13 +78,14 @@ import Prelude as P
 newtype MusicBrainzId = MusicBrainzId
   { mbid :: Text
   }
-  deriving (Show, Eq, Ord, Generic)
-  deriving newtype (FromJSON, ToJSON)
+  deriving (Show, Eq, Ord)
+  deriving newtype (FromJSON, ToJSON, Hashable)
 
 newtype ArtistSearch = ArtistSearch
   { artist :: Text
   }
-  deriving (Generic)
+  deriving stock (Generic)
+  deriving anyclass (Hashable)
 
 newtype ArtistSearchResult = ArtistSearchResult
   { artists :: Maybe [Artist]
@@ -105,7 +110,7 @@ data ReleaseSearch = ReleaseSearch
   { albumArtist :: Maybe Text,
     albumTitle :: Maybe Text
   }
-  deriving (Generic, Default)
+  deriving (Generic, Default, Hashable)
 
 newtype ReleaseSearchResult = ReleaseSearchResult
   { releases :: Maybe [Release]
@@ -155,7 +160,7 @@ data RecordingSearch = RecordingSearch
     artist :: Maybe Text,
     album :: Maybe Text
   }
-  deriving (Show, Generic)
+  deriving (Show, Generic, Hashable)
 
 newtype RecordingSearchResult = RecordingSearchResult
   { recordings :: Maybe [Recording]
@@ -175,7 +180,7 @@ data Recording = Recording
 instance FromJSON Recording where
   parseJSON = genericParseJSON mbAesonOptions
 
-data MusicBrainzService (m :: Type -> Type) k where
+data MusicBrainzService (m :: Type -> Type) a where
   SearchReleases :: ReleaseSearch -> MusicBrainzService m [Release]
   SearchReleaseGroups :: ReleaseSearch -> MusicBrainzService m [ReleaseGroup]
   SearchArtists :: ArtistSearch -> MusicBrainzService m [Artist]
@@ -186,6 +191,18 @@ data MusicBrainzService (m :: Type -> Type) k where
   GetArtistRecordings :: MusicBrainzId -> MusicBrainzService m [Recording]
   GetRelease :: MusicBrainzId -> MusicBrainzService m (Maybe Release)
   GetReleaseGroup :: MusicBrainzId -> MusicBrainzService m (Maybe ReleaseGroup)
+
+instance Hashable (MusicBrainzService m a) where
+  hashWithSalt s (SearchReleases r) = hashWithSalt s ("MusicBrainzService.SearchReleases" :: ByteString) + hashWithSalt s r
+  hashWithSalt s (SearchReleaseGroups r) = hashWithSalt s ("MusicBrainzService.SearchReleaseGroups" :: ByteString) + hashWithSalt s r
+  hashWithSalt s (SearchArtists a) = hashWithSalt s ("MusicBrainzService.SearchArtists" :: ByteString) + hashWithSalt s a
+  hashWithSalt s (SearchRecordings r) = hashWithSalt s ("MusicBrainzService.SearchRecordings" :: ByteString) + hashWithSalt s r
+  hashWithSalt s (GetArtist mbid) = hashWithSalt s ("MusicBrainzService.GetArtist" :: ByteString) + hashWithSalt s mbid
+  hashWithSalt s (GetArtistReleaseGroups mbid) = hashWithSalt s ("MusicBrainzService.GetArtistReleaseGroups" :: ByteString) + hashWithSalt s mbid
+  hashWithSalt s (GetArtistReleases mbid) = hashWithSalt s ("MusicBrainzService.GetArtistReleases" :: ByteString) + hashWithSalt s mbid
+  hashWithSalt s (GetArtistRecordings mbid) = hashWithSalt s ("MusicBrainzService.GetArtistRecordings" :: ByteString) + hashWithSalt s mbid
+  hashWithSalt s (GetRelease mbid) = hashWithSalt s ("MusicBrainzService.GetRelease" :: ByteString) + hashWithSalt s mbid
+  hashWithSalt s (GetReleaseGroup mbid) = hashWithSalt s ("MusicBrainzService.GetReleaseGroup" :: ByteString) + hashWithSalt s mbid
 
 searchReleases :: Has MusicBrainzService sig m => ReleaseSearch -> m [Release]
 searchReleases s = send (SearchReleases s)
@@ -252,7 +269,7 @@ getArtistByAlbum ::
 getArtistByAlbum Nothing Nothing = E.empty
 getArtistByAlbum albumTitle albumArtist = do
   release <- getReleaseByAlbum albumTitle albumArtist
-  let artists = release ^.. #artistCredit . traverse . traverse . #artist . #id . #mbid
+  let artists = release ^.. #artistCredit . traverse . traverse . #artist . #id . coerced
   getArtistByMusicBrainzId artists
 
 getArtistByTrackArtistName ::
@@ -389,13 +406,13 @@ instance
             pure $ ctx $> fromMaybe [] r
       GetArtist artistId -> do
         let opts = mbWreqDefaults
-        let url = baseUrl <> "/artist/" <> artistId ^. #mbid
+        let url = baseUrl <> "/artist/" <> artistId ^. coerced
         r <- getWithJson opts url <&> view Wr.responseBody
         pure $ ctx $> r
       GetArtistReleaseGroups artistId -> do
         let opts =
               mbWreqDefaults
-                & Wr.param "artist" .~ [artistId ^. #mbid]
+                & Wr.param "artist" .~ [artistId ^. coerced]
                 & Wr.param "limit" .~ ["100"]
         let url = baseUrl <> "/release-group/"
         r <- getWithJson opts url <&> view Wr.responseBody
@@ -403,7 +420,7 @@ instance
       GetArtistReleases artistId -> do
         let opts =
               mbWreqDefaults
-                & Wr.param "artist" .~ [artistId ^. #mbid]
+                & Wr.param "artist" .~ [artistId ^. coerced]
                 & Wr.param "limit" .~ ["100"]
         let url = baseUrl <> "/release/"
         r <- getWithJson opts url <&> view Wr.responseBody
@@ -411,24 +428,32 @@ instance
       GetArtistRecordings artistId -> do
         let opts =
               mbWreqDefaults
-                & Wr.param "artist" .~ [artistId ^. #mbid]
+                & Wr.param "artist" .~ [artistId ^. coerced]
                 & Wr.param "limit" .~ ["100"]
         let url = baseUrl <> "/recording/"
         r <- getWithJson opts url <&> view Wr.responseBody
         pure $ ctx $> r
       GetRelease releaseId -> do
         let opts = mbWreqDefaults
-        let url = baseUrl <> "/release/" <> releaseId ^. #mbid
+        let url = baseUrl <> "/release/" <> releaseId ^. coerced
         r <- getWithJson opts url <&> view Wr.responseBody
         pure $ ctx $> r
       GetReleaseGroup releaseGroupId -> do
         let opts = mbWreqDefaults
-        let url = baseUrl <> "/release-group/" <> releaseGroupId ^. #mbid
+        let url = baseUrl <> "/release-group/" <> releaseGroupId ^. coerced
         r <- getWithJson opts url <&> view Wr.responseBody
         pure $ ctx $> r
   alg hdl (R other) ctx =
     MusicBrainzServiceIOC $
       alg (runMusicBrainzServiceIOC . hdl) (R (R other)) ctx
+
+--newtype CachedMusicBrainzServiceIOC m a = CachedMusicBrainzServiceIOC
+--  { runCachedMusicBrainzServiceIOC :: HttpSessionIOC (RateLimitIOC m) a
+--  }
+--  deriving newtype (Applicative, Functor, Monad)
+--
+--instance Algebra (Cache :+: MusicBrainzService :+: sig) (CachedMusicBrainzServiceIOC m) where
+--  alg hdl sig ctx = undefined
 
 mbWreqDefaults :: Wr.Options
 mbWreqDefaults =

@@ -25,6 +25,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding
 import Data.Traversable
+import Data.Vector (fromList)
 import GHC.Generics (Generic, Generic1)
 import Melo.Common.Effect
 import Melo.Common.Logging
@@ -39,8 +40,6 @@ import qualified Melo.Lookup.MusicBrainz as MB
 
 data ArtistService :: Effect where
   ImportArtists :: [Source] -> ArtistService m [Artist]
-
---  SetArtists :: Metadata -> [Artist] -> ArtistService m Metadata
 
 importArtists :: Has ArtistService sig m => [Source] -> m [Artist]
 importArtists m = send (ImportArtists m)
@@ -67,15 +66,13 @@ instance
   -- TODO search Discogs (https://www.discogs.com/developers/#page:database)
   -- TODO search Spotify (https://developer.spotify.com/documentation/web-api/reference/search/search/)
   -- TODO search Rovi (http://developer.rovicorp.com/docs)
-  --      SetArtists m a -> do
-  --        let tag = lens m
-  --        let ts = m ^. #tags
-  --        let m' = m {tags = ts & tag M.trackArtistTag .~ (a <&> (^. #name))}
-  --        pure $ ctx $> m'
   alg hdl (R other) ctx = ArtistServiceIOC (alg (runArtistServiceIOC . hdl) other ctx)
 
 runArtistServiceIO :: ArtistServiceIOC m a -> m a
 runArtistServiceIO = runArtistServiceIOC
 
 setArtists :: Metadata -> [Artist] -> Metadata
-setArtists m a = undefined
+setArtists m a =
+  let tag = lens m
+      ts = m ^. #tags
+   in m {tags = ts & tag M.trackArtistTag .~ (fromList a <&> (^. #name))}

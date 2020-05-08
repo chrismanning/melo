@@ -26,15 +26,17 @@ import Database.PostgreSQL.Simple.FromField
 import Database.PostgreSQL.Simple.ToField
 import Database.PostgreSQL.Simple.TypeInfo.Static (interval)
 import Debug.Trace
-import GHC.Generics ()
 import GHC.OverloadedLabels ()
 
 data LibraryDb f = LibraryDb
   { source :: f (TableEntity SourceT),
     genre :: f (TableEntity GenreT),
     artist :: f (TableEntity ArtistT),
+    artist_stage :: f (TableEntity ArtistStageT),
     album :: f (TableEntity AlbumT),
+    album_stage :: f (TableEntity AlbumStageT),
     track :: f (TableEntity TrackT),
+    track_stage :: f (TableEntity TrackStageT),
     related_artist :: f (TableEntity RelatedArtistT),
     track_genre :: f (TableEntity TrackGenreT),
     album_genre :: f (TableEntity AlbumGenreT),
@@ -43,29 +45,36 @@ data LibraryDb f = LibraryDb
     album_artist_name :: f (TableEntity AlbumArtistNameT),
     artist_name :: f (TableEntity ArtistNameT)
   }
-  deriving (Generic, Database be)
+  deriving (Generic, Database Postgres)
 
-libraryDb :: DatabaseSettings be LibraryDb
+libraryDb :: DatabaseSettings Postgres LibraryDb
 libraryDb =
   defaultDbSettings
     `withDbModification` dbModification
       { album_artist_name =
           modifyTableFields
             ( tableModification
-                & (setField @"album_id" (AlbumKey $ fieldNamed "album_id"))
-                . (setField @"artist_name_id" (ArtistNameKey $ fieldNamed "artist_name_id"))
+                & setField @"album_id" (AlbumKey $ fieldNamed "album_id")
+                  . setField @"artist_name_id"
+                    (ArtistNameKey $ fieldNamed "artist_name_id")
             ),
         track =
           modifyTableFields
             ( tableModification
-                & (setField @"album_id" (AlbumKey $ fieldNamed "album_id"))
-                . (setField @"source_id" (SourceKey $ fieldNamed "source_id"))
+                & setField @"album_id" (AlbumKey $ fieldNamed "album_id")
+                  . setField @"source_id" (SourceKey $ fieldNamed "source_id")
+            ),
+        track_stage =
+          modifyTableFields
+            ( tableModification
+                & setField @"album_id" (AlbumKey $ fieldNamed "album_id")
+                  . setField @"source_id" (SourceKey $ fieldNamed "source_id")
             ),
         track_genre =
           modifyTableFields
             ( tableModification
-                & (setField @"track_id" (TrackKey $ fieldNamed "track_id"))
-                . (setField @"genre_id" (GenreKey $ fieldNamed "genre_id"))
+                & setField @"track_id" (TrackKey $ fieldNamed "track_id")
+                  . setField @"genre_id" (GenreKey $ fieldNamed "genre_id")
             )
       }
 
@@ -73,7 +82,6 @@ data GenreT (f :: Type -> Type) = Genre
   { id :: Columnar f UUID,
     name :: Columnar f Text,
     description :: Columnar f (Maybe Text)
-    -- , links :: Columnar f (Maybe (PgJSONB Links))
   }
   deriving (Generic, Beamable)
 
@@ -111,9 +119,10 @@ data ArtistT (f :: Type -> Type) = Artist
   deriving (Generic, Beamable)
 
 instance Table ArtistT where
-  data PrimaryKey ArtistT f
+  newtype PrimaryKey ArtistT f
     = ArtistKey (Columnar f UUID)
-    deriving (Generic, Beamable)
+    deriving (Generic)
+    deriving anyclass (Beamable)
 
   primaryKey = ArtistKey . view #id
 
@@ -125,13 +134,50 @@ deriving instance Show Artist
 
 deriving instance Eq Artist
 
-deriving instance Show ArtistKey
+deriving instance (Show (Columnar f UUID)) => Show (PrimaryKey ArtistT (f :: Type -> Type))
 
-deriving instance Eq ArtistKey
+deriving instance (Eq (Columnar f UUID)) => Eq (PrimaryKey ArtistT (f :: Type -> Type))
 
 deriving instance Ord ArtistKey
 
-deriving instance Hashable ArtistKey
+deriving newtype instance Hashable ArtistKey
+
+data ArtistStageT (f :: Type -> Type) = ArtistStage
+  { id :: Columnar f UUID,
+    name :: Columnar f (Maybe Text),
+    disambiguation :: Columnar f (Maybe Text),
+    short_bio :: Columnar f (Maybe Text),
+    bio :: Columnar f (Maybe Text),
+    country :: Columnar f (Maybe Text),
+    ref_artist_id :: PrimaryKey ArtistT (Nullable f),
+    ref_album_id :: PrimaryKey AlbumT (Nullable f),
+    ref_track_id :: PrimaryKey TrackT (Nullable f)
+  }
+  deriving (Generic, Beamable)
+
+instance Table ArtistStageT where
+  newtype PrimaryKey ArtistStageT f
+    = ArtistStageKey (Columnar f UUID)
+    deriving (Generic)
+    deriving anyclass (Beamable)
+
+  primaryKey = ArtistStageKey . view #id
+
+type ArtistStage = ArtistStageT Identity
+
+type ArtistStageKey = PrimaryKey ArtistStageT Identity
+
+deriving instance Show ArtistStage
+
+deriving instance Eq ArtistStage
+
+deriving instance (Show (Columnar f UUID)) => Show (PrimaryKey ArtistStageT (f :: Type -> Type))
+
+deriving instance (Eq (Columnar f UUID)) => Eq (PrimaryKey ArtistStageT (f :: Type -> Type))
+
+deriving instance Ord ArtistStageKey
+
+deriving newtype instance Hashable ArtistStageKey
 
 data ArtistNameT (f :: Type -> Type) = ArtistName
   { artist_name_id :: Columnar f UUID,
@@ -141,9 +187,10 @@ data ArtistNameT (f :: Type -> Type) = ArtistName
   deriving (Generic, Beamable)
 
 instance Table ArtistNameT where
-  data PrimaryKey ArtistNameT f
+  newtype PrimaryKey ArtistNameT f
     = ArtistNameKey (Columnar f UUID)
-    deriving (Generic, Beamable)
+    deriving (Generic)
+    deriving anyclass (Beamable)
 
   primaryKey = ArtistNameKey <$> view #artist_name_id
 
@@ -161,7 +208,7 @@ deriving instance Eq ArtistNameKey
 
 deriving instance Ord ArtistNameKey
 
-deriving instance Hashable ArtistNameKey
+deriving newtype instance Hashable ArtistNameKey
 
 data RelatedArtistT (f :: Type -> Type) = RelatedArtist
   { artist_id :: PrimaryKey ArtistT f,
@@ -202,9 +249,10 @@ data AlbumT (f :: Type -> Type) = Album
   deriving (Generic, Beamable)
 
 instance Table AlbumT where
-  data PrimaryKey AlbumT f
+  newtype PrimaryKey AlbumT f
     = AlbumKey (Columnar f UUID)
-    deriving (Generic, Beamable)
+    deriving (Generic)
+    deriving anyclass (Beamable)
 
   primaryKey = AlbumKey . view #id
 
@@ -222,7 +270,42 @@ deriving instance (Eq (Columnar f UUID)) => Eq (PrimaryKey AlbumT (f :: Type -> 
 
 deriving instance Ord AlbumKey
 
-deriving instance Hashable AlbumKey
+deriving newtype instance Hashable AlbumKey
+
+data AlbumStageT (f :: Type -> Type) = AlbumStage
+  { id :: Columnar f UUID,
+    title :: Columnar f Text,
+    comment :: Columnar f (Maybe Text),
+    year_released :: Columnar f (Maybe Text),
+    length :: Columnar f Interval,
+    ref_artist_id :: PrimaryKey ArtistT (Nullable f),
+    ref_album_id :: PrimaryKey AlbumT (Nullable f),
+    ref_track_id :: PrimaryKey TrackT (Nullable f)
+  }
+  deriving (Generic, Beamable)
+
+instance Table AlbumStageT where
+  data PrimaryKey AlbumStageT f
+    = AlbumStageKey (Columnar f UUID)
+    deriving (Generic, Beamable)
+
+  primaryKey = AlbumStageKey . view #id
+
+type AlbumStage = AlbumStageT Identity
+
+type AlbumStageKey = PrimaryKey AlbumStageT Identity
+
+deriving instance Show AlbumStage
+
+deriving instance Eq AlbumStage
+
+deriving instance (Show (Columnar f UUID)) => Show (PrimaryKey AlbumStageT (f :: Type -> Type))
+
+deriving instance (Eq (Columnar f UUID)) => Eq (PrimaryKey AlbumStageT (f :: Type -> Type))
+
+deriving instance Ord AlbumStageKey
+
+deriving instance Hashable AlbumStageKey
 
 data AlbumArtistNameT (f :: Type -> Type) = AlbumArtistName
   { album_id :: PrimaryKey AlbumT f,
@@ -253,7 +336,7 @@ deriving instance Ord AlbumArtistNameKey
 
 deriving instance Hashable AlbumArtistNameKey
 
-albumArtistNameRelationship :: ManyToMany be LibraryDb ArtistNameT AlbumT
+albumArtistNameRelationship :: ManyToMany Postgres LibraryDb ArtistNameT AlbumT
 albumArtistNameRelationship =
   manyToMany_ (libraryDb ^. #album_artist_name) (^. #artist_name_id) (^. #album_id)
 
@@ -270,9 +353,10 @@ data TrackT (f :: Type -> Type) = Track
   deriving (Generic, Beamable)
 
 instance Table TrackT where
-  data PrimaryKey TrackT f
+  newtype PrimaryKey TrackT f
     = TrackKey (Columnar f UUID)
-    deriving (Generic, Beamable)
+    deriving (Generic)
+    deriving anyclass (Beamable)
 
   primaryKey = TrackKey . view #id
 
@@ -284,13 +368,52 @@ deriving instance Show Track
 
 deriving instance Eq Track
 
-deriving instance Show TrackKey
+deriving instance (Show (Columnar f UUID)) => Show (PrimaryKey TrackT (f :: Type -> Type))
 
-deriving instance Eq TrackKey
+deriving instance (Eq (Columnar f UUID)) => Eq (PrimaryKey TrackT (f :: Type -> Type))
 
 deriving instance Ord TrackKey
 
-deriving instance Hashable TrackKey
+deriving newtype instance Hashable TrackKey
+
+data TrackStageT (f :: Type -> Type) = TrackStage
+  { id :: Columnar f UUID,
+    title :: Columnar f (Maybe Text),
+    album_id :: PrimaryKey AlbumT (Nullable f),
+    track_number :: Columnar f (Maybe Int),
+    disc_number :: Columnar f (Maybe Int),
+    comment :: Columnar f (Maybe Text),
+    source_id :: PrimaryKey SourceT (Nullable f),
+    length :: Columnar f (Maybe Interval),
+    ref_artist_id :: PrimaryKey ArtistT (Nullable f),
+    ref_album_id :: PrimaryKey AlbumT (Nullable f),
+    ref_track_id :: PrimaryKey TrackT (Nullable f)
+  }
+  deriving (Generic, Beamable)
+
+instance Table TrackStageT where
+  newtype PrimaryKey TrackStageT f
+    = TrackStageKey (Columnar f UUID)
+    deriving (Generic)
+    deriving anyclass (Beamable)
+
+  primaryKey = TrackStageKey . view #id
+
+type TrackStage = TrackStageT Identity
+
+type TrackStageKey = PrimaryKey TrackStageT Identity
+
+deriving instance Show TrackStage
+
+deriving instance Eq TrackStage
+
+deriving instance (Show (Columnar f UUID)) => Show (PrimaryKey TrackStageT (f :: Type -> Type))
+
+deriving instance (Eq (Columnar f UUID)) => Eq (PrimaryKey TrackStageT (f :: Type -> Type))
+
+deriving instance Ord TrackStageKey
+
+deriving newtype instance Hashable TrackStageKey
 
 data SourceT (f :: Type -> Type) = Source
   { id :: Columnar f UUID,
@@ -306,9 +429,10 @@ data SourceT (f :: Type -> Type) = Source
   deriving (Generic, Beamable)
 
 instance Table SourceT where
-  data PrimaryKey SourceT f
+  newtype PrimaryKey SourceT f
     = SourceKey (Columnar f UUID)
-    deriving (Generic, Beamable)
+    deriving (Generic)
+    deriving anyclass (Beamable)
 
   primaryKey = SourceKey . view #id
 
@@ -324,7 +448,7 @@ deriving instance (Eq (Columnar f UUID)) => Eq (PrimaryKey SourceT (f :: Type ->
 
 deriving instance Ord SourceKey
 
-deriving instance Hashable SourceKey
+deriving newtype instance Hashable SourceKey
 
 data ArtistGenreT (f :: Type -> Type) = ArtistGenre
   { artist_id :: PrimaryKey ArtistT f,

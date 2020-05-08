@@ -167,7 +167,8 @@ data Source = Source
     metadata :: Metadata,
     source :: URI,
     range :: Maybe AudioRange
-  } deriving (Generic)
+  }
+  deriving (Generic)
 
 instance TryFrom DB.Source Source where
   tryFrom s = do

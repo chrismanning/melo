@@ -70,7 +70,7 @@ instance
   where
   alg _ (L (ImportTracks mss)) ctx = do
     let ts = fmap newTracks mss
-    tracks <- insertTracks ts >>= getTracksById
+    tracks <- insertTracks ts >>= getTracks
     pure (ctx $> fmap from tracks)
   alg hdl (R other) ctx = TrackServiceIOC (alg (runTrackServiceIOC . hdl) other ctx)
 
