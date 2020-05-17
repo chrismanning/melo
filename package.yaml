@@ -54,6 +54,7 @@ library:
   - exceptions
   - extra
   - filepath
+  - fraxl
   - fused-effects
   - generic-aeson
   - generic-lens
@@ -69,6 +70,7 @@ library:
   - log-warper
   - monad-control
   - monad-logger
+  - morpheus-graphql
   - mtl
   - network-uri
   - network-uri-json
@@ -115,6 +117,17 @@ executables:
     - resource-pool
     - text
     - time
+  melo-api:
+    source-dirs: app/api
+    main: Main.hs
+    dependencies:
+      - melo
+      - melo-format
+      - bytestring
+      - harg
+      - postgresql-simple
+      - resource-pool
+      - scotty
 
 tests:
   melo-test:

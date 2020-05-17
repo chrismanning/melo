@@ -31,7 +31,7 @@ import Melo.Library.Album.Repo
 --import Melo.Library.Album.Service
 import Melo.Library.Artist.Repo
 import Melo.Library.Artist.Service
-import qualified Melo.Library.Database.Model as DB
+import qualified Melo.Database.Model as DB
 import Melo.Library.Genre.Repo
 --import Melo.Library.Genre.Service
 import Melo.Library.Source.Service
@@ -83,7 +83,7 @@ instance
               mfs <- catMaybes <$> mapM openMetadataFile files
               $(logDebug) $ "Opened " <> show mfs
               srcs <- importSources (FileSource <$> mfs)
-              artists <- importArtists srcs
+              let artists = [] -- <- importArtists srcs
               let albums = [] --importAlbums metadataSources
               let tracks = [] --importTracks metadataSources
               pure

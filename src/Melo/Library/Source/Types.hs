@@ -28,7 +28,7 @@ import Melo.Common.Metadata
 import Melo.Format.Info
 import Melo.Format.Internal.Tag
 import Melo.Format.Metadata
-import qualified Melo.Library.Database.Model as DB
+import qualified Melo.Database.Model as DB
 import Network.URI
 import Numeric.Natural
 

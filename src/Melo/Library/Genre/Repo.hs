@@ -12,8 +12,8 @@ import Database.Beam
 import Database.Beam.Postgres
 import Database.Beam.Postgres.Full
 import Melo.Common.Effect
-import qualified Melo.Library.Database.Model as DB
-import Melo.Library.Database.Query
+import qualified Melo.Database.Model as DB
+import Melo.Database.Query
 
 data NewGenre = NewGenre
   { name :: Text,
@@ -64,8 +64,8 @@ newtype GenreRepositoryIOC m a = GenreRepositoryIOC
   }
   deriving newtype (Applicative, Functor, Monad)
 
-tbl :: DatabaseEntity Postgres DB.LibraryDb (TableEntity DB.GenreT)
-tbl = DB.libraryDb ^. #genre
+tbl :: DatabaseEntity Postgres DB.MeloDb (TableEntity DB.GenreT)
+tbl = DB.meloDb ^. #genre
 
 instance
   (Has (Lift IO) sig m, Has (Reader Connection) sig m, Algebra sig m) =>
@@ -85,7 +85,7 @@ instance
     L (SearchGenres t) -> GenreRepositoryIOC $ do
       conn <- ask
       let q = select $ do
-            genre <- all_ (DB.libraryDb ^. #genre)
+            genre <- all_ (DB.meloDb ^. #genre)
             guard_ (toTsVector Nothing (genre ^. #name) @@ toTsQuery Nothing (val_ (t <> "|" <> t <> ":*")))
             pure genre
       ctx $$> $(runPgDebug') conn (runSelectReturningList q)
@@ -95,11 +95,11 @@ instance
       let q = select $ do
             (g, a) <-
               manyToMany_
-                (DB.libraryDb ^. #artist_genre)
+                (DB.meloDb ^. #artist_genre)
                 (^. #genre_id)
                 (^. #artist_id)
                 (byKeys tbl ks)
-                (all_ (DB.libraryDb ^. #artist))
+                (all_ (DB.meloDb ^. #artist))
             pure (primaryKey g, a)
       ctx $$> runGenreRepositoryIOC ($(runPgDebug') conn (runSelectReturningList q))
     L (GetGenreAlbums []) -> pure $ ctx $> []
@@ -108,11 +108,11 @@ instance
       let q = select $ do
             (g, a) <-
               manyToMany_
-                (DB.libraryDb ^. #album_genre)
+                (DB.meloDb ^. #album_genre)
                 (^. #genre_id)
                 (^. #album_id)
                 (byKeys tbl ks)
-                (all_ (DB.libraryDb ^. #album))
+                (all_ (DB.meloDb ^. #album))
             pure (primaryKey g, a)
       ctx $$> runGenreRepositoryIOC ($(runPgDebug') conn (runSelectReturningList q))
     L (GetGenreTracks []) -> pure $ ctx $> []
@@ -121,11 +121,11 @@ instance
       let q = select $ do
             (g, t) <-
               manyToMany_
-                (DB.libraryDb ^. #track_genre)
+                (DB.meloDb ^. #track_genre)
                 (^. #genre_id)
                 (^. #track_id)
                 (byKeys tbl ks)
-                (all_ (DB.libraryDb ^. #track))
+                (all_ (DB.meloDb ^. #track))
             pure (primaryKey g, t)
       ctx $$> runGenreRepositoryIOC ($(runPgDebug') conn (runSelectReturningList q))
     L (InsertGenres []) -> pure $ ctx $> []
@@ -133,7 +133,7 @@ instance
       conn <- ask
       let q =
             insertReturning
-              (DB.libraryDb ^. #genre)
+              (DB.meloDb ^. #genre)
               (insertExpressions (newGenres <$> gs))
               (onConflict (conflictingFields (^. #name)) onConflictDoNothing)
               (Just primaryKey)

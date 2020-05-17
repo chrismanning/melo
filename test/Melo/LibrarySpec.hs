@@ -34,7 +34,7 @@ import qualified Melo.API as API
 import qualified Melo.GraphQL.Resolve as API
 import Melo.Library
 import qualified Melo.Library.API as API
-import Melo.Library.Database.Query
+import Melo.Database.Query
 import Melo.Library.Repo.Haxl as API
 import System.IO
 import Test.Hspec
@@ -71,7 +71,7 @@ spec = do
     it "" pending
     -- it "generates query" $ do
     --   dumpPgSqlSelect $
-    --     (albumArtistAliasRelationship (all_ $ libraryDb ^. #artistAliases) (all_ $ libraryDb ^. #albums))
+    --     (albumArtistAliasRelationship (all_ $ meloDb ^. #artistAliases) (all_ $ meloDb ^. #albums))
     it "finds genre + track" $ do
       let connInfo =
             defaultConnectInfo

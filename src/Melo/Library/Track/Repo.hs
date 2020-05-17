@@ -14,8 +14,8 @@ import Database.Beam.Postgres
 import Database.Beam.Postgres.Full
 import Melo.Common.Effect
 import Melo.Common.Logging
-import qualified Melo.Library.Database.Model as DB
-import Melo.Library.Database.Query
+import qualified Melo.Database.Model as DB
+import Melo.Database.Query
 
 data NewTrack = NewTrack
   { title :: Text,
@@ -71,8 +71,8 @@ newtype TrackRepositoryIOC m a = TrackRepositoryIOC
   }
   deriving newtype (Applicative, Functor, Monad)
 
-tbl :: DatabaseEntity Postgres DB.LibraryDb (TableEntity DB.TrackT)
-tbl = DB.libraryDb ^. #track
+tbl :: DatabaseEntity Postgres DB.MeloDb (TableEntity DB.TrackT)
+tbl = DB.meloDb ^. #track
 
 instance
   ( Has (Lift IO) sig m,

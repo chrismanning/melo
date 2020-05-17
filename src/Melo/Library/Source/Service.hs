@@ -34,18 +34,22 @@ import Melo.Library.Album.Repo
 import Melo.Library.Album.Service
 import Melo.Library.Artist.Repo
 import Melo.Library.Artist.Service
-import qualified Melo.Library.Database.Model as DB
-import Melo.Library.Database.Query
+import qualified Melo.Database.Model as DB
+import Melo.Database.Query
 import qualified Melo.Library.Source.Repo as Repo
 import Melo.Library.Source.Types
 import Melo.Library.Track.Service
 import Network.URI
 import System.Directory
 
+getAllSources :: Has SourceService sig m => m [Source]
+getAllSources = send GetAllSources
+
 importSources :: Has SourceService sig m => [NewImportSource] -> m [Source]
 importSources ss = send (ImportSources ss)
 
 data SourceService :: Effect where
+  GetAllSources :: SourceService m [Source]
   ImportSources :: [NewImportSource] -> SourceService m [Source]
   UpdateSources :: [Source] -> SourceService m ()
   DeleteSources :: [Source] -> SourceService m ()
@@ -66,6 +70,9 @@ instance
   Algebra (SourceService :+: sig) (SourceServiceIOC m)
   where
   alg _ (L sig) ctx = case sig of
+    GetAllSources -> do
+      srcs <- Repo.getAllSources
+      pure (ctx $> mapMaybe tryFrom srcs)
     ImportSources ss -> do
       $(logDebug) $ "Importing sources: " <> show ss
       let metadataSources :: [MetadataImportSource] = mapMaybe tryFrom ss

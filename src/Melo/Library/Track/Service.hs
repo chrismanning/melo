@@ -32,8 +32,8 @@ import Melo.Library.Album.Repo
 import Melo.Library.Album.Service
 import Melo.Library.Artist.Repo
 import Melo.Library.Artist.Service
-import qualified Melo.Library.Database.Model as DB
-import Melo.Library.Database.Query
+import qualified Melo.Database.Model as DB
+import Melo.Database.Query
 import Melo.Library.Source.Types
 import Melo.Library.Track.Repo
 import Network.URI

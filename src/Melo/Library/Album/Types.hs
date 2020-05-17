@@ -7,7 +7,7 @@ import Data.Time (NominalDiffTime)
 import Database.Beam.Postgres (Postgres)
 import Database.Beam.Query
 import GHC.Generics
-import qualified Melo.Library.Database.Model as DB
+import qualified Melo.Database.Model as DB
 import qualified Melo.Lookup.MusicBrainz as MB
 
 data Album = Album

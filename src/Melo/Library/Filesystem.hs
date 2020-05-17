@@ -46,9 +46,10 @@ import Melo.Format.Vorbis
 import Melo.Library.Album.Repo
 import Melo.Library.Album.Service
 import Melo.Library.Artist.Repo
+import Melo.Library.Artist.Staging.Repo
 import Melo.Library.Artist.Service
-import Melo.Library.Database.Model as BM
-import Melo.Library.Database.Transaction as Tr
+import Melo.Database.Model as BM
+import Melo.Database.Transaction as Tr
 import Melo.Library.Genre.Repo
 import Melo.Library.Service
 import Melo.Library.Source.Repo
@@ -77,6 +78,7 @@ type Importer sig m =
     Has AlbumRepository sig m,
     Has AlbumService sig m,
     Has ArtistRepository sig m,
+    Has ArtistStagingRepository sig m,
     Has ArtistService sig m,
     Has GenreRepository sig m,
     Has TrackRepository sig m,
@@ -92,6 +94,7 @@ runImporter sess =
     . runAlbumRepositoryIO
     . runAlbumServiceIO
     . runArtistRepositoryIO
+    . runArtistStagingRepositoryIO
     . runArtistServiceIO
     . runTrackRepositoryIO
     . runTrackServiceIO

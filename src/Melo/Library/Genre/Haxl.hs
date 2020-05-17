@@ -13,7 +13,7 @@ import Database.Beam.Postgres (Connection)
 import GHC.Generics (Generic)
 import Haxl.Core
 import Melo.Common.Haxl
-import qualified Melo.Library.Database.Model as DB
+import qualified Melo.Database.Model as DB
 import qualified Melo.Library.Genre.Repo as Repo
 
 getAllGenres :: Haxl [DB.Genre]

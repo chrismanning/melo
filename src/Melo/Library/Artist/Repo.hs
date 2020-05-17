@@ -14,8 +14,8 @@ import Database.Beam.Postgres as Pg
 import Database.Beam.Postgres.Full as Pg
 import Melo.Common.Effect
 import Melo.Library.Artist.Types
-import qualified Melo.Library.Database.Model as DB
-import Melo.Library.Database.Query
+import qualified Melo.Database.Model as DB
+import Melo.Database.Query
 
 data ArtistRepository :: Effect where
   GetAllArtists :: ArtistRepository m [DB.Artist]
@@ -52,8 +52,8 @@ newtype ArtistRepositoryIOC m a = ArtistRepositoryIOC
   }
   deriving newtype (Applicative, Functor, Monad)
 
-tbl :: DatabaseEntity Postgres DB.LibraryDb (TableEntity DB.ArtistT)
-tbl = DB.libraryDb ^. #artist
+tbl :: DatabaseEntity Postgres DB.MeloDb (TableEntity DB.ArtistT)
+tbl = DB.meloDb ^. #artist
 
 instance
   ( Has (Lift IO) sig m,
@@ -74,7 +74,7 @@ instance
       let q =
             runPgInsertReturningList $
               insertReturning
-                (DB.libraryDb ^. #artist)
+                (DB.meloDb ^. #artist)
                 ( insertExpressions
                     (fmap from as)
                 )

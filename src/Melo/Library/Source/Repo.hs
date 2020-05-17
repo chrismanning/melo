@@ -14,8 +14,8 @@ import Database.Beam.Backend.SQL.BeamExtensions as B
 import Database.Beam.Postgres as Pg
 import Database.Beam.Postgres.Full as Pg
 import Melo.Common.Effect
-import qualified Melo.Library.Database.Model as DB
-import Melo.Library.Database.Query
+import qualified Melo.Database.Model as DB
+import Melo.Database.Query
 import Melo.Library.Source.Types
 import Network.URI
 
@@ -46,8 +46,8 @@ newtype SourceRepositoryIOC m a = SourceRepositoryIOC
   }
   deriving newtype (Functor, Applicative, Monad)
 
-tbl :: DatabaseEntity Postgres DB.LibraryDb (TableEntity DB.SourceT)
-tbl = DB.libraryDb ^. #source
+tbl :: DatabaseEntity Postgres DB.MeloDb (TableEntity DB.SourceT)
+tbl = DB.meloDb ^. #source
 
 instance
   (Has (Lift IO) sig m, Has (Reader Connection) sig m) =>
@@ -59,7 +59,7 @@ instance
     L (GetSourcesByUri []) -> pure $ ctx $> []
     L (GetSourcesByUri fs) -> SourceRepositoryIOC $ do
       conn <- ask
-      let q = filter_ (\t -> t ^. #source_uri `in_` fmap (val_ . T.pack . show) fs) (all_ $ DB.libraryDb ^. #source)
+      let q = filter_ (\t -> t ^. #source_uri `in_` fmap (val_ . T.pack . show) fs) (all_ $ DB.meloDb ^. #source)
       r <- runSourceRepositoryIOC ($(runPgDebug') conn (runSelectReturningList (select q)))
       pure $ ctx $> r
     L (InsertSources []) -> pure $ ctx $> []

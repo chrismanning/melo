@@ -1,4 +1,4 @@
-module Melo.Library.Database.Query where
+module Melo.Database.Query where
 
 import Control.Effect.Lift
 import Control.Effect.Reader
@@ -7,17 +7,17 @@ import Database.Beam
 import Database.Beam.Postgres
 import qualified Language.Haskell.TH.Syntax as TH (Exp, Q)
 import Melo.Common.Logging
-import Melo.Library.Database.Model
+import Melo.Database.Model
 
-type QL = Q Postgres LibraryDb
+type QL = Q Postgres MeloDb
 
 type QPgExpr = QExpr Postgres
 
 --type QPgAgg = QAgg Postgres
 
-type ReusableQL = ReusableQ Postgres LibraryDb
+type ReusableQL = ReusableQ Postgres MeloDb
 
-type WithL = With Postgres LibraryDb
+type WithL = With Postgres MeloDb
 
 runPgDebug ::
   Has (Lift IO) sig m =>
@@ -33,16 +33,20 @@ runPgDebug' =
 getAll ::
   ( Has (Reader Connection) sig m,
     Has (Lift IO) sig m,
-    Database Postgres db,
     Table tbl,
     FromBackendRow Postgres (tbl Identity)
   ) =>
-  DatabaseEntity Postgres db (TableEntity tbl) ->
+  DatabaseEntity Postgres MeloDb (TableEntity tbl) ->
   m [tbl Identity]
 getAll tbl = do
   conn <- ask
-  let q = select (all_ tbl)
-  runPgDebug conn (runSelectReturningList q)
+  runPgDebug conn (runSelectReturningList (selectAll tbl))
+
+selectAll ::
+  Table tbl =>
+  DatabaseEntity Postgres MeloDb (TableEntity tbl) ->
+  SqlSelect Postgres (tbl Identity)
+selectAll = select . all_
 
 getByKeys ::
   ( Has (Reader Connection) sig m,
@@ -51,7 +55,7 @@ getByKeys ::
     SqlValableTable Postgres (PrimaryKey tbl),
     FromBackendRow Postgres (tbl Identity)
   ) =>
-  DatabaseEntity Postgres LibraryDb (TableEntity tbl) ->
+  DatabaseEntity Postgres MeloDb (TableEntity tbl) ->
   [PrimaryKey tbl Identity] ->
   m [tbl Identity]
 getByKeys _ [] = pure []
@@ -64,7 +68,7 @@ byKeys ::
   ( Table tbl,
     SqlValableTable Postgres (PrimaryKey tbl)
   ) =>
-  DatabaseEntity Postgres LibraryDb (TableEntity tbl) ->
+  DatabaseEntity Postgres MeloDb (TableEntity tbl) ->
   [PrimaryKey tbl Identity] ->
   QL s (tbl (QPgExpr s))
 byKeys tbl ks = filter_ (\g -> primaryKey g `in_` (val_ <$> ks)) (all_ tbl)

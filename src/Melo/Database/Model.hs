@@ -1,7 +1,7 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Melo.Library.Database.Model where
+module Melo.Database.Model where
 
 import Control.Lens as L
 import Data.Aeson
@@ -28,7 +28,7 @@ import Database.PostgreSQL.Simple.TypeInfo.Static (interval)
 import Debug.Trace
 import GHC.OverloadedLabels ()
 
-data LibraryDb f = LibraryDb
+data MeloDb f = MeloDb
   { source :: f (TableEntity SourceT),
     genre :: f (TableEntity GenreT),
     artist :: f (TableEntity ArtistT),
@@ -47,8 +47,8 @@ data LibraryDb f = LibraryDb
   }
   deriving (Generic, Database Postgres)
 
-libraryDb :: DatabaseSettings Postgres LibraryDb
-libraryDb =
+meloDb :: DatabaseSettings Postgres MeloDb
+meloDb =
   defaultDbSettings
     `withDbModification` dbModification
       { album_artist_name =
@@ -144,7 +144,7 @@ deriving newtype instance Hashable ArtistKey
 
 data ArtistStageT (f :: Type -> Type) = ArtistStage
   { id :: Columnar f UUID,
-    name :: Columnar f (Maybe Text),
+    name :: Columnar f Text,
     disambiguation :: Columnar f (Maybe Text),
     short_bio :: Columnar f (Maybe Text),
     bio :: Columnar f (Maybe Text),
@@ -336,9 +336,9 @@ deriving instance Ord AlbumArtistNameKey
 
 deriving instance Hashable AlbumArtistNameKey
 
-albumArtistNameRelationship :: ManyToMany Postgres LibraryDb ArtistNameT AlbumT
+albumArtistNameRelationship :: ManyToMany Postgres MeloDb ArtistNameT AlbumT
 albumArtistNameRelationship =
-  manyToMany_ (libraryDb ^. #album_artist_name) (^. #artist_name_id) (^. #album_id)
+  manyToMany_ (meloDb ^. #album_artist_name) (^. #artist_name_id) (^. #album_id)
 
 data TrackT (f :: Type -> Type) = Track
   { id :: Columnar f UUID,

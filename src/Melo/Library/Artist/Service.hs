@@ -26,22 +26,23 @@ import qualified Data.Text as T
 import Data.Text.Encoding
 import Data.Traversable
 import Data.Vector (fromList)
-import GHC.Generics (Generic, Generic1)
 import Melo.Common.Effect
 import Melo.Common.Logging
-import Melo.Format.Internal.Metadata
 import qualified Melo.Format.Mapping as M
 import Melo.Format.Metadata
 import Melo.Library.Artist.Repo
+import Melo.Library.Artist.Staging.Repo
 import Melo.Library.Artist.Types
-import qualified Melo.Library.Database.Model as DB
+import qualified Melo.Database.Model as DB
 import Melo.Library.Source.Types
 import qualified Melo.Lookup.MusicBrainz as MB
 
 data ArtistService :: Effect where
-  ImportArtists :: [Source] -> ArtistService m [Artist]
+  ImportArtists :: [Source] -> ArtistService m [StagedArtist]
+  ReviewStagedArtists :: (DB.ArtistStage -> m (Reviewed DB.ArtistStage)) -> ArtistService m [Artist]
+  ReviewStagedArtistsByKeys :: [DB.ArtistStageKey] -> (DB.ArtistStage -> m (Reviewed DB.ArtistStage)) -> ArtistService m [Artist]
 
-importArtists :: Has ArtistService sig m => [Source] -> m [Artist]
+importArtists :: Has ArtistService sig m => [Source] -> m [StagedArtist]
 importArtists m = send (ImportArtists m)
 
 newtype ArtistServiceIOC m a = ArtistServiceIOC
@@ -52,6 +53,7 @@ newtype ArtistServiceIOC m a = ArtistServiceIOC
 instance
   ( Has MB.MusicBrainzService sig m,
     Has ArtistRepository sig m,
+    Has ArtistStagingRepository sig m,
     Has Logging sig m
   ) =>
   Algebra (ArtistService :+: sig) (ArtistServiceIOC m)
@@ -61,7 +63,7 @@ instance
       ImportArtists ms -> do
         mbArtists <- fold <$> mapM (MB.getArtistFromMetadata . (^. #metadata)) ms
         $(logDebugShow) mbArtists
-        artists <- insertArtists (fmap from mbArtists) >>= getArtists
+        artists <- insertStagedArtists (fmap from mbArtists) >>= getStagedArtists
         pure $ ctx $> fmap from artists
   -- TODO search Discogs (https://www.discogs.com/developers/#page:database)
   -- TODO search Spotify (https://developer.spotify.com/documentation/web-api/reference/search/search/)

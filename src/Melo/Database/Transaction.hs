@@ -1,6 +1,6 @@
 {-# LANGUAGE UndecidableInstances #-}
 
-module Melo.Library.Database.Transaction where
+module Melo.Database.Transaction where
 
 import Control.Algebra
 import Control.Carrier.Lift

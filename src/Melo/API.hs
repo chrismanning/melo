@@ -2,27 +2,42 @@
 
 module Melo.API where
 
+import Control.Algebra
+import Control.Carrier.Reader
+import Data.ByteString.Lazy.Char8
 import Data.Generic.HKD
+import Data.Morpheus
+import Data.Morpheus.Document
+import Data.Morpheus.Kind
+import Data.Morpheus.Types
+import Data.Typeable
 import GHC.Generics
-import Melo.Common.Haxl
-import Melo.GraphQL.Introspect
-import Melo.GraphQL.Resolve
 import Melo.Library.API
+import Melo.Library.Source.Repo
+import Database.PostgreSQL.Simple (Connection)
+import Data.Pool
 
-data Query = Query
-  { library :: Library
-  }
-  deriving (Generic)
+data Query m = Query {
+  library :: m (Library m)
+} deriving (Generic, GQLType)
 
-instance GraphQLType Query where
-  type TypeKind Query = 'ObjectKind
+rootResolver :: ResolverE sig m => GQLRootResolver m () Query Undefined Undefined
+rootResolver =
+  GQLRootResolver
+    { queryResolver = Query {library = resolveLibrary}
+    , mutationResolver = Undefined
+    , subscriptionResolver = Undefined
+    }
 
-data QueryCtx = QueryCtx
+gqlApi :: forall sig m. (ResolverE sig m, Typeable m) => ByteString -> m ByteString
+gqlApi = interpreter (rootResolver @sig @m)
 
-instance ObjectResolver Haxl Query where
-  type ResolverContext Query = QueryCtx
+gqlApiIO :: Pool Connection -> ByteString -> IO ByteString
+gqlApiIO pool r =
+  withResource pool $ \conn ->
+    runResolverE conn (gqlApi r)
 
-instance GenericResolver Haxl Query where
-  genericResolver =
-    let g = build @Query
-     in g (Resolve $ \_ _ fs -> resolveFieldValues LibraryCtx fs)
+type ResolverE sig m = (Has SourceRepository sig m)
+
+runResolverE conn = runReader conn
+  . runSourceRepositoryIO
