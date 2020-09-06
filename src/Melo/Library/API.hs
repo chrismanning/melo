@@ -1,32 +1,115 @@
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE UndecidableInstances #-}
+
 module Melo.Library.API where
 
+import Basement.From
 import Control.Algebra
-import Control.Lens hiding ((.=))
+import Control.Effect.Lift
+import Control.Effect.Reader
+import Control.Lens hiding (from, (.=))
 import Control.Monad
-import Data.Aeson as A
-import Data.Aeson.Encoding as A
-import Data.Generic.HKD
-import Data.Morpheus
-import Data.Morpheus.Document
-import Data.Morpheus.Kind
+import Data.Kind
 import Data.Morpheus.Types
 import Data.Text as T hiding (null)
-import Data.Traversable
-import Data.UUID (toText)
 import Database.Beam hiding (C)
-import Debug.Trace
+import Database.Beam.Postgres (Connection)
 import GHC.OverloadedLabels ()
-import Melo.Common.Haxl
-import qualified Melo.Database.Model as DB
+import Melo.Common.FileSystem
+import Melo.Common.Logging
+import Melo.Common.Metadata
+import Melo.Library.Service
 import Melo.Library.Source.API
 import Melo.Library.Source.Repo
+import Network.URI
 
-data Library m = Library
-  { sources :: m [SearchResult Source]
+data LibraryQuery m = LibraryQuery
+  { sources :: m [Source m],
+    sourceGroups :: m [SourceGroup m]
   }
   deriving (Generic, GQLType)
 
-resolveLibrary :: forall sig m e. (Has SourceRepository sig m) => ResolveQ e m Library
-resolveLibrary = lift $ pure Library {
-  sources = resolveSources @sig @m
-}
+resolveLibrary ::
+  forall sig m e.
+  ( Has SourceRepository sig m,
+    Has FileSystem sig m
+  ) =>
+  ResolveQ e m LibraryQuery
+resolveLibrary =
+  lift $
+    pure
+      LibraryQuery
+        { sources = resolveSources @sig @m,
+          sourceGroups = resolveSourceGroups @sig
+        }
+
+data LibraryMutation (m :: Type -> Type) = LibraryMutation
+  { stageSources :: StageSourcesArgs -> m (StagedSources m),
+    updateSources :: UpdateSourcesArgs -> m UpdatedSources
+  }
+  deriving (Generic, GQLType)
+
+resolveLibraryMutation ::
+  forall sig m e.
+  ( Has SourceRepository sig m,
+    Has LibraryService sig m,
+    Has (Lift IO) sig m,
+    Has (Reader Connection) sig m,
+    Has Logging sig m,
+    Has MetadataService sig m
+  ) =>
+  ResolveM e (m :: Type -> Type) LibraryMutation
+resolveLibraryMutation =
+  lift $
+    pure
+      LibraryMutation
+        { stageSources = stageSourcesImpl @sig @m,
+          updateSources = updateSourcesImpl @sig @m
+        }
+
+newtype StageSourcesArgs = StageSourcesArgs
+  { uris :: [Text]
+  }
+  deriving (Generic)
+
+data StagedSources m = StagedSources
+  { sources :: m [Source m],
+    groups :: m [SourceGroup m],
+    numberOfSourcesImported :: Int
+  }
+  deriving (Generic, GQLType)
+
+instance Monad m => Semigroup (StagedSources m) where
+  a <> b =
+    StagedSources
+      { sources = liftM2 (<>) (a ^. #sources) (b ^. #sources),
+        groups = liftM2 (<>) (a ^. #groups) (b ^. #groups),
+        numberOfSourcesImported = a ^. #numberOfSourcesImported + b ^. #numberOfSourcesImported
+      }
+
+instance (Semigroup (StagedSources m), Applicative m) => Monoid (StagedSources m) where
+  mempty =
+    StagedSources
+      { sources = pure [],
+        groups = pure [],
+        numberOfSourcesImported = 0
+      }
+
+stageSourcesImpl ::
+  (Has SourceRepository sig m, Has LibraryService sig m) =>
+  StageSourcesArgs ->
+  ResolveM e m StagedSources
+stageSourcesImpl (StageSourcesArgs ss) = lift $ do
+  x <- forM ss $ \s ->
+    case parseURI (T.unpack s) of
+      Just srcUri -> case uriScheme srcUri of
+        "file:" -> do
+          srcs <- importPath (unEscapeString $ uriPath srcUri)
+          pure
+            StagedSources
+              { numberOfSourcesImported = Prelude.length srcs,
+                sources = pure (fmap from srcs)
+              }
+        _ -> pure mempty
+      Nothing -> pure mempty
+  pure $ mconcat x

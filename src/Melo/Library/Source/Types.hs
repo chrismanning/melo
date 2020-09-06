@@ -5,9 +5,12 @@ module Melo.Library.Source.Types
   ( NewImportSource (..),
     MetadataImportSource (..),
     NewSource (..),
+    UpdateSource (..),
     AudioRange (..),
     Source (..),
     ImportStats (..),
+    fileUri,
+    tagsToValue,
   )
 where
 
@@ -25,10 +28,10 @@ import qualified Data.Vector as V
 import Database.Beam
 import Database.Beam.Postgres as Pg
 import Melo.Common.Metadata
+import qualified Melo.Database.Model as DB
 import Melo.Format.Info
 import Melo.Format.Internal.Tag
 import Melo.Format.Metadata
-import qualified Melo.Database.Model as DB
 import Network.URI
 import Numeric.Natural
 
@@ -38,7 +41,8 @@ data NewImportSource = FileSource MetadataFile | CueFileSource
 data MetadataImportSource = MetadataImportSource
   { metadata :: Metadata,
     audioInfo :: Info,
-    src :: URI
+    src :: URI,
+    metadataFileId :: MetadataFileId
   }
   deriving (Show, Generic)
 
@@ -50,7 +54,8 @@ instance TryFrom NewImportSource MetadataImportSource where
       MetadataImportSource
         { audioInfo = getInfo s,
           metadata,
-          src
+          src,
+          metadataFileId = getMetadataFileId s
         }
 
 getSourceUri :: NewImportSource -> URI
@@ -74,6 +79,9 @@ getInfo (FileSource f) = getFileInfo f
 getFileInfo :: MetadataFile -> Info
 getFileInfo f = f ^. #audioInfo
 
+getMetadataFileId :: NewImportSource -> MetadataFileId
+getMetadataFileId (FileSource f) = f ^. #fileId
+
 data NewSource = NewSource
   { kind :: Text,
     metadataFormat :: Text,
@@ -90,7 +98,7 @@ data AudioRange = SampleRange (Range Int64) | TimeRange (Range DB.Interval)
 instance From MetadataImportSource NewSource where
   from ms =
     NewSource
-      { kind = "",
+      { kind = ms ^. #metadataFileId . coerced,
         metadataFormat = coerce (ms ^. #metadata . #formatId :: MetadataId),
         tags = ms ^. #metadata . #tags,
         source = T.pack $ show $ ms ^. #src,
@@ -114,22 +122,23 @@ instance From NewSource (DB.SourceT (QExpr Postgres s)) where
       }
 
 tagsToValue :: Tags -> A.Value
-tagsToValue (Tags tags) = A.toJSON $
-  tags <&> \(k, v) ->
-    A.object
-      [ "key" .= k,
-        "value" .= v
-      ]
+tagsToValue (Tags tags) =
+  A.toJSON $
+    tags <&> \(k, v) ->
+      A.object
+        [ "key" .= k,
+          "value" .= v
+        ]
 
 valueToTags :: A.Value -> Maybe Tags
 valueToTags (A.Array ts) = do
   tags <- V.forM ts $ \t ->
-    flip A.parseMaybe t
-      $ A.withObject "Tags"
-      $ \obj -> do
-        k <- obj .: "key"
-        v <- obj .: "value"
-        pure (k, v)
+    flip A.parseMaybe t $
+      A.withObject "Tags" $
+        \obj -> do
+          k <- obj .: "key"
+          v <- obj .: "value"
+          pure (k, v)
   pure (Tags tags)
 valueToTags _ = Nothing
 
@@ -168,7 +177,7 @@ data Source = Source
     source :: URI,
     range :: Maybe AudioRange
   }
-  deriving (Generic)
+  deriving (Generic, Show)
 
 instance TryFrom DB.Source Source where
   tryFrom s = do
@@ -183,6 +192,8 @@ instance TryFrom DB.Source Source where
           source = uri,
           metadata
         }
+
+type UpdateSource = DB.Source
 
 data ImportStats = ImportStats
   { sourcesImported :: Natural,

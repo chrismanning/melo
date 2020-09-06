@@ -15,7 +15,7 @@
 # resolver:
 #  name: custom-snapshot
 #  location: "./custom-snapshot.yaml"
-resolver: lts-15.6
+resolver: lts-15.14
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -70,6 +70,8 @@ extra-deps:
   - fastsum-0.1.1.1
   - fmt-0.6.1
   - fraxl-0.3.0.0
+  - fused-effects-th-0.1.0.1
+  - fused-effects-exceptions-1.1.0.0
   - generic-aeson-0.2.0.10
 #  - graphql-0.5.1.0
   - harg-0.4.2.0

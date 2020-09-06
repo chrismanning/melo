@@ -7,8 +7,8 @@ import Control.Applicative
 import Control.Lens (Contravariant, Optic', Profunctor, (^.))
 import qualified Control.Lens as L
 import Control.Monad.Catch
+import Data.Aeson as A (FromJSON (..), ToJSON (..), (.=))
 import qualified Data.Aeson as A
-import Data.Aeson as A ((.=), FromJSON (..), ToJSON (..))
 import qualified Data.Aeson.Encoding as A
 import Data.Foldable
 import Data.Generic.HKD
@@ -198,6 +198,7 @@ type family UnwrapNull a where
   UnwrapNull a = a
 
 type ResolverM m a = HKD a (Resolve m (ResolverContext a))
+
 --type ExObjResolver = HaxlResolver ExObj
 --
 --type HaxlResolver a = ResolverM Haxl a

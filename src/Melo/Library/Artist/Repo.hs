@@ -13,9 +13,9 @@ import Database.Beam
 import Database.Beam.Postgres as Pg
 import Database.Beam.Postgres.Full as Pg
 import Melo.Common.Effect
-import Melo.Library.Artist.Types
 import qualified Melo.Database.Model as DB
 import Melo.Database.Query
+import Melo.Library.Artist.Types
 
 data ArtistRepository :: Effect where
   GetAllArtists :: ArtistRepository m [DB.Artist]
@@ -70,7 +70,6 @@ instance
     SearchArtists t -> undefined
     InsertArtists as' -> do
       let !as = nub as'
-      conn <- ask
       let q =
             runPgInsertReturningList $
               insertReturning
@@ -85,7 +84,7 @@ instance
                     )
                 )
                 (Just primaryKey)
-      ctx $$> $(runPgDebug') conn q
+      ctx $$> $(runPgDebug') q
   alg hdl (R other) ctx = ArtistRepositoryIOC (alg (runArtistRepositoryIOC . hdl) other ctx)
 
 runArtistRepositoryIO :: ArtistRepositoryIOC m a -> m a

@@ -17,4 +17,4 @@ main = do
             connectDatabase = "melo"
           }
   pool <- createPool (connect connInfo) close 1 20 10
-  scotty 3000 $ post "/api" $ raw =<< (liftIO . gqlApiIO pool =<< body)
+  scotty 5000 (api pool)

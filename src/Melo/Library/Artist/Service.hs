@@ -4,74 +4,47 @@ module Melo.Library.Artist.Service where
 
 import Basement.From
 import Control.Algebra
-import Control.Carrier.Cull.Church
-import Control.Carrier.NonDet.Church
-import Control.Effect.Cull
-import Control.Effect.Empty as E
-import Control.Effect.NonDet
-import Control.Effect.Reader
-import Control.Effect.Sum
 import Control.Lens hiding (from, lens)
-import Control.Monad
-import Control.Monad.IO.Class
-import Country
-import Data.Default
 import Data.Foldable
-import Data.Functor
-import qualified Data.HashMap.Strict as H
-import Data.Maybe
-import Data.Monoid
-import Data.Text (Text)
-import qualified Data.Text as T
-import Data.Text.Encoding
-import Data.Traversable
 import Data.Vector (fromList)
-import Melo.Common.Effect
 import Melo.Common.Logging
+import qualified Melo.Database.Model as DB
 import qualified Melo.Format.Mapping as M
 import Melo.Format.Metadata
 import Melo.Library.Artist.Repo
 import Melo.Library.Artist.Staging.Repo
 import Melo.Library.Artist.Types
-import qualified Melo.Database.Model as DB
 import Melo.Library.Source.Types
 import qualified Melo.Lookup.MusicBrainz as MB
 
-data ArtistService :: Effect where
-  ImportArtists :: [Source] -> ArtistService m [StagedArtist]
-  ReviewStagedArtists :: (DB.ArtistStage -> m (Reviewed DB.ArtistStage)) -> ArtistService m [Artist]
-  ReviewStagedArtistsByKeys :: [DB.ArtistStageKey] -> (DB.ArtistStage -> m (Reviewed DB.ArtistStage)) -> ArtistService m [Artist]
-
-importArtists :: Has ArtistService sig m => [Source] -> m [StagedArtist]
-importArtists m = send (ImportArtists m)
-
-newtype ArtistServiceIOC m a = ArtistServiceIOC
-  { runArtistServiceIOC :: m a
-  }
-  deriving newtype (Applicative, Functor, Monad)
-
-instance
+importArtists ::
   ( Has MB.MusicBrainzService sig m,
-    Has ArtistRepository sig m,
     Has ArtistStagingRepository sig m,
     Has Logging sig m
   ) =>
-  Algebra (ArtistService :+: sig) (ArtistServiceIOC m)
-  where
-  alg _hdl (L sig) ctx =
-    case sig of
-      ImportArtists ms -> do
-        mbArtists <- fold <$> mapM (MB.getArtistFromMetadata . (^. #metadata)) ms
-        $(logDebugShow) mbArtists
-        artists <- insertStagedArtists (fmap from mbArtists) >>= getStagedArtists
-        pure $ ctx $> fmap from artists
-  -- TODO search Discogs (https://www.discogs.com/developers/#page:database)
-  -- TODO search Spotify (https://developer.spotify.com/documentation/web-api/reference/search/search/)
-  -- TODO search Rovi (http://developer.rovicorp.com/docs)
-  alg hdl (R other) ctx = ArtistServiceIOC (alg (runArtistServiceIOC . hdl) other ctx)
+  [Source] ->
+  m [StagedArtist]
+importArtists ss = do
+  mbArtists <- fold <$> mapM (MB.getArtistFromMetadata . (^. #metadata)) ss
+  $(logDebugShow) mbArtists
+  artists <- insertStagedArtists (fmap from mbArtists) >>= getStagedArtists
+  pure $ fmap from artists
 
-runArtistServiceIO :: ArtistServiceIOC m a -> m a
-runArtistServiceIO = runArtistServiceIOC
+-- TODO search Discogs (https://www.discogs.com/developers/#page:database)
+-- TODO search Spotify (https://developer.spotify.com/documentation/web-api/reference/search/search/)
+-- TODO search Rovi (http://developer.rovicorp.com/docs)
+
+--commitArtists ::
+--  ( Has ArtistStagingRepository sig m,
+--    Has ArtistRepository sig m,
+--    Has Logging sig m
+--  ) => [DB.ArtistStageKey] -> m [DB.ArtistKey]
+--
+--mergeArtists ::
+--  ( Has ArtistRepository sig m,
+--    Has Logging sig m
+--  ) =>
+--  [DB.ArtistKey] -> DB.ArtistT x -> m DB.ArtistKey
 
 setArtists :: Metadata -> [Artist] -> Metadata
 setArtists m a =

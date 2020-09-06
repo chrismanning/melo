@@ -3,50 +3,25 @@
 module Melo.Library.Service where
 
 import Control.Algebra
-import Control.Applicative
-import Control.Bool
-import Control.Effect.Error
 import Control.Effect.Lift
+import Control.Effect.TH
 import qualified Control.Exception.Safe as E
-import Control.Lens hiding (lens)
 import Control.Monad
-import Data.Attoparsec.Text
-import Data.Foldable
 import Data.Functor
-import qualified Data.HashMap.Strict as H
 import Data.Maybe (catMaybes, maybeToList)
-import Data.Text (Text)
-import qualified Data.Text as T
-import GHC.Generics (Generic)
 import Melo.Common.Effect
+import Melo.Common.FileSystem
 import Melo.Common.Logging
-import Melo.Format.Ape
-import Melo.Format.ID3.ID3v1
-import Melo.Format.ID3.ID3v2
-import Melo.Format.Info
-import qualified Melo.Format.Mapping as M
 import qualified Melo.Format.Metadata as F
-import Melo.Format.Vorbis
-import Melo.Library.Album.Repo
---import Melo.Library.Album.Service
-import Melo.Library.Artist.Repo
-import Melo.Library.Artist.Service
-import qualified Melo.Database.Model as DB
-import Melo.Library.Genre.Repo
---import Melo.Library.Genre.Service
+import qualified Melo.Library.Source.Repo as SourceRepo
 import Melo.Library.Source.Service
 import Melo.Library.Source.Types
-import Melo.Library.Track.Repo
-import Melo.Library.Track.Service
-import Network.URI
-import System.Directory
 import System.FilePath
 
 data LibraryService :: Effect where
-  ImportPath :: FilePath -> LibraryService m ImportStats
+  ImportPath :: FilePath -> LibraryService m [Source]
 
-importPath :: Has LibraryService sig m => FilePath -> m ImportStats
-importPath p = send (ImportPath p)
+makeSmartConstructors ''LibraryService
 
 newtype LibraryServiceIOC m a = LibraryServiceIOC
   { runLibraryServiceIOC :: m a
@@ -55,60 +30,46 @@ newtype LibraryServiceIOC m a = LibraryServiceIOC
 
 instance
   ( Has (Lift IO) sig m,
-    Has SourceService sig m,
-    Has ArtistService sig m,
+    Has FileSystem sig m,
+    Has SourceRepo.SourceRepository sig m,
     Has Logging sig m
   ) =>
   Algebra (LibraryService :+: sig) (LibraryServiceIOC m)
   where
   alg _ (L (ImportPath p')) ctx = do
     -- TODO IO error handling
-    p <- sendIO $ canonicalizePath p'
+    p <- canonicalizePath p'
     $(logInfo) $ "Importing " <> p
-    isDir <- sendIO $ doesDirectoryExist p
-    isFile <- sendIO $ doesFileExist p
-    stats <-
+    isDir <- doesDirectoryExist p
+    isFile <- doesFileExist p
+    srcs <-
       if isDir
         then do
           $(logDebug) $ p <> " is directory; recursing..."
-          dirs <- sendIO $ filterM doesDirectoryExist =<< listDirectoryAbs p
+          dirs <- filterM doesDirectoryExist =<< listDirectoryAbs p
           mapM_ importPath dirs
-          files <- sendIO $ filterM doesFileExist =<< listDirectoryAbs p
+          files <- filterM doesFileExist =<< listDirectoryAbs p
           if any ((== ".cue") . takeExtension) files
             then do
               -- TODO load file(s) referenced in cuefile
+              $(logWarn) $ "Cue file found in " <> show p <> "; skipping..."
               pure mempty
             else do
               $(logDebug) $ "Importing " <> show files
               mfs <- catMaybes <$> mapM openMetadataFile files
               $(logDebug) $ "Opened " <> show mfs
-              srcs <- importSources (FileSource <$> mfs)
-              let artists = [] -- <- importArtists srcs
-              let albums = [] --importAlbums metadataSources
-              let tracks = [] --importTracks metadataSources
-              pure
-                ImportStats
-                  { sourcesImported = length' srcs,
-                    tracksImported = length' tracks,
-                    albumsImported = length' albums,
-                    artistsImported = length' artists,
-                    genresImported = 0
-                  }
+              importSources (FileSource <$> mfs)
         else
           if isFile
             then do
               mf <- openMetadataFile p
-              srcs <- importSources $ FileSource <$> maybeToList mf
-              pure $
-                mempty
-                  { sourcesImported = length' srcs
-                  }
+              importSources $ FileSource <$> maybeToList mf
             else pure mempty
-    $(logInfo) $ "Import finished: " <> show stats
-    pure (ctx $> stats)
+    $(logInfo) $ "Import finished: " <> show srcs
+    pure (ctx $> srcs)
   alg hdl (R other) ctx = LibraryServiceIOC (alg (runLibraryServiceIOC . hdl) other ctx)
 
-listDirectoryAbs :: FilePath -> IO [FilePath]
+listDirectoryAbs :: Has FileSystem sig m => FilePath -> m [FilePath]
 listDirectoryAbs p = do
   es <- listDirectory p
   pure $ (p </>) <$> es

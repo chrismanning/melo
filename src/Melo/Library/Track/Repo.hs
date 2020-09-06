@@ -92,7 +92,6 @@ instance
     SearchTracks t -> undefined
     InsertTracks ts' -> do
       let !ts = nub ts'
-      conn <- ask
       let q =
             runPgInsertReturningList $
               insertReturning
@@ -102,7 +101,7 @@ instance
                 )
                 onConflictDefault
                 (Just primaryKey)
-      ctx $$> $(runPgDebug') conn q
+      ctx $$> $(runPgDebug') q
   alg hdl (R other) ctx = TrackRepositoryIOC (alg (runTrackRepositoryIOC . hdl) other ctx)
 
 newTrack :: NewTrack -> DB.TrackT (QExpr Postgres s)

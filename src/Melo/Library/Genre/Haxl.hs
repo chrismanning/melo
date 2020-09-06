@@ -75,9 +75,9 @@ instance DataSource () GenreDataSource where
         do
           allGenres <- runReader conn $ Repo.runGenreRepositoryIO Repo.getAllGenres
           mapM_ (`putSuccess` allGenres) vs
-      searchGenres' vs = unless (null vs)
-        $ forM_ (H.toList vs)
-        $ \(t, r) -> putSuccess r =<< runReader conn (Repo.runGenreRepositoryIO (Repo.searchGenres t))
+      searchGenres' vs = unless (null vs) $
+        forM_ (H.toList vs) $
+          \(t, r) -> putSuccess r =<< runReader conn (Repo.runGenreRepositoryIO (Repo.searchGenres t))
       getGenreTracks' vs = unless (null vs) $
         do
           genreTracks <- runReader conn (Repo.runGenreRepositoryIO $ Repo.getGenreTracks (H.keys vs))

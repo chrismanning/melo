@@ -95,14 +95,14 @@ instance TagReader ID3v1 where
           tag yearTag year,
           tag commentTag comment,
           do
-            fm <- headTagMapping trackNumberTag
+            let fm = headTagMapping trackNumberTag
             track' <- track id3
             pure (toCanonicalForm $ id3v1 fm, T.pack $ show track'),
           tag genreTag genre
         ]
     where
-      tag tm sel = headTagMapping tm <&> \fm ->
-        (toCanonicalForm $ id3v1 fm, sel id3)
+      tag tm sel = let fm = headTagMapping tm in
+        Just (toCanonicalForm $ id3v1 fm, sel id3)
 
 instance TagWriter ID3v1 where
   saveTags _ newTags =
@@ -116,12 +116,10 @@ instance TagWriter ID3v1 where
         genre = saveTag genreTag
       }
     where
-      saveTag tm =
+      saveTag tm = let fm = headTagMapping tm in
         fromMaybe
           ""
-          ( headTagMapping tm >>= \f ->
-              listToMaybe $ lookupTag (toCanonicalForm $ id3v1 f) newTags
-          )
+          (listToMaybe $ lookupTag (toCanonicalForm $ id3v1 fm) newTags)
 
 instance Binary ID3v1 where
   get = isolate 128 getID3v1

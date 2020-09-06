@@ -114,7 +114,8 @@ data ArtistT (f :: Type -> Type) = Artist
     disambiguation :: Columnar f (Maybe Text),
     short_bio :: Columnar f (Maybe Text),
     bio :: Columnar f (Maybe Text),
-    country :: Columnar f (Maybe Text)
+    country :: Columnar f (Maybe Text),
+    musicbrainz_id :: Columnar f (Maybe Text)
   }
   deriving (Generic, Beamable)
 
@@ -149,6 +150,7 @@ data ArtistStageT (f :: Type -> Type) = ArtistStage
     short_bio :: Columnar f (Maybe Text),
     bio :: Columnar f (Maybe Text),
     country :: Columnar f (Maybe Text),
+    musicbrainz_id :: Columnar f (Maybe Text),
     ref_artist_id :: PrimaryKey ArtistT (Nullable f),
     ref_album_id :: PrimaryKey AlbumT (Nullable f),
     ref_track_id :: PrimaryKey TrackT (Nullable f)
@@ -244,7 +246,8 @@ data AlbumT (f :: Type -> Type) = Album
     title :: Columnar f Text,
     comment :: Columnar f (Maybe Text),
     year_released :: Columnar f (Maybe Text),
-    length :: Columnar f Interval
+    length :: Columnar f Interval,
+    musicbrainz_id :: Columnar f (Maybe Text)
   }
   deriving (Generic, Beamable)
 

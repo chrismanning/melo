@@ -22,11 +22,7 @@ import Basement.From
 import Control.Algebra
 import Control.Carrier.Lift
 import Control.Monad.IO.Class
-import qualified Data.ByteString.Builder as BB
-import qualified Data.ByteString.Char8 as C8
-import qualified Data.ByteString.Lazy as BL
 import qualified Data.Text as T
-import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Lazy as LT
 import Data.Time.Format
 import Language.Haskell.TH.Syntax (Exp, Loc (..), Q, liftString, qLocation)
@@ -48,11 +44,11 @@ instance From LT.Text LogMessage where
 instance From String LogMessage where
   from = from . T.pack
 
-instance From C8.ByteString LogMessage where
-  from = from . TE.decodeUtf8
+--instance From C8.ByteString LogMessage where
+--  from = from . (trace "decoding str" $ TE.decodeUtf8)
 
-instance From BB.Builder LogMessage where
-  from = from . BL.toStrict . BB.toLazyByteString
+--instance From BB.Builder LogMessage where
+--  from = from . BL.toStrict . BB.toLazyByteString
 
 newtype LoggingIOC m a = LoggingIOC
   { runLoggingIOC :: m a
@@ -110,4 +106,4 @@ runStdoutLogging = runLoggingIOC
 initLogging :: MonadIO m => m ()
 initLogging = do
   config <- Wlog.parseLoggerConfig "logging.yaml"
-  Wlog.setupLogging (Just (T.pack . formatTime defaultTimeLocale "%T%3Q")) config
+  Wlog.setupLogging (Just (T.pack . formatTime defaultTimeLocale "%F %T%3Q")) config

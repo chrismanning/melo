@@ -11,6 +11,8 @@ module Melo.Format.Metadata
     openMetadataFile,
     mkMetadata,
     module Melo.Format.Internal.Tag,
+    metadataFileFactoryIO,
+    metadataFileFactoriesIO,
   )
 where
 
@@ -34,6 +36,12 @@ import Melo.Format.Vorbis
 import Melo.Format.WavPack (WavPack, wavPack)
 
 type SupportedFormats = '[Flac, MP3, OggVorbis, WavPack]
+
+metadataFileFactoriesIO :: [MetadataFileFactory IO]
+metadataFileFactoriesIO = [flac, mp3, oggVorbis, wavPack]
+
+metadataFileFactoryIO :: MetadataFileId -> Maybe (MetadataFileFactory IO)
+metadataFileFactoryIO mfid = find (\f -> f ^. #fileId == mfid) metadataFileFactoriesIO
 
 openMetadataFile :: FilePath -> IO MetadataFile
 openMetadataFile p = do

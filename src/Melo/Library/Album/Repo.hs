@@ -14,9 +14,9 @@ import Database.Beam
 import Database.Beam.Postgres as Pg
 import Database.Beam.Postgres.Full as Pg
 import Melo.Common.Effect
-import Melo.Library.Album.Types
 import qualified Melo.Database.Model as DB
 import Melo.Database.Query
+import Melo.Library.Album.Types
 
 data AlbumRepository :: Effect where
   GetAllAlbums :: AlbumRepository m [DB.Album]
@@ -71,11 +71,10 @@ instance
     GetAlbums ks -> ctx $$> getByKeys tbl ks
     DeleteAlbums ks -> ctx $$> deleteByKeys tbl ks
     GetAlbumGenres k -> undefined
-    GetAlbumArtists k -> undefined
-    GetAlbumTracks k -> undefined
-    SearchAlbums k -> undefined
+    GetAlbumArtists k -> undefined
+    GetAlbumTracks k -> undefined
+    SearchAlbums k -> undefined
     InsertAlbums as' -> do
-      conn <- ask
       let !as = nub as'
       let q =
             runPgInsertReturningList $
@@ -86,7 +85,7 @@ instance
                 )
                 Pg.onConflictDefault
                 (Just primaryKey)
-      ctx $$> $(runPgDebug') conn q
+      ctx $$> $(runPgDebug') q
   alg hdl (R other) ctx = AlbumRepositoryIOC (alg (runAlbumRepositoryIOC . hdl) other ctx)
 
 runAlbumRepositoryIO :: AlbumRepositoryIOC m a -> m a

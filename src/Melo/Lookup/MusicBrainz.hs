@@ -240,10 +240,11 @@ getArtistFromMetadata ::
 getArtistFromMetadata m = do
   let tag = lens m
   let ts = m ^. #tags
-  runCullM P.id $ cull $
-    getArtistByMusicBrainzId (V.toList $ ts ^. tag artistIdTag)
-      <|> getArtistByAlbum (ts ^. tag M.album ^? _head) (ts ^. tag M.albumArtist ^? _head)
-      <|> getArtistByTrackArtistName (ts ^. tag M.artist ^? _head)
+  runCullM P.id $
+    cull $
+      getArtistByMusicBrainzId (V.toList $ ts ^. tag artistIdTag)
+        <|> getArtistByAlbum (ts ^. tag M.album ^? _head) (ts ^. tag M.albumArtist ^? _head)
+        <|> getArtistByTrackArtistName (ts ^. tag M.artist ^? _head)
 
 getArtistByMusicBrainzId ::
   ( Has MusicBrainzService sig m,
@@ -296,9 +297,10 @@ getReleaseFromMetadata ::
 getReleaseFromMetadata m = do
   let tag = lens m
   let ts = m ^. #tags
-  runCullA $ cull $
-    getReleaseByMusicBrainzId (V.toList $ ts ^. tag releaseIdTag)
-      <|> getReleaseByAlbum (ts ^. tag M.album ^? _head) (ts ^. tag M.albumArtist ^? _head)
+  runCullA $
+    cull $
+      getReleaseByMusicBrainzId (V.toList $ ts ^. tag releaseIdTag)
+        <|> getReleaseByAlbum (ts ^. tag M.album ^? _head) (ts ^. tag M.albumArtist ^? _head)
 
 getReleaseByMusicBrainzId ::
   ( Has MusicBrainzService sig m,
@@ -343,106 +345,107 @@ instance
   ) =>
   Algebra (MusicBrainzService :+: sig) (MusicBrainzServiceIOC m)
   where
-  alg _ (L mb) ctx = MusicBrainzServiceIOC $
-    waitReady >> case mb of
-      SearchReleases search -> do
-        let qterms =
-              catMaybes
-                [ fmap (\t -> "release:\"" <> t <> "\"") $ search ^. #albumTitle,
-                  fmap (\a -> "artist:\"" <> a <> "\"") $ search ^. #albumArtist
-                ]
-        case qterms of
-          [] -> pure $ ctx $> []
-          ts -> do
-            let q = T.intercalate " AND " ts
-            let opts = mbWreqDefaults & Wr.param "query" .~ [q]
-            let url = baseUrl <> "/release"
-            r <- do
-              r' :: Wr.Response ReleaseSearchResult <- getWithJson opts url
-              pure (r' ^. Wr.responseBody . #releases)
-            pure $ ctx $> fromMaybe [] r
-      SearchReleaseGroups search -> do
-        let qterms =
-              catMaybes
-                [ fmap (\t -> "release:\"" <> t <> "\"") $ search ^. #albumTitle,
-                  fmap (\a -> "artist:\"" <> a <> "\"") $ search ^. #albumArtist
-                ]
-        case qterms of
-          [] -> pure $ ctx $> []
-          ts -> do
-            let q = T.intercalate " AND " ts
-            let opts = mbWreqDefaults & Wr.param "query" .~ [q]
-            let url = baseUrl <> "/release-group"
-            r <- do
-              r' :: Wr.Response ReleaseGroupSearchResult <- getWithJson opts url
-              pure (r' ^. Wr.responseBody . #releaseGroups)
-            pure $ ctx $> fromMaybe [] r
-      SearchArtists search -> do
-        let opts =
-              mbWreqDefaults
-                & Wr.param "query" .~ ["artist:\"" <> search ^. #artist <> "\""]
-        let url = baseUrl <> "/artist"
-        r <- do
-          r' :: Wr.Response ArtistSearchResult <- getWithJson opts url
-          pure (r' ^. Wr.responseBody . #artists)
-        pure $ ctx $> fromMaybe [] r
-      SearchRecordings search -> do
-        let qterms =
-              catMaybes
-                [ fmap (\a -> "artist:\"" <> a <> "\"") $ search ^. #artist,
-                  fmap (\a -> "release:\"" <> a <> "\"") $ search ^. #album,
-                  fmap (\a -> "recording:\"" <> a <> "\"") $ search ^. #title
-                ]
-        case qterms of
-          [] -> pure $ ctx $> []
-          ts -> do
-            let q = T.intercalate " AND " ts
-            let opts =
-                  mbWreqDefaults & Wr.param "query" .~ [q]
-            let url = baseUrl <> "/recording"
-            r <- do
-              r' :: Wr.Response RecordingSearchResult <- getWithJson opts url
-              pure (r' ^. Wr.responseBody . #recordings)
-            pure $ ctx $> fromMaybe [] r
-      GetArtist artistId -> do
-        let opts = mbWreqDefaults
-        let url = baseUrl <> "/artist/" <> artistId ^. coerced
-        r <- getWithJson opts url <&> view Wr.responseBody
-        pure $ ctx $> r
-      GetArtistReleaseGroups artistId -> do
-        let opts =
-              mbWreqDefaults
-                & Wr.param "artist" .~ [artistId ^. coerced]
-                & Wr.param "limit" .~ ["100"]
-        let url = baseUrl <> "/release-group/"
-        r <- getWithJson opts url <&> view Wr.responseBody
-        pure $ ctx $> r
-      GetArtistReleases artistId -> do
-        let opts =
-              mbWreqDefaults
-                & Wr.param "artist" .~ [artistId ^. coerced]
-                & Wr.param "limit" .~ ["100"]
-        let url = baseUrl <> "/release/"
-        r <- getWithJson opts url <&> view Wr.responseBody
-        pure $ ctx $> r
-      GetArtistRecordings artistId -> do
-        let opts =
-              mbWreqDefaults
-                & Wr.param "artist" .~ [artistId ^. coerced]
-                & Wr.param "limit" .~ ["100"]
-        let url = baseUrl <> "/recording/"
-        r <- getWithJson opts url <&> view Wr.responseBody
-        pure $ ctx $> r
-      GetRelease releaseId -> do
-        let opts = mbWreqDefaults
-        let url = baseUrl <> "/release/" <> releaseId ^. coerced
-        r <- getWithJson opts url <&> view Wr.responseBody
-        pure $ ctx $> r
-      GetReleaseGroup releaseGroupId -> do
-        let opts = mbWreqDefaults
-        let url = baseUrl <> "/release-group/" <> releaseGroupId ^. coerced
-        r <- getWithJson opts url <&> view Wr.responseBody
-        pure $ ctx $> r
+  alg _ (L mb) ctx =
+    MusicBrainzServiceIOC $
+      waitReady >> case mb of
+        SearchReleases search -> do
+          let qterms =
+                catMaybes
+                  [ fmap (\t -> "release:\"" <> t <> "\"") $ search ^. #albumTitle,
+                    fmap (\a -> "artist:\"" <> a <> "\"") $ search ^. #albumArtist
+                  ]
+          case qterms of
+            [] -> pure $ ctx $> []
+            ts -> do
+              let q = T.intercalate " AND " ts
+              let opts = mbWreqDefaults & Wr.param "query" .~ [q]
+              let url = baseUrl <> "/release"
+              r <- do
+                r' :: Wr.Response ReleaseSearchResult <- getWithJson opts url
+                pure (r' ^. Wr.responseBody . #releases)
+              pure $ ctx $> fromMaybe [] r
+        SearchReleaseGroups search -> do
+          let qterms =
+                catMaybes
+                  [ fmap (\t -> "release:\"" <> t <> "\"") $ search ^. #albumTitle,
+                    fmap (\a -> "artist:\"" <> a <> "\"") $ search ^. #albumArtist
+                  ]
+          case qterms of
+            [] -> pure $ ctx $> []
+            ts -> do
+              let q = T.intercalate " AND " ts
+              let opts = mbWreqDefaults & Wr.param "query" .~ [q]
+              let url = baseUrl <> "/release-group"
+              r <- do
+                r' :: Wr.Response ReleaseGroupSearchResult <- getWithJson opts url
+                pure (r' ^. Wr.responseBody . #releaseGroups)
+              pure $ ctx $> fromMaybe [] r
+        SearchArtists search -> do
+          let opts =
+                mbWreqDefaults
+                  & Wr.param "query" .~ ["artist:\"" <> search ^. #artist <> "\""]
+          let url = baseUrl <> "/artist"
+          r <- do
+            r' :: Wr.Response ArtistSearchResult <- getWithJson opts url
+            pure (r' ^. Wr.responseBody . #artists)
+          pure $ ctx $> fromMaybe [] r
+        SearchRecordings search -> do
+          let qterms =
+                catMaybes
+                  [ fmap (\a -> "artist:\"" <> a <> "\"") $ search ^. #artist,
+                    fmap (\a -> "release:\"" <> a <> "\"") $ search ^. #album,
+                    fmap (\a -> "recording:\"" <> a <> "\"") $ search ^. #title
+                  ]
+          case qterms of
+            [] -> pure $ ctx $> []
+            ts -> do
+              let q = T.intercalate " AND " ts
+              let opts =
+                    mbWreqDefaults & Wr.param "query" .~ [q]
+              let url = baseUrl <> "/recording"
+              r <- do
+                r' :: Wr.Response RecordingSearchResult <- getWithJson opts url
+                pure (r' ^. Wr.responseBody . #recordings)
+              pure $ ctx $> fromMaybe [] r
+        GetArtist artistId -> do
+          let opts = mbWreqDefaults
+          let url = baseUrl <> "/artist/" <> artistId ^. coerced
+          r <- getWithJson opts url <&> view Wr.responseBody
+          pure $ ctx $> r
+        GetArtistReleaseGroups artistId -> do
+          let opts =
+                mbWreqDefaults
+                  & Wr.param "artist" .~ [artistId ^. coerced]
+                  & Wr.param "limit" .~ ["100"]
+          let url = baseUrl <> "/release-group/"
+          r <- getWithJson opts url <&> view Wr.responseBody
+          pure $ ctx $> r
+        GetArtistReleases artistId -> do
+          let opts =
+                mbWreqDefaults
+                  & Wr.param "artist" .~ [artistId ^. coerced]
+                  & Wr.param "limit" .~ ["100"]
+          let url = baseUrl <> "/release/"
+          r <- getWithJson opts url <&> view Wr.responseBody
+          pure $ ctx $> r
+        GetArtistRecordings artistId -> do
+          let opts =
+                mbWreqDefaults
+                  & Wr.param "artist" .~ [artistId ^. coerced]
+                  & Wr.param "limit" .~ ["100"]
+          let url = baseUrl <> "/recording/"
+          r <- getWithJson opts url <&> view Wr.responseBody
+          pure $ ctx $> r
+        GetRelease releaseId -> do
+          let opts = mbWreqDefaults
+          let url = baseUrl <> "/release/" <> releaseId ^. coerced
+          r <- getWithJson opts url <&> view Wr.responseBody
+          pure $ ctx $> r
+        GetReleaseGroup releaseGroupId -> do
+          let opts = mbWreqDefaults
+          let url = baseUrl <> "/release-group/" <> releaseGroupId ^. coerced
+          r <- getWithJson opts url <&> view Wr.responseBody
+          pure $ ctx $> r
   alg hdl (R other) ctx =
     MusicBrainzServiceIOC $
       alg (runMusicBrainzServiceIOC . hdl) (R (R other)) ctx

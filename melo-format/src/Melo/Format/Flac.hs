@@ -109,7 +109,10 @@ flac =
               audioInfo = info f,
               fileId = flacFileId,
               filePath = p
-            }
+            },
+      writeMetadataFile = \f p -> do
+        -- TODO flac writeMetadataFile
+        undefined
     }
 
 flacMetadata :: Flac -> H.HashMap MetadataId Metadata

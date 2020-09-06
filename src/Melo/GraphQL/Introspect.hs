@@ -20,6 +20,7 @@ import Data.Vector (Vector)
 import GHC.Generics
 import GHC.OverloadedLabels ()
 import GHC.TypeLits as TL
+import Network.URI (URI)
 
 data GQLTypeKind
   = ScalarKind
@@ -388,6 +389,12 @@ instance GraphQLType a => GraphQLType (Maybe a) where
   typeEnumValues = typeEnumValues @a
   typeInputFields = typeInputFields @a
   ofType = ofType @a
+
+instance GraphQLType URI where
+  type TypeKind URI = 'ScalarKind
+  typeKind = ScalarKind
+  typeName = Just "String"
+  description = Just "String type"
 
 ----------------------------
 

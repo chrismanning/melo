@@ -1,6 +1,7 @@
 module Melo.Format.Mapping where
 
 import Data.Default
+import Data.List.NonEmpty
 import Data.Text
 
 data FieldMappings = FieldMappings
@@ -38,22 +39,16 @@ caseSensitiveMapping m = FieldMapping m (== m)
 caseInsensitiveMapping :: Text -> FieldMapping
 caseInsensitiveMapping m = FieldMapping m (\x -> toLower x == toLower m)
 
-newtype TagMapping = TagMapping [FieldMappings]
+newtype TagMapping = TagMapping (NonEmpty FieldMappings)
 
 singletonTagMapping :: FieldMappings -> TagMapping
-singletonTagMapping m = TagMapping [m]
+singletonTagMapping m = TagMapping (m :| [])
 
-headTagMapping :: TagMapping -> Maybe FieldMappings
-headTagMapping (TagMapping [m]) = Just m
-headTagMapping _ = Nothing
-
-instance Monoid TagMapping where
-  mempty = TagMapping []
-
-  mappend = (<>)
+headTagMapping :: TagMapping -> FieldMappings
+headTagMapping (TagMapping (m :| _)) = m
 
 instance Semigroup TagMapping where
-  (TagMapping xs) <> (TagMapping ys) = TagMapping $ xs ++ ys
+  (TagMapping xs) <> (TagMapping ys) = TagMapping $ xs <> ys
 
 albumArtist :: TagMapping
 albumArtist = albumArtistTag <> trackArtistTag <> composerTag <> performerTag

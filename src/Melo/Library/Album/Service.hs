@@ -28,12 +28,12 @@ import Data.Traversable
 import GHC.Generics (Generic, Generic1)
 import Melo.Common.Effect
 import Melo.Common.Logging
+import qualified Melo.Database.Model as DB
 import Melo.Format.Internal.Metadata
 import qualified Melo.Format.Mapping as M
 import Melo.Format.Metadata
 import Melo.Library.Album.Repo
 import Melo.Library.Album.Types
-import qualified Melo.Database.Model as DB
 import Melo.Library.Source.Types
 import qualified Melo.Lookup.MusicBrainz as MB
 

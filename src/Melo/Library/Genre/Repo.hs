@@ -77,21 +77,18 @@ instance
     L (DeleteGenres ks) -> ctx $$> deleteByKeys tbl ks
     L (GetGenresByName []) -> ctx $$> pure []
     L (GetGenresByName ns) -> GenreRepositoryIOC $ do
-      conn <- ask
       let names = val_ <$> ns
       let q = select $ filter_ (\g -> g ^. #name `in_` names) (all_ tbl)
-      ctx $$> runGenreRepositoryIOC ($(runPgDebug') conn (runSelectReturningList q))
+      ctx $$> runGenreRepositoryIOC ($(runPgDebug') (runSelectReturningList q))
     L (SearchGenres "") -> ctx $$> pure []
     L (SearchGenres t) -> GenreRepositoryIOC $ do
-      conn <- ask
       let q = select $ do
             genre <- all_ (DB.meloDb ^. #genre)
             guard_ (toTsVector Nothing (genre ^. #name) @@ toTsQuery Nothing (val_ (t <> "|" <> t <> ":*")))
             pure genre
-      ctx $$> $(runPgDebug') conn (runSelectReturningList q)
+      ctx $$> $(runPgDebug') (runSelectReturningList q)
     L (GetGenreArtists []) -> ctx $$> pure []
     L (GetGenreArtists ks) -> GenreRepositoryIOC $ do
-      conn <- ask
       let q = select $ do
             (g, a) <-
               manyToMany_
@@ -101,10 +98,9 @@ instance
                 (byKeys tbl ks)
                 (all_ (DB.meloDb ^. #artist))
             pure (primaryKey g, a)
-      ctx $$> runGenreRepositoryIOC ($(runPgDebug') conn (runSelectReturningList q))
+      ctx $$> runGenreRepositoryIOC ($(runPgDebug') (runSelectReturningList q))
     L (GetGenreAlbums []) -> pure $ ctx $> []
     L (GetGenreAlbums ks) -> GenreRepositoryIOC $ do
-      conn <- ask
       let q = select $ do
             (g, a) <-
               manyToMany_
@@ -114,10 +110,9 @@ instance
                 (byKeys tbl ks)
                 (all_ (DB.meloDb ^. #album))
             pure (primaryKey g, a)
-      ctx $$> runGenreRepositoryIOC ($(runPgDebug') conn (runSelectReturningList q))
+      ctx $$> runGenreRepositoryIOC ($(runPgDebug') (runSelectReturningList q))
     L (GetGenreTracks []) -> pure $ ctx $> []
     L (GetGenreTracks ks) -> GenreRepositoryIOC $ do
-      conn <- ask
       let q = select $ do
             (g, t) <-
               manyToMany_
@@ -127,17 +122,16 @@ instance
                 (byKeys tbl ks)
                 (all_ (DB.meloDb ^. #track))
             pure (primaryKey g, t)
-      ctx $$> runGenreRepositoryIOC ($(runPgDebug') conn (runSelectReturningList q))
+      ctx $$> runGenreRepositoryIOC ($(runPgDebug') (runSelectReturningList q))
     L (InsertGenres []) -> pure $ ctx $> []
     L (InsertGenres gs) -> GenreRepositoryIOC $ do
-      conn <- ask
       let q =
             insertReturning
               (DB.meloDb ^. #genre)
               (insertExpressions (newGenres <$> gs))
               (onConflict (conflictingFields (^. #name)) onConflictDoNothing)
               (Just primaryKey)
-      ctx $$> runGenreRepositoryIOC ($(runPgDebug') conn (runPgInsertReturningList q))
+      ctx $$> runGenreRepositoryIOC ($(runPgDebug') (runPgInsertReturningList q))
     R other -> GenreRepositoryIOC (alg (runGenreRepositoryIOC . hdl) other ctx)
 
 newGenres :: NewGenre -> DB.GenreT (QExpr Postgres s)

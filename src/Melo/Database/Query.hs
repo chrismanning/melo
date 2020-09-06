@@ -20,15 +20,18 @@ type ReusableQL = ReusableQ Postgres MeloDb
 type WithL = With Postgres MeloDb
 
 runPgDebug ::
-  Has (Lift IO) sig m =>
-  Connection ->
+  ( Has (Lift IO) sig m,
+    Has (Reader Connection) sig m
+  ) =>
   Pg a ->
   m a
-runPgDebug conn q = sendIO $ runBeamPostgresDebug (runStdoutLogging . $(logDebug)) conn q
+runPgDebug q = do
+  conn <- ask
+  sendIO $ runBeamPostgresDebug (runStdoutLogging . $(logDebug)) conn q
 
 runPgDebug' :: TH.Q TH.Exp
 runPgDebug' =
-  [|(\conn q -> sendIO $ runBeamPostgresDebug (runStdoutLogging . $(logDebug)) conn q)|]
+  [|(\q -> do conn <- ask; sendIO $ runBeamPostgresDebug (runStdoutLogging . $(logDebug)) conn q)|]
 
 getAll ::
   ( Has (Reader Connection) sig m,
@@ -38,15 +41,22 @@ getAll ::
   ) =>
   DatabaseEntity Postgres MeloDb (TableEntity tbl) ->
   m [tbl Identity]
-getAll tbl = do
-  conn <- ask
-  runPgDebug conn (runSelectReturningList (selectAll tbl))
+getAll tbl = runPgDebug (runSelectReturningList (selectAll tbl))
+
+getAllSorted o tbl = runPgDebug (runSelectReturningList (selectAllSorted o tbl))
 
 selectAll ::
   Table tbl =>
   DatabaseEntity Postgres MeloDb (TableEntity tbl) ->
   SqlSelect Postgres (tbl Identity)
 selectAll = select . all_
+
+--selectAllSorted ::
+--  Table tbl =>
+--  orderer ->
+--  DatabaseEntity Postgres MeloDb (TableEntity tbl) ->
+--  SqlSelect Postgres (tbl Identity)
+selectAllSorted o = select . orderBy_ (asc_ . o) . all_
 
 getByKeys ::
   ( Has (Reader Connection) sig m,
@@ -59,10 +69,9 @@ getByKeys ::
   [PrimaryKey tbl Identity] ->
   m [tbl Identity]
 getByKeys _ [] = pure []
-getByKeys tbl ks = do
-  conn <- ask
+getByKeys tbl ks =
   let q = select (byKeys tbl ks)
-  runPgDebug conn (runSelectReturningList q)
+   in runPgDebug (runSelectReturningList q)
 
 byKeys ::
   ( Table tbl,
@@ -83,7 +92,6 @@ deleteByKeys ::
   [PrimaryKey tbl Identity] ->
   m ()
 deleteByKeys _ [] = pure ()
-deleteByKeys tbl ks = do
-  conn <- ask
+deleteByKeys tbl ks =
   let q = delete tbl (\t -> primaryKey t `in_` (val_ <$> ks))
-  runPgDebug conn (runDelete q)
+   in runPgDebug (runDelete q)

@@ -32,11 +32,11 @@ instance
       sendM $ waitDebit lc rl 1
       pure ctx
     R other ->
-      RateLimitIOC
-        $ ReaderC
-        $ \lc ->
-          ReaderC $ \rl ->
-            alg (runReader rl . runReader lc . runRateLimitIOC . hdl) other ctx
+      RateLimitIOC $
+        ReaderC $
+          \lc ->
+            ReaderC $ \rl ->
+              alg (runReader rl . runReader lc . runRateLimitIOC . hdl) other ctx
 
 runRateLimitIO ::
   Has (Lift IO) sig m =>

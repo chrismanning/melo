@@ -131,6 +131,7 @@ instance From NewStagedArtist (DB.ArtistStageT (QExpr Postgres s)) where
         ref_track_id = nothing_
       }
 
-data Reviewed a = CommitAsIs
+data Reviewed a
+  = CommitAsIs
   | CommitAs a
   | DoNotCommit

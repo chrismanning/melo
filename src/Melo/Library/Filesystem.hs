@@ -1,3 +1,5 @@
+{-# LANGUAGE UndecidableInstances #-}
+
 module Melo.Library.Filesystem where
 
 import Basement.From
@@ -10,13 +12,18 @@ import Control.Carrier.Lift
 import Control.Carrier.Reader
 import Control.Effect.Reader
 import Control.Effect.Sum
+import Control.Effect.TH
 import Control.Exception.Safe
 import Control.Lens hiding (lens)
 import Control.Monad
+import Control.Monad.IO.Class
 import Control.Monad.Logger (LoggingT)
+import Control.Monad.Trans
+import Control.Monad.Trans.Identity
 import Data.Attoparsec.Text
 import Data.Foldable
 import qualified Data.HashMap.Strict as H
+import Data.Kind (Type)
 import Data.List.NonEmpty as NE
 import Data.Maybe
 import Data.Pool
@@ -31,10 +38,15 @@ import Database.Beam.Postgres.Full as Pg
 import qualified Database.PostgreSQL.Simple as Pg
 import Debug.Trace
 import GHC.Records
+import Generics.Deriving.Default
 import Haxl.Core
+import Melo.Common.Effect
+import Melo.Common.FileSystem
 import Melo.Common.Http
 import Melo.Common.Logging
 import Melo.Common.RateLimit
+import Melo.Database.Model as BM
+import Melo.Database.Transaction as Tr
 import Melo.Format.Ape
 import Melo.Format.ID3.ID3v1
 import Melo.Format.ID3.ID3v2
@@ -46,10 +58,8 @@ import Melo.Format.Vorbis
 import Melo.Library.Album.Repo
 import Melo.Library.Album.Service
 import Melo.Library.Artist.Repo
-import Melo.Library.Artist.Staging.Repo
 import Melo.Library.Artist.Service
-import Melo.Database.Model as BM
-import Melo.Database.Transaction as Tr
+import Melo.Library.Artist.Staging.Repo
 import Melo.Library.Genre.Repo
 import Melo.Library.Service
 import Melo.Library.Source.Repo
@@ -58,10 +68,10 @@ import Melo.Library.Track.Repo
 import Melo.Library.Track.Service
 import Melo.Lookup.MusicBrainz
 import Network.URI
-import qualified Network.Wreq.Session as Sess
 import Network.Wreq.Session (Session)
-import System.Directory
-import System.FilePath.Posix
+import qualified Network.Wreq.Session as Sess
+import qualified System.Directory as Dir
+import qualified System.FilePath.Posix as Path
 
 importDeep :: Pool Connection -> FilePath -> IO ()
 importDeep pool root = do
@@ -79,10 +89,10 @@ type Importer sig m =
     Has AlbumService sig m,
     Has ArtistRepository sig m,
     Has ArtistStagingRepository sig m,
-    Has ArtistService sig m,
     Has GenreRepository sig m,
     Has TrackRepository sig m,
     Has TrackService sig m,
+    Has FileSystem sig m,
     Has Logging sig m,
     Has Empty sig m
   )
@@ -90,21 +100,22 @@ type Importer sig m =
 runImporter sess =
   runEmpty (sendIO $ putStrLn "failed") (sendIO . print)
     . runStdoutLogging
+    . runFileSystemIO
     . runMusicBrainzServiceIO sess
     . runAlbumRepositoryIO
     . runAlbumServiceIO
     . runArtistRepositoryIO
     . runArtistStagingRepositoryIO
-    . runArtistServiceIO
     . runTrackRepositoryIO
     . runTrackServiceIO
     . runSourceRepositoryIO
-    . runSourceServiceIO
     . runGenreRepositoryIO
     . runLibraryServiceIO
 
 importPath' :: Pool Connection -> Session -> FilePath -> IO ()
 importPath' pool sess dir = do
-  Tr.runTransaction pool $ Tr.withTransaction $ runImporter sess $
-    importPath dir
+  Tr.runTransaction pool $
+    Tr.withTransaction $
+      runImporter sess $
+        importPath dir
   pure ()

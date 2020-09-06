@@ -1,4 +1,5 @@
 {-# LANGUAGE UndecidableInstances #-}
+
 module Melo.Library.Artist.Staging.Repo where
 
 import Basement.From
@@ -6,15 +7,15 @@ import Control.Algebra
 import Control.Effect.Lift
 import Control.Effect.Reader
 import Control.Lens hiding (from)
+import Data.List (nub)
 import Data.Text
 import Database.Beam
 import Database.Beam.Postgres as Pg
 import Database.Beam.Postgres.Full as Pg
 import Melo.Common.Effect
-import Melo.Library.Artist.Types
 import qualified Melo.Database.Model as DB
 import Melo.Database.Query
-import Data.List (nub)
+import Melo.Library.Artist.Types
 
 data ArtistStagingRepository :: Effect where
   GetAllStagedArtists :: ArtistStagingRepository m [DB.ArtistStage]
@@ -59,7 +60,6 @@ instance
     SearchStagedArtists t -> undefined
     InsertStagedArtists as' -> do
       let !as = nub as'
-      conn <- ask
       let q =
             runPgInsertReturningList $
               insertReturning
@@ -74,7 +74,7 @@ instance
                     )
                 )
                 (Just primaryKey)
-      ctx $$> $(runPgDebug') conn q
+      ctx $$> $(runPgDebug') q
   alg hdl (R other) ctx = ArtistStagingRepositoryIOC (alg (runArtistStagingRepositoryIOC . hdl) other ctx)
 
 runArtistStagingRepositoryIO :: ArtistStagingRepositoryIOC m a -> m a

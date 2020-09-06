@@ -6,7 +6,9 @@ import Basement.From
 import Control.Algebra
 import Control.Effect.Lift
 import Control.Effect.Reader
+import Control.Effect.TH
 import Control.Lens hiding (from)
+import Control.Monad
 import Data.Functor
 import qualified Data.Text as T
 import Database.Beam as B hiding (char, insert)
@@ -14,25 +16,11 @@ import Database.Beam.Backend.SQL.BeamExtensions as B
 import Database.Beam.Postgres as Pg
 import Database.Beam.Postgres.Full as Pg
 import Melo.Common.Effect
+import Melo.Common.NaturalSort
 import qualified Melo.Database.Model as DB
 import Melo.Database.Query
 import Melo.Library.Source.Types
 import Network.URI
-
-getAllSources :: Has SourceRepository sig m => m [DB.Source]
-getAllSources = send GetAllSources
-
-getSources :: Has SourceRepository sig m => [DB.SourceKey] -> m [DB.Source]
-getSources ks = send (GetSources ks)
-
-getSourcesByUri :: Has SourceRepository sig m => [URI] -> m [DB.Source]
-getSourcesByUri srcs = send (GetSourcesByUri srcs)
-
-insertSources :: Has SourceRepository sig m => [NewSource] -> m [DB.Source]
-insertSources ts = send (InsertSources ts)
-
-deleteSources :: Has SourceRepository sig m => [DB.SourceKey] -> m ()
-deleteSources ks = send (DeleteSources ks)
 
 data SourceRepository :: Effect where
   GetAllSources :: SourceRepository m [DB.Source]
@@ -40,6 +28,9 @@ data SourceRepository :: Effect where
   GetSourcesByUri :: [URI] -> SourceRepository m [DB.Source]
   InsertSources :: [NewSource] -> SourceRepository m [DB.Source]
   DeleteSources :: [DB.SourceKey] -> SourceRepository m ()
+  UpdateSources :: [UpdateSource] -> SourceRepository m ()
+
+makeSmartConstructors ''SourceRepository
 
 newtype SourceRepositoryIOC m a = SourceRepositoryIOC
   { runSourceRepositoryIOC :: m a
@@ -54,17 +45,15 @@ instance
   Algebra (SourceRepository :+: sig) (SourceRepositoryIOC m)
   where
   alg hdl sig ctx = case sig of
-    L GetAllSources -> ctx $$> getAll tbl
+    L GetAllSources -> ctx $$> sortNaturalBy (^. #source_uri) <$> getAll tbl
     L (GetSources ks) -> ctx $$> getByKeys tbl ks
     L (GetSourcesByUri []) -> pure $ ctx $> []
     L (GetSourcesByUri fs) -> SourceRepositoryIOC $ do
-      conn <- ask
       let q = filter_ (\t -> t ^. #source_uri `in_` fmap (val_ . T.pack . show) fs) (all_ $ DB.meloDb ^. #source)
-      r <- runSourceRepositoryIOC ($(runPgDebug') conn (runSelectReturningList (select q)))
+      r <- $(runPgDebug') (runSelectReturningList (select q))
       pure $ ctx $> r
     L (InsertSources []) -> pure $ ctx $> []
-    L (InsertSources ss) -> SourceRepositoryIOC $ do
-      conn <- ask
+    L (InsertSources ss) -> do
       let q =
             Pg.insertReturning
               tbl
@@ -72,13 +61,18 @@ instance
               ( Pg.onConflict
                   (B.conflictingFields (\t -> (t ^. #source_uri, t ^. #idx)))
                   ( Pg.onConflictUpdateInstead
-                      (^. #scanned)
+                      (\s -> (s ^. #scanned, s ^. #metadata, s ^. #kind, s ^. #metadata_format))
                   )
               )
               (Just id)
-      r <- runSourceRepositoryIOC ($(runPgDebug') conn (Pg.runPgInsertReturningList q))
+      r <- $(runPgDebug') (Pg.runPgInsertReturningList q)
       pure $ ctx $> r
     L (DeleteSources ks) -> ctx $$> deleteByKeys tbl ks
+    L (UpdateSources us) -> do
+      forM_ us $ \u -> do
+        let q = save tbl u
+        $(runPgDebug') (runUpdate q)
+      pure ctx
     R other -> SourceRepositoryIOC (alg (runSourceRepositoryIOC . hdl) other ctx)
 
 runSourceRepositoryIO :: SourceRepositoryIOC m a -> m a

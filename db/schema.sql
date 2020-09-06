@@ -66,7 +66,8 @@ CREATE TABLE melo.album (
     title text NOT NULL,
     comment text,
     year_released text,
-    length interval
+    length interval,
+    musicbrainz_id text
 );
 
 
@@ -116,7 +117,8 @@ CREATE TABLE melo.artist (
     disambiguation text,
     short_bio text,
     bio text,
-    country text
+    country text,
+    musicbrainz_id text
 );
 
 
@@ -405,6 +407,20 @@ ALTER TABLE ONLY public.schema_migrations
 
 
 --
+-- Name: album_musicbrainz_id_uindex; Type: INDEX; Schema: melo; Owner: -
+--
+
+CREATE UNIQUE INDEX album_musicbrainz_id_uindex ON melo.album USING btree (musicbrainz_id);
+
+
+--
+-- Name: artist_musicbrainz_id_uindex; Type: INDEX; Schema: melo; Owner: -
+--
+
+CREATE UNIQUE INDEX artist_musicbrainz_id_uindex ON melo.artist USING btree (musicbrainz_id);
+
+
+--
 -- Name: artist_name_disambiguation_uindex; Type: INDEX; Schema: melo; Owner: -
 --
 
@@ -629,4 +645,5 @@ ALTER TABLE ONLY melo.track_stage
 --
 
 INSERT INTO public.schema_migrations (version) VALUES
-    ('20200505222518');
+    ('20200505222518'),
+    ('20200626210715');

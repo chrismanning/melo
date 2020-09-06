@@ -25,6 +25,8 @@ import Database.Beam.Postgres.Full as Pg
 import Melo.Common.Effect
 import Melo.Common.Logging
 import Melo.Common.Metadata
+import qualified Melo.Database.Model as DB
+import Melo.Database.Query
 import Melo.Format.Info
 import Melo.Format.Internal.Metadata
 import qualified Melo.Format.Mapping as M
@@ -32,8 +34,6 @@ import Melo.Library.Album.Repo
 import Melo.Library.Album.Service
 import Melo.Library.Artist.Repo
 import Melo.Library.Artist.Service
-import qualified Melo.Database.Model as DB
-import Melo.Database.Query
 import Melo.Library.Source.Types
 import Melo.Library.Track.Repo
 import Network.URI
@@ -62,8 +62,6 @@ runTrackServiceIO = runTrackServiceIOC
 
 instance
   ( Has TrackRepository sig m,
-    Has ArtistService sig m,
-    Has AlbumService sig m,
     Has Logging sig m
   ) =>
   Algebra (TrackService :+: sig) (TrackServiceIOC m)
