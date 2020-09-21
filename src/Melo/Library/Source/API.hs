@@ -6,8 +6,6 @@ module Melo.Library.Source.API where
 import Basement.From
 import Control.Algebra
 import Control.Applicative
-import Control.Carrier.Lift
-import Control.Effect.Reader
 import Control.Lens hiding (from, (|>))
 import Control.Monad
 import Data.Aeson as A
@@ -282,14 +280,6 @@ data SourceGroup' m = SourceGroup'
   }
   deriving (Generic)
 
---instance From SourceGroup' SourceGroup where
---  from g =
---    SourceGroup
---      { groupTags = g ^. #groupTags,
---        groupParentUri = g ^. #groupParentUri,
---        sources = toList $ g ^. #sources
---      }
-
 getParentUri :: Text -> Text
 getParentUri srcUri = case parseURI (T.unpack srcUri) of
   Just uri -> case uriScheme uri of
@@ -397,9 +387,7 @@ updateSourcesImpl ::
   forall sig m e.
   ( Has SourceRepository sig m,
     Has Logging sig m,
-    Has MetadataService sig m,
-    Has (Reader Connection) sig m,
-    Has (Lift IO) sig m
+    Has MetadataService sig m
   ) =>
   UpdateSourcesArgs ->
   MutRes e m UpdatedSources
@@ -409,47 +397,38 @@ updateSourcesImpl (UpdateSourcesArgs updates) = do
   pure UpdatedSources {results}
   where
     updateSource :: SourceUpdate' -> m UpdateSourceResult
-    updateSource update =
-      case fromText $ update ^. #id of
+    updateSource SourceUpdate' {..} =
+      case fromText id of
         Nothing -> do
-          let id = update ^. #id
           let msg = "invalid source id '" <> id <> "'; expected UUID"
           $(logError) msg
           pure $ FailedSourceUpdate {id, msg}
         Just key ->
-          case parseURI (T.unpack $ update ^. #originalSource . #source_uri) >>= uriToFilePath of
+          case parseURI (T.unpack $ originalSource ^. #source_uri) >>= uriToFilePath of
             Just path -> do
-              let metadataFileId = F.MetadataFileId $ update ^. #originalSource . #kind
+              let metadataFileId = F.MetadataFileId $ originalSource ^. #kind
               -- TODO catch exceptions with fused-effects-exceptions
               f <-
                 readMetadataFile metadataFileId path
-                  <&> #metadata . each %~ resolveMetadata (update ^. #updateTags)
+                  <&> #metadata . each %~ resolveMetadata updateTags
               f <- writeMetadataFile f path
               case chooseMetadata (H.elems (f ^. #metadata)) of
                 Nothing -> do
-                  let id = update ^. #id
                   let msg = T.pack $ "unable to choose metadata format for source '" <> show id <> "'"
                   $(logError) msg
                   pure $ FailedSourceUpdate {id, msg}
                 Just metadata -> do
-                  let tags = PgJSONB $ Ty.tagsToValue (F.tags metadata)
-                  let metadataFormat = coerce $ F.formatId metadata
-                  let q =
-                        runUpdate $
-                          B.update
-                            (DB.meloDb ^. #source)
-                            ( \s ->
-                                (s ^. #metadata <-. val_ tags)
-                                  <> (s ^. #metadata_format <-. val_ metadataFormat)
-                            )
-                            (\s -> s ^. #id ==. val_ key)
-                  $(runPgDebug') q
+                  let updatedSource =
+                        originalSource
+                          { DB.metadata = PgJSONB $ Ty.tagsToValue (F.tags metadata),
+                            DB.metadata_format = coerce $ F.formatId metadata
+                          }
+                  updateSources [updatedSource]
                   pure
                     UpdatedSource
                       { id = toText key
                       }
             Nothing -> do
-              let id = update ^. #id
               let msg = T.pack $ "invalid source id '" <> show id <> "'"
               $(logError) msg
               pure $ FailedSourceUpdate {id, msg}

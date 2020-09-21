@@ -8,6 +8,7 @@ data MetadataException
   = UnknownFormat
   | UnsupportedFormat
   | MetadataReadError Text
+  | MetadataWriteError Text
   | MetadataNotFound MetadataId
   deriving (Eq, Show)
 

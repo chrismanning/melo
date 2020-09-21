@@ -75,20 +75,20 @@ instance Eq Metadata where
 class MetadataFormat a where
   metadataFormat :: MetadataFormatDesc
   metadataLens :: TagMapping -> TagLens
-  metadataFactory :: MetadataId -> Tags -> Maybe Metadata
-  default metadataFactory :: MetadataId -> Tags -> Maybe Metadata
-  metadataFactory mid tags =
-    let MetadataFormat {..} = metadataFormat @a
-     in if mid == formatId
-          then
-            Just
-              Metadata
-                { formatId,
-                  formatDesc,
-                  tags,
-                  lens = metadataLens @a
-                }
-          else Nothing
+
+metadataFactory :: forall a. MetadataFormat a => MetadataId -> Tags -> Maybe Metadata
+metadataFactory mid tags =
+  let MetadataFormat {..} = metadataFormat @a
+   in if mid == formatId
+        then
+          Just
+            Metadata
+              { formatId,
+                formatDesc,
+                tags,
+                lens = metadataLens @a
+              }
+        else Nothing
 
 data MetadataFormatDesc = MetadataFormat
   { formatId :: !MetadataId,
@@ -104,3 +104,8 @@ extractMetadata a =
       tags = readTags a,
       lens = metadataLens @a
     }
+
+class MetadataDeserialiser a where
+
+class MetadataSize a where
+  metadataSize :: a -> Integer

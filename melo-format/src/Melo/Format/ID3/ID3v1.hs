@@ -5,6 +5,7 @@ module Melo.Format.ID3.ID3v1
     hRemoveID3v1,
     id3v1Id,
     id3v1Tag,
+    id3v1Size,
   )
 where
 
@@ -76,9 +77,12 @@ id3v1Id = MetadataId "ID3v1"
 id3v1Tag :: TagMapping -> TagLens
 id3v1Tag = mappedTag id3v1
 
+id3v1Size :: Integer
+id3v1Size = 128
+
 instance MetadataLocator ID3v1 where
   hLocate h = do
-    hSeek h SeekFromEnd (-128)
+    hSeek h SeekFromEnd (-id3v1Size)
     pos <- fromIntegral <$> hTell h
     tag <- BS.hGet h 3
     return $ case tag of
@@ -122,7 +126,7 @@ instance TagWriter ID3v1 where
           (listToMaybe $ lookupTag (toCanonicalForm $ id3v1 fm) newTags)
 
 instance Binary ID3v1 where
-  get = isolate 128 getID3v1
+  get = isolate (fromInteger id3v1Size) getID3v1
 
   put = putID3v1
 
@@ -197,7 +201,7 @@ hReplaceID3v1 h id3 = do
     Just l' -> hSeek h AbsoluteSeek l'
     Nothing -> do
       hSeek h SeekFromEnd 0
-      hFileSize h <&> (+ 128) >>= hSetFileSize h
+      hFileSize h <&> (+ id3v1Size) >>= hSetFileSize h
   let tagBuf = runPut $ put id3
   L.hPut h tagBuf
 

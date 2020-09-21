@@ -28,7 +28,8 @@ spec = do
             sampleRate = 44100,
             bitrateMax = Nothing,
             bitrateNominal = Just 80000,
-            bitrateMin = Nothing
+            bitrateMin = Nothing,
+            blockSize = 184
           }
       vc
         `shouldBe` VorbisComments

@@ -2,7 +2,8 @@ module Melo.Format.Internal.BinaryUtil
   ( get24Bits,
     getLazyByteStringUpTo,
     getNullTerminatedAscii,
-    getUTF8Text,
+    getUtf8Text,
+    putUtf8Text,
     expect,
     expectGet,
     expectGet_,
@@ -17,14 +18,19 @@ import Control.Monad.Fail as Fail
 import Data.Binary
 import qualified Data.Binary.Bits.Get as BG
 import Data.Binary.Get
+import Data.Binary.Put
 import qualified Data.ByteString.Lazy as L
 import Data.Text as T
+import Data.Text.Encoding
 import Melo.Format.Internal.Encoding
 import System.IO
 import Text.Printf
 
-getUTF8Text :: Int -> Get Text
-getUTF8Text n = getByteString n >>= decodeUtf8OrFail
+getUtf8Text :: Int -> Get Text
+getUtf8Text n = getByteString n >>= decodeUtf8OrFail
+
+putUtf8Text :: Text -> Put
+putUtf8Text = putByteString . encodeUtf8
 
 getNullTerminatedAscii :: Get Text
 getNullTerminatedAscii =

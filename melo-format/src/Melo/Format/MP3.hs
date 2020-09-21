@@ -141,10 +141,10 @@ tryGetHeader = isolate 4 $ BG.runBitGet $ do
 instance MetadataLocator FrameHeader where
   hLocate h =
     hLocateGet' @ID3.ID3v2_3 h >>= \case
-      Just ID3.ID3v2_3 {id3v2size} ->
+      Just ID3.ID3v2 {id3v2size} ->
         findHeader (id3v2size + fromIntegral ID3.headerSize)
       Nothing -> hLocateGet' @ID3.ID3v2_4 h >>= \case
-        Just ID3.ID3v2_4 {id3v2size} ->
+        Just ID3.ID3v2 {id3v2size} ->
           findHeader (id3v2size + fromIntegral ID3.headerSize)
         Nothing ->
           findHeader 0

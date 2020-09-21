@@ -53,8 +53,6 @@ extra-deps:
     commit: 587ac10827b28327f03c89081d9797b8953780fc
   - github: caraus-ecms/graphql
     commit: 613e929d91dfc46ecfc5e28479098ce52aeb56f6
-  - github: fused-effects/fused-effects
-    commit: 40cf33031576f179c9e4ba3f9e8a33ba642fcc91
   - github: aycanirican/hweblib
     commit: aeda1f04c292bcd4648f395a6d2494685d2ca402
   - barbies-2.0.0.0
@@ -71,6 +69,7 @@ extra-deps:
   - fmt-0.6.1
   - fraxl-0.3.0.0
   - fused-effects-th-0.1.0.1
+  - fused-effects-1.1.0.0
   - fused-effects-exceptions-1.1.0.0
   - generic-aeson-0.2.0.10
 #  - graphql-0.5.1.0

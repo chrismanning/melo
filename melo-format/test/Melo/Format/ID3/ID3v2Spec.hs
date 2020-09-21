@@ -47,11 +47,11 @@ spec =
     context "ID3v2.3" $ do
       context "with valid input" $ do
         it "finds tags" $ do
-          h <- openBinaryFile "test/Melo/vbr-id3v23.mp3" ReadMode
+          h <- openBinaryFile "test/Melo/silence-1s-id3v23.mp3" ReadMode
           id3pos <- hLocate @ID3v2_3 h
           id3pos `shouldSatisfy` isJust
         it "parses ID3v2.3" $ do
-          id3 <- readID3v2_3Tags "test/Melo/vbr-id3v23.mp3"
+          id3 <- readID3v2_3Tags "test/Melo/silence-1s-id3v23.mp3"
           let t = readTags id3
           getMappedTag M.id3v2_3 artist t `shouldBe` fromList ["κόσμε"]
           getMappedTag M.id3v2_3 trackTitle t
