@@ -2,13 +2,17 @@ module Melo.Format.Internal.Encoding
   ( decodeUtf8OrFail,
     decodeUtf16BEOrFail,
     decodeUtf16WithBOMOrFail,
+    encodeLatin1,
+    utf16BeBom,
+    utf16LeBom,
   )
 where
 
 import Control.Exception.Safe
 import Control.Monad.Fail as Fail
 import Data.ByteString as BS
-import Data.Text
+import qualified Data.ByteString.Char8 as C8
+import Data.Text as T
 import Data.Text.Encoding
 import Data.Text.Encoding.Error
 import Debug.Trace
@@ -49,3 +53,12 @@ decodeUtf' ::
   ByteString ->
   Either UnicodeException Text
 decodeUtf' f = unsafePerformIO . tryDeep . pure . f strictDecode
+
+encodeLatin1 :: Text -> ByteString
+encodeLatin1 = C8.pack . T.unpack
+
+utf16BeBom :: ByteString
+utf16BeBom = "\xFE\xFF"
+
+utf16LeBom :: ByteString
+utf16LeBom = "\xFF\xFE"
