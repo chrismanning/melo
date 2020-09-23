@@ -89,7 +89,7 @@ locateApe bs v =
           Just $
             if isHeader (flags header)
               then i
-              else i - fromIntegral (numBytes header) - headerSize
+              else i - (fromIntegral (numBytes header) - headerSize)
 
 hLocateApe :: Num a => Handle -> Version -> IO (Maybe a)
 hLocateApe h v = do
