@@ -82,7 +82,7 @@ id3v1Size = 128
 
 instance MetadataLocator ID3v1 where
   hLocate h = do
-    hSeek h SeekFromEnd (-id3v1Size)
+    hSeek h SeekFromEnd (- id3v1Size)
     pos <- fromIntegral <$> hTell h
     tag <- BS.hGet h 3
     return $ case tag of
@@ -91,22 +91,24 @@ instance MetadataLocator ID3v1 where
 
 instance TagReader ID3v1 where
   readTags id3 =
-    Tags $ V.fromList $
-      catMaybes
-        [ tag trackTitleTag title,
-          tag trackArtistTag artist,
-          tag albumTitleTag album,
-          tag yearTag year,
-          tag commentTag comment,
-          do
-            let fm = headTagMapping trackNumberTag
-            track' <- track id3
-            pure (toCanonicalForm $ id3v1 fm, T.pack $ show track'),
-          tag genreTag genre
-        ]
+    Tags $
+      V.fromList $
+        catMaybes
+          [ tag trackTitleTag title,
+            tag trackArtistTag artist,
+            tag albumTitleTag album,
+            tag yearTag year,
+            tag commentTag comment,
+            do
+              let fm = headTagMapping trackNumberTag
+              track' <- track id3
+              pure (toCanonicalForm $ id3v1 fm, T.pack $ show track'),
+            tag genreTag genre
+          ]
     where
-      tag tm sel = let fm = headTagMapping tm in
-        Just (toCanonicalForm $ id3v1 fm, sel id3)
+      tag tm sel =
+        let fm = headTagMapping tm
+         in Just (toCanonicalForm $ id3v1 fm, sel id3)
 
 instance TagWriter ID3v1 where
   saveTags _ newTags =
@@ -120,10 +122,11 @@ instance TagWriter ID3v1 where
         genre = saveTag genreTag
       }
     where
-      saveTag tm = let fm = headTagMapping tm in
-        fromMaybe
-          ""
-          (listToMaybe $ lookupTag (toCanonicalForm $ id3v1 fm) newTags)
+      saveTag tm =
+        let fm = headTagMapping tm
+         in fromMaybe
+              ""
+              (listToMaybe $ lookupTag (toCanonicalForm $ id3v1 fm) newTags)
 
 instance Binary ID3v1 where
   get = isolate (fromInteger id3v1Size) getID3v1

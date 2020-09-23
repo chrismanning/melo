@@ -11,8 +11,8 @@ import Melo.Format.Metadata
 import Melo.Library.Artist.Service
 import Melo.Library.Service
 import Melo.Lookup.MusicBrainz
-import qualified Network.Wreq.Session as Sess
 import Network.Wreq.Session (Session)
+import qualified Network.Wreq.Session as Sess
 import Test.Hspec
 
 main :: IO ()

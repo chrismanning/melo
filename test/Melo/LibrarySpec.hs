@@ -31,10 +31,10 @@ import Language.Haskell.TH
 import qualified Melo.API as API
 --import qualified Melo.API.Haxl as API
 
+import Melo.Database.Query
 import qualified Melo.GraphQL.Resolve as API
 import Melo.Library
 import qualified Melo.Library.API as API
-import Melo.Database.Query
 import Melo.Library.Repo.Haxl as API
 import System.IO
 import Test.Hspec
@@ -109,15 +109,15 @@ spec = do
                   $ Seq.fromList
                     [ QL.SelectionField $ QL.Field Nothing "slug" (QL.Arguments H.empty) Seq.empty,
                       QL.SelectionField $ QL.Field Nothing "name" (QL.Arguments H.empty) Seq.empty,
-                      QL.SelectionField
-                        $ QL.Field
+                      QL.SelectionField $
+                        QL.Field
                           Nothing
                           "tracks"
                           (QL.Arguments H.empty)
-                        $ Seq.fromList
-                          [ QL.SelectionField $ QL.Field Nothing "slug" (QL.Arguments H.empty) Seq.empty,
-                            QL.SelectionField $ QL.Field Nothing "title" (QL.Arguments H.empty) Seq.empty
-                          ]
+                          $ Seq.fromList
+                            [ QL.SelectionField $ QL.Field Nothing "slug" (QL.Arguments H.empty) Seq.empty,
+                              QL.SelectionField $ QL.Field Nothing "title" (QL.Arguments H.empty) Seq.empty
+                            ]
                     ]
               ]
       -- ]
@@ -126,6 +126,7 @@ spec = do
       rs <- runHaxl e x
       L8.putStrLn $ A.encodingToLazyByteString rs
       pending
+
 --   dumpPgSqlSelect artistAlbums
 -- it "reads entire library" $ do
 --   let queryTxt = [r|{

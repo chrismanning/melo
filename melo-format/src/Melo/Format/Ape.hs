@@ -252,10 +252,11 @@ instance Binary Version where
   get = getVersion
 
 getVersion :: Get Version
-getVersion = getWord32le >>= \case
-  1000 -> return V1
-  2000 -> return V2
-  x -> fail $ "Invalid APE tag version " <> show x
+getVersion =
+  getWord32le >>= \case
+    1000 -> return V1
+    2000 -> return V2
+    x -> fail $ "Invalid APE tag version " <> show x
 
 data Flags = Flags
   { hasHeader :: !Bool,

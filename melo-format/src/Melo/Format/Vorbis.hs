@@ -46,10 +46,11 @@ data PacketType
   deriving (Eq, Show)
 
 getPacketType :: Get (Maybe PacketType)
-getPacketType = getWord8 <&> \case
-  1 -> Just IdentificationHeaderType
-  3 -> Just CommentsHeaderType
-  _ -> Nothing
+getPacketType =
+  getWord8 <&> \case
+    1 -> Just IdentificationHeaderType
+    3 -> Just CommentsHeaderType
+    _ -> Nothing
 
 putPacketType :: PacketType -> Put
 putPacketType IdentificationHeaderType = putWord8 1

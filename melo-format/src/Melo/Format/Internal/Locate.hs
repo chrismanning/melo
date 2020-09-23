@@ -31,11 +31,12 @@ locateBinary bs = locateBinaryLazy @a $ L.fromStrict bs
 
 hLocateGet :: forall a. (MetadataLocator a) => Handle -> IO a
 hLocateGet h = do
-  bs <- hLocate @a h >>= \case
-    Nothing -> F.fail "Could not locate metadata"
-    Just i -> do
-      hSeek h AbsoluteSeek (fromIntegral i)
-      hGetFileContents h
+  bs <-
+    hLocate @a h >>= \case
+      Nothing -> F.fail "Could not locate metadata"
+      Just i -> do
+        hSeek h AbsoluteSeek (fromIntegral i)
+        hGetFileContents h
   return $ bdecode bs
 
 hLocateGet' :: forall a. (MetadataLocator a) => Handle -> IO (Maybe a)

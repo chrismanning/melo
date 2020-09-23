@@ -1,7 +1,7 @@
 module Melo.Format.Internal.Tag where
 
 import Data.Foldable
-import Data.List.NonEmpty (NonEmpty(..))
+import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe
 import Data.Text (Text)

@@ -105,7 +105,7 @@ extractMetadata a =
       lens = metadataLens @a
     }
 
-class MetadataDeserialiser a where
+class MetadataDeserialiser a
 
 class MetadataSize a where
   metadataSize :: a -> Integer

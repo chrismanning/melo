@@ -130,8 +130,9 @@ flacSize (MkFlacWithID3v2_3 id3v23 m) = metadataSize id3v23 + flacMetadataSize m
 flacSize (MkFlacWithID3v2_4 id3v24 m) = metadataSize id3v24 + flacMetadataSize m
 
 flacMetadataSize :: FlacMetadata -> Integer
-flacMetadataSize m = fromIntegral (BS.length marker) + blockHeaderSize + streamInfoSize +
-  getSum (foldMap (Sum . metadataBlockSize) (metadataBlocks m))
+flacMetadataSize m =
+  fromIntegral (BS.length marker) + blockHeaderSize + streamInfoSize
+    + getSum (foldMap (Sum . metadataBlockSize) (metadataBlocks m))
 
 hReadFlac :: Handle -> IO Flac
 hReadFlac h = do
@@ -165,10 +166,10 @@ hWriteFlac :: Handle -> Flac -> IO ()
 hWriteFlac h flac = do
   let buf = L.toStrict $ runPut (putFlac flac)
   hPut h buf
-    where
-      putFlac (MkFlac flacMetadata) = put flacMetadata
-      putFlac (MkFlacWithID3v2_3 id3 flacMetadata) = put id3 >> put flacMetadata
-      putFlac (MkFlacWithID3v2_4 id3 flacMetadata) = put id3 >> put flacMetadata
+  where
+    putFlac (MkFlac flacMetadata) = put flacMetadata
+    putFlac (MkFlacWithID3v2_3 id3 flacMetadata) = put id3 >> put flacMetadata
+    putFlac (MkFlacWithID3v2_4 id3 flacMetadata) = put id3 >> put flacMetadata
 
 flacMetadata :: Flac -> H.HashMap MetadataId Metadata
 flacMetadata (FlacWithID3v2_3 id3v2 f) =
@@ -317,39 +318,44 @@ instance Binary MetadataBlock where
         blockData <- getByteString $ fromIntegral len
         pure $ OtherBlock (isLast header) bt blockData
   put (StreamInfoBlock isLast streamInfo) = do
-    put MetadataBlockHeader {
-      blockType = 0,
-      blockLength = fromInteger streamInfoSize,
-      isLast
-    }
+    put
+      MetadataBlockHeader
+        { blockType = 0,
+          blockLength = fromInteger streamInfoSize,
+          isLast
+        }
     put streamInfo
   put (PaddingBlock isLast (Padding size)) = do
-    put MetadataBlockHeader {
-      blockType = 1,
-      blockLength = size,
-      isLast = isLast
-    }
+    put
+      MetadataBlockHeader
+        { blockType = 1,
+          blockLength = size,
+          isLast = isLast
+        }
     replicateM_ (fromIntegral size) $ putWord8 0
   put (VorbisCommentBlock isLast ft@(FlacTags vc)) = do
-    put MetadataBlockHeader {
-      blockType = 4,
-      blockLength = fromInteger $ metadataSize vc,
-      isLast
-    }
+    put
+      MetadataBlockHeader
+        { blockType = 4,
+          blockLength = fromInteger $ metadataSize vc,
+          isLast
+        }
     put ft
   put (PictureBlock isLast picture) = do
-    put MetadataBlockHeader {
-      blockType = 6,
-      blockLength = fromInteger $ pictureSize picture,
-      isLast
-    }
+    put
+      MetadataBlockHeader
+        { blockType = 6,
+          blockLength = fromInteger $ pictureSize picture,
+          isLast
+        }
     put picture
   put (OtherBlock isLast blockType blockData) = do
-    put MetadataBlockHeader {
-      blockType,
-      blockLength = fromIntegral $ BS.length blockData,
-      isLast
-    }
+    put
+      MetadataBlockHeader
+        { blockType,
+          blockLength = fromIntegral $ BS.length blockData,
+          isLast
+        }
     putByteString blockData
 
 data MetadataBlockHeader = MetadataBlockHeader

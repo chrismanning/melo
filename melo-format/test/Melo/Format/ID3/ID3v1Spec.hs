@@ -185,26 +185,73 @@ spec =
         id3v1 <- readID3v1Tags "test/Melo/id3v1/id3v1_270_genre_F.mp3"
         evaluate id3v1 `shouldThrow` anyErrorCall
     context "remove ID3v1" $ do
-      it "does nothing to untagged file"
-        $ withTempCopyOf "test/Melo/id3v1/no_tag.mp3"
-        $ \h -> do
-          x <- hLocate @ID3v1 h
-          x `shouldSatisfy` isNothing
-          hRemoveID3v1 h
-          x' <- hLocate @ID3v1 h
-          x' `shouldSatisfy` isNothing
-      it "removes existing ID3v1 tag"
-        $ withTempCopyOf "test/Melo/id3v1/id3v1_006_basic.mp3"
-        $ \h -> do
-          sz <- hFileSize h
-          hRemoveID3v1 h
-          sz' <- hFileSize h
-          pure (sz, sz') `shouldReturn` (704, 576)
+      it "does nothing to untagged file" $
+        withTempCopyOf "test/Melo/id3v1/no_tag.mp3" $
+          \h -> do
+            x <- hLocate @ID3v1 h
+            x `shouldSatisfy` isNothing
+            hRemoveID3v1 h
+            x' <- hLocate @ID3v1 h
+            x' `shouldSatisfy` isNothing
+      it "removes existing ID3v1 tag" $
+        withTempCopyOf "test/Melo/id3v1/id3v1_006_basic.mp3" $
+          \h -> do
+            sz <- hFileSize h
+            hRemoveID3v1 h
+            sz' <- hFileSize h
+            pure (sz, sz') `shouldReturn` (704, 576)
     context "replace ID3v1" $ do
-      it "replaces existing ID3v1.1 tag"
-        $ withTempCopyOf "test/Melo/id3v1/id3v1_006_basic.mp3"
-        $ \h -> do
-          oldTag <- hReadID3v1Tags h
+      it "replaces existing ID3v1.1 tag" $
+        withTempCopyOf "test/Melo/id3v1/id3v1_006_basic.mp3" $
+          \h -> do
+            oldTag <- hReadID3v1Tags h
+            let tag =
+                  ID3v1
+                    { title = "title",
+                      artist = "artist",
+                      album = "album",
+                      year = "2018",
+                      comment = "comment",
+                      track = Just 10,
+                      genre = "Garage Rock"
+                    }
+            oldTag `shouldNotBe` tag
+            h `shouldReplaceWith` tag
+      it "adds ID3v1 tag to tagless file" $
+        withTempCopyOf "test/Melo/id3v1/no_tag.mp3" $
+          \h -> do
+            x <- hLocate @ID3v1 h
+            x `shouldSatisfy` isNothing
+            let tag =
+                  ID3v1
+                    { title = "title",
+                      artist = "artist",
+                      album = "album",
+                      year = "2018",
+                      comment = "comment",
+                      track = Nothing,
+                      genre = "Garage Rock"
+                    }
+            h `shouldReplaceWith` tag
+      it "adds ID3v1.1 tag to tagless file" $
+        withTempCopyOf "test/Melo/id3v1/no_tag.mp3" $
+          \h -> do
+            x <- hLocate @ID3v1 h
+            x `shouldSatisfy` isNothing
+            let tag =
+                  ID3v1
+                    { title = "title",
+                      artist = "artist",
+                      album = "album",
+                      year = "2018",
+                      comment = "comment",
+                      track = Just 10,
+                      genre = "Garage Rock"
+                    }
+            h `shouldReplaceWith` tag
+    context "TagReader" $
+      it "maps ID3v1 fields to tags" $
+        do
           let tag =
                 ID3v1
                   { title = "title",
@@ -215,62 +262,15 @@ spec =
                     track = Just 10,
                     genre = "Garage Rock"
                   }
-          oldTag `shouldNotBe` tag
-          h `shouldReplaceWith` tag
-      it "adds ID3v1 tag to tagless file"
-        $ withTempCopyOf "test/Melo/id3v1/no_tag.mp3"
-        $ \h -> do
-          x <- hLocate @ID3v1 h
-          x `shouldSatisfy` isNothing
-          let tag =
-                ID3v1
-                  { title = "title",
-                    artist = "artist",
-                    album = "album",
-                    year = "2018",
-                    comment = "comment",
-                    track = Nothing,
-                    genre = "Garage Rock"
-                  }
-          h `shouldReplaceWith` tag
-      it "adds ID3v1.1 tag to tagless file"
-        $ withTempCopyOf "test/Melo/id3v1/no_tag.mp3"
-        $ \h -> do
-          x <- hLocate @ID3v1 h
-          x `shouldSatisfy` isNothing
-          let tag =
-                ID3v1
-                  { title = "title",
-                    artist = "artist",
-                    album = "album",
-                    year = "2018",
-                    comment = "comment",
-                    track = Just 10,
-                    genre = "Garage Rock"
-                  }
-          h `shouldReplaceWith` tag
-    context "TagReader"
-      $ it "maps ID3v1 fields to tags"
-      $ do
-        let tag =
-              ID3v1
-                { title = "title",
-                  artist = "artist",
-                  album = "album",
-                  year = "2018",
-                  comment = "comment",
-                  track = Just 10,
-                  genre = "Garage Rock"
-                }
-        let tags' = readTags tag
-        let getID3v1Tag = getMappedTag M.id3v1
-        getID3v1Tag M.trackTitle tags' `shouldBe` fromList ["title"]
-        getID3v1Tag M.artist tags' `shouldBe` fromList ["artist"]
-        getID3v1Tag M.album tags' `shouldBe` fromList ["album"]
-        getID3v1Tag M.year tags' `shouldBe` fromList ["2018"]
-        getID3v1Tag M.commentTag tags' `shouldBe` fromList ["comment"]
-        getID3v1Tag M.trackNumber tags' `shouldBe` fromList ["10"]
-        getID3v1Tag M.genre tags' `shouldBe` fromList ["Garage Rock"]
+          let tags' = readTags tag
+          let getID3v1Tag = getMappedTag M.id3v1
+          getID3v1Tag M.trackTitle tags' `shouldBe` fromList ["title"]
+          getID3v1Tag M.artist tags' `shouldBe` fromList ["artist"]
+          getID3v1Tag M.album tags' `shouldBe` fromList ["album"]
+          getID3v1Tag M.year tags' `shouldBe` fromList ["2018"]
+          getID3v1Tag M.commentTag tags' `shouldBe` fromList ["comment"]
+          getID3v1Tag M.trackNumber tags' `shouldBe` fromList ["10"]
+          getID3v1Tag M.genre tags' `shouldBe` fromList ["Garage Rock"]
 
 shouldReplaceWith :: Handle -> ID3v1 -> IO ()
 shouldReplaceWith h tag = do

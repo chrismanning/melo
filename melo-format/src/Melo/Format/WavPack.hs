@@ -24,11 +24,11 @@ import qualified Melo.Format.Ape as Ape
 import qualified Melo.Format.ID3 as ID3
 import Melo.Format.Internal.Binary
 import Melo.Format.Internal.BinaryUtil
-import qualified Melo.Format.Internal.Info as I
 import Melo.Format.Internal.Info
   ( Info (..),
     InfoReader (..),
   )
+import qualified Melo.Format.Internal.Info as I
 import Melo.Format.Internal.Locate
 import Melo.Format.Internal.Metadata
 import Numeric.Natural (Natural)
@@ -251,10 +251,11 @@ findApe h = do
       hSeek h AbsoluteSeek $ fromIntegral n
       bs <- BS.hGet h Ape.headerSize
       let footer = runGet Ape.getHeader (L.fromStrict bs)
-      return $ Just $
-        if Ape.isHeader (Ape.flags footer)
-          then fromIntegral n
-          else fromIntegral n - fromIntegral (Ape.numBytes footer)
+      return $
+        Just $
+          if Ape.isHeader (Ape.flags footer)
+            then fromIntegral n
+            else fromIntegral n - fromIntegral (Ape.numBytes footer)
     Nothing -> return Nothing
 
 findID3 :: Handle -> IO (Maybe Natural)

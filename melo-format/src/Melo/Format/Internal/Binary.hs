@@ -12,8 +12,8 @@ where
 
 import Control.Exception.Safe
 import qualified Data.Binary as Bin
-import qualified Data.Binary.Get as Bin
 import Data.Binary.Get (Decoder (..))
+import qualified Data.Binary.Get as Bin
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString.Lazy.Internal as L
