@@ -117,20 +117,26 @@ instance (GetFrame v, PutFrame v) => Binary (ID3v2 v) where
         headerSize <- fromSyncSafe <$> get
         getByteString headerSize
   put ID3v2 {..} = do
-    -- TODO recalculate size - recalculate padding
-    put $
-      Header
-        { version = id3v2Version @v,
-          flags = headerFlags,
-          totalSize = toSyncSafe (fromIntegral @_ @Word32 id3v2size)
-        }
-    if hasExtendedHeader headerFlags
-      then do
-        put $ toSyncSafe (BS.length extendedHeader)
-        put extendedHeader
-      else pure ()
-    putFrames frames
-    -- TODO id3v2 padding
+    let id3data = runPut $ do
+                    if hasExtendedHeader headerFlags
+                      then do
+                        put $ toSyncSafe (BS.length extendedHeader)
+                        put extendedHeader
+                      else pure ()
+                    putFrames frames
+    let header = Header
+         { version = id3v2Version @v,
+           flags = headerFlags,
+           totalSize = toSyncSafe (fromIntegral @_ @Word32 id3v2size)
+         }
+    put header
+    putLazyByteString id3data
+    let padding = fromIntegral id3v2size - fromIntegral (L.length id3data)
+    if padding >= 0 then
+      replicateM_ padding (putWord8 0)
+    else
+      -- FIXME used up id3 padding
+      undefined
     -- TODO id3v2 footer
     pure ()
 
@@ -143,7 +149,7 @@ instance TagReader (ID3v2 v) where
       accumFrames acc frame = acc <> catMaybes [extractFrameContent frame]
 
 instance MetadataSize (ID3v2 v) where
-  metadataSize = id3v2size
+  metadataSize ID3v2{..} = fromIntegral headerSize + id3v2size
 
 data Header = Header
   { version :: !ID3v2Version,

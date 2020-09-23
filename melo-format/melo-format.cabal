@@ -1,10 +1,10 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.31.2.
+-- This file has been generated from package.yaml by hpack version 0.33.0.
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 32ae3aecdbd0cc19906aec4b242868fec2eae362a7d7ee112a62b8dcbd207d00
+-- hash: 4bddb67b025e08c528dcdb64ea28baeeeac5764fbbf7ff600506f3a597136141
 
 name:           melo-format
 version:        0.1.0.0
@@ -65,6 +65,7 @@ library
     , bytestring
     , containers
     , data-default
+    , directory
     , extra
     , filepath
     , generic-lens
@@ -125,6 +126,8 @@ test-suite melo-format-test
     , binary
     , bytestring
     , conduit
+    , directory
+    , filepath
     , hspec
     , hspec-expectations-lifted
     , melo-format

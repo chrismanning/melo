@@ -30,6 +30,7 @@ library:
     - bytestring
     - containers
     - data-default
+    - directory
     - extra
     - filepath
     - generic-lens
@@ -74,6 +75,8 @@ tests:
     - binary
     - bytestring
     - conduit
+    - directory
+    - filepath
     - hspec
     - hspec-expectations-lifted
     - safe-exceptions

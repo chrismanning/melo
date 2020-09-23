@@ -4,13 +4,18 @@ module Melo.Format.FlacSpec
   )
 where
 
+import Control.Exception
+import qualified Data.ByteString as BS
 import Data.ByteString.Base16 as Hex
+import Data.Tuple
 import Data.Vector
 import Melo.Format.Error
 import Melo.Format.Flac
 import Melo.Format.Info
 import Melo.Format.Internal.Tag
 import Melo.Format.Vorbis
+import System.Directory
+import System.FilePath
 import System.IO
 import Test.Hspec
 
@@ -33,7 +38,7 @@ spec = do
       h <- openBinaryFile "test/Melo/silence-1s.flac" ReadMode
       Flac flac <- hReadFlac h
       let (md5, _) = Hex.decode "ee67686246536453b5950b21810fde82"
-      streamInfoBlock flac
+      streamInfo flac
         `shouldSatisfy` ( \case
                             StreamInfo
                               { minBlockSize = 4096,
@@ -60,9 +65,21 @@ spec = do
       h <- openBinaryFile "test/Melo/silence-1s.flac" ReadMode
       Flac flac <- hReadFlac h
       vorbisComment flac `shouldBe` Just (VorbisComments "reference libFLAC 1.3.2 20170101" empty)
-  describe "Flac with ID3v2"
-    $ it "reads flac file with ID3"
-    $ do
+    it "writes flac file" $ do
+      let origFile = "test/Melo/silence-1s.flac"
+      orig <- readFlacFile origFile
+      bracket (openBinaryTempFile "test/Melo/" "silence-1s.flac") (removeFile . fst) $ \(tmpfile, h') -> do
+        hClose h'
+        writeFlacFile orig tmpfile
+        writtenFileSize <- getFileSize tmpfile
+        origFileSize <- getFileSize origFile
+        !writtenContents <- withBinaryFile tmpfile ReadMode $ \h ->
+          BS.hGet h (fromIntegral writtenFileSize)
+        !origContents <- withBinaryFile origFile ReadMode $ \h ->
+          BS.hGet h (fromIntegral origFileSize)
+        writtenContents `shouldSatisfy` (== origContents)
+  describe "Flac with ID3v2" $ do
+    it "reads flac file with ID3" $ do
       h <- openBinaryFile "test/Melo/silence-1s-id3v2.flac" ReadMode
       (FlacWithID3v2_4 id3 fs) <- hReadFlac h
       let Just v = vorbisComment fs
@@ -95,6 +112,19 @@ spec = do
               ]
           )
       hClose h
+    it "writes flac file with ID3v2" $ do
+      let origFile = "test/Melo/silence-1s-id3v2.flac"
+      orig <- readFlacFile origFile
+      bracket (openBinaryTempFile "test/Melo/" "silence-1s-id3v2.flac") (removeFile . fst) $ \(tmpfile, h') -> do
+        hClose h'
+        writeFlacFile orig tmpfile
+        writtenFileSize <- getFileSize tmpfile
+        origFileSize <- getFileSize origFile
+        !writtenContents <- withBinaryFile tmpfile ReadMode $ \h ->
+          BS.hGet h (fromIntegral writtenFileSize)
+        !origContents <- withBinaryFile origFile ReadMode $ \h ->
+          BS.hGet h (fromIntegral origFileSize)
+        writtenContents `shouldSatisfy` (== origContents)
   it "rejects non-flac files" $ do
     h <- openBinaryFile "test/Melo/silence-1s.ogg" ReadMode
     hReadFlac h `shouldThrow` (== UnknownFormat)

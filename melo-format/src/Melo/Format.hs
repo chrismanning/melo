@@ -25,8 +25,9 @@ import Melo.Format.Flac
   )
 import Melo.Format.ID3
   ( ID3v1 (..),
-    ID3v2_3 (..),
-    ID3v2_4 (..),
+    ID3v2 (..),
+    ID3v2_3,
+    ID3v2_4,
     id3v1Id,
     id3v1Tag,
     id3v23Id,

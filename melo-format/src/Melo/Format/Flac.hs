@@ -6,10 +6,12 @@ module Melo.Format.Flac
     pattern FlacWithID3v2_3,
     pattern FlacWithID3v2_4,
     StreamInfo (..),
-    streamInfoBlock,
+    streamInfo,
     vorbisComment,
     hReadFlac,
     readFlacOrFail,
+    readFlacFile,
+    writeFlacFile,
     removeID3,
     flacFileId,
     flac,
@@ -128,7 +130,8 @@ flacSize (MkFlacWithID3v2_3 id3v23 m) = metadataSize id3v23 + flacMetadataSize m
 flacSize (MkFlacWithID3v2_4 id3v24 m) = metadataSize id3v24 + flacMetadataSize m
 
 flacMetadataSize :: FlacMetadata -> Integer
-flacMetadataSize m = streamInfoSize + getSum (foldMap (Sum . metadataBlockSize) (metadataBlocks m))
+flacMetadataSize m = fromIntegral (BS.length marker) + blockHeaderSize + streamInfoSize +
+  getSum (foldMap (Sum . metadataBlockSize) (metadataBlocks m))
 
 hReadFlac :: Handle -> IO Flac
 hReadFlac h = do
@@ -199,7 +202,7 @@ instance InfoReader Flac where
     where
       getInfo :: FlacMetadata -> Info
       getInfo fs =
-        let si = streamInfoBlock fs
+        let si = streamInfo fs
          in Info
               { sampleRate = SampleRate $ fromIntegral (getField @"sampleRate" si),
                 bitsPerSample = pure $ fromIntegral $ bps si,
@@ -250,7 +253,7 @@ hFindFlac h = do
           else Nothing
 
 data FlacMetadata = FlacMetadata
-  { streamInfoBlock :: !StreamInfo,
+  { streamInfo :: !StreamInfo,
     metadataBlocks :: !(Vector MetadataBlock)
   }
   deriving (Show)
@@ -268,7 +271,8 @@ instance Binary FlacMetadata where
     expectGetEq (getByteString 4) marker ("Couldn't find " <> marker <> " marker")
     StreamInfoBlock _ streamInfo <- get
     FlacMetadata streamInfo <$> getMetadataBlocks
-  put FlacMetadata {..} = put streamInfoBlock >> V.mapM_ put metadataBlocks
+  put FlacMetadata {..} =
+    putByteString marker >> put (StreamInfoBlock False streamInfo) >> V.mapM_ put metadataBlocks
 
 getMetadataBlocks :: Get (Vector MetadataBlock)
 getMetadataBlocks = fromList <$> go
@@ -291,11 +295,11 @@ data MetadataBlock
   deriving (Show)
 
 metadataBlockSize :: MetadataBlock -> Integer
-metadataBlockSize (StreamInfoBlock _ _) = streamInfoSize
-metadataBlockSize (PaddingBlock _ (Padding s)) = toInteger s
-metadataBlockSize (OtherBlock _ _ d) = toInteger $ BS.length d
-metadataBlockSize (VorbisCommentBlock _ (FlacTags vc)) = metadataSize vc
-metadataBlockSize (PictureBlock _ p) = pictureSize p
+metadataBlockSize (StreamInfoBlock _ _) = blockHeaderSize + streamInfoSize
+metadataBlockSize (PaddingBlock _ (Padding s)) = blockHeaderSize + toInteger s
+metadataBlockSize (OtherBlock _ _ d) = blockHeaderSize + toInteger (BS.length d)
+metadataBlockSize (VorbisCommentBlock _ (FlacTags vc)) = blockHeaderSize + metadataSize vc
+metadataBlockSize (PictureBlock _ p) = blockHeaderSize + pictureSize p
 
 instance Binary MetadataBlock where
   get = do
@@ -355,17 +359,19 @@ data MetadataBlockHeader = MetadataBlockHeader
   }
   deriving (Show)
 
+blockHeaderSize = 4
+
 instance Binary MetadataBlockHeader where
   get = do
     (isLast, blockType) <-
       BG.runBitGet $ (,) <$> BG.getBool <*> BG.getWord8 7
     blockLength <- get24Bits
     return MetadataBlockHeader {blockType, blockLength, isLast}
-  put MetadataBlockHeader {..} = do
+  put MetadataBlockHeader {..} =
     BP.runBitPut $ do
       BP.putBool isLast
       BP.putWord8 7 blockType
-    putWord32be blockLength
+      BP.putWord32be 24 blockLength
 
 data StreamInfo = StreamInfo
   { minBlockSize :: !Word16,
@@ -381,7 +387,7 @@ data StreamInfo = StreamInfo
   deriving (Show)
 
 streamInfoSize :: Integer
-streamInfoSize = 272
+streamInfoSize = 34
 
 instance Binary StreamInfo where
   get = do
