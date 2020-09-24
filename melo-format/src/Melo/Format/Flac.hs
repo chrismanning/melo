@@ -115,6 +115,7 @@ writeFlacFile f newpath = do
   where
     writeFlacFile' oldpath newpath = do
       !flac <- withBinaryFile oldpath ReadMode hReadFlac
+      -- TODO update flac from f
       !audioData <- withBinaryFile oldpath ReadMode $ \h -> do
         hSeek h SeekFromEnd 0
         end <- hTell h

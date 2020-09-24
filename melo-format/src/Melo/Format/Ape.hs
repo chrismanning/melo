@@ -104,6 +104,9 @@ hLocateApe h v = do
     Just loc -> pure $ Just (fromIntegral (loc + n))
     Nothing -> pure Nothing
 
+instance MetadataSize APEv1 where
+  metadataSize = toInteger . L.length . runPut . put
+
 newtype APEv2 = APEv2 (Vector TagItem)
   deriving (Show, Eq)
 
@@ -140,6 +143,9 @@ instance Binary APEv2 where
 instance MetadataLocator APEv2 where
   locate bs = locateApe bs V2
   hLocate h = hLocateApe h V2
+
+instance MetadataSize APEv2 where
+  metadataSize = toInteger . L.length . runPut . put
 
 data APE = APE
   { version :: !Version,

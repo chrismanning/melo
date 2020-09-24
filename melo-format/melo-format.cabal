@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 4bddb67b025e08c528dcdb64ea28baeeeac5764fbbf7ff600506f3a597136141
+-- hash: 296add468f023e06bb8cbca39b16060e593b4af41a71d9624b38f8ca850b005f
 
 name:           melo-format
 version:        0.1.0.0
@@ -111,6 +111,7 @@ test-suite melo-format-test
       Melo.Format.FlacSpec
       Melo.Format.ID3.ID3v1Spec
       Melo.Format.ID3.ID3v2Spec
+      Melo.Format.MP3Spec
       Melo.Format.OggVorbisSpec
       Melo.Format.TestUtil
       Melo.Format.VorbisSpec
@@ -134,5 +135,6 @@ test-suite melo-format-test
     , safe-exceptions
     , temporary
     , text
+    , unordered-containers
     , vector
   default-language: Haskell2010

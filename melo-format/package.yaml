@@ -82,6 +82,7 @@ tests:
     - safe-exceptions
     - temporary
     - text
+    - unordered-containers
     - vector
 
 ghc-options:

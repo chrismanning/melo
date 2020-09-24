@@ -62,7 +62,7 @@ data ID3v2 (v :: ID3v2Version) = ID3v2
     extendedHeader :: !ByteString,
     frames :: !(Frames v)
   }
-  deriving (Generic, Show)
+  deriving (Generic, Show, Eq)
 
 type ID3v2_3 = ID3v2 'ID3v23
 
@@ -235,7 +235,7 @@ newtype Padding = Padding Word32
   deriving (Eq, Show)
 
 newtype Frames (v :: ID3v2Version) = Frames (NonEmpty (Frame v))
-  deriving (Show)
+  deriving (Show, Eq)
 
 foldlFrames :: (b -> Frame v -> b) -> b -> Frames v -> b
 foldlFrames f z (Frames frms) = F.foldl f z frms
