@@ -16,7 +16,6 @@ module Melo.Format.Metadata
   )
 where
 
-import Control.Applicative ((<|>))
 import Control.Exception.Safe
 import Control.Monad
 import Data.Generics.Labels ()
@@ -45,7 +44,7 @@ metadataFileFactoryIO mfid = find (\f -> f ^. #fileId == mfid) metadataFileFacto
 
 openMetadataFile :: FilePath -> IO MetadataFile
 openMetadataFile p = do
-  let fmts = sortOn (Down . (^. #priority)) [flac, mp3, oggVorbis, wavPack]
+  let fmts = sortOn (Down . (^. #priority)) metadataFileFactoriesIO
   fs <- filterM (\factory -> factory ^. #detectFile $ p) fmts
   case fs of
     [] -> throwIO UnknownFormat
@@ -60,7 +59,10 @@ class MetadataFactory (a :: [Type]) where
   mk' :: MetadataId -> Tags -> Maybe Metadata
 
 instance (MetadataFactory fs, MetadataFormat f) => MetadataFactory (f ': fs) where
-  mk' mid tags = metadataFactory @f mid tags <|> mk' @fs mid tags
+  mk' mid tags =
+    if metadataFormat @f ^. #formatId == mid
+      then Just $ metadataFactory @f tags
+      else mk' @fs mid tags
 
 instance MetadataFactory '[] where
   mk' _ _ = Nothing

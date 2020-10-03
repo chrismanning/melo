@@ -10,6 +10,7 @@ data MetadataException
   | MetadataReadError Text
   | MetadataWriteError Text
   | MetadataNotFound MetadataId
+  | IncompatibleFormat MetadataFileId MetadataId
   deriving (Eq, Show)
 
 instance Exception MetadataException

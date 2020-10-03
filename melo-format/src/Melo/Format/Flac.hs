@@ -29,9 +29,10 @@ import Data.Binary.Bits.Put ()
 import qualified Data.Binary.Bits.Put as BP
 import Data.Binary.Get
 import Data.Binary.Put
-import Data.ByteString hiding (putStrLn, unpack)
+import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as L
+import Data.Foldable
 import Data.Generics.Labels ()
 import qualified Data.HashMap.Strict as H
 import Data.Maybe
@@ -40,19 +41,21 @@ import Data.String (IsString)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding
-import Data.Vector as V
+import Data.Vector (Vector)
+import qualified Data.Vector as V
+import GHC.Generics
 import GHC.Records
 import Lens.Micro
 import Melo.Format.Error
 import Melo.Format.ID3.ID3v2
-import qualified Melo.Format.ID3.ID3v2 as ID3
 import Melo.Format.Internal.Binary
 import Melo.Format.Internal.BinaryUtil
 import Melo.Format.Internal.Info
 import Melo.Format.Internal.Locate
 import Melo.Format.Internal.Metadata
+import Melo.Format.Internal.Tag
 import Melo.Format.Vorbis
-import System.Directory.Extra
+import System.Directory
 import System.FilePath
 import System.IO
 
@@ -94,7 +97,7 @@ readFlacFile p = do
   f <- withBinaryFile p ReadMode hReadFlac
   pure
     MetadataFile
-      { metadata = flacMetadata f,
+      { metadata = collectFlacMetadata f,
         audioInfo = info f,
         fileId = flacFileId,
         filePath = p
@@ -114,21 +117,56 @@ writeFlacFile f newpath = do
     else writeFlacFile' oldpath newpath
   where
     writeFlacFile' oldpath newpath = do
-      !flac <- withBinaryFile oldpath ReadMode hReadFlac
-      -- TODO update flac from f
+      !flac' <-
+        updateFlacWith (H.elems $ f ^. #metadata)
+          <$> withBinaryFile oldpath ReadMode hReadFlac
       !audioData <- withBinaryFile oldpath ReadMode $ \h -> do
         hSeek h SeekFromEnd 0
         end <- hTell h
-        hSeek h AbsoluteSeek (flacSize flac)
-        hGet h $ fromInteger (end - flacSize flac)
+        hSeek h AbsoluteSeek (flacSize flac')
+        BS.hGet h $ fromInteger (end - flacSize flac')
       withBinaryFile newpath WriteMode $ \h -> do
-        hWriteFlac h flac
-        hPut h audioData
+        hWriteFlac h flac'
+        BS.hPut h audioData
+
+updateFlacWith :: [Metadata] -> Flac -> Flac
+updateFlacWith = flip $ foldl' replaceMetadata
+
+replaceMetadata :: Flac -> Metadata -> Flac
+replaceMetadata (Flac flacMetadata) Metadata {formatId, tags} = case formatId of
+  fid | fid == id3v23Id -> MkFlacWithID3v2_3 (newId3v2 tags) flacMetadata
+  fid | fid == id3v24Id -> MkFlacWithID3v2_4 (newId3v2 tags) flacMetadata
+  fid
+    | fid == vorbisCommentsId ->
+      MkFlac (replaceVorbisCommentBlock flacMetadata tags)
+  _ -> impureThrow $ IncompatibleFormat flacFileId formatId
+replaceMetadata (FlacWithID3v2_3 id3v23 flacMetadata) Metadata {formatId, tags} = case formatId of
+  fid | fid == id3v23Id -> MkFlacWithID3v2_3 (replaceWithTags id3v23 tags) flacMetadata
+  fid | fid == id3v24Id -> MkFlacWithID3v2_4 (replaceWithTags (changeVersion id3v23) tags) flacMetadata
+  fid
+    | fid == vorbisCommentsId ->
+      MkFlacWithID3v2_3 id3v23 (replaceVorbisCommentBlock flacMetadata tags)
+  _ -> impureThrow $ IncompatibleFormat flacFileId formatId
+replaceMetadata (FlacWithID3v2_4 id3v24 flacMetadata) Metadata {formatId, tags} = case formatId of
+  fid | fid == id3v23Id -> MkFlacWithID3v2_3 (replaceWithTags (changeVersion id3v24) tags) flacMetadata
+  fid | fid == id3v24Id -> MkFlacWithID3v2_4 (replaceWithTags id3v24 tags) flacMetadata
+  fid
+    | fid == vorbisCommentsId ->
+      MkFlacWithID3v2_4 id3v24 (replaceVorbisCommentBlock flacMetadata tags)
+  _ -> impureThrow $ IncompatibleFormat flacFileId formatId
+
+replaceVorbisCommentBlock :: FlacMetadata -> Tags -> FlacMetadata
+replaceVorbisCommentBlock flacMetadata tags =
+  flacMetadata & #metadataBlocks . mapped %~ \case
+    VorbisCommentBlock isLast vcs ->
+      VorbisCommentBlock isLast $
+        replaceUserComments vcs (toUserComments tags)
+    block -> block
 
 flacSize :: Flac -> Integer
-flacSize (MkFlac m) = flacMetadataSize m
-flacSize (MkFlacWithID3v2_3 id3v23 m) = metadataSize id3v23 + flacMetadataSize m
-flacSize (MkFlacWithID3v2_4 id3v24 m) = metadataSize id3v24 + flacMetadataSize m
+flacSize (Flac m) = flacMetadataSize m
+flacSize (FlacWithID3v2_3 id3v23 m) = metadataSize id3v23 + flacMetadataSize m
+flacSize (FlacWithID3v2_4 id3v24 m) = metadataSize id3v24 + flacMetadataSize m
 
 flacMetadataSize :: FlacMetadata -> Integer
 flacMetadataSize m =
@@ -164,16 +202,16 @@ hReadFlac h = do
                 else throwIO $ MetadataReadError "ID3v2 detected but couldn't be read"
 
 hWriteFlac :: Handle -> Flac -> IO ()
-hWriteFlac h flac = do
-  let buf = L.toStrict $ runPut (putFlac flac)
-  hPut h buf
+hWriteFlac h flac' = do
+  let buf = L.toStrict $ runPut (putFlac flac')
+  BS.hPut h buf
   where
-    putFlac (MkFlac flacMetadata) = put flacMetadata
-    putFlac (MkFlacWithID3v2_3 id3 flacMetadata) = put id3 >> put flacMetadata
-    putFlac (MkFlacWithID3v2_4 id3 flacMetadata) = put id3 >> put flacMetadata
+    putFlac (Flac flacMetadata) = put flacMetadata
+    putFlac (FlacWithID3v2_3 id3 flacMetadata) = put id3 >> put flacMetadata
+    putFlac (FlacWithID3v2_4 id3 flacMetadata) = put id3 >> put flacMetadata
 
-flacMetadata :: Flac -> H.HashMap MetadataId Metadata
-flacMetadata (FlacWithID3v2_3 id3v2 f) =
+collectFlacMetadata :: Flac -> H.HashMap MetadataId Metadata
+collectFlacMetadata (FlacWithID3v2_3 id3v2 f) =
   let id3v2fmt = metadataFormat @ID3v2_3
       vc = vorbisComment f
    in H.fromList $
@@ -181,7 +219,7 @@ flacMetadata (FlacWithID3v2_3 id3v2 f) =
           [ Just (id3v2fmt ^. #formatId, extractMetadata id3v2),
             vc <&> (vorbisCommentsId,) . extractMetadata
           ]
-flacMetadata (FlacWithID3v2_4 id3v2 f) =
+collectFlacMetadata (FlacWithID3v2_4 id3v2 f) =
   let id3v2fmt = metadataFormat @ID3v2_4
       vc = vorbisComment f
    in H.fromList $
@@ -189,7 +227,7 @@ flacMetadata (FlacWithID3v2_4 id3v2 f) =
           [ Just (id3v2fmt ^. #formatId, extractMetadata id3v2),
             vc <&> (vorbisCommentsId,) . extractMetadata
           ]
-flacMetadata (Flac f) =
+collectFlacMetadata (Flac f) =
   let vc = vorbisComment f
    in H.fromList $
         catMaybes
@@ -238,17 +276,17 @@ hFindFlac h = do
               pure ()
     findId3End ::
       forall id3 a.
-      (BinaryGet id3, HasField "id3v2size" id3 Integer, Integral a) =>
+      (BinaryGet id3, MetadataFormat id3, Integral a) =>
       a ->
       IO Integer
     findId3End loc = do
       hSeek h AbsoluteSeek (fromIntegral loc)
       id3 <- bdecode @id3 <$> hGetFileContents h
-      let flacLoc = fromIntegral loc + getField @"id3v2size" id3 + fromIntegral ID3.headerSize
+      let flacLoc = fromIntegral loc + metadataSize id3
       pure flacLoc
     findFlac flacLoc = do
       hSeek h AbsoluteSeek flacLoc
-      buf <- hGet h 4
+      buf <- BS.hGet h 4
       pure $
         if buf == marker
           then Just flacLoc
@@ -258,14 +296,14 @@ data FlacMetadata = FlacMetadata
   { streamInfo :: !StreamInfo,
     metadataBlocks :: !(Vector MetadataBlock)
   }
-  deriving (Show)
+  deriving (Show, Generic)
 
 vorbisComment :: FlacMetadata -> Maybe VorbisComments
-vorbisComment (FlacMetadata _ blocks) = findVcs $ toList blocks
+vorbisComment (FlacMetadata _ blocks) = findVcs $ V.toList blocks
   where
     findVcs [] = Nothing
     findVcs (m : ms) = case m of
-      VorbisCommentBlock _ (FlacTags vcs) -> Just vcs
+      VorbisCommentBlock _ vcs -> Just vcs
       _ -> findVcs ms
 
 instance Binary FlacMetadata where
@@ -274,10 +312,12 @@ instance Binary FlacMetadata where
     StreamInfoBlock _ streamInfo <- get
     FlacMetadata streamInfo <$> getMetadataBlocks
   put FlacMetadata {..} =
-    putByteString marker >> put (StreamInfoBlock False streamInfo) >> V.mapM_ put metadataBlocks
+    putByteString marker
+      >> put (StreamInfoBlock False streamInfo)
+      >> V.mapM_ put metadataBlocks
 
 getMetadataBlocks :: Get (Vector MetadataBlock)
-getMetadataBlocks = fromList <$> go
+getMetadataBlocks = V.fromList <$> go
   where
     go = do
       header <- lookAhead get
@@ -291,7 +331,7 @@ getMetadataBlocks = fromList <$> go
 data MetadataBlock
   = StreamInfoBlock !Bool !StreamInfo
   | PaddingBlock !Bool !Padding
-  | VorbisCommentBlock !Bool !FlacTags
+  | VorbisCommentBlock !Bool !VorbisComments
   | PictureBlock !Bool !Picture
   | OtherBlock !Bool !Word8 !ByteString
   deriving (Show)
@@ -300,7 +340,7 @@ metadataBlockSize :: MetadataBlock -> Integer
 metadataBlockSize (StreamInfoBlock _ _) = blockHeaderSize + streamInfoSize
 metadataBlockSize (PaddingBlock _ (Padding s)) = blockHeaderSize + toInteger s
 metadataBlockSize (OtherBlock _ _ d) = blockHeaderSize + toInteger (BS.length d)
-metadataBlockSize (VorbisCommentBlock _ (FlacTags vc)) = blockHeaderSize + metadataSize vc
+metadataBlockSize (VorbisCommentBlock _ vc) = blockHeaderSize + metadataSize vc
 metadataBlockSize (PictureBlock _ p) = blockHeaderSize + pictureSize p
 
 instance Binary MetadataBlock where
@@ -334,14 +374,14 @@ instance Binary MetadataBlock where
           isLast = isLast
         }
     replicateM_ (fromIntegral size) $ putWord8 0
-  put (VorbisCommentBlock isLast ft@(FlacTags vc)) = do
+  put (VorbisCommentBlock isLast vc) = do
     put
       MetadataBlockHeader
         { blockType = 4,
           blockLength = fromInteger $ metadataSize vc,
           isLast
         }
-    put ft
+    put vc
   put (PictureBlock isLast picture) = do
     put
       MetadataBlockHeader
@@ -366,6 +406,7 @@ data MetadataBlockHeader = MetadataBlockHeader
   }
   deriving (Show)
 
+blockHeaderSize :: Integer
 blockHeaderSize = 4
 
 instance Binary MetadataBlockHeader where
@@ -439,14 +480,6 @@ instance Binary StreamInfo where
 
 newtype Padding = Padding Word32
   deriving (Show)
-
-newtype FlacTags
-  = FlacTags VorbisComments
-  deriving (Show)
-
-instance Binary FlacTags where
-  get = FlacTags <$> get
-  put (FlacTags vc) = put vc
 
 data Picture = Picture
   { pictureType :: !Word32,

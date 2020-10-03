@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 296add468f023e06bb8cbca39b16060e593b4af41a71d9624b38f8ca850b005f
+-- hash: b6e934b68dd0dad056ae324ee3be594ffd8238c7a19c094961156e8b1fea5124
 
 name:           melo-format
 version:        0.1.0.0
@@ -72,8 +72,6 @@ library
     , hashable
     , microlens
     , microlens-th
-    , polysemy
-    , polysemy-plugin
     , range
     , safe-exceptions
     , text

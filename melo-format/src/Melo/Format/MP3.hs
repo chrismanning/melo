@@ -233,12 +233,12 @@ frameSync = 0b11111111111
 instance MetadataLocator FrameHeader where
   hLocate h =
     hLocateGet' @ID3.ID3v2_3 h >>= \case
-      Just ID3.ID3v2 {id3v2size} ->
-        findHeader (id3v2size + fromIntegral ID3.headerSize)
+      Just id3v2 ->
+        findHeader (metadataSize id3v2 + fromIntegral ID3.headerSize)
       Nothing ->
         hLocateGet' @ID3.ID3v2_4 h >>= \case
-          Just ID3.ID3v2 {id3v2size} ->
-            findHeader (id3v2size + fromIntegral ID3.headerSize)
+          Just id3v2 ->
+            findHeader (metadataSize id3v2 + fromIntegral ID3.headerSize)
           Nothing ->
             findHeader 0
     where

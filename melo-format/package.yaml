@@ -37,8 +37,6 @@ library:
     - hashable
     - microlens
     - microlens-th
-    - polysemy
-    - polysemy-plugin
     - range
     - safe-exceptions
     - text

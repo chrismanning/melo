@@ -70,26 +70,6 @@ instance MetadataFormat ID3v1 where
         formatDesc = let (MetadataId k) = id3v1Id in k
       }
   metadataLens = mappedTag id3v1
-
-id3v1Id :: MetadataId
-id3v1Id = MetadataId "ID3v1"
-
-id3v1Tag :: TagMapping -> TagLens
-id3v1Tag = mappedTag id3v1
-
-id3v1Size :: Integer
-id3v1Size = 128
-
-instance MetadataLocator ID3v1 where
-  hLocate h = do
-    hSeek h SeekFromEnd (- id3v1Size)
-    pos <- fromIntegral <$> hTell h
-    tag <- BS.hGet h 3
-    return $ case tag of
-      "TAG" -> Just pos
-      _ -> Nothing
-
-instance TagReader ID3v1 where
   readTags id3 =
     Tags $
       V.fromList $
@@ -109,10 +89,8 @@ instance TagReader ID3v1 where
       tag tm sel =
         let fm = headTagMapping tm
          in Just (toCanonicalForm $ id3v1 fm, sel id3)
-
-instance TagWriter ID3v1 where
-  saveTags _ newTags =
-    ID3v1
+  replaceWithTags id3 newTags =
+    id3
       { title = saveTag trackTitleTag,
         artist = saveTag trackArtistTag,
         album = saveTag albumTitleTag,
@@ -127,6 +105,25 @@ instance TagWriter ID3v1 where
          in fromMaybe
               ""
               (listToMaybe $ lookupTag (toCanonicalForm $ id3v1 fm) newTags)
+  metadataSize = const id3v1Size
+
+id3v1Id :: MetadataId
+id3v1Id = MetadataId "ID3v1"
+
+id3v1Tag :: TagMapping -> TagLens
+id3v1Tag = mappedTag id3v1
+
+id3v1Size :: Integer
+id3v1Size = 128
+
+instance MetadataLocator ID3v1 where
+  hLocate h = do
+    hSeek h SeekFromEnd (- id3v1Size)
+    pos <- fromIntegral <$> hTell h
+    tag <- BS.hGet h 3
+    return $ case tag of
+      "TAG" -> Just pos
+      _ -> Nothing
 
 instance Binary ID3v1 where
   get = isolate (fromInteger id3v1Size) getID3v1

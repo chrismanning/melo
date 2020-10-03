@@ -168,12 +168,9 @@ instance MetadataFormat VorbisComments where
         formatDesc = "Vorbis Comments"
       }
   metadataLens = vorbisTag
-
-instance MetadataSize VorbisComments where
-  metadataSize = toInteger . L.length . runPut . put
-
-instance TagReader VorbisComments where
   readTags = getVorbisTags
+  replaceWithTags vc tags = replaceUserComments vc (toUserComments tags)
+  metadataSize = toInteger . L.length . runPut . put
 
 vorbisTag :: TagMapping -> TagLens
 vorbisTag = mappedTag vorbis

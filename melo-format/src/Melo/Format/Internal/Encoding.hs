@@ -32,15 +32,15 @@ decodeUtf16WithBOMOrFail bs =
   let bom = BS.take 2 bs
    in case bom of
         "\xFF\xFE" -> do
-          traceM "Little endian string detected"
-          traceM $ "UTF16LE: " ++ show (BS.drop 2 bs)
+          --          traceM "Little endian string detected"
+          --          traceM $ "UTF16LE: " ++ show (BS.drop 2 bs)
           decodeUtf16LEOrFail (BS.drop 2 bs)
         "\xFE\xFF" -> do
-          traceM "Big endian string detected"
-          traceM $ "UTF16BE: " ++ show (BS.drop 2 bs)
+          --          traceM "Big endian string detected"
+          --          traceM $ "UTF16BE: " ++ show (BS.drop 2 bs)
           decodeUtf16BEOrFail (BS.drop 2 bs)
         _ -> do
-          traceM "No BOM detected; assuming UTF16BE"
+          --          traceM "No BOM detected; assuming UTF16BE"
           decodeUtf16BEOrFail bs
 
 decodeUtfOrFail :: MonadFail m => Either UnicodeException Text -> m Text

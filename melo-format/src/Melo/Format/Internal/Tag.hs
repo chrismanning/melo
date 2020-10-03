@@ -14,12 +14,6 @@ import Melo.Format.Mapping
 newtype Tags = Tags (Vector (Text, Text))
   deriving (Show, Eq, Generic)
 
-class TagReader a where
-  readTags :: a -> Tags
-
-class TagWriter a where
-  saveTags :: a -> Tags -> a
-
 lookupTag :: Text -> Tags -> [Text]
 lookupTag n (Tags ts) = V.toList $ fmap snd . V.filter ((== n) . fst) $ ts
 

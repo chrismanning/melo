@@ -26,7 +26,6 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BC
 import qualified Data.ByteString.Lazy as L
 import Data.Coerce
-import Data.Int
 import Data.Text (Text)
 import Data.Text.Encoding
 import Data.Vector (Vector)
@@ -40,7 +39,6 @@ import Melo.Format.Internal.Tag
 import Melo.Format.Mapping
 import Numeric.Natural (Natural)
 import System.IO
-import Prelude as P
 
 apeTag :: TagMapping -> TagLens
 apeTag = mappedTag ape
@@ -55,12 +53,12 @@ instance MetadataFormat APEv1 where
         formatDesc = "APEv1"
       }
   metadataLens = apeTag
+  readTags a = Tags (coerce a >>= getTextItem)
+  metadataSize = toInteger . L.length . runPut . put
+  replaceWithTags _ = APEv1 . createApeTags
 
 apeV1Id :: MetadataId
 apeV1Id = MetadataId "APEv1"
-
-instance TagReader APEv1 where
-  readTags a = Tags (coerce a >>= getTextItem)
 
 instance Binary APEv1 where
   get = do
@@ -104,9 +102,6 @@ hLocateApe h v = do
     Just loc -> pure $ Just (fromIntegral (loc + n))
     Nothing -> pure Nothing
 
-instance MetadataSize APEv1 where
-  metadataSize = toInteger . L.length . runPut . put
-
 newtype APEv2 = APEv2 (Vector TagItem)
   deriving (Show, Eq)
 
@@ -117,12 +112,12 @@ instance MetadataFormat APEv2 where
         formatDesc = "APEv2"
       }
   metadataLens = apeTag
+  readTags a = Tags (coerce a >>= getTextItem)
+  metadataSize = toInteger . L.length . runPut . put
+  replaceWithTags _ = APEv2 . createApeTags
 
 apeV2Id :: MetadataId
 apeV2Id = MetadataId "APEv2"
-
-instance TagReader APEv2 where
-  readTags a = Tags (coerce a >>= getTextItem)
 
 getTextItem :: TagItem -> Vector (Text, Text)
 getTextItem t = case t of
@@ -143,9 +138,6 @@ instance Binary APEv2 where
 instance MetadataLocator APEv2 where
   locate bs = locateApe bs V2
   hLocate h = hLocateApe h V2
-
-instance MetadataSize APEv2 where
-  metadataSize = toInteger . L.length . runPut . put
 
 data APE = APE
   { version :: !Version,
@@ -221,7 +213,7 @@ mkHeader_ a n f =
   Header
     { headerVersion = version a,
       numBytes = n + headerSize,
-      numItems = fromIntegral (P.length $ items a),
+      numItems = fromIntegral (V.length $ items a),
       flags = f
     }
 
@@ -402,3 +394,6 @@ putTagItemValue (TagItemValue t) = case t of
 putValueList :: Vector Text -> Put
 putValueList vals =
   putByteString $ BS.intercalate (BC.pack "\0") $ V.toList (fmap encodeUtf8 vals)
+
+createApeTags :: Tags -> Vector TagItem
+createApeTags (Tags tags) = fmap (uncurry mkTextTagItem) tags

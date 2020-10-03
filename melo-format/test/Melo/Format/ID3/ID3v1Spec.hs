@@ -13,6 +13,7 @@ import Data.Vector (fromList)
 import Melo.Format.ID3.ID3v1
 import Melo.Format.Internal.Binary
 import Melo.Format.Internal.Locate
+import Melo.Format.Internal.Metadata
 import Melo.Format.Internal.Tag
 import qualified Melo.Format.Mapping as M
 import Melo.Format.TestUtil

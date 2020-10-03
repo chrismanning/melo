@@ -12,6 +12,7 @@ import Data.Vector
 import Melo.Format.Error
 import Melo.Format.Flac
 import Melo.Format.Info
+import Melo.Format.Internal.Metadata
 import Melo.Format.Internal.Tag
 import Melo.Format.Vorbis
 import System.Directory
@@ -77,7 +78,7 @@ spec = do
           BS.hGet h (fromIntegral writtenFileSize)
         !origContents <- withBinaryFile origFile ReadMode $ \h ->
           BS.hGet h (fromIntegral origFileSize)
-        writtenContents `shouldSatisfy` (== origContents)
+        writtenContents `shouldBe` origContents
   describe "Flac with ID3v2" $ do
     it "reads flac file with ID3" $ do
       h <- openBinaryFile "test/Melo/silence-1s-id3v2.flac" ReadMode
@@ -124,7 +125,7 @@ spec = do
           BS.hGet h (fromIntegral writtenFileSize)
         !origContents <- withBinaryFile origFile ReadMode $ \h ->
           BS.hGet h (fromIntegral origFileSize)
-        writtenContents `shouldSatisfy` (== origContents)
+        writtenContents `shouldBe` origContents
   it "rejects non-flac files" $ do
     h <- openBinaryFile "test/Melo/silence-1s.ogg" ReadMode
     hReadFlac h `shouldThrow` (== UnknownFormat)

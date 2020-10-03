@@ -3,6 +3,7 @@
 
 module Melo.Format.ID3.ID3v2
   ( ID3v2 (..),
+    newId3v2,
     ID3v2_3,
     id3v23Tag,
     id3v23Id,
@@ -13,6 +14,7 @@ module Melo.Format.ID3.ID3v2
     SyncSafe,
     fromSyncSafe,
     toSyncSafe,
+    changeVersion,
   )
 where
 
@@ -27,9 +29,10 @@ import Data.Bits
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as L
+import Data.Coerce
 import Data.Foldable as F
 import Data.Functor
-import Data.List.NonEmpty
+import Data.List.NonEmpty as NE
 import Data.Maybe
 import Data.Text as T
 import Data.Text.Encoding
@@ -58,7 +61,7 @@ id3v24Tag = mappedTag id3v2_4
 
 data ID3v2 (v :: ID3v2Version) = ID3v2
   { headerFlags :: !HeaderFlags,
-    id3v2size :: !Integer,
+    paddingSize :: !Word32,
     extendedHeader :: !ByteString,
     frames :: !(Frames v)
   }
@@ -76,6 +79,23 @@ instance MetadataFormat ID3v2_3 where
         formatDesc = "ID3v2.3"
       }
   metadataLens = id3v23Tag
+  readTags = readId3v2Tags
+  replaceWithTags id3 tags = id3 & #frames .~ framesFromTags tags
+  metadataSize = id3v2SizeWithHeader
+
+readId3v2Tags :: ID3v2 v -> Tags
+readId3v2Tags id3 =
+  let frames' = id3 ^. #frames
+      contents = foldlFrames accumFrames [] frames'
+   in Tags $ V.fromList $ fmap (first toTagKey) contents >>= \(a, bs) -> fmap (a,) bs
+  where
+    accumFrames acc frame = acc <> catMaybes [extractFrameContent frame]
+
+id3v2SizeWithHeader :: (GetFrame v, PutFrame v) => ID3v2 v -> Integer
+id3v2SizeWithHeader ID3v2 {..} =
+  toInteger headerSize
+    + foldlFrames (\c f -> c + calculateFrameSize f) 0 frames
+    + toInteger paddingSize
 
 type ID3v2_4 = ID3v2 'ID3v24
 
@@ -89,6 +109,42 @@ instance MetadataFormat ID3v2_4 where
         formatDesc = "ID3v2.4"
       }
   metadataLens = id3v24Tag
+  readTags = readId3v2Tags
+  replaceWithTags id3 tags = id3 & #frames .~ framesFromTags tags
+  metadataSize = id3v2SizeWithHeader
+
+newId3v2 :: Tags -> ID3v2 v
+newId3v2 tags =
+  ID3v2
+    { headerFlags = HeaderFlags 0,
+      paddingSize = 128,
+      extendedHeader = BS.empty,
+      frames = framesFromTags tags
+    }
+
+framesFromTags :: Tags -> Frames v
+framesFromTags (Tags tags) =
+  if V.length tags == 0
+    then impureThrow $ MetadataWriteError "ID3v2 must contain at least one frame"
+    else Frames $ createFrame <$> NE.fromList (V.toList tags)
+
+createFrame :: (Text, Text) -> Frame v
+createFrame (k, v) =
+  let frameId = fromTagKey k
+   in Frame
+        { frameId = frameId,
+          frameFlags = FrameHeaderFlags 0,
+          frameContent = createFrameContent frameId v
+        }
+
+changeVersion :: ID3v2 v1 -> ID3v2 v2
+changeVersion ID3v2 {..} =
+  ID3v2
+    { headerFlags,
+      paddingSize,
+      extendedHeader,
+      frames = Frames $ fmap changeFrameVersion (coerce frames)
+    }
 
 instance (GetFrame v, PutFrame v) => MetadataLocator (ID3v2 v) where
   locate bs =
@@ -105,18 +161,21 @@ instance (GetFrame v, PutFrame v) => MetadataLocator (ID3v2 v) where
 
 instance (GetFrame v, PutFrame v) => Binary (ID3v2 v) where
   get = do
-    header <- get
+    header@Header {..} <- get
     extendedHeader <-
-      if hasExtendedHeader (flags header)
+      if hasExtendedHeader flags
         then getExtendedHeader
         else pure BS.empty
-    ID3v2 (flags header) (fromSyncSafe $ totalSize header) extendedHeader
-      <$> getFrames @v header
+    frames <- getFrames @v header
+    let padding =
+          fromSyncSafe totalSize
+            - foldlFrames (\c f -> c + calculateFrameSize f) 0 frames
+    pure $ ID3v2 flags (fromInteger padding) extendedHeader frames
     where
       getExtendedHeader = do
-        headerSize <- fromSyncSafe <$> get
-        getByteString headerSize
-  put ID3v2 {..} = do
+        extendedHeaderSize <- fromSyncSafe <$> get
+        getByteString extendedHeaderSize
+  put id3@ID3v2 {..} = do
     let id3data = runPut $ do
           if hasExtendedHeader headerFlags
             then do
@@ -124,6 +183,7 @@ instance (GetFrame v, PutFrame v) => Binary (ID3v2 v) where
               put extendedHeader
             else pure ()
           putFrames frames
+    let id3v2size = id3v2SizeWithHeader id3 - toInteger headerSize
     let header =
           Header
             { version = id3v2Version @v,
@@ -132,24 +192,8 @@ instance (GetFrame v, PutFrame v) => Binary (ID3v2 v) where
             }
     put header
     putLazyByteString id3data
-    let padding = fromIntegral id3v2size - fromIntegral (L.length id3data)
-    if padding >= 0
-      then replicateM_ padding (putWord8 0)
-      else -- FIXME used up id3 padding
-        undefined
-    -- TODO id3v2 footer
-    pure ()
-
-instance TagReader (ID3v2 v) where
-  readTags id3 =
-    let frames' = id3 ^. #frames
-        contents = foldlFrames accumFrames [] frames'
-     in Tags $ V.fromList $ fmap (first toTagKey) contents >>= \(a, bs) -> fmap (a,) bs
-    where
-      accumFrames acc frame = acc <> catMaybes [extractFrameContent frame]
-
-instance MetadataSize (ID3v2 v) where
-  metadataSize ID3v2 {..} = fromIntegral headerSize + id3v2size
+    -- TODO id3v2 footer after padding
+    replicateM_ (fromIntegral paddingSize) (putWord8 0)
 
 data Header = Header
   { version :: !ID3v2Version,
@@ -238,14 +282,13 @@ newtype Frames (v :: ID3v2Version) = Frames (NonEmpty (Frame v))
   deriving (Show, Eq)
 
 foldlFrames :: (b -> Frame v -> b) -> b -> Frames v -> b
-foldlFrames f z (Frames frms) = F.foldl f z frms
+foldlFrames f z (Frames frms) = F.foldl' f z frms
 
 type GetFrame v = (GetFrameHeader v, GetEncoding v, GetFrameId v, GetTextContent v, Version v)
 
 getFrames :: (GetFrame v, PutFrame v) => Header -> Get (Frames v)
-getFrames header = Frames <$> getFrames'
+getFrames Header {flags} = Frames <$> getFrames'
   where
-    flags' = flags header
     getFrames' = liftM2 (:|) get getRest
     getRest =
       isEnd >>= \case
@@ -253,7 +296,7 @@ getFrames header = Frames <$> getFrames'
         False -> liftM2 (:) get getRest
     isEnd =
       lookAhead (getByteString 1)
-        <&> if hasFooter flags'
+        <&> if hasFooter flags
           then \case
             -- found footer
             "3" -> True
@@ -269,9 +312,9 @@ putFrames :: (GetFrame v, PutFrame v) => Frames v -> Put
 putFrames (Frames frames) = mapM_ put frames
 
 data Frame (v :: ID3v2Version) = Frame
-  { frameId :: FrameId,
-    frameFlags :: FrameHeaderFlags,
-    frameContent :: FrameContent v
+  { frameId :: !FrameId,
+    frameFlags :: !FrameHeaderFlags,
+    frameContent :: !(FrameContent v)
   }
   deriving (Eq, Show)
 
@@ -281,20 +324,20 @@ instance (GetFrame v, PutFrame v) => Binary (Frame v) where
     if isText header
       then do
         enc <- getEncoding @v
-        frameId <- getFrameId @v header enc
-        Frame frameId frameFlags . mkFrameContent frameId enc <$> getTextContent header frameId enc
+        frameId' <- getFrameId @v header enc
+        Frame frameId' frameFlags . mkFrameContent frameId' enc <$> getTextContent header frameId' enc
       else do
-        frameId <- getFrameId @v header NullTerminated
+        frameId' <- getFrameId @v header NullTerminated
         frameContent <- OtherFrame <$> getByteString (fromIntegral frameSize)
-        pure $ Frame frameId frameFlags frameContent
+        pure $ Frame frameId' frameFlags frameContent
     where
       isText :: FrameHeader v -> Bool
       isText FrameHeader {frameId} = T.isPrefixOf "T" frameId || T.isPrefixOf "W" frameId
 
   put Frame {..} = do
     let fid = case frameId of
-          PreDefinedId fid -> fid
-          UserDefinedId fid _ -> fid
+          PreDefinedId fid' -> fid'
+          UserDefinedId fid' _ -> fid'
     let frameContentData = runPut $ putFrameContent frameId frameContent
     let frameSize = fromIntegral $ L.length frameContentData
     let header :: FrameHeader v =
@@ -306,6 +349,17 @@ instance (GetFrame v, PutFrame v) => Binary (Frame v) where
     put header
     putLazyByteString frameContentData
 
+calculateFrameSize :: (GetFrame v, PutFrame v) => Frame v -> Integer
+calculateFrameSize = fromIntegral . L.length . runPut . put
+
+changeFrameVersion :: Frame v1 -> Frame v2
+changeFrameVersion Frame {..} =
+  Frame
+    { frameId,
+      frameFlags,
+      frameContent = changeContentVersion frameContent
+    }
+
 data FrameId
   = PreDefinedId !Text
   | UserDefinedId !Text !Text
@@ -314,6 +368,12 @@ data FrameId
 toTagKey :: FrameId -> Text
 toTagKey (PreDefinedId fid) = fid
 toTagKey (UserDefinedId fid1 fid2) = fid1 <> ";" <> fid2
+
+fromTagKey :: Text -> FrameId
+fromTagKey k = case T.split (== ';') k of
+  [fid, desc] -> UserDefinedId fid desc
+  [fid] -> PreDefinedId fid
+  _ -> error "invlid id3v2 key"
 
 class GetFrameId (v :: ID3v2Version) where
   getFrameId :: FrameHeader v -> TextEncoding -> Get FrameId
@@ -366,7 +426,7 @@ instance PutFrameHeader 'ID3v23 where
 
 instance PutFrameHeader 'ID3v24 where
   putFrameHeader FrameHeader {..} = do
-    putUtf8Text frameId
+    putUtf8Text (T.take 4 frameId)
     put (toSyncSafe frameSize)
     put frameFlags
 
@@ -378,8 +438,8 @@ instance Binary FrameHeaderFlags where
   put (FrameHeaderFlags f) = putWord16be f
 
 data FrameContent (v :: ID3v2Version)
-  = TextFrame TextEncoding ![Text]
-  | UrlFrame TextEncoding ![Text]
+  = TextFrame !TextEncoding ![Text]
+  | UrlFrame !TextEncoding ![Text]
   | OtherFrame !ByteString
   deriving (Show, Eq)
 
@@ -388,7 +448,7 @@ mkFrameContent fid enc t = case fid of
   PreDefinedId i -> cid i
   UserDefinedId i _ -> cid i
   where
-    cid i = case i of
+    cid = \case
       i | T.isPrefixOf "T" i -> TextFrame enc t
       i | T.isPrefixOf "W" i -> UrlFrame enc t
       _ -> OtherFrame BS.empty
@@ -403,6 +463,21 @@ extractFrameContent Frame {frameId, frameContent} = case frameContent of
   TextFrame _ vs -> Just (frameId, vs)
   UrlFrame _ vs -> Just (frameId, vs)
   _ -> Nothing
+
+createFrameContent :: FrameId -> Text -> FrameContent v
+createFrameContent frameId val =
+  let frameId' = toTagKey frameId
+   in if T.isPrefixOf "T" frameId'
+        then TextFrame UTF8 [val]
+        else
+          if T.isPrefixOf "W" frameId'
+            then UrlFrame UTF8 [val]
+            else error "invalid ID3v2 text frame id " frameId'
+
+changeContentVersion :: FrameContent v1 -> FrameContent v2
+changeContentVersion (TextFrame enc content) = TextFrame enc content
+changeContentVersion (UrlFrame enc content) = UrlFrame enc content
+changeContentVersion (OtherFrame content) = OtherFrame content
 
 class GetTextContent (v :: ID3v2Version) where
   getTextContent :: FrameHeader v -> FrameId -> TextEncoding -> Get [Text]
@@ -498,7 +573,7 @@ instance PutEncoding 'ID3v24 where
   putEncoding = \case
     NullTerminated -> putWord8 0
     UTF16 -> putWord8 1
-    UTF16BE -> putWord8 1
+    UTF16BE -> putWord8 2
     UTF8 -> putWord8 3
     x ->
       impureThrow $
@@ -511,7 +586,7 @@ newtype SyncSafe = SyncSafe
 
 fromSyncSafe :: (Num a, Bits a) => SyncSafe -> a
 fromSyncSafe s =
-  let s' = syncSafe s in BS.foldl (\a b -> shiftL a 7 .|. fromIntegral b) 0 s'
+  let s' = syncSafe s in BS.foldl' (\a b -> shiftL a 7 .|. fromIntegral b) 0 s'
 
 toSyncSafe :: (Integral a, Bits a) => a -> SyncSafe
 toSyncSafe a =

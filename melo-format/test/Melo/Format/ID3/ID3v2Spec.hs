@@ -11,6 +11,7 @@ import Data.Vector
 import Melo.Format.ID3.ID3v2
 import Melo.Format.Internal.Binary
 import Melo.Format.Internal.Locate
+import Melo.Format.Internal.Metadata
 import Melo.Format.Internal.Tag
 import Melo.Format.Mapping
 import qualified Melo.Format.Mapping as M
