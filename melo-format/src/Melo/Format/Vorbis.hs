@@ -10,6 +10,7 @@ import qualified Data.ByteString.Lazy as L
 import Data.Functor
 import Data.Int
 import Data.Maybe
+import Data.String
 import Data.Text (Text)
 import qualified Data.Text as T (drop, findIndex, length, take)
 import Data.Text.Encoding
@@ -25,19 +26,24 @@ data Header
   | CommentsHeader !FramedVorbisComments
   deriving (Eq, Show)
 
+vorbisIdentifier :: IsString s => s
+vorbisIdentifier = "vorbis"
+
 instance Binary Header where
   get = do
     t <- getPacketType
-    expectGetEq (getByteString 6) "vorbis" "Expected vorbis identifier string"
+    expectGetEq (getByteString 6) vorbisIdentifier "Expected vorbis identifier string"
     case t of
       Just IdentificationHeaderType -> IdentificationHeader <$> get
       Just CommentsHeaderType -> CommentsHeader <$> get
       _ -> F.fail "Unexpected packet header"
   put (IdentificationHeader i) = do
     putPacketType IdentificationHeaderType
+    putByteString vorbisIdentifier
     put i
   put (CommentsHeader vc) = do
     putPacketType CommentsHeaderType
+    putByteString vorbisIdentifier
     put vc
 
 data PacketType
@@ -107,8 +113,8 @@ instance Binary FramedVorbisComments where
     expectGetEq getWord8 1 "Expected vorbis framing bit"
     return $ FramedVorbisComments vc
   put (FramedVorbisComments vc) = do
-    putWord8 1
     put vc
+    putWord8 1
 
 data VorbisComments = VorbisComments
   { vendorString :: !Text,

@@ -25,6 +25,7 @@ dependencies:
 library:
   source-dirs: src
   dependencies:
+    - array
     - binary
     - binary-bits
     - bytestring
@@ -37,8 +38,10 @@ library:
     - hashable
     - microlens
     - microlens-th
+    - pureMD5
     - range
     - safe-exceptions
+    - split
     - text
     - time
     - unordered-containers
@@ -54,7 +57,6 @@ executables:
       - generic-lens
       - microlens
       - optparse-applicative
-      - polysemy
       - text
       - time
       - unordered-containers

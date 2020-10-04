@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: b6e934b68dd0dad056ae324ee3be594ffd8238c7a19c094961156e8b1fea5124
+-- hash: ab3309cb25714761817e0ca99dcf56b722908b08dc907219c620d72a0a19263f
 
 name:           melo-format
 version:        0.1.0.0
@@ -59,7 +59,8 @@ library
   default-extensions: ApplicativeDo BangPatterns BinaryLiterals ConstraintKinds DataKinds DefaultSignatures DeriveAnyClass DeriveFoldable DeriveFunctor DeriveGeneric DeriveLift DeriveTraversable DerivingStrategies DuplicateRecordFields EmptyCase ExistentialQuantification FlexibleContexts FlexibleInstances FunctionalDependencies GADTs GeneralizedNewtypeDeriving InstanceSigs KindSignatures LambdaCase MultiParamTypeClasses MultiWayIf NamedFieldPuns OverloadedLabels OverloadedStrings PatternSynonyms RankNTypes RecordWildCards ScopedTypeVariables StandaloneDeriving TemplateHaskell TupleSections TypeApplications TypeFamilies TypeFamilyDependencies TypeOperators ViewPatterns
   ghc-options: -O2 -Wall -Wcompat -fno-warn-name-shadowing -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wnoncanonical-monad-instances
   build-depends:
-      base >=4.7 && <5
+      array
+    , base >=4.7 && <5
     , binary
     , binary-bits
     , bytestring
@@ -72,8 +73,10 @@ library
     , hashable
     , microlens
     , microlens-th
+    , pureMD5
     , range
     , safe-exceptions
+    , split
     , text
     , time
     , unordered-containers
@@ -95,7 +98,6 @@ executable melo-detect
     , melo-format
     , microlens
     , optparse-applicative
-    , polysemy
     , text
     , time
     , unordered-containers
