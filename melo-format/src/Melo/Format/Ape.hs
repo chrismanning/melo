@@ -79,15 +79,17 @@ locateApe :: L.ByteString -> Version -> Maybe Int
 locateApe bs v =
   case locateBinaryLazy @Header bs of
     Nothing -> Nothing
-    Just i -> do
-      let header = runGet (lookAhead $ skip (fromIntegral i) >> getHeader) bs
-      if headerVersion header /= v
-        then Nothing
-        else
-          Just $
-            if isHeader (flags header)
-              then i
-              else i - (fromIntegral (numBytes header) - headerSize)
+    Just i ->
+      case runGetOrFail (lookAhead $ skip (fromIntegral i) >> getHeader) bs of
+        Left _ -> Nothing
+        Right (_, _, header) ->
+          if headerVersion header /= v
+            then Nothing
+            else
+              Just $
+                if isHeader (flags header)
+                  then i
+                  else i - (fromIntegral (numBytes header) - headerSize)
 
 hLocateApe :: Num a => Handle -> Version -> IO (Maybe a)
 hLocateApe h v = do

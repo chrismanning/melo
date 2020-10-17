@@ -11,8 +11,8 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as L
 import Data.Int
 import Data.List.Split
-import Data.String
 import Data.STRef
+import Data.String
 import Melo.Format.Internal.BinaryUtil
 
 data OggPage a = OggPage
@@ -106,26 +106,25 @@ crc32Update crcInit d = runST $ do
   go d crc
   readSTRef crc
   where
-   go d' crc
-    | L.null d' = pure ()
-    | otherwise = do
-      let (x, xs) = (L.head d', L.tail d')
-      crc' <- readSTRef crc
-      let ix = fromIntegral x `xor` ((crc' `shiftR` 24) .&. 0xFF)
-      writeSTRef crc $ (crcLookup ! ix) `xor` (crc' `shiftL` 8)
-      go xs crc
+    go d' crc
+      | L.null d' = pure ()
+      | otherwise = do
+        let (x, xs) = (L.head d', L.tail d')
+        crc' <- readSTRef crc
+        let ix = fromIntegral x `xor` ((crc' `shiftR` 24) .&. 0xFF)
+        writeSTRef crc $ (crcLookup ! ix) `xor` (crc' `shiftL` 8)
+        go xs crc
 
 crcLookup :: UArray Word32 Word32
-crcLookup = listArray (0, 255) (genEntry <$> [0..255])
+crcLookup = listArray (0, 255) (genEntry <$> [0 .. 255])
 
 genEntry :: Word32 -> Word32
 genEntry idx = runST $ do
   r <- newSTRef (idx `shiftL` 24)
   replicateM_ 8 $ do
     r' <- readSTRef r
-    if r' .&. 0x80000000 /= 0 then
-      writeSTRef r ((r' `shiftL` 1) `xor` 0x04C11DB7)
-    else
-      writeSTRef r (r' `shiftL` 1)
+    if r' .&. 0x80000000 /= 0
+      then writeSTRef r ((r' `shiftL` 1) `xor` 0x04C11DB7)
+      else writeSTRef r (r' `shiftL` 1)
   r' <- readSTRef r
   pure (r' .&. 0xFFFFFFFF)

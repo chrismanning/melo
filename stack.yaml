@@ -41,8 +41,8 @@ packages:
 # Dependency packages to be pulled from upstream that are not in the resolver
 # (e.g., acme-missiles-0.3)
 extra-deps:
-  - github: nerded1337/beam
-    commit: ba443c81f5bc6716a722a68180c373e87fba73bf
+  - github: haskell-beam/beam
+    commit: efd464b079755a781c2bb7a2fc030d6c141bbb8a
     subdirs:
       - beam-core
       - beam-postgres

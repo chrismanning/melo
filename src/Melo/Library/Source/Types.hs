@@ -10,13 +10,11 @@ module Melo.Library.Source.Types
     Source (..),
     ImportStats (..),
     fileUri,
-    tagsToValue,
   )
 where
 
 import Basement.From
 import Control.Lens hiding ((.=))
-import Data.Aeson.Types as A
 import Data.Coerce
 import qualified Data.HashMap.Strict as H
 import Data.Int
@@ -24,15 +22,13 @@ import Data.Maybe
 import Data.Range as R
 import Data.Text (Text)
 import qualified Data.Text as T
-import qualified Data.Vector as V
 import Database.Beam
-import Database.Beam.Postgres as Pg
+import Database.Beam.Postgres as PgB
 import Melo.Common.Metadata
 import qualified Melo.Database.Model as DB
 import Melo.Format.Info
-import Melo.Format.Internal.Tag
 import Melo.Format.Metadata
-import Network.URI
+import Network.URI hiding (escapeString)
 import Numeric.Natural
 
 data NewImportSource = FileSource MetadataFile | CueFileSource
@@ -87,7 +83,7 @@ data NewSource = NewSource
     metadataFormat :: Text,
     tags :: Tags,
     source :: Text,
-    idx :: Maybe Int,
+    idx :: Maybe Int16,
     range :: Maybe AudioRange
   }
   deriving (Show, Eq, Generic)
@@ -113,34 +109,13 @@ instance From NewSource (DB.SourceT (QExpr Postgres s)) where
       { id = default_,
         kind = val_ $ s ^. #kind,
         metadata_format = val_ $ s ^. #metadataFormat,
-        metadata = val_ $ PgJSONB (tagsToValue $ s ^. #tags),
+        metadata = val_ $ s ^. #tags . coerced,
         source_uri = val_ $ s ^. #source,
-        idx = val_ $ fromMaybe (-1 :: Int) (s ^. #idx),
+        idx = val_ $ fromMaybe (-1 :: Int16) (s ^. #idx),
         sample_range = val_ $ sampleRange =<< (s ^. #range),
         time_range = val_ $ timeRange =<< (s ^. #range),
         scanned = currentTimestamp_
       }
-
-tagsToValue :: Tags -> A.Value
-tagsToValue (Tags tags) =
-  A.toJSON $
-    tags <&> \(k, v) ->
-      A.object
-        [ "key" .= k,
-          "value" .= v
-        ]
-
-valueToTags :: A.Value -> Maybe Tags
-valueToTags (A.Array ts) = do
-  tags <- V.forM ts $ \t ->
-    flip A.parseMaybe t $
-      A.withObject "Tags" $
-        \obj -> do
-          k <- obj .: "key"
-          v <- obj .: "value"
-          pure (k, v)
-  pure (Tags tags)
-valueToTags _ = Nothing
 
 fileUri :: FilePath -> URI
 fileUri p =
@@ -161,15 +136,15 @@ timeRange (TimeRange range) = Just (toPgRange range)
 timeRange (SampleRange _) = Nothing
 
 toPgRange :: Range a -> PgRange b a
-toPgRange (SingletonRange a) = PgRange (Pg.inclusive a) (Pg.inclusive a)
+toPgRange (SingletonRange a) = PgRange (PgB.inclusive a) (PgB.inclusive a)
 toPgRange (SpanRange a b) = PgRange (toPgRangeBound a) (toPgRangeBound b)
-toPgRange (LowerBoundRange a) = PgRange (toPgRangeBound a) Pg.unbounded
-toPgRange (UpperBoundRange a) = PgRange Pg.unbounded (toPgRangeBound a)
-toPgRange InfiniteRange = PgRange Pg.unbounded Pg.unbounded
+toPgRange (LowerBoundRange a) = PgRange (toPgRangeBound a) PgB.unbounded
+toPgRange (UpperBoundRange a) = PgRange PgB.unbounded (toPgRangeBound a)
+toPgRange InfiniteRange = PgRange PgB.unbounded PgB.unbounded
 
 toPgRangeBound :: Bound a -> PgRangeBound a
-toPgRangeBound (Bound a R.Inclusive) = Pg.inclusive a
-toPgRangeBound (Bound a R.Exclusive) = Pg.exclusive a
+toPgRangeBound (Bound a R.Inclusive) = PgB.inclusive a
+toPgRangeBound (Bound a R.Exclusive) = PgB.exclusive a
 
 data Source = Source
   { ref :: DB.SourceKey,
@@ -183,8 +158,8 @@ instance TryFrom DB.Source Source where
   tryFrom s = do
     uri <- parseURI $ T.unpack (s ^. #source_uri)
     let mid = MetadataId $ s ^. #metadata_format
-    tags <- valueToTags (coerce $ s ^. #metadata)
-    metadata <- mkMetadata mid tags
+    let PgJSONB (DB.SourceMetadata tags) = s ^. #metadata
+    metadata <- mkMetadata mid (Tags tags)
     pure
       Source
         { ref = primaryKey s,

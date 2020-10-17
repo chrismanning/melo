@@ -281,7 +281,7 @@ hFindFlac h = do
       IO Integer
     findId3End loc = do
       hSeek h AbsoluteSeek (fromIntegral loc)
-      id3 <- bdecode @id3 <$> hGetFileContents h
+      id3 <- bdecodeOrThrowIO @id3 =<< hGetFileContents h
       let flacLoc = fromIntegral loc + metadataSize id3
       pure flacLoc
     findFlac flacLoc = do

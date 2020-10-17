@@ -24,12 +24,11 @@ import qualified Data.Text as T
 import Data.UUID (fromText, toText)
 import qualified Data.Vector as V
 import Database.Beam as B hiding (char, insert)
-import Database.Beam.Postgres as Pg
+import Database.Beam.Postgres (PgJSONB (..))
 import Melo.Common.FileSystem
 import Melo.Common.Logging
 import Melo.Common.Metadata
 import qualified Melo.Database.Model as DB
-import Melo.Database.Query
 import Melo.Format ()
 import qualified Melo.Format as F
 import qualified Melo.Format.Mapping as M
@@ -121,10 +120,10 @@ instance From DB.Source Metadata where
   from s =
     let s' :: Maybe Ty.Source = tryFrom s
         m :: Maybe F.Metadata = fmap (^. #metadata) s'
-        tags = fromMaybe [] $ toMaybe $ fromJSON (s ^. #metadata . fromPg)
+        PgJSONB (DB.SourceMetadata tags) = s ^. #metadata
         format = maybe "" (^. #formatDesc) m
      in Metadata
-          { tags,
+          { tags = V.toList tags,
             mappedTags = maybe def mapTags m,
             formatId = s ^. #metadata_format,
             format = format
@@ -316,16 +315,6 @@ groupMappedTags m =
       musicbrainzAlbumId = m ^. #musicbrainzAlbumId
     }
 
-toMaybe :: Result a -> Maybe a
-toMaybe = \case
-  Success a -> Just a
-  Error _ -> Nothing
-
-fromPg = to fromPg'
-
-fromPg' :: PgJSONB a -> a
-fromPg' (PgJSONB a) = a
-
 data SourceUpdate = SourceUpdate
   { id :: Text,
     updateTags :: TagUpdate
@@ -418,9 +407,10 @@ updateSourcesImpl (UpdateSourcesArgs updates) = do
                   $(logError) msg
                   pure $ FailedSourceUpdate {id, msg}
                 Just metadata -> do
+                  let F.Tags tags = F.tags metadata
                   let updatedSource =
                         originalSource
-                          { DB.metadata = PgJSONB $ Ty.tagsToValue (F.tags metadata),
+                          { DB.metadata = PgJSONB $ DB.SourceMetadata tags,
                             DB.metadata_format = coerce $ F.formatId metadata
                           }
                   updateSources [updatedSource]

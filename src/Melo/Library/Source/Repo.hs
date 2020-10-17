@@ -4,6 +4,7 @@ module Melo.Library.Source.Repo where
 
 import Basement.From
 import Control.Algebra
+import Control.Effect.Exception
 import Control.Effect.Lift
 import Control.Effect.Reader
 import Control.Effect.TH
@@ -54,18 +55,20 @@ instance
       pure $ ctx $> r
     L (InsertSources []) -> pure $ ctx $> []
     L (InsertSources ss) -> do
-      let q =
-            Pg.insertReturning
-              tbl
-              (insertExpressions (fmap from ss))
-              ( Pg.onConflict
-                  (B.conflictingFields (\t -> (t ^. #source_uri, t ^. #idx)))
-                  ( Pg.onConflictUpdateInstead
-                      (\s -> (s ^. #scanned, s ^. #metadata, s ^. #kind, s ^. #metadata_format))
-                  )
-              )
-              (Just id)
-      r <- $(runPgDebug') (Pg.runPgInsertReturningList q)
+      r <- do
+        expr <- evaluate (insertExpressions $ fmap from ss)
+        let q =
+              Pg.insertReturning
+                tbl
+                expr
+                ( Pg.onConflict
+                    (B.conflictingFields (\t -> (t ^. #source_uri, t ^. #idx)))
+                    ( Pg.onConflictUpdateInstead
+                        (\s -> (s ^. #scanned, s ^. #metadata, s ^. #kind, s ^. #metadata_format))
+                    )
+                )
+                (Just id)
+        $(runPgDebug') (Pg.runPgInsertReturningList q)
       pure $ ctx $> r
     L (DeleteSources ks) -> ctx $$> deleteByKeys tbl ks
     L (UpdateSources us) -> do

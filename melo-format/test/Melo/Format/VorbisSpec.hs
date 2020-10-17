@@ -38,4 +38,6 @@ spec = do
           )
 
 readVorbisComments :: FilePath -> IO VorbisComments
-readVorbisComments p = bdecode <$> L.readFile p
+readVorbisComments p = case bdecodeFileOrFail p of
+  Right v -> pure v
+  _ -> error $ "cannot read file " <> p

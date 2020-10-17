@@ -6,6 +6,7 @@ import Control.Algebra
 import Control.Effect.Lift
 import Control.Effect.Reader
 import Control.Lens ((^.))
+import Data.Int (Int16)
 import Data.List
 import Data.Text (Text)
 import Data.Time (NominalDiffTime)
@@ -19,8 +20,8 @@ import Melo.Database.Query
 
 data NewTrack = NewTrack
   { title :: Text,
-    trackNumber :: Maybe Int,
-    discNumber :: Maybe Int,
+    trackNumber :: Maybe Int16,
+    discNumber :: Maybe Int16,
     comment :: Maybe Text,
     sourceId :: DB.SourceKey,
     albumId :: DB.AlbumKey,

@@ -289,7 +289,7 @@ instance (Selector s, GraphQLType (FieldResultT a)) => GGraphQLInputFields' (M1 
 instance (GGraphQLInputFields' f, GGraphQLInputFields' g) => GGraphQLInputFields' (f :*: g) where
   inputFields' = inputFields' @f <> inputFields' @g
 
-instance (GGraphQLInputFields' f) => GGraphQLInputFields' (M1 C ('MetaCons x y 'True) f) where
+instance (GGraphQLInputFields' f) => GGraphQLInputFields' (M1 C ( 'MetaCons x y 'True) f) where
   inputFields' = inputFields' @f
 
 -- ENUM VALUES ---------------------------------

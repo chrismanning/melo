@@ -23,6 +23,7 @@ importSources ::
   ) =>
   [NewImportSource] ->
   m [Source]
+importSources [] = pure []
 importSources ss = do
   $(logDebug) $ "Importing sources: " <> show ss
   let metadataSources :: [MetadataImportSource] = mapMaybe tryFrom ss

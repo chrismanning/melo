@@ -2,9 +2,7 @@
 
 module Melo.Format.Internal.Binary
   ( BinaryGet (..),
-    bdecode,
     bdecodeOrFail,
-    bdecodeFile,
     bdecodeFileOrFail,
     bdecodeOrThrowIO,
   )
@@ -26,22 +24,12 @@ import System.IO
 class BinaryGet a where
   bget :: Bin.Get a
 
-bdecode :: BinaryGet a => L.ByteString -> a
-bdecode = Bin.runGet bget
-
 bdecodeOrFail :: BinaryGet a => L.ByteString -> Either (L.ByteString, Bin.ByteOffset, String) (L.ByteString, Bin.ByteOffset, a)
 bdecodeOrFail = Bin.runGetOrFail bget
 
-bdecodeFile :: BinaryGet a => FilePath -> IO a
-bdecodeFile f = do
-  result <- bdecodeFileOrFail f
-  case result of
-    Right x -> return x
-    Left (_, str) -> error str
-
 bdecodeFileOrFail :: BinaryGet a => FilePath -> IO (Either (Bin.ByteOffset, String) a)
 bdecodeFileOrFail f =
-  withBinaryFile f ReadMode $ \h -> feed (Bin.runGetIncremental bget) h
+  withBinaryFile f ReadMode (feed (Bin.runGetIncremental bget))
   where
     feed (Done _ _ x) _ = return (Right x)
     feed (Fail _ pos str) _ = return (Left (pos, str))

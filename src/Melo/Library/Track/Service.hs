@@ -12,6 +12,7 @@ import Data.Attoparsec.Text
 import Data.Foldable
 import Data.Functor
 import qualified Data.HashMap.Strict as H
+import Data.Int (Int16)
 import Data.Maybe
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -144,9 +145,9 @@ metadataTrack m sk ak i p = do
 --    undefined
 
 data TrackNumber = TrackNumber
-  { discNumber :: Maybe Int,
-    trackNumber :: Int,
-    totalTracks :: Maybe Int
+  { discNumber :: Maybe Int16,
+    trackNumber :: Int16,
+    totalTracks :: Maybe Int16
   }
   deriving (Generic)
 
@@ -164,20 +165,20 @@ trackNumParser = do
       }
 
 --- parses track number tags of form "1", "01", "01/11", "1.01/11"
-parseTrackNumber :: Text -> Maybe Int
+parseTrackNumber :: Text -> Maybe Int16
 parseTrackNumber num = case parseOnly trackNumParser num of
   Right tn -> Just $ tn ^. #trackNumber
   Left _ -> Nothing
 
-parseTrackNumberFromFileName :: FilePath -> Maybe Int
+parseTrackNumberFromFileName :: FilePath -> Maybe Int16
 parseTrackNumberFromFileName = parseTrackNumber . T.pack
 
-parseDiscNumber :: Text -> Maybe Int
+parseDiscNumber :: Text -> Maybe Int16
 parseDiscNumber num = case parseOnly decimal num of
   Right d -> Just d
   Left _ -> Nothing
 
-parseDiscNumberFromTrackNumber :: Text -> Maybe Int
+parseDiscNumberFromTrackNumber :: Text -> Maybe Int16
 parseDiscNumberFromTrackNumber num = case parseOnly trackNumParser num of
   Right d -> d ^. #discNumber
   Left _ -> Nothing

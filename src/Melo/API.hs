@@ -3,6 +3,7 @@
 module Melo.API where
 
 import Control.Algebra
+import Control.Carrier.Error.Church
 import Control.Carrier.Lift
 import Control.Carrier.Reader
 import Control.Lens ((^.))
@@ -24,6 +25,8 @@ import Melo.Common.FileSystem
 import Melo.Common.Logging
 import Melo.Common.Metadata
 import qualified Melo.Database.Model as DB
+import Melo.Database.Transaction
+import qualified Melo.Format.Error as F
 import Melo.Library.API
 import Melo.Library.Service
 import Melo.Library.Source.Repo
@@ -56,16 +59,19 @@ gqlApi :: forall sig m. (ResolverE sig m, Typeable m) => ByteString -> m ByteStr
 gqlApi = interpreter (rootResolver @sig @m)
 
 gqlApiIO :: Pool Connection -> ByteString -> IO ByteString
-gqlApiIO pool r =
-  withResource pool $ \conn ->
-    runResolverE conn (gqlApi r)
+gqlApiIO pool r = runStdoutLogging $ runTransaction pool $
+  withTransaction $
+    ReaderC $ \conn ->
+      runResolverE conn (gqlApi r)
 
 type ResolverE sig m =
   ( Has (Lift IO) sig m,
     Has (Reader Connection) sig m,
+    Has Transaction sig m,
     Has Logging sig m,
     Has FileSystem sig m,
     Has SourceRepository sig m,
+    Has (Error F.MetadataException) sig m,
     Has LibraryService sig m,
     Has MetadataService sig m
   )
@@ -73,10 +79,16 @@ type ResolverE sig m =
 runResolverE conn =
   runReader conn
     . runStdoutLogging
+    . runError
+      ( \(e :: F.MetadataException) -> do
+          $(logError) ("Uncaught metadata error: " <> show e)
+          undefined
+      )
+      pure
+    . runMetadataServiceIO
     . runFileSystemIO
     . runSourceRepositoryIO
     . runLibraryServiceIO
-    . runMetadataServiceIO
 
 api :: Pool Connection -> ScottyM ()
 api pool = do

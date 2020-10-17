@@ -37,7 +37,7 @@ hLocateGet h = do
       Just i -> do
         hSeek h AbsoluteSeek (fromIntegral i)
         hGetFileContents h
-  return $ bdecode bs
+  bdecodeOrThrowIO bs
 
 hLocateGet' :: forall a. (MetadataLocator a) => Handle -> IO (Maybe a)
 hLocateGet' h =

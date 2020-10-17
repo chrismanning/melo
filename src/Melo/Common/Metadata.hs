@@ -4,6 +4,8 @@ module Melo.Common.Metadata where
 
 import Control.Algebra
 import Control.Applicative
+import Control.Effect.Error
+import Control.Effect.Exception
 import Control.Effect.Lift
 import Control.Effect.TH
 import Control.Lens ((^.))
@@ -14,6 +16,7 @@ import Melo.Common.Effect
 import Melo.Common.Logging
 import Melo.Format (Metadata (..))
 import qualified Melo.Format as F
+import qualified Melo.Format.Error as F
 
 chooseMetadata :: [Metadata] -> Maybe Metadata
 chooseMetadata ms =
@@ -41,17 +44,18 @@ runMetadataServiceIO = runMetadataServiceIOC
 
 instance
   ( Has (Lift IO) sig m,
+    Has (Throw F.MetadataException) sig m,
     Has Logging sig m
   ) =>
   Algebra (MetadataService :+: sig) (MetadataServiceIOC m)
   where
   alg _ (L sig) ctx =
-    ctx $$!> sendIO case sig of
-      OpenMetadataFile path -> F.openMetadataFile path
-      ReadMetadataFile mfid path -> do
+    ctx $$!> case sig of
+      OpenMetadataFile path -> handle (throwError @F.MetadataException) (sendIO $ F.openMetadataFile path)
+      ReadMetadataFile mfid path -> handle (throwError @F.MetadataException) $ sendIO do
         F.MetadataFileFactory {readMetadataFile} <- getFactory mfid
         readMetadataFile path
-      WriteMetadataFile mf path -> do
+      WriteMetadataFile mf path -> handle (throwError @F.MetadataException) $ sendIO do
         F.MetadataFileFactory {writeMetadataFile, readMetadataFile} <- getFactory (mf ^. #fileId)
         writeMetadataFile mf path
         readMetadataFile path
@@ -61,5 +65,5 @@ instance
         Just fact -> pure fact
         Nothing -> do
           runStdoutLogging $ $(logError) $ T.pack "unknown metadata file id '" <> coerce mfid <> "'"
-          undefined
+          throwIO F.UnknownFormat
   alg hdl (R other) ctx = MetadataServiceIOC (alg (runMetadataServiceIOC . hdl) other ctx)

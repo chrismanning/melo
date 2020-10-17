@@ -5,11 +5,12 @@ module Melo.Database.Transaction where
 import Control.Algebra
 import Control.Carrier.Lift
 import Control.Carrier.Reader
+import Control.Effect.Exception
 import qualified Control.Exception.Safe as E
 import Data.Pool as P
 import qualified Database.PostgreSQL.Simple as Pg
 import Melo.Common.Effect
-import Melo.Common.Exception
+import Melo.Common.Logging
 
 data Transaction :: Effect where
   WithTransaction :: ReaderC Pg.Connection m a -> Transaction m a
@@ -21,7 +22,7 @@ newtype TransactionC m a = TransactionC {runTransactionC :: ReaderC (Pool Pg.Con
   deriving newtype (Applicative, Functor, Monad)
 
 instance
-  (Has (Lift IO) sig m) =>
+  (Has (Lift IO) sig m, Has Logging sig m) =>
   Algebra (Transaction :+: sig) (TransactionC m)
   where
   alg hdl (L (WithTransaction t)) ctx = do
@@ -29,14 +30,16 @@ instance
     mask $ \restore -> do
       (conn, localPool) <- sendIO $ takeResource pool
       sendIO $ Pg.begin conn
-      r <- restore (hdl (runReader conn t <$ ctx)) `onException` cleanUp conn pool localPool
+      r <- restore (hdl (runReader conn t <$ ctx)) `onException` cleanUp conn localPool
       sendIO $ Pg.commit conn
       sendIO $ putResource localPool conn
       return r
     where
-      cleanUp conn pool localPool = sendIO $ do
-        Pg.rollback conn `E.catch` \(_ :: IOError) -> return ()
-        destroyResource pool localPool conn
+      cleanUp conn localPool = do
+        $(logWarnShow) ("rolling back" :: String)
+        sendIO $ do
+          Pg.rollback conn `E.catch` \(_ :: IOError) -> return ()
+          putResource localPool conn
   alg hdl (R other) ctx = TransactionC (alg (runTransactionC . hdl) (R other) ctx)
 
 runTransaction :: Pool Pg.Connection -> TransactionC m a -> m a

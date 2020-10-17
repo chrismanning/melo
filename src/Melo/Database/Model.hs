@@ -3,30 +3,30 @@
 
 module Melo.Database.Model where
 
-import Control.Lens as L
-import Data.Aeson
+import Control.Lens as L hiding ((.=))
+import Data.Aeson as A
+import Data.Aeson.Types (parseMaybe)
 import Data.Attoparsec.ByteString.Char8
+import qualified Data.ByteString.Lazy as L
 import Data.Char
 import Data.Fixed
 import Data.Generics.Labels ()
-import Data.Generics.Product
-import Data.Generics.Sum ()
 import Data.Hashable
-import Data.Int (Int64)
+import Data.Int (Int16, Int64)
 import Data.Kind
 import Data.Text
 import Data.Time.Clock
 import Data.Time.LocalTime
 import Data.UUID
+import Data.Vector (Vector)
+import qualified Data.Vector as V
 import Database.Beam hiding (char, double)
 import Database.Beam.Backend.SQL.SQL92 (HasSqlValueSyntax (..))
 import Database.Beam.Postgres
 import Database.Beam.Postgres.Syntax
-import Database.PostgreSQL.Simple.FromField
+import Database.PostgreSQL.Simple.FromField as Pg
 import Database.PostgreSQL.Simple.ToField
-import Database.PostgreSQL.Simple.TypeInfo.Static (interval)
-import Debug.Trace
-import GHC.OverloadedLabels ()
+import Database.PostgreSQL.Simple.TypeInfo.Static (interval, jsonbOid)
 
 data MeloDb f = MeloDb
   { source :: f (TableEntity SourceT),
@@ -52,29 +52,32 @@ meloDb =
   defaultDbSettings
     `withDbModification` dbModification
       { album_artist_name =
-          modifyTableFields
+          modifyTableFields @AlbumArtistNameT
             ( tableModification
-                & setField @"album_id" (AlbumKey $ fieldNamed "album_id")
-                  . setField @"artist_name_id"
-                    (ArtistNameKey $ fieldNamed "artist_name_id")
+                { album_id = AlbumKey $ fieldNamed "album_id",
+                  artist_name_id = ArtistNameKey $ fieldNamed "artist_name_id"
+                }
             ),
         track =
-          modifyTableFields
+          modifyTableFields @TrackT
             ( tableModification
-                & setField @"album_id" (AlbumKey $ fieldNamed "album_id")
-                  . setField @"source_id" (SourceKey $ fieldNamed "source_id")
+                { album_id = AlbumKey $ fieldNamed "album_id",
+                  source_id = SourceKey $ fieldNamed "source_id"
+                }
             ),
         track_stage =
-          modifyTableFields
+          modifyTableFields @TrackStageT
             ( tableModification
-                & setField @"album_id" (AlbumKey $ fieldNamed "album_id")
-                  . setField @"source_id" (SourceKey $ fieldNamed "source_id")
+                { album_id = AlbumKey $ fieldNamed "album_id",
+                  source_id = SourceKey $ fieldNamed "source_id"
+                }
             ),
         track_genre =
-          modifyTableFields
+          modifyTableFields @TrackGenreT
             ( tableModification
-                & setField @"track_id" (TrackKey $ fieldNamed "track_id")
-                  . setField @"genre_id" (GenreKey $ fieldNamed "genre_id")
+                { track_id = TrackKey $ fieldNamed "track_id",
+                  genre_id = GenreKey $ fieldNamed "genre_id"
+                }
             )
       }
 
@@ -347,8 +350,8 @@ data TrackT (f :: Type -> Type) = Track
   { id :: Columnar f UUID,
     title :: Columnar f Text,
     album_id :: PrimaryKey AlbumT f,
-    track_number :: Columnar f (Maybe Int),
-    disc_number :: Columnar f (Maybe Int),
+    track_number :: Columnar f (Maybe Int16),
+    disc_number :: Columnar f (Maybe Int16),
     comment :: Columnar f (Maybe Text),
     source_id :: PrimaryKey SourceT f,
     length :: Columnar f Interval
@@ -422,9 +425,9 @@ data SourceT (f :: Type -> Type) = Source
   { id :: Columnar f UUID,
     kind :: Columnar f Text,
     metadata_format :: Columnar f Text,
-    metadata :: Columnar f (PgJSONB Value),
+    metadata :: Columnar f (PgJSONB SourceMetadata),
     source_uri :: Columnar f Text,
-    idx :: Columnar f Int,
+    idx :: Columnar f Int16,
     time_range :: Columnar f (Maybe (PgRange IntervalRange Interval)),
     sample_range :: Columnar f (Maybe (PgRange PgInt8Range Int64)),
     scanned :: Columnar f LocalTime
@@ -452,6 +455,57 @@ deriving instance (Eq (Columnar f UUID)) => Eq (PrimaryKey SourceT (f :: Type ->
 deriving instance Ord SourceKey
 
 deriving newtype instance Hashable SourceKey
+
+newtype SourceMetadata = SourceMetadata (Vector (Text, Text))
+  deriving (Show, Eq)
+
+instance Pg.FromField SourceMetadata where
+  fromField field d =
+    if Pg.typeOid field /= jsonbOid
+      then Pg.returnError Pg.Incompatible field ""
+      else case eitherDecodeStrict' <$> d of
+        Nothing -> Pg.returnError Pg.UnexpectedNull field ""
+        Just (Left e) -> Pg.returnError Pg.ConversionFailed field e
+        Just (Right d') -> pure d'
+
+instance FromBackendRow Postgres SourceMetadata
+
+instance HasSqlValueSyntax PgValueSyntax SourceMetadata where
+  sqlValueSyntax a =
+    PgValueSyntax $
+      emit "'" <> escapeString (L.toStrict (encode (toJSON a))) <> emit "'::jsonb"
+
+instance ToJSON SourceMetadata where
+  toJSON (SourceMetadata tags) =
+    object
+      [ "tags"
+          .= toJSON
+            ( tags <&> \(k, v) ->
+                object
+                  [ "key" .= k,
+                    "value" .= v
+                  ]
+            )
+      ]
+
+instance FromJSON SourceMetadata where
+  parseJSON = withObject "SourceMetadata" $
+    \sm -> do
+      tagPairs <- sm .: "tags"
+      withArray
+        "Tags"
+        ( \arr ->
+            do
+              tags <- V.forM arr $
+                withObject "Tag" $
+                  \obj ->
+                    do
+                      k <- obj .: "key"
+                      v <- obj .: "value"
+                      pure (k, v)
+              pure (SourceMetadata tags)
+        )
+        tagPairs
 
 data ArtistGenreT (f :: Type -> Type) = ArtistGenre
   { artist_id :: PrimaryKey ArtistT f,
@@ -610,7 +664,6 @@ intervalParser = do
   h <- signed decimal <* char ':'
   m <- twoDigits <* char ':'
   s <- rational
-  traceM $ "h: " <> show h <> "; m: " <> show m <> "; s: " <> show s
   if m < 60 && s <= 60
     then return (h, m, s)
     else fail "invalid interval"
