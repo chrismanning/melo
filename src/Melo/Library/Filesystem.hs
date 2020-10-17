@@ -6,6 +6,7 @@ import Control.Algebra
 import Control.Carrier.Empty.Church
 import Control.Carrier.Error.Church
 import Control.Carrier.Lift
+import Control.Carrier.Reader
 import Control.Exception.Safe
 import Data.Pool
 import Database.Beam.Postgres as Pg
@@ -49,11 +50,13 @@ type Importer sig m =
     Has TrackRepository sig m,
     Has TrackService sig m,
     Has FileSystem sig m,
+    Has Savepoint sig m,
+    Has (Reader Pg.Connection) sig m,
     Has Logging sig m,
     Has Empty sig m
   )
 
-runImporter sess =
+runImporter sess conn =
   runEmpty (sendIO $ putStrLn "failed") (sendIO . print)
     . runStdoutLogging
     . runError
@@ -62,6 +65,8 @@ runImporter sess =
           undefined
       )
       pure
+    . runReader conn
+    . runSavepoint
     . runFileSystemIO
     . runMusicBrainzServiceIO sess
     . runMetadataServiceIO
@@ -77,8 +82,10 @@ runImporter sess =
 
 importPath' :: Pool Connection -> Session -> FilePath -> IO ()
 importPath' pool sess dir = do
-  runStdoutLogging $ Tr.runTransaction pool $
-    Tr.withTransaction $
-      runImporter sess $
-        importPath dir
+  runStdoutLogging $
+    runReader pool $
+      Tr.runTransaction $
+        Tr.withTransaction $ \conn ->
+          runImporter sess conn $
+            importPath dir
   pure ()

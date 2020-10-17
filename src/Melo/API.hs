@@ -59,15 +59,17 @@ gqlApi :: forall sig m. (ResolverE sig m, Typeable m) => ByteString -> m ByteStr
 gqlApi = interpreter (rootResolver @sig @m)
 
 gqlApiIO :: Pool Connection -> ByteString -> IO ByteString
-gqlApiIO pool r = runStdoutLogging $ runTransaction pool $
-  withTransaction $
-    ReaderC $ \conn ->
-      runResolverE conn (gqlApi r)
+gqlApiIO pool r = runStdoutLogging $
+  runReader pool $
+    runTransaction $
+      withTransaction $ \conn ->
+        runResolverE conn (gqlApi r)
 
 type ResolverE sig m =
   ( Has (Lift IO) sig m,
     Has (Reader Connection) sig m,
     Has Transaction sig m,
+    Has Savepoint sig m,
     Has Logging sig m,
     Has FileSystem sig m,
     Has SourceRepository sig m,
@@ -85,6 +87,7 @@ runResolverE conn =
           undefined
       )
       pure
+    . runSavepoint
     . runMetadataServiceIO
     . runFileSystemIO
     . runSourceRepositoryIO

@@ -12,6 +12,7 @@ import Melo.Common.Effect
 import Melo.Common.FileSystem
 import Melo.Common.Logging
 import Melo.Common.Metadata
+import Melo.Database.Transaction
 import qualified Melo.Format.Error as F
 import qualified Melo.Format.Metadata as F
 import qualified Melo.Library.Source.Repo as SourceRepo
@@ -34,11 +35,12 @@ instance
     Has MetadataService sig m,
     Has SourceRepo.SourceRepository sig m,
     Has (Catch F.MetadataException) sig m,
+    Has Savepoint sig m,
     Has Logging sig m
   ) =>
   Algebra (LibraryService :+: sig) (LibraryServiceIOC m)
   where
-  alg _ (L (ImportPath p')) ctx = do
+  alg _ (L (ImportPath p')) ctx = withSavepoint do
     -- TODO IO error handling
     p <- canonicalizePath p'
     $(logInfo) $ "Importing " <> p
