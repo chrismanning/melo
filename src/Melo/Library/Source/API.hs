@@ -41,8 +41,34 @@ import System.FilePath
 
 resolveSources ::
   (Has SourceRepository sig m) =>
+  SourcesArgs ->
   Res e m [Source (Res e m)]
-resolveSources =
+resolveSources (SourceArgs (Just SourceWhere{..})) =
+  case id of
+    Just idExpr -> case idExpr of
+      WhereEqExpr (EqExpr x) -> case fromText x of
+        Just uuid -> lift $ fmap from <$> getSources [DB.SourceKey uuid]
+        Nothing -> fail $ "invalid source id " <> show x
+      WhereInExpr (InExpr x) -> case allJust (fmap fromText x) of
+        Just uuids -> lift $ fmap from <$> getSources (DB.SourceKey <$> uuids)
+        Nothing -> fail $ "invalid source id in " <> show x
+      _ -> fail "invalid where clause for Source.id"
+    Nothing -> case sourceUri of
+      Just sourceUriExpr -> case sourceUriExpr of
+        WhereEqExpr (EqExpr x) -> case parseURI (T.unpack x) of
+          Just uri -> lift $ fmap from <$> getSourcesByUri [uri]
+          Nothing -> fail $ "invalid source uri " <> show x
+        WhereInExpr (InExpr x) -> case allJust (fmap (parseURI . T.unpack) x) of
+          Just uris -> lift $ fmap from <$> getSourcesByUri uris
+          Nothing -> fail $ "invalid source id in " <> show x
+        _ -> fail "invalid where clause for Source.sourceUri"
+      Nothing -> lift $ fmap (fmap from) getAllSources
+    where
+      allJust :: [Maybe a] -> Maybe [a]
+      allJust [] = Just []
+      allJust (Just a:as) = fmap (a :) (allJust as)
+      allJust (Nothing:_) = Nothing
+resolveSources _ =
   lift $
     fmap (fmap from) getAllSources
 
@@ -91,6 +117,62 @@ uriToFilePath uri =
   case uriScheme uri of
     "file:" -> Just $ unEscapeString (uriPath uri)
     _ -> Nothing
+
+data SourcesArgs = SourceArgs {
+  where' :: Maybe SourceWhere
+} deriving (Generic)
+
+instance GQLType SourcesArgs where
+  type KIND SourcesArgs = INPUT
+
+data SourceWhere = SourceWhere
+  { id :: Maybe Where,
+--    format :: Maybe Where,
+--    metadata :: Maybe Metadata,
+--    sourceName :: Maybe Where,
+    sourceUri :: Maybe Where
+  }
+  deriving (Generic)
+
+instance GQLType SourceWhere where
+  type KIND SourceWhere = INPUT
+
+data Where = WhereEqExpr EqExpr |
+  WhereNotEqExpr NotEqExpr |
+  WhereContainsExpr ContainsExpr |
+  WhereInExpr InExpr
+    deriving (Generic)
+
+instance GQLType Where where
+  type KIND Where = INPUT
+
+newtype EqExpr = EqExpr {
+  eq :: Text
+} deriving (Generic)
+
+instance GQLType EqExpr where
+  type KIND EqExpr = INPUT
+
+newtype NotEqExpr = NotEqExpr {
+  notEq :: Text
+} deriving (Generic)
+
+instance GQLType NotEqExpr where
+  type KIND NotEqExpr = INPUT
+
+newtype ContainsExpr = ContainsExpr {
+  contains :: Text
+} deriving (Generic)
+
+instance GQLType ContainsExpr where
+  type KIND ContainsExpr = INPUT
+
+newtype InExpr = InExpr {
+  in' :: [Text]
+} deriving (Generic)
+
+instance GQLType InExpr where
+  type KIND InExpr = INPUT
 
 data TimeUnit = Seconds | Milliseconds | Nanoseconds
   deriving (Generic)
@@ -348,6 +430,9 @@ newtype UpdateSourcesArgs = UpdateSourcesArgs
   { updates :: [SourceUpdate]
   }
   deriving (Generic)
+
+instance GQLType UpdateSourcesArgs where
+  type KIND UpdateSourcesArgs = INPUT
 
 newtype UpdatedSources = UpdatedSources
   { results :: [UpdateSourceResult]

@@ -67,7 +67,6 @@ extra-deps:
   - dependent-sum-0.6.2.0
   - fastsum-0.1.1.1
   - fmt-0.6.1
-  - fraxl-0.3.0.0
   - fused-effects-th-0.1.0.1
   - fused-effects-1.1.0.0
   - fused-effects-exceptions-1.1.0.0
@@ -82,7 +81,8 @@ extra-deps:
   - linkedhashmap-0.4.0.0
   - log-warper-1.9.0
   - mime-0.4.0.2
-  - morpheus-graphql-0.11.0
+  - morpheus-graphql-0.15.1
+  - morpheus-graphql-core-0.15.1
   - named-0.3.0.1
   - network-uri-json-0.3.1.1
   - polysemy-1.2.1.0

@@ -5,7 +5,6 @@ module Melo.Library.Source.Repo where
 import Basement.From
 import Control.Algebra
 import Control.Effect.Exception
-import Control.Effect.Lift
 import Control.Effect.Reader
 import Control.Effect.TH
 import Control.Lens hiding (from)
@@ -47,6 +46,7 @@ instance
   where
   alg hdl sig ctx = case sig of
     L GetAllSources -> ctx $$> sortNaturalBy (^. #source_uri) <$> getAll tbl
+    L (GetSources []) -> pure $ ctx $> []
     L (GetSources ks) -> ctx $$> getByKeys tbl ks
     L (GetSourcesByUri []) -> pure $ ctx $> []
     L (GetSourcesByUri fs) -> SourceRepositoryIOC $ do

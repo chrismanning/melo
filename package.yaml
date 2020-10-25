@@ -56,7 +56,6 @@ library:
   - exceptions
   - extra
   - filepath
-  - fraxl
   - fused-effects
   - fused-effects-exceptions
   - fused-effects-th

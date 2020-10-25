@@ -10,6 +10,7 @@ import Control.Effect.Reader
 import Control.Lens hiding (from, (.=))
 import Control.Monad
 import Data.Kind
+import Data.Morpheus.Kind
 import Data.Morpheus.Types
 import Data.Text as T hiding (null)
 import Database.Beam hiding (C)
@@ -24,7 +25,7 @@ import Melo.Library.Source.Repo
 import Network.URI
 
 data LibraryQuery m = LibraryQuery
-  { sources :: m [Source m],
+  { sources :: SourcesArgs -> m [Source m],
     sourceGroups :: m [SourceGroup m]
   }
   deriving (Generic, GQLType)
@@ -71,6 +72,9 @@ newtype StageSourcesArgs = StageSourcesArgs
   { uris :: [Text]
   }
   deriving (Generic)
+
+instance GQLType StageSourcesArgs where
+  type KIND StageSourcesArgs = INPUT
 
 data StagedSources m = StagedSources
   { sources :: m [Source m],

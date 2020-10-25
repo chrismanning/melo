@@ -47,9 +47,9 @@ data Mutation m = Mutation
   }
   deriving (Generic, GQLType)
 
-rootResolver :: ResolverE sig m => GQLRootResolver m () Query Mutation Undefined
+rootResolver :: ResolverE sig m => RootResolver m () Query Mutation Undefined
 rootResolver =
-  GQLRootResolver
+  RootResolver
     { queryResolver = Query {library = resolveLibrary},
       mutationResolver = Mutation {library = resolveLibraryMutation},
       subscriptionResolver = Undefined
