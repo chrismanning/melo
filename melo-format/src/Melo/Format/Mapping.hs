@@ -199,6 +199,20 @@ trackNumberTag =
         vorbis = caseInsensitiveMapping "TRACKNUMBER"
       }
 
+totalTracksTag :: TagMapping
+totalTracksTag =
+  singletonTagMapping
+    def
+      { vorbis = caseInsensitiveMapping "TOTALTRACKS"
+      }
+
+trackTotalTag :: TagMapping
+trackTotalTag =
+  singletonTagMapping
+    def
+      { vorbis = caseInsensitiveMapping "TRACKTOTAL"
+      }
+
 genreTag :: TagMapping
 genreTag =
   singletonTagMapping
@@ -229,4 +243,18 @@ discNumberTag =
         id3v2_3 = caseSensitiveMapping "TPOS",
         id3v2_4 = caseSensitiveMapping "TPOS",
         vorbis = caseInsensitiveMapping "DISCNUMBER"
+      }
+
+totalDiscsTag :: TagMapping
+totalDiscsTag =
+  singletonTagMapping
+    def
+      { vorbis = caseInsensitiveMapping "TOTALDISCS"
+      }
+
+discTotalTag :: TagMapping
+discTotalTag =
+  singletonTagMapping
+    def
+      { vorbis = caseInsensitiveMapping "DISCTOTAL"
       }

@@ -1,0 +1,9 @@
+version: "3.8"
+services:
+  postgres:
+    image: postgres:12-alpine
+    environment:
+      POSTGRES_USER: melo
+      POSTGRES_PASSWORD: melo
+    ports:
+     - 5432:5432

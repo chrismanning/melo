@@ -26,6 +26,7 @@ module Melo.Lookup.MusicBrainz
     artistIdTag,
     originalArtistIdTag,
     albumArtistIdTag,
+    albumIdTag,
     trackIdTag,
     releaseTrackIdTag,
     releaseGroupIdTag,
@@ -521,6 +522,16 @@ albumArtistIdTag =
         vorbis = caseInsensitiveMapping "MUSICBRAINZ_ALBUMARTISTID",
         id3v2_3 = caseInsensitiveMapping "TXXX:MusicBrainz Album Artist Id",
         id3v2_4 = caseInsensitiveMapping "TXXX:MusicBrainz Album Artist Id"
+      }
+
+albumIdTag :: TagMapping
+albumIdTag =
+  singletonTagMapping
+    def
+      { ape = caseInsensitiveMapping "MUSICBRAINZ_ALBUMID",
+        vorbis = caseInsensitiveMapping "MUSICBRAINZ_ALBUMID",
+        id3v2_3 = caseInsensitiveMapping "TXXX:MusicBrainz Album Id",
+        id3v2_4 = caseInsensitiveMapping "TXXX:MusicBrainz Album Id"
       }
 
 trackIdTag :: TagMapping

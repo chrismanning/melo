@@ -183,7 +183,7 @@ getSourceLength uri unit = do
 
 data Metadata = Metadata
   { tags :: [(Text, Text)],
-    mappedTags :: MappedTags OUTPUT,
+    mappedTags :: MappedTags,
     formatId :: Text,
     format :: Text
   }
@@ -211,19 +211,19 @@ instance From DB.Source Metadata where
             format = format
           }
 
-mapTags :: F.Metadata -> MappedTags t
+mapTags :: F.Metadata -> MappedTags
 mapTags metadata =
   MappedTags
-    { artistName = mfilter (not . null) $ Just (V.toList $ ts ^. tag M.artist),
+    { artistName = mfilter (not . null) $ Just (V.toList $ ts ^. tag M.trackArtistTag),
       trackTitle = ts ^. tag M.trackTitle ^? _head,
       albumTitle = ts ^. tag M.album ^? _head,
       date = ts ^. tag M.year ^? _head,
       genre = mfilter (not . null) $ Just (V.toList $ ts ^. tag M.genre),
-      albumArtist = mfilter (not . null) $ Just (V.toList $ ts ^. tag M.albumArtist),
+      albumArtist = mfilter (not . null) $ Just (V.toList $ ts ^. tag M.albumArtistTag),
       trackNumber = ts ^. tag M.trackNumber ^? _head,
-      totalTracks = Nothing, -- ts ^. tag M.totalTracks ^? _head,
-      discNumber = Nothing, -- ts ^. tag M.discNumber ^? _head,
-      totalDiscs = Nothing, -- ts ^. tag M.totalDiscs ^? _head,
+      totalTracks = ts ^. tag M.totalTracksTag ^? _head <|> ts ^. tag M.trackTotalTag ^? _head,
+      discNumber = ts ^. tag M.discNumberTag ^? _head,
+      totalDiscs = ts ^. tag M.totalDiscsTag ^? _head <|> ts ^. tag M.discTotalTag ^? _head,
       comment = ts ^. tag M.commentTag ^? _head,
       musicbrainzArtistId = mfilter (not . null) $ Just (V.toList $ ts ^. tag MB.artistIdTag),
       musicbrainzAlbumArtistId = mfilter (not . null) $ Just (V.toList $ ts ^. tag MB.albumArtistIdTag),
@@ -235,7 +235,7 @@ mapTags metadata =
     ts = metadata ^. #tags
     tag = F.lens metadata
 
-data MappedTags (t :: GQL_KIND) = MappedTags
+data MappedTags = MappedTags
   { artistName :: Maybe [Text],
     trackTitle :: Maybe Text,
     albumTitle :: Maybe Text,
@@ -252,9 +252,9 @@ data MappedTags (t :: GQL_KIND) = MappedTags
     musicbrainzAlbumId :: Maybe Text,
     musicbrainzTrackId :: Maybe Text
   }
-  deriving (Generic, ToJSON)
+  deriving (Generic, ToJSON, GQLType)
 
-instance Default (MappedTags t) where
+instance Default MappedTags where
   def =
     MappedTags
       { artistName = Nothing,
@@ -274,10 +274,28 @@ instance Default (MappedTags t) where
         musicbrainzTrackId = Nothing
       }
 
-instance GQLType (MappedTags OUTPUT)
+data MappedTagsInput = MappedTagsInput
+  { __typename :: Maybe Text,
+    artistName :: Maybe [Text],
+    trackTitle :: Maybe Text,
+    albumTitle :: Maybe Text,
+    date :: Maybe Text,
+    genre :: Maybe [Text],
+    albumArtist :: Maybe [Text],
+    trackNumber :: Maybe Text,
+    totalTracks :: Maybe Text,
+    discNumber :: Maybe Text,
+    totalDiscs :: Maybe Text,
+    comment :: Maybe Text,
+    musicbrainzArtistId :: Maybe [Text],
+    musicbrainzAlbumArtistId :: Maybe [Text],
+    musicbrainzAlbumId :: Maybe Text,
+    musicbrainzTrackId :: Maybe Text
+  }
+  deriving (Generic, ToJSON)
 
-instance GQLType (MappedTags INPUT) where
-  type KIND (MappedTags INPUT) = INPUT
+instance GQLType MappedTagsInput where
+  type KIND MappedTagsInput = INPUT
 
 --unmapTags :: MappedTags INPUT -> F.Tags
 
@@ -382,10 +400,10 @@ data GroupTags = GroupTags
   }
   deriving (Eq, Generic, GQLType)
 
-groupMappedTags :: MappedTags a -> GroupTags
+groupMappedTags :: MappedTags -> GroupTags
 groupMappedTags m =
   GroupTags
-    { albumArtist = m ^. #albumArtist,
+    { albumArtist = m ^. #albumArtist <|> m ^. #artistName,
       albumTitle = m ^. #albumTitle,
       date = m ^. #date,
       genre = m ^. #genre,
@@ -407,10 +425,8 @@ instance GQLType SourceUpdate where
   type KIND SourceUpdate = INPUT
 
 data TagUpdate = TagUpdate
-  { setMappedTags :: Maybe (MappedTags INPUT),
-    setTags :: Maybe [UpdatePair],
-    updateMappedTags :: Maybe (MappedTags INPUT),
-    updateTags :: Maybe [UpdatePair]
+  { setMappedTags :: Maybe MappedTagsInput,
+    setTags :: Maybe [UpdatePair]
   }
   deriving (Generic)
 
@@ -521,11 +537,27 @@ updateSourcesImpl (UpdateSourcesArgs updates) = do
     resolveMetadata :: TagUpdateOp -> F.Metadata -> F.Metadata
     resolveMetadata (SetMappedTags m) metadata = metadata {F.tags = setTagsFromMapped (F.lens metadata) (F.Tags V.empty) m}
       where
-        setTagsFromMapped :: (F.TagMapping -> F.TagLens) -> F.Tags -> MappedTags INPUT -> F.Tags
-        setTagsFromMapped tag ts MappedTags {..} = ts & tag M.artist .~ V.fromList (fromMaybe [] artistName)
-    resolveMetadata (UpdateMappedTags m) metadata = metadata {F.tags = undefined}
+        setTagsFromMapped :: (F.TagMapping -> F.TagLens) -> F.Tags -> MappedTagsInput -> F.Tags
+        setTagsFromMapped tag ts MappedTagsInput {..} = ts
+          & tag M.artist .~ maybe V.empty V.fromList artistName
+          & tag M.trackTitle .~ maybe V.empty V.singleton trackTitle
+          & tag M.album .~ maybe V.empty V.singleton albumTitle
+          & tag M.year .~ maybe V.empty V.singleton date
+          & tag M.genre .~ maybe V.empty V.fromList genre
+          & tag M.albumArtist .~ maybe V.empty V.fromList albumArtist
+          & tag M.trackNumber .~ maybe V.empty V.singleton trackNumber
+          & tag M.totalTracksTag .~ maybe V.empty V.singleton totalTracks
+          & tag M.trackTotalTag .~ maybe V.empty V.singleton totalTracks
+          & tag M.discNumberTag .~ maybe V.empty V.singleton discNumber
+          & tag M.totalDiscsTag .~ maybe V.empty V.singleton totalDiscs
+          & tag M.discTotalTag .~ maybe V.empty V.singleton totalDiscs
+          & tag M.commentTag .~ maybe V.empty V.singleton comment
+          & tag MB.artistIdTag .~ maybe V.empty V.fromList musicbrainzArtistId
+          & tag MB.albumArtistIdTag .~ maybe V.empty V.fromList musicbrainzAlbumArtistId
+          & tag MB.albumIdTag .~ maybe V.empty V.singleton musicbrainzAlbumId
+          & tag MB.trackIdTag .~ maybe V.empty V.singleton musicbrainzTrackId
+          & tag M.commentTag .~ maybe V.empty V.singleton comment
     resolveMetadata (SetTags ps) metadata = metadata {F.tags = F.Tags $ V.fromList $ ps <&> \(UpdatePair k v) -> (k, v)}
-    resolveMetadata (UpdateTags ps) metadata = metadata {F.tags = undefined}
 
 data SourceUpdate' = SourceUpdate'
   { id :: Text,
@@ -535,14 +567,10 @@ data SourceUpdate' = SourceUpdate'
   deriving (Generic)
 
 data TagUpdateOp
-  = SetMappedTags (MappedTags INPUT)
-  | UpdateMappedTags (MappedTags INPUT)
+  = SetMappedTags MappedTagsInput
   | SetTags [UpdatePair]
-  | UpdateTags [UpdatePair]
 
 instance TryFrom TagUpdate TagUpdateOp where
   tryFrom TagUpdate {..} =
     SetMappedTags <$> setMappedTags
-      <|> UpdateMappedTags <$> updateMappedTags
       <|> SetTags <$> setTags
-      <|> UpdateTags <$> updateTags
