@@ -88,11 +88,11 @@ function BasicEditor(props: EditorPanelProps
     event.persist()
     setMappedTags(produce(mappedTags => {
       if (event?.target) {
-        if (event.target.name == 'artistName'
-          || event.target.name == 'albumArtist'
-          || event.target.name == 'genre'
-          || event.target.name == 'musicbrainzArtistId'
-          || event.target.name == 'musicbrainzAlbumArtistId') {
+        if (event.target.name === 'artistName'
+          || event.target.name === 'albumArtist'
+          || event.target.name === 'genre'
+          || event.target.name === 'musicbrainzArtistId'
+          || event.target.name === 'musicbrainzAlbumArtistId') {
           console.log('event.target.value: ' + JSON.stringify(event.target.value))
           mappedTags[event.target.name] = event.target.value.split('\n')
         } else {
@@ -335,18 +335,9 @@ export default function SourceMetadataEditor(props: SourceMetadataEditorProps) {
 
   return (
     <div className={classes.root}>
-      <div>
-
-        <Fade
-          in={loading}
-          style={{
-            transitionDelay: loading ? '800ms' : '0ms',
-          }}
-          unmountOnExit
-        >
-          <LinearProgress/>
-        </Fade>
-      </div>
+      {loading && (
+        <LinearProgress/>
+      )}
       {error && (
         <Typography>Error retrieving source metadata: {error.message}</Typography>
       )}
