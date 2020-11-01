@@ -21,6 +21,8 @@ import CloseIcon from "@material-ui/icons/Close";
 import DialogActions from "@material-ui/core/DialogActions";
 import Button from "@material-ui/core/Button";
 import {SourceItem} from "./API";
+import {LinearProgress} from "@material-ui/core";
+import {Alert} from "@material-ui/lab";
 
 const GET_SOURCES = gql`
     query GetSources {
@@ -79,11 +81,11 @@ const DialogTitle = withStyles(styles)((props: DialogTitleProps) => {
   return (
     <MuiDialogTitle disableTypography className={classes.root} {...other}>
       <Typography variant="h6">{children}</Typography>
-      {onClose ? (
+      {onClose && (
         <IconButton aria-label="close" className={classes.closeButton} onClick={onClose}>
           <CloseIcon/>
         </IconButton>
-      ) : null}
+      )}
     </MuiDialogTitle>
   );
 });
@@ -100,8 +102,8 @@ export default function SourcesList() {
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
 
-  if (loading) return <p>Loading...</p>;
-  if (error) return <p>Error :(</p>;
+  if (loading) return <LinearProgress/>;
+  if (error) return <Alert severity="error">Error :(</Alert>;
 
   let sourceGroups: API.SourceGroup[] = data?.library?.sourceGroups || [];
 

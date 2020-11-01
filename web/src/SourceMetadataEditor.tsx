@@ -15,8 +15,6 @@ import TextField, {TextFieldProps} from "@material-ui/core/TextField";
 import 'ag-grid-community/dist/styles/ag-grid.css';
 import 'ag-grid-community/dist/styles/ag-theme-material.css';
 import 'ag-grid-community/dist/styles/ag-grid.css';
-import AppBar from "@material-ui/core/AppBar";
-import Fade from "@material-ui/core/Fade";
 import LinearProgress from "@material-ui/core/LinearProgress";
 import produce from "immer";
 import Grid from "@material-ui/core/Grid";
@@ -162,7 +160,7 @@ function BasicEditor(props: EditorPanelProps
             <Grid container item xs={12} spacing={1}>
               <Grid item xs={12} sm={6}>
                 <MultilineTextField name={'artistName'} label="Artist Name" value={mappedTags.artistName || []}
-                           onChange={handleChange} fullWidth/>
+                           onChange={handleChange}/>
               </Grid>
               <Grid item xs={12} sm={6}>
                 <TextField name={'trackTitle'} label="Track Title" value={mappedTags.trackTitle || ""}
@@ -172,11 +170,10 @@ function BasicEditor(props: EditorPanelProps
             <Grid container item xs={12} spacing={1}>
               <Grid item xs={12} sm={6}>
                 <TextField name={'albumTitle'} label="Album Title" value={mappedTags.albumTitle || ""}
-                           onChange={handleChange} fullWidth/>
+                           onChange={handleChange}/>
               </Grid>
               <Grid item xs={12} sm={6}>
-                <TextField name={'date'} label="Date" value={mappedTags.date || ""} onChange={handleChange}
-                           fullWidth/>
+                <TextField name={'date'} label="Date" value={mappedTags.date || ""} onChange={handleChange}/>
               </Grid>
             </Grid>
             <Grid container item xs={12} spacing={1}>
@@ -185,19 +182,19 @@ function BasicEditor(props: EditorPanelProps
               </Grid>
               <Grid item xs={12} sm={6}>
                 <MultilineTextField name={'albumArtist'} label="Album Artist" value={mappedTags.albumArtist || []}
-                           onChange={handleChange} fullWidth/>
+                           onChange={handleChange}/>
               </Grid>
             </Grid>
             <Grid container item xs={12} spacing={1}>
               <Grid item xs={12} sm={6}>
                 <TextField name={'trackNumber'} label="Track Number" value={mappedTags.trackNumber || ""}
-                           onChange={handleChange} fullWidth/>
+                           onChange={handleChange}/>
               </Grid>
             </Grid>
-            <Grid container item xs={12} spacing={1} className={classes.doubleWidth}>
+            <Grid container item xs={12} spacing={1}>
               <Grid item xs={12}>
                 <TextField name={'comment'} label="Comment" value={mappedTags.comment || ""} onChange={handleChange}
-                           multiline rowsMax={3} fullWidth/>
+                           multiline rowsMax={3}/>
               </Grid>
             </Grid>
           </Grid>
@@ -343,19 +340,18 @@ export default function SourceMetadataEditor(props: SourceMetadataEditorProps) {
       )}
       {srcs && (
         <>
-          <AppBar position="static" color="default" className={classes.tabbar}>
-            <Tabs
-              value={value}
-              onChange={(_, index) => setValue(index)}
-              indicatorColor="primary"
-              textColor="primary"
-              variant="fullWidth"
-              aria-label="metadata editor tabs"
-            >
-              <Tab label="Basic" {...tabProps(0)} />
-              <Tab label="Advanced" {...tabProps(1)} />
-            </Tabs>
-          </AppBar>
+          <Tabs
+            value={value}
+            onChange={(_, index) => setValue(index)}
+            indicatorColor="primary"
+            textColor="primary"
+            variant="fullWidth"
+            aria-label="metadata editor tabs"
+            className={classes.tabbar}
+          >
+            <Tab label="Basic" {...tabProps(0)} />
+            <Tab label="Advanced" {...tabProps(1)} />
+          </Tabs>
 
           <BasicEditor index={0} value={value} mappedTags={srcs[0]?.metadata?.mappedTags} srcId={srcs[0].id}
                        onFailure={props.onFailure} onSuccess={props.onSuccess}/>
