@@ -5,10 +5,12 @@ import * as API from "./API";
 import Typography from "@material-ui/core/Typography";
 import {createStyles, makeStyles, Theme} from '@material-ui/core/styles';
 import Tab from '@material-ui/core/Tab';
+import Alert from '@material-ui/lab/Alert';
+import AlertTitle from '@material-ui/lab/AlertTitle';
 import Tabs from '@material-ui/core/Tabs';
 import 'react-data-grid/dist/react-data-grid.css'
 import {MappedTags, MappedTagsInput, MetadataPair} from "./API";
-import {TextField} from "@material-ui/core";
+import TextField, {TextFieldProps} from "@material-ui/core/TextField";
 
 import 'ag-grid-community/dist/styles/ag-grid.css';
 import 'ag-grid-community/dist/styles/ag-theme-material.css';
@@ -80,31 +82,40 @@ function BasicEditor(props: EditorPanelProps
     & { mappedTags: MappedTags, srcId: string }) {
   let classes = useStyles();
   const [mappedTags, setMappedTags] = useState(props.mappedTags as MappedTagsInput);
-  const [saveMappedTags, { error, data, loading }] = useMutation(SAVE_MAPPED_TAGS, {
-    variables: {
-      id: props.srcId,
-      mappedTags: mappedTags
-    }
-  })
+  const [saveMappedTags, { error, data, loading }] = useMutation(SAVE_MAPPED_TAGS)
 
-  const handleChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     event.persist()
     setMappedTags(produce(mappedTags => {
       if (event?.target) {
-        mappedTags[event.target.name] = event.target.value;
+        if (event.target.name == 'artistName'
+          || event.target.name == 'albumArtist'
+          || event.target.name == 'genre'
+          || event.target.name == 'musicbrainzArtistId'
+          || event.target.name == 'musicbrainzAlbumArtistId') {
+          console.log('event.target.value: ' + JSON.stringify(event.target.value))
+          mappedTags[event.target.name] = event.target.value.split('\n')
+        } else {
+          mappedTags[event.target.name] = event.target.value;
+        }
       }
     }))
   };
 
   const handleReset = () => {
-    setMappedTags(_ => props.mappedTags)
+    setMappedTags(_ => props.mappedTags as MappedTagsInput)
     console.log("reset form")
   }
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault()
     console.log("submitting form")
-    saveMappedTags().then(() => {
+    saveMappedTags( {
+      variables: {
+        id: props.srcId,
+        mappedTags: mappedTags
+      }
+    }).then(_ => {
       console.log("mapped tags saved")
       if (props.onSuccess) {
         props.onSuccess()
@@ -113,6 +124,7 @@ function BasicEditor(props: EditorPanelProps
       if (error) {
         console.log("failed to save mapped tags: " + error.message)
         console.log("mappedTags: " + JSON.stringify(mappedTags))
+        console.log("errors: " + JSON.stringify(error?.graphQLErrors))
       }
       if (props.onFailure) {
         props.onFailure()
@@ -132,6 +144,12 @@ function BasicEditor(props: EditorPanelProps
       {loading && (
         <LinearProgress/>
       )}
+      {error && (
+        <Alert severity="error">
+          <AlertTitle>Failed to save tags</AlertTitle>
+          {error.message}
+        </Alert>
+      )}
       {value === index && (
         <form id="metadata-form" onSubmit={handleSubmit} onReset={handleReset} noValidate autoComplete="off">
           <Grid
@@ -141,17 +159,17 @@ function BasicEditor(props: EditorPanelProps
             justify="flex-start"
             alignItems="stretch"
           >
-            <Grid container item xs={12} spacing={2}>
+            <Grid container item xs={12} spacing={1}>
               <Grid item xs={12} sm={6}>
-                <TextField name={'artistName'} label="Artist Name" value={mappedTags.artistName || ""}
-                           onChange={handleChange}/>
+                <MultilineTextField name={'artistName'} label="Artist Name" value={mappedTags.artistName || []}
+                           onChange={handleChange} fullWidth/>
               </Grid>
               <Grid item xs={12} sm={6}>
                 <TextField name={'trackTitle'} label="Track Title" value={mappedTags.trackTitle || ""}
                            onChange={handleChange}/>
               </Grid>
             </Grid>
-            <Grid container item xs={12} spacing={2}>
+            <Grid container item xs={12} spacing={1}>
               <Grid item xs={12} sm={6}>
                 <TextField name={'albumTitle'} label="Album Title" value={mappedTags.albumTitle || ""}
                            onChange={handleChange} fullWidth/>
@@ -161,26 +179,25 @@ function BasicEditor(props: EditorPanelProps
                            fullWidth/>
               </Grid>
             </Grid>
-            <Grid container item xs={12} spacing={2}>
+            <Grid container item xs={12} spacing={1}>
               <Grid item xs={12} sm={6}>
-                <TextField name={'genre'} label="Genre" value={mappedTags.genre || ""} onChange={handleChange}
-                           fullWidth/>
+                <MultilineTextField name={'genre'} label="Genre" value={mappedTags.genre || []} onChange={handleChange}/>
               </Grid>
               <Grid item xs={12} sm={6}>
-                <TextField name={'albumArtist'} label="Album Artist" value={mappedTags.albumArtist || ""}
+                <MultilineTextField name={'albumArtist'} label="Album Artist" value={mappedTags.albumArtist || []}
                            onChange={handleChange} fullWidth/>
               </Grid>
             </Grid>
-            <Grid container item xs={12} spacing={2}>
+            <Grid container item xs={12} spacing={1}>
               <Grid item xs={12} sm={6}>
                 <TextField name={'trackNumber'} label="Track Number" value={mappedTags.trackNumber || ""}
                            onChange={handleChange} fullWidth/>
               </Grid>
             </Grid>
-            <Grid container item xs={12} spacing={2} className={classes.doubleWidth}>
+            <Grid container item xs={12} spacing={1} className={classes.doubleWidth}>
               <Grid item xs={12}>
                 <TextField name={'comment'} label="Comment" value={mappedTags.comment || ""} onChange={handleChange}
-                           multiline rowsMax={3}/>
+                           multiline rowsMax={3} fullWidth/>
               </Grid>
             </Grid>
           </Grid>
@@ -188,6 +205,13 @@ function BasicEditor(props: EditorPanelProps
       )}
     </div>
   );
+}
+
+function MultilineTextField(props: TextFieldProps) {
+  let {value, ...others} = props
+  return (
+    <TextField multiline value={(value as [string] || []).join('\n')} {...others}/>
+  )
 }
 
 function AdvancedEditor(props: EditorPanelProps & { tags: [MetadataPair] }) {
@@ -335,7 +359,7 @@ export default function SourceMetadataEditor(props: SourceMetadataEditorProps) {
               indicatorColor="primary"
               textColor="primary"
               variant="fullWidth"
-              aria-label="full width tabs example"
+              aria-label="metadata editor tabs"
             >
               <Tab label="Basic" {...tabProps(0)} />
               <Tab label="Advanced" {...tabProps(1)} />

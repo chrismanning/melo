@@ -501,6 +501,7 @@ updateSourcesImpl (UpdateSourcesArgs updates) = do
               f <-
                 readMetadataFile metadataFileId path
                   <&> #metadata . each %~ resolveMetadata updateTags
+              $(logDebug) $ "saving metadata: " <> show (f ^. #metadata)
               f <- writeMetadataFile f path
               case chooseMetadata (H.elems (f ^. #metadata)) of
                 Nothing -> do
@@ -539,24 +540,23 @@ updateSourcesImpl (UpdateSourcesArgs updates) = do
       where
         setTagsFromMapped :: (F.TagMapping -> F.TagLens) -> F.Tags -> MappedTagsInput -> F.Tags
         setTagsFromMapped tag ts MappedTagsInput {..} = ts
-          & tag M.artist .~ maybe V.empty V.fromList artistName
-          & tag M.trackTitle .~ maybe V.empty V.singleton trackTitle
-          & tag M.album .~ maybe V.empty V.singleton albumTitle
-          & tag M.year .~ maybe V.empty V.singleton date
-          & tag M.genre .~ maybe V.empty V.fromList genre
-          & tag M.albumArtist .~ maybe V.empty V.fromList albumArtist
-          & tag M.trackNumber .~ maybe V.empty V.singleton trackNumber
-          & tag M.totalTracksTag .~ maybe V.empty V.singleton totalTracks
-          & tag M.trackTotalTag .~ maybe V.empty V.singleton totalTracks
-          & tag M.discNumberTag .~ maybe V.empty V.singleton discNumber
-          & tag M.totalDiscsTag .~ maybe V.empty V.singleton totalDiscs
-          & tag M.discTotalTag .~ maybe V.empty V.singleton totalDiscs
-          & tag M.commentTag .~ maybe V.empty V.singleton comment
-          & tag MB.artistIdTag .~ maybe V.empty V.fromList musicbrainzArtistId
-          & tag MB.albumArtistIdTag .~ maybe V.empty V.fromList musicbrainzAlbumArtistId
-          & tag MB.albumIdTag .~ maybe V.empty V.singleton musicbrainzAlbumId
-          & tag MB.trackIdTag .~ maybe V.empty V.singleton musicbrainzTrackId
-          & tag M.commentTag .~ maybe V.empty V.singleton comment
+          & tag M.trackArtistTag .~ maybe V.empty (V.fromList . filter (not . T.null)) artistName
+          & tag M.trackTitle .~  maybe V.empty V.singleton (mfilter (not . T.null) trackTitle)
+          & tag M.album .~ maybe V.empty V.singleton (mfilter (not . T.null) albumTitle)
+          & tag M.year .~ maybe V.empty V.singleton (mfilter (not . T.null) date)
+          & tag M.genre .~ maybe V.empty (V.fromList . filter (not . T.null)) genre
+          & tag M.albumArtistTag .~ maybe V.empty (V.fromList . filter (not . T.null)) albumArtist
+          & tag M.trackNumber .~ maybe V.empty V.singleton (mfilter (not . T.null) trackNumber)
+          & tag M.totalTracksTag .~ maybe V.empty V.singleton (mfilter (not . T.null) totalTracks)
+          & tag M.trackTotalTag .~ maybe V.empty V.singleton (mfilter (not . T.null) totalTracks)
+          & tag M.discNumberTag .~ maybe V.empty V.singleton (mfilter (not . T.null) discNumber)
+          & tag M.totalDiscsTag .~ maybe V.empty V.singleton (mfilter (not . T.null) totalDiscs)
+          & tag M.discTotalTag .~ maybe V.empty V.singleton (mfilter (not . T.null) totalDiscs)
+          & tag M.commentTag .~ maybe V.empty V.singleton (mfilter (not . T.null) comment)
+          & tag MB.artistIdTag .~ maybe V.empty (V.fromList . filter (not . T.null)) musicbrainzArtistId
+          & tag MB.albumArtistIdTag .~ maybe V.empty (V.fromList . filter (not . T.null)) musicbrainzAlbumArtistId
+          & tag MB.albumIdTag .~ maybe V.empty V.singleton (mfilter (not . T.null) musicbrainzAlbumId)
+          & tag MB.trackIdTag .~ maybe V.empty V.singleton (mfilter (not . T.null) musicbrainzTrackId)
     resolveMetadata (SetTags ps) metadata = metadata {F.tags = F.Tags $ V.fromList $ ps <&> \(UpdatePair k v) -> (k, v)}
 
 data SourceUpdate' = SourceUpdate'

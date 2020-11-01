@@ -63,7 +63,9 @@ gqlApiIO pool r = runStdoutLogging $
   runReader pool $
     runTransaction $
       withTransaction $ \conn ->
-        runResolverE conn (gqlApi r)
+        runResolverE conn $ do
+          $(logDebug) $ "Handling GraphQL request: " <> r
+          gqlApi r
 
 type ResolverE sig m =
   ( Has (Lift IO) sig m,

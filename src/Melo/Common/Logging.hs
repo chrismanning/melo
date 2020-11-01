@@ -22,7 +22,10 @@ import Basement.From
 import Control.Algebra
 import Control.Carrier.Lift
 import Control.Monad.IO.Class
+import Data.ByteString (ByteString)
+import qualified Data.ByteString.Lazy as L
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Lazy as LT
 import Data.Time.Format
 import Language.Haskell.TH.Syntax (Exp, Loc (..), Q, liftString, qLocation)
@@ -44,8 +47,11 @@ instance From LT.Text LogMessage where
 instance From String LogMessage where
   from = from . T.pack
 
---instance From C8.ByteString LogMessage where
---  from = from . (trace "decoding str" $ TE.decodeUtf8)
+instance From ByteString LogMessage where
+  from = from . TE.decodeUtf8
+
+instance From L.ByteString LogMessage where
+  from = from . TE.decodeUtf8 . L.toStrict
 
 --instance From BB.Builder LogMessage where
 --  from = from . BL.toStrict . BB.toLazyByteString

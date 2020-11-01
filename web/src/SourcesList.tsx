@@ -20,6 +20,7 @@ import IconButton from "@material-ui/core/IconButton";
 import CloseIcon from "@material-ui/icons/Close";
 import DialogActions from "@material-ui/core/DialogActions";
 import Button from "@material-ui/core/Button";
+import {SourceItem} from "./API";
 
 const GET_SOURCES = gql`
     query GetSources {
@@ -94,7 +95,7 @@ export default function SourcesList() {
   const [selectedIndexes, setSelectedIndexes] = React.useState(new Set() as Set<number>);
   const [lastSelected, setLastSelected] = React.useState(null as number | null);
   const [collapsedGroups, setCollapsedGroups] = React.useState(new Set() as Set<number>);
-  const [selectedSrcId, setSelectedSrcId] = React.useState(null as string | null);
+  const [selectedSrc, setSelectedSrc] = React.useState(null as SourceItem | null);
   const [openMetadataEditor, setOpenMetadataEditor] = React.useState(false);
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
@@ -113,7 +114,7 @@ export default function SourcesList() {
     ) => {
       event.persist();
       setLastSelected(index);
-      setSelectedSrcId(sourceGroup.sources[sourcesIndex].id);
+      setSelectedSrc(sourceGroup.sources[sourcesIndex]);
       setSelectedIndexes(produce(indexes => {
         if (event.shiftKey) {
           const from = lastSelected || 0;
@@ -163,7 +164,7 @@ export default function SourcesList() {
                            onClick={event => handleListItemClick(event, j, j - groupIndex)}
                            onDoubleClick={_ => setOpenMetadataEditor(true)} selected={selectedIndexes.has(j)}>
             <Typography className={classes.trackNumber}>{mappedTags.trackNumber}</Typography>
-            <Typography>{mappedTags.trackTitle}</Typography>
+            <Typography>{mappedTags.trackTitle || sourceItem.sourceName}</Typography>
           </ListItem>
         })}
       </Collapse>
@@ -180,12 +181,12 @@ export default function SourcesList() {
       {items}
     </List>
 
-    {selectedSrcId && (
-      <Dialog hidden={!selectedSrcId} disablePortal={true} open={openMetadataEditor} onClose={handleClose}
+    {selectedSrc && (
+      <Dialog hidden={!selectedSrc} disablePortal={true} open={openMetadataEditor} onClose={handleClose}
         fullScreen={fullScreen} aria-labelledby="form-dialog-title">
-        <DialogTitle id="form-dialog-title" onClose={handleClose}>Edit Metadata</DialogTitle>
+        <DialogTitle id="form-dialog-title" onClose={handleClose}>Edit Metadata{selectedSrc && (` \u2014 ${selectedSrc.sourceName}`)}</DialogTitle>
         <DialogContent>
-          <SourceMetadataEditor srcId={selectedSrcId} onSuccess={handleSubmit} onFailure={handleClose}/>
+          <SourceMetadataEditor srcId={selectedSrc.id} onSuccess={handleSubmit} onFailure={() => {}}/>
         </DialogContent>
         <DialogActions>
           <Button form="metadata-form" type="submit" autoFocus color="primary">
@@ -206,7 +207,7 @@ export default function SourcesList() {
 function SourceListSubheader(props: { sourceGroup: API.SourceGroup }) {
   const classes = useStyles();
   const sourceGroup = props.sourceGroup;
-  const albumArtist = sourceGroup.groupTags.albumArtist || "<unknown artist>";
+  const albumArtist = sourceGroup.groupTags.albumArtist?.join(" / ") || "<unknown artist>";
   const albumTitle = sourceGroup.groupTags.albumTitle || "<unknown album>";
   const groupUri = sourceGroup.groupParentUri || "<unknown uri>";
   const date = sourceGroup.groupTags.date || "<unknown date>";
