@@ -1,4 +1,4 @@
-import React, {FormEvent, useState} from 'react';
+import React, {FormEvent, RefObject, useState} from 'react';
 import {useQuery, useMutation} from '@apollo/react-hooks';
 import {gql} from "apollo-boost";
 import * as API from "./API";
@@ -9,7 +9,6 @@ import Alert from '@material-ui/lab/Alert';
 import AlertTitle from '@material-ui/lab/AlertTitle';
 import Tabs from '@material-ui/core/Tabs';
 import 'react-data-grid/dist/react-data-grid.css'
-import {MappedTags, MappedTagsInput, MetadataPair} from "./API";
 import TextField, {TextFieldProps} from "@material-ui/core/TextField";
 
 import 'ag-grid-community/dist/styles/ag-grid.css';
@@ -18,6 +17,11 @@ import 'ag-grid-community/dist/styles/ag-grid.css';
 import LinearProgress from "@material-ui/core/LinearProgress";
 import produce from "immer";
 import Grid from "@material-ui/core/Grid";
+import Accordian from "@material-ui/core/Accordion";
+import AccordionActions from "@material-ui/core/AccordionActions";
+import AccordionDetails from "@material-ui/core/AccordionDetails";
+import AccordionSummary from "@material-ui/core/AccordionSummary";
+import ExpandMoreIcon from "@material-ui/icons/ExpandMore";
 
 const useStyles = makeStyles((theme: Theme) =>
   createStyles({
@@ -44,22 +48,10 @@ const useStyles = makeStyles((theme: Theme) =>
   }),
 );
 
-interface EditorPanelProps {
-  index: number,
-  value: number,
-  onSuccess: () => void,
-  onFailure: () => void,
-}
-
 const SAVE_MAPPED_TAGS = gql`
-    mutation UpdateSourcesByMappedTags($id: String!, $mappedTags: MappedTagsInput!) {
+    mutation UpdateSourcesByMappedTags($updates: [SourceUpdate!]!) {
         library {
-            updateSources(updates: [{
-                id: $id,
-                updateTags: {
-                    setMappedTags: $mappedTags
-                }
-            }]) {
+            updateSources(updates: $updates) {
                 results {
                     __typename
                     ... on UpdatedSource {
@@ -73,45 +65,54 @@ const SAVE_MAPPED_TAGS = gql`
             }
         }
     }
-
 `
 
-function BasicEditor(props: EditorPanelProps
-    & { mappedTags: MappedTags, srcId: string }) {
+interface EditorProps<T> {
+  onSuccess: () => void,
+  onFailure: () => void,
+  data: T,
+}
+
+function BasicEditor(props: EditorProps<[API.SourceItem]>) {
   let classes = useStyles();
-  const [mappedTags, setMappedTags] = useState(props.mappedTags as MappedTagsInput);
-  const [saveMappedTags, { error, data, loading }] = useMutation(SAVE_MAPPED_TAGS)
+  const [sources, setSources] = useState(props.data as [API.EditableSourceItem]);
+  const [saveMappedTags, { error, loading }] = useMutation(SAVE_MAPPED_TAGS)
 
-  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    event.persist()
-    setMappedTags(produce(mappedTags => {
-      if (event?.target) {
-        if (event.target.name === 'artistName'
-          || event.target.name === 'albumArtist'
-          || event.target.name === 'genre'
-          || event.target.name === 'musicbrainzArtistId'
-          || event.target.name === 'musicbrainzAlbumArtistId') {
-          console.log('event.target.value: ' + JSON.stringify(event.target.value))
-          mappedTags[event.target.name] = event.target.value.split('\n')
-        } else {
-          mappedTags[event.target.name] = event.target.value;
-        }
-      }
-    }))
-  };
+  let forms = sources.sort((a, b) => {
+    return a.sourceUri.localeCompare(b.sourceUri)
+  }).map(sourceItem => {
+    let ref = React.createRef();
+    return [ref, sourceItem, (<BasicEditorForm data={sourceItem} ref={ref} />)]
+  })
 
-  const handleReset = () => {
-    setMappedTags(_ => props.mappedTags as MappedTagsInput)
+  const handleReset = (event: FormEvent) => {
+    event.preventDefault()
+    setSources(_ => props.data as [API.EditableSourceItem])
     console.log("reset form")
+    console.log("reset sources: " + JSON.stringify([...sources.values()]))
+    forms.forEach(([ref, a, b]) => {
+      (ref as RefObject<any>).current?.reset()
+    })
   }
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault()
     console.log("submitting form")
+    console.log("getting updated values from child forms")
+    let sources = forms.map(([ref, a, b]) => {
+      return (ref as RefObject<any>).current?.submit() as API.EditableSourceItem
+    })
+    console.log("sources: " + JSON.stringify(sources))
     saveMappedTags( {
       variables: {
-        id: props.srcId,
-        mappedTags: mappedTags
+        updates: sources.map(source => {
+          return {
+            id: source.id,
+            updateTags: {
+              setMappedTags: source.metadata.mappedTags
+            }
+          }
+        })
       }
     }).then(_ => {
       console.log("mapped tags saved")
@@ -121,7 +122,7 @@ function BasicEditor(props: EditorPanelProps
     }, () => {
       if (error) {
         console.log("failed to save mapped tags: " + error.message)
-        console.log("mappedTags: " + JSON.stringify(mappedTags))
+        console.log("mappedTags: " + JSON.stringify(sources))
         console.log("errors: " + JSON.stringify(error?.graphQLErrors))
       }
       if (props.onFailure) {
@@ -130,13 +131,11 @@ function BasicEditor(props: EditorPanelProps
     })
   }
 
-  const {value, index} = props;
   return (
     <div
       role="tabpanel"
-      hidden={value !== index}
-      id={`simple-tabpanel-${index}`}
-      aria-labelledby={`simple-tab-${index}`}
+      id="basic-editor"
+      aria-labelledby="basic-editor"
       className={classes.editor}
     >
       {loading && (
@@ -148,61 +147,107 @@ function BasicEditor(props: EditorPanelProps
           {error.message}
         </Alert>
       )}
-      {value === index && (
-        <form id="metadata-form" onSubmit={handleSubmit} onReset={handleReset} noValidate autoComplete="off">
-          <Grid
-            container
-            spacing={1}
-            // direction="column"
-            justify="flex-start"
-            alignItems="stretch"
-          >
-            <Grid container item xs={12} spacing={1}>
-              <Grid item xs={12} sm={6}>
-                <MultilineTextField name={'artistName'} label="Artist Name" value={mappedTags.artistName || []}
-                           onChange={handleChange}/>
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <TextField name={'trackTitle'} label="Track Title" value={mappedTags.trackTitle || ""}
-                           onChange={handleChange}/>
-              </Grid>
-            </Grid>
-            <Grid container item xs={12} spacing={1}>
-              <Grid item xs={12} sm={6}>
-                <TextField name={'albumTitle'} label="Album Title" value={mappedTags.albumTitle || ""}
-                           onChange={handleChange}/>
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <TextField name={'date'} label="Date" value={mappedTags.date || ""} onChange={handleChange}/>
-              </Grid>
-            </Grid>
-            <Grid container item xs={12} spacing={1}>
-              <Grid item xs={12} sm={6}>
-                <MultilineTextField name={'genre'} label="Genre" value={mappedTags.genre || []} onChange={handleChange}/>
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <MultilineTextField name={'albumArtist'} label="Album Artist" value={mappedTags.albumArtist || []}
-                           onChange={handleChange}/>
-              </Grid>
-            </Grid>
-            <Grid container item xs={12} spacing={1}>
-              <Grid item xs={12} sm={6}>
-                <TextField name={'trackNumber'} label="Track Number" value={mappedTags.trackNumber || ""}
-                           onChange={handleChange}/>
-              </Grid>
-            </Grid>
-            <Grid container item xs={12} spacing={1}>
-              <Grid item xs={12}>
-                <TextField name={'comment'} label="Comment" value={mappedTags.comment || ""} onChange={handleChange}
-                           multiline rowsMax={3}/>
-              </Grid>
-            </Grid>
-          </Grid>
-        </form>
-      )}
+      <form id="metadata-form" onSubmit={handleSubmit} onReset={handleReset} noValidate autoComplete="off">
+        {forms.map(([ref, src, form], i) => {
+          const source = src as API.EditableSourceItem
+          return <Accordian key={source?.id} defaultExpanded={i === 0}>
+            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+              <Typography>{source?.sourceName}</Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              {form}
+            </AccordionDetails>
+          </Accordian>
+        })}
+      </form>
     </div>
   );
 }
+
+type BasicEditorFormProps = {
+  data: API.EditableSourceItem
+}
+
+const BasicEditorForm = React.forwardRef((props: BasicEditorFormProps, ref) => {
+  const [source, setSource] = useState(props.data)
+  React.useImperativeHandle(ref, () => ({
+    reset() {
+      setSource(props.data)
+    },
+    submit() {
+      return source
+    }
+  }))
+
+  const handleChange = (event: React.ChangeEvent<HTMLInputElement|HTMLTextAreaElement>) => {
+    console.log("handleChange: " + event.target.value)
+    event.persist()
+    setSource(produce(source => {
+      let mappedTags = source?.metadata?.mappedTags;
+      if (event?.target && source && mappedTags) {
+        if (event.target.name === 'artistName'
+          || event.target.name === 'albumArtist'
+          || event.target.name === 'genre'
+          || event.target.name === 'musicbrainzArtistId'
+          || event.target.name === 'musicbrainzAlbumArtistId') {
+          mappedTags[event.target.name as string] = event.target.value.split('\n')
+        } else {
+          mappedTags[event.target.name] = event.target.value;
+        }
+      }
+    }))
+  }
+
+  let mappedTags = source.metadata.mappedTags
+  return (
+    <Grid
+      container
+      spacing={1}
+      justify="flex-start"
+      alignItems="stretch"
+    >
+      <Grid container item xs={12} spacing={1}>
+        <Grid item xs={12} sm={6}>
+          <MultilineTextField name={'artistName'} label="Artist Name" value={mappedTags.artistName || []}
+                              onChange={handleChange}/>
+        </Grid>
+        <Grid item xs={12} sm={6}>
+          <TextField name={'trackTitle'} label="Track Title" value={mappedTags.trackTitle || ""}
+                     onChange={handleChange}/>
+        </Grid>
+      </Grid>
+      <Grid container item xs={12} spacing={1}>
+        <Grid item xs={12} sm={6}>
+          <TextField name={'albumTitle'} label="Album Title" value={mappedTags.albumTitle || ""}
+                     onChange={handleChange}/>
+        </Grid>
+        <Grid item xs={12} sm={6}>
+          <TextField name={'date'} label="Date" value={mappedTags.date || ""} onChange={handleChange}/>
+        </Grid>
+      </Grid>
+      <Grid container item xs={12} spacing={1}>
+        <Grid item xs={12} sm={6}>
+          <MultilineTextField name={'genre'} label="Genre" value={mappedTags.genre || []} onChange={handleChange}/>
+        </Grid>
+        <Grid item xs={12} sm={6}>
+          <MultilineTextField name={'albumArtist'} label="Album Artist" value={mappedTags.albumArtist || []}
+                              onChange={handleChange}/>
+        </Grid>
+      </Grid>
+      <Grid container item xs={12} spacing={1}>
+        <Grid item xs={12} sm={6}>
+          <TextField name={'trackNumber'} label="Track Number" value={mappedTags.trackNumber || ""}
+                     onChange={handleChange}/>
+        </Grid>
+      </Grid>
+      <Grid container item xs={12} spacing={1}>
+        <Grid item xs={12}>
+          <TextField name={'comment'} label="Comment" value={mappedTags.comment || ""} onChange={handleChange}
+                     multiline rowsMax={3}/>
+        </Grid>
+      </Grid>
+    </Grid>)
+})
 
 function MultilineTextField(props: TextFieldProps) {
   let {value, ...others} = props
@@ -211,9 +256,9 @@ function MultilineTextField(props: TextFieldProps) {
   )
 }
 
-function AdvancedEditor(props: EditorPanelProps & { tags: [MetadataPair] }) {
+function AdvancedEditor(props: EditorProps<[API.MetadataPair]>) {
   let classes = useStyles();
-  const [tags, setTags] = useState(props.tags);
+  const [tags, setTags] = useState(props.data);
 
   const handleChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     event.persist()
@@ -225,7 +270,7 @@ function AdvancedEditor(props: EditorPanelProps & { tags: [MetadataPair] }) {
   };
 
   const handleReset = () => {
-    setTags(_ => props.tags)
+    setTags(_ => props.data)
     console.log("reset form")
   }
 
@@ -244,15 +289,13 @@ function AdvancedEditor(props: EditorPanelProps & { tags: [MetadataPair] }) {
     console.log("cancelled form")
   }
 
-  const {value, index} = props;
   return (
     <div
       role="tabpanel"
-      hidden={value !== index}
-      id={`simple-tabpanel-${index}`}
-      aria-labelledby={`simple-tab-${index}`}
+      // hidden={value !== index}
+      id="single-advanced-editor"
+      aria-labelledby="single-advanced-editor"
     >
-      {value === index && (
         <form id="metadata-form" onSubmit={handleSubmit} onReset={handleReset} noValidate autoComplete="off">
 
           {/*<div className="ag-theme-material" style={ {height: '600px', width: '600px'} }>*/}
@@ -262,7 +305,6 @@ function AdvancedEditor(props: EditorPanelProps & { tags: [MetadataPair] }) {
           {/*  </AgGridReact>*/}
           {/*</div>*/}
         </form>
-      )}
     </div>
   );
 }
@@ -280,6 +322,7 @@ const GET_SOURCES = gql`
             sources(where: {id: {inputname: InExpr, InExpr: {in: $in}}}) {
                 id
                 sourceName
+                sourceUri
                 format
                 metadata {
                     tags {
@@ -313,7 +356,7 @@ const GET_SOURCES = gql`
 `;
 
 export interface SourceMetadataEditorProps {
-  srcId: String,
+  srcIds: string[],
   onSuccess: () => void,
   onFailure: () => void,
 }
@@ -323,7 +366,7 @@ export default function SourceMetadataEditor(props: SourceMetadataEditorProps) {
   const [value, setValue] = React.useState(0);
   const {loading, error, data, refetch} = useQuery<API.Data>(GET_SOURCES, {
     variables: {
-      in: [props.srcId]
+      in: props.srcIds
     },
     fetchPolicy: "no-cache"
   });
@@ -353,10 +396,23 @@ export default function SourceMetadataEditor(props: SourceMetadataEditorProps) {
             <Tab label="Advanced" {...tabProps(1)} />
           </Tabs>
 
-          <BasicEditor index={0} value={value} mappedTags={srcs[0]?.metadata?.mappedTags} srcId={srcs[0].id}
-                       onFailure={props.onFailure} onSuccess={props.onSuccess}/>
-          <AdvancedEditor index={1} value={value} tags={srcs[0]?.metadata?.tags}
-                          onFailure={props.onFailure} onSuccess={props.onSuccess}/>
+          <>
+            {value == 0 && (
+              <BasicEditor data={srcs} onFailure={props.onFailure} onSuccess={props.onSuccess}/>
+            )}
+            {/*{value == 1 && (*/}
+            {/*  <AdvancedEditor tags={srcs[0]?.metadata?.tags}*/}
+            {/*                  onFailure={props.onFailure} onSuccess={props.onSuccess}/>*/}
+            {/*)}*/}
+          </>
+          {/*{srcs?.length > 1 && (*/}
+          {/*  <>*/}
+          {/*    {value == 0 && (*/}
+          {/*      <MultiSrcBasicEditor sources={srcs}*/}
+          {/*                           onFailure={props.onFailure} onSuccess={props.onSuccess}/>*/}
+          {/*    )}*/}
+          {/*  </>*/}
+          {/*)}*/}
         </>
       )}
     </div>

@@ -24,6 +24,24 @@ export interface SourceItem {
   length: number
 }
 
+export interface EditableSourceItem {
+  id: string,
+  format: string,
+  metadata: EditableMetadata,
+  sourceName: string,
+  sourceUri: string,
+  parentUri: string,
+  downloadUri: string,
+  length: number
+}
+
+export interface EditableMetadata {
+  tags: [MetadataPair],
+  mappedTags: {[values: string]: any},
+  formatId: string,
+  format: string
+}
+
 export interface Metadata {
   tags: [MetadataPair],
   mappedTags: MappedTags,
