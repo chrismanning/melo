@@ -217,8 +217,9 @@ export default function SourcesList() {
       handleListItemClick(event, indices, groupIndex)
     }
     return <>
-      <ListSubheader component="div" key={`sourceGroup-${groupIndex}`} onClick={handleSubheaderClick}>
-        <SourceListSubheader sourceGroup={sourceGroup} collapsed={collapsedGroups.has(groupIndex)} onToggleCollapse={toggleCollapseGroup}/>
+      <ListSubheader component="div" key={`sourceGroup-${groupIndex}`}>
+        <SourceListSubheader sourceGroup={sourceGroup} collapsed={collapsedGroups.has(groupIndex)}
+                             onToggleCollapse={toggleCollapseGroup} onClick={handleSubheaderClick}/>
       </ListSubheader>
       <Collapse in={!collapsedGroups.has(groupIndex)}>
         {sourceListItems}
@@ -274,6 +275,7 @@ type SourceListSubheaderProps = {
   sourceGroup: API.SourceGroup,
   onToggleCollapse: () => void,
   collapsed: boolean,
+  onClick: (event: React.MouseEvent<HTMLElement, MouseEvent>) => void,
 }
 
 function SourceListSubheader(props: SourceListSubheaderProps) {
@@ -283,15 +285,20 @@ function SourceListSubheader(props: SourceListSubheaderProps) {
   const albumTitle = sourceGroup.groupTags.albumTitle || "<unknown album>";
   // const groupUri = sourceGroup.groupParentUri || "<unknown uri>";
   const date = sourceGroup.groupTags.date || "<unknown date>";
-  return <Paper className={classes.listSection} square>
-    <Typography align="left">{albumArtist}</Typography>
-    <Typography align="left">{date}</Typography>
-    <Typography align="left">{albumTitle}</Typography>
-    <IconButton className={classes.collapseButton} onClick={event => {event.preventDefault(); props.onToggleCollapse()}}>
-      {props.collapsed && <ExpandMoreIcon />}
-      {props.collapsed || <ExpandLessIcon />}
+  return <>
+    <Paper className={classes.listSection} onClick={props.onClick} square>
+      <Typography align="left">{albumArtist}</Typography>
+      <Typography align="left">{date}</Typography>
+      <Typography align="left">{albumTitle}</Typography>
+    </Paper>
+    <IconButton className={classes.collapseButton} onClick={event => {
+      event.preventDefault();
+      props.onToggleCollapse()
+    }}>
+      {props.collapsed && <ExpandMoreIcon/>}
+      {props.collapsed || <ExpandLessIcon/>}
     </IconButton>
-  </Paper>
+  </>
     ;
 }
 
