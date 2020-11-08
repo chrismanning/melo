@@ -11,7 +11,7 @@ import {enableMapSet} from "immer";
 enableMapSet();
 
 const client = new ApolloClient({
-  uri: 'http://localhost:5000/api',
+  uri: '/api',
 });
 
 ReactDOM.render(
