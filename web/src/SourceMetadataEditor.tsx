@@ -39,6 +39,7 @@ const useStyles = makeStyles((theme: Theme) =>
     },
     editor: {
       flexGrow: 1,
+      paddingBottom: theme.spacing(1),
     },
     doubleWidth: {
       '& .MuiTextField-root': {
@@ -90,7 +91,7 @@ function BasicEditor(props: EditorProps<[API.SourceItem]>) {
     setSources(_ => props.data as [API.EditableSourceItem])
     console.log("reset form")
     console.log("reset sources: " + JSON.stringify([...sources.values()]))
-    forms.forEach(([ref, a, b]) => {
+    forms.forEach(([ref]) => {
       (ref as RefObject<any>).current?.reset()
     })
   }
@@ -237,6 +238,10 @@ const BasicEditorForm = React.forwardRef((props: BasicEditorFormProps, ref) => {
       <Grid container item xs={12} spacing={1}>
         <Grid item xs={12} sm={6}>
           <TextField name={'trackNumber'} label="Track Number" value={mappedTags.trackNumber || ""}
+                     onChange={handleChange}/>
+        </Grid>
+        <Grid item xs={12} sm={6}>
+          <TextField name={'discNumber'} label="Disc Number" value={mappedTags.discNumber || ""}
                      onChange={handleChange}/>
         </Grid>
       </Grid>
