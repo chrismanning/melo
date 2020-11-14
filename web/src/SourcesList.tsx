@@ -29,6 +29,7 @@ import {Alert} from "@material-ui/lab";
 import ListItemSecondaryAction from "@material-ui/core/ListItemSecondaryAction";
 import Paper from "@material-ui/core/Paper";
 import Fab from "@material-ui/core/Fab";
+import OverflowTip from "./OverflowTip";
 
 const GET_SOURCES = gql`
     query GetSources {
@@ -205,8 +206,11 @@ export default function SourcesList() {
       return <ListItem key={`sourceGroup-${groupIndex}-source-${sourceItem.id}`} dense className={classes.track}
                        onClick={event => handleListItemClick(event, [j], groupIndex)}
                        selected={selectedIndices.has(j)}>
-        <Typography className={classes.trackNumber}>{mappedTags.trackNumber}</Typography>
-        <Typography>{mappedTags.trackTitle || sourceItem.sourceName}</Typography>
+        <OverflowTip className={classes.trackNumber} value={mappedTags.trackNumber || ""}/>
+        <OverflowTip value={mappedTags.trackTitle || sourceItem.sourceName}/>
+        {/*<Tooltip title={mappedTags.trackTitle || sourceItem.sourceName}>*/}
+        {/*  <Typography noWrap>{mappedTags.trackTitle || sourceItem.sourceName}</Typography>*/}
+        {/*</Tooltip>*/}
       </ListItem>
     })
     const end = i
@@ -287,9 +291,9 @@ function SourceListSubheader(props: SourceListSubheaderProps) {
   const date = sourceGroup.groupTags.date || "<unknown date>";
   return <>
     <Paper className={classes.listSection} onClick={props.onClick} square>
-      <Typography align="left">{albumArtist}</Typography>
-      <Typography align="left">{date}</Typography>
-      <Typography align="left">{albumTitle}</Typography>
+      <Typography align="left" noWrap>{albumArtist}</Typography>
+      <Typography align="left" noWrap>{date}</Typography>
+      <Typography align="left" noWrap>{albumTitle}</Typography>
     </Paper>
     <IconButton className={classes.collapseButton} onClick={event => {
       event.preventDefault();
@@ -345,10 +349,11 @@ const useStyles = makeStyles((theme: Theme) =>
       padding: 0,
     },
     track: {
-      paddingLeft: theme.spacing(2)
+      paddingLeft: theme.spacing(2),
     },
     trackNumber: {
-      paddingRight: theme.spacing(2)
+      paddingRight: theme.spacing(2),
+      width: 15,
     },
     unselectable: {
       "user-select": "none",
