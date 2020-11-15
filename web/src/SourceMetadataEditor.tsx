@@ -11,17 +11,26 @@ import Tabs from '@material-ui/core/Tabs';
 import 'react-data-grid/dist/react-data-grid.css'
 import TextField, {TextFieldProps} from "@material-ui/core/TextField";
 
-import 'ag-grid-community/dist/styles/ag-grid.css';
-import 'ag-grid-community/dist/styles/ag-theme-material.css';
-import 'ag-grid-community/dist/styles/ag-grid.css';
 import LinearProgress from "@material-ui/core/LinearProgress";
 import produce from "immer";
-import Grid from "@material-ui/core/Grid";
+import MaterialGrid from "@material-ui/core/Grid";
 import Accordian from "@material-ui/core/Accordion";
 import AccordionActions from "@material-ui/core/AccordionActions";
 import AccordionDetails from "@material-ui/core/AccordionDetails";
 import AccordionSummary from "@material-ui/core/AccordionSummary";
 import ExpandMoreIcon from "@material-ui/icons/ExpandMore";
+import {ChangeSet, EditingCell, EditingState} from '@devexpress/dx-react-grid';
+import {
+  Grid,
+  Table,
+  TableHeaderRow,
+  TableEditColumn,
+  TableInlineCellEditing,
+} from '@devexpress/dx-react-grid-material-ui';
+import {MetadataPair} from "./API";
+import IconButton from "@material-ui/core/IconButton";
+import AddIcon from "@material-ui/icons/Add"
+import DeleteIcon from "@material-ui/icons/Delete"
 
 const useStyles = makeStyles((theme: Theme) =>
   createStyles({
@@ -201,57 +210,57 @@ const BasicEditorForm = React.forwardRef((props: BasicEditorFormProps, ref) => {
 
   let mappedTags = source.metadata.mappedTags
   return (
-    <Grid
+    <MaterialGrid
       container
       spacing={1}
       justify="flex-start"
       alignItems="stretch"
     >
-      <Grid container item xs={12} spacing={1}>
-        <Grid item xs={12} sm={6}>
+      <MaterialGrid container item xs={12} spacing={1}>
+        <MaterialGrid item xs={12} sm={6}>
           <MultilineTextField name={'artistName'} label="Artist Name" value={mappedTags.artistName || []}
                               onChange={handleChange}/>
-        </Grid>
-        <Grid item xs={12} sm={6}>
+        </MaterialGrid>
+        <MaterialGrid item xs={12} sm={6}>
           <TextField name={'trackTitle'} label="Track Title" value={mappedTags.trackTitle || ""}
                      onChange={handleChange}/>
-        </Grid>
-      </Grid>
-      <Grid container item xs={12} spacing={1}>
-        <Grid item xs={12} sm={6}>
+        </MaterialGrid>
+      </MaterialGrid>
+      <MaterialGrid container item xs={12} spacing={1}>
+        <MaterialGrid item xs={12} sm={6}>
           <TextField name={'albumTitle'} label="Album Title" value={mappedTags.albumTitle || ""}
                      onChange={handleChange}/>
-        </Grid>
-        <Grid item xs={12} sm={6}>
+        </MaterialGrid>
+        <MaterialGrid item xs={12} sm={6}>
           <TextField name={'date'} label="Date" value={mappedTags.date || ""} onChange={handleChange}/>
-        </Grid>
-      </Grid>
-      <Grid container item xs={12} spacing={1}>
-        <Grid item xs={12} sm={6}>
+        </MaterialGrid>
+      </MaterialGrid>
+      <MaterialGrid container item xs={12} spacing={1}>
+        <MaterialGrid item xs={12} sm={6}>
           <MultilineTextField name={'genre'} label="Genre" value={mappedTags.genre || []} onChange={handleChange}/>
-        </Grid>
-        <Grid item xs={12} sm={6}>
+        </MaterialGrid>
+        <MaterialGrid item xs={12} sm={6}>
           <MultilineTextField name={'albumArtist'} label="Album Artist" value={mappedTags.albumArtist || []}
                               onChange={handleChange}/>
-        </Grid>
-      </Grid>
-      <Grid container item xs={12} spacing={1}>
-        <Grid item xs={12} sm={6}>
+        </MaterialGrid>
+      </MaterialGrid>
+      <MaterialGrid container item xs={12} spacing={1}>
+        <MaterialGrid item xs={12} sm={6}>
           <TextField name={'trackNumber'} label="Track Number" value={mappedTags.trackNumber || ""}
                      onChange={handleChange}/>
-        </Grid>
-        <Grid item xs={12} sm={6}>
+        </MaterialGrid>
+        <MaterialGrid item xs={12} sm={6}>
           <TextField name={'discNumber'} label="Disc Number" value={mappedTags.discNumber || ""}
                      onChange={handleChange}/>
-        </Grid>
-      </Grid>
-      <Grid container item xs={12} spacing={1}>
-        <Grid item xs={12}>
+        </MaterialGrid>
+      </MaterialGrid>
+      <MaterialGrid container item xs={12} spacing={1}>
+        <MaterialGrid item xs={12}>
           <TextField name={'comment'} label="Comment" value={mappedTags.comment || ""} onChange={handleChange}
                      multiline rowsMax={3}/>
-        </Grid>
-      </Grid>
-    </Grid>)
+        </MaterialGrid>
+      </MaterialGrid>
+    </MaterialGrid>)
 })
 
 function MultilineTextField(props: TextFieldProps) {
@@ -261,7 +270,7 @@ function MultilineTextField(props: TextFieldProps) {
   )
 }
 
-function AdvancedEditor(props: EditorProps<[API.MetadataPair]>) {
+function AdvancedEditor(props: EditorProps<[API.SourceItem]>) {
   let classes = useStyles();
   const [tags, setTags] = useState(props.data);
 
@@ -293,25 +302,87 @@ function AdvancedEditor(props: EditorProps<[API.MetadataPair]>) {
     }
     console.log("cancelled form")
   }
+  const [columns] = useState([
+    { name: 'key', title: 'Key' },
+    { name: 'value', title: 'Value' },
+  ]);
+  const sourceItem = props.data[0];
+  const [rows, setRows] = useState<MetadataPair[]>(sourceItem.metadata.tags);
+  const [editingCells, setEditingCells] = useState<EditingCell[]>([]);
 
-  return (
-    <div
-      role="tabpanel"
-      // hidden={value !== index}
-      id="single-advanced-editor"
-      aria-labelledby="single-advanced-editor"
-    >
-        <form id="metadata-form" onSubmit={handleSubmit} onReset={handleReset} noValidate autoComplete="off">
+  const commitChanges = (changes: ChangeSet) => {
+    let changedRows: MetadataPair[] | undefined;
+    if (changes.added) {
+      changedRows = [
+        ...rows,
+        ...changes.added,
+      ];
+      setEditingCells([{ rowId: rows.length, columnName: columns[0].name }]);
+    }
+    if (changes.changed) {
+      changedRows = rows.map((row, index) => {
+        if (changes.changed && changes.changed[index]) {
+          return { ...row, ...changes.changed[index] }
+        }
+        return row
+      })
+    }
+    if (changes.deleted) {
+      const deletedSet = new Set(changes.deleted);
+      changedRows = rows.filter((_, index) => !deletedSet.has(index));
+    }
 
-          {/*<div className="ag-theme-material" style={ {height: '600px', width: '600px'} }>*/}
-          {/*  <AgGridReact*/}
-          {/*    columnDefs={columnDefs}*/}
-          {/*    rowData={rows}>*/}
-          {/*  </AgGridReact>*/}
-          {/*</div>*/}
-        </form>
-    </div>
+    if (changedRows) {
+      setRows(changedRows);
+    }
+  };
+
+  const addEmptyRow = () => commitChanges({ added: [{}] });
+
+  return (<>
+      <Grid
+        rows={rows}
+        columns={columns}
+      >
+        <EditingState
+          onCommitChanges={commitChanges}
+          editingCells={editingCells}
+          onEditingCellsChange={setEditingCells}
+          addedRows={[]}
+          onAddedRowsChange={addEmptyRow}
+        />
+        <Table  />
+        <TableHeaderRow />
+        <TableInlineCellEditing selectTextOnEditStart />
+        <TableEditColumn
+          showAddCommand
+          showDeleteCommand
+          commandComponent={CommandButton}
+        />
+      </Grid>
+    </>
   );
+}
+
+const CommandButton = (props: TableEditColumn.CommandProps) => {
+  const {text, onExecute} = props
+  const CommandIconButton = (props: { children: React.ReactNode }) => (
+    <IconButton aria-label={text} onClick={onExecute}>
+      {props.children}
+    </IconButton>
+  )
+  return (<>
+    {props.id == "delete" &&
+    <CommandIconButton>
+        <DeleteIcon/>
+    </CommandIconButton>
+    }
+    {props.id == "add" &&
+    <CommandIconButton>
+        <AddIcon/>
+    </CommandIconButton>
+    }
+  </>)
 }
 
 function tabProps(index: any) {
@@ -405,10 +476,10 @@ export default function SourceMetadataEditor(props: SourceMetadataEditorProps) {
             {value == 0 && (
               <BasicEditor data={srcs} onFailure={props.onFailure} onSuccess={props.onSuccess}/>
             )}
-            {/*{value == 1 && (*/}
-            {/*  <AdvancedEditor tags={srcs[0]?.metadata?.tags}*/}
-            {/*                  onFailure={props.onFailure} onSuccess={props.onSuccess}/>*/}
-            {/*)}*/}
+            {value == 1 && (
+              <AdvancedEditor data={srcs}
+                              onFailure={props.onFailure} onSuccess={props.onSuccess}/>
+            )}
           </>
           {/*{srcs?.length > 1 && (*/}
           {/*  <>*/}
