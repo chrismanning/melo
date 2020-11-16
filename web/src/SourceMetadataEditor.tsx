@@ -58,7 +58,7 @@ const useStyles = makeStyles((theme: Theme) =>
   }),
 );
 
-const SAVE_MAPPED_TAGS = gql`
+const SAVE_TAGS = gql`
     mutation UpdateSourcesByMappedTags($updates: [SourceUpdate!]!) {
         library {
             updateSources(updates: $updates) {
@@ -86,7 +86,7 @@ interface EditorProps<T> {
 function BasicEditor(props: EditorProps<[API.SourceItem]>) {
   let classes = useStyles();
   const [sources, setSources] = useState(props.data as [API.EditableSourceItem]);
-  const [saveMappedTags, { error, loading }] = useMutation(SAVE_MAPPED_TAGS)
+  const [saveTags, { error, loading }] = useMutation(SAVE_TAGS)
 
   let forms = sources.sort((a, b) => {
     return a.sourceUri.localeCompare(b.sourceUri)
@@ -109,11 +109,11 @@ function BasicEditor(props: EditorProps<[API.SourceItem]>) {
     event.preventDefault()
     console.log("submitting form")
     console.log("getting updated values from child forms")
-    let sources = forms.map(([ref, a, b]) => {
+    let sources = forms.map(([ref]) => {
       return (ref as RefObject<any>).current?.submit() as API.EditableSourceItem
     })
     console.log("sources: " + JSON.stringify(sources))
-    saveMappedTags( {
+    saveTags( {
       variables: {
         updates: sources.map(source => {
           return {
@@ -271,37 +271,8 @@ function MultilineTextField(props: TextFieldProps) {
 }
 
 function AdvancedEditor(props: EditorProps<[API.SourceItem]>) {
-  let classes = useStyles();
-  const [tags, setTags] = useState(props.data);
+  const [saveTags, { error, loading }] = useMutation(SAVE_TAGS)
 
-  const handleChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
-    event.persist()
-    setTags(produce(tags => {
-      if (event?.target) {
-        // tags[event.target.name] = event.target.value;
-      }
-    }))
-  };
-
-  const handleReset = () => {
-    setTags(_ => props.data)
-    console.log("reset form")
-  }
-
-  const handleSubmit = (event: FormEvent) => {
-    event.preventDefault()
-    if (props.onSuccess) {
-      props.onSuccess()
-    }
-    console.log("submitted form")
-  }
-
-  const handleCancel = () => {
-    if (props.onFailure) {
-      props.onFailure()
-    }
-    console.log("cancelled form")
-  }
   const [columns] = useState([
     { name: 'key', title: 'Key' },
     { name: 'value', title: 'Value' },
@@ -309,6 +280,45 @@ function AdvancedEditor(props: EditorProps<[API.SourceItem]>) {
   const sourceItem = props.data[0];
   const [rows, setRows] = useState<MetadataPair[]>(sourceItem.metadata.tags);
   const [editingCells, setEditingCells] = useState<EditingCell[]>([]);
+
+  const handleReset = () => {
+    console.log("resetting form")
+    setRows(sourceItem.metadata.tags)
+  }
+
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault()
+    if (props.onSuccess) {
+      props.onSuccess()
+    }
+    console.log("submitting form")
+    saveTags({
+      variables: {
+        updates: [
+          {
+            id: sourceItem.id,
+            updateTags: {
+              setTags: rows.map(row => ({key: row.key, value: row.value}))
+            }
+          }
+        ]
+      }
+    }).then(_ => {
+      console.log("tags saved")
+      if (props.onSuccess) {
+        props.onSuccess()
+      }
+    }, () => {
+      if (error) {
+        console.log("failed to save mapped tags: " + error.message)
+        console.log("tags: " + JSON.stringify(rows))
+        console.log("errors: " + JSON.stringify(error?.graphQLErrors))
+      }
+      if (props.onFailure) {
+        props.onFailure()
+      }
+    })
+  }
 
   const commitChanges = (changes: ChangeSet) => {
     let changedRows: MetadataPair[] | undefined;
@@ -340,6 +350,16 @@ function AdvancedEditor(props: EditorProps<[API.SourceItem]>) {
   const addEmptyRow = () => commitChanges({ added: [{}] });
 
   return (<>
+      {loading && (
+        <LinearProgress/>
+      )}
+      {error && (
+        <Alert severity="error">
+          <AlertTitle>Failed to save tags</AlertTitle>
+          {error.message}
+        </Alert>
+      )}
+      <form id="metadata-form" onSubmit={handleSubmit} onReset={handleReset} noValidate autoComplete="off"/>
       <Grid
         rows={rows}
         columns={columns}
