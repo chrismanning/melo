@@ -36,7 +36,7 @@ instance Binary Header where
     case t of
       Just IdentificationHeaderType -> IdentificationHeader <$> get
       Just CommentsHeaderType -> CommentsHeader <$> get
-      _ -> F.fail "Unexpected packet header"
+      _otherHeader -> F.fail "Unexpected packet header"
   put (IdentificationHeader i) = do
     putPacketType IdentificationHeaderType
     putByteString vorbisIdentifier
@@ -134,7 +134,7 @@ instance Binary VorbisComments where
     putWord32le $ fromIntegral $ V.length userComments
     mapM_ put userComments
 
-data UserComment = UserComment Text Text
+data UserComment = UserComment !Text !Text
   deriving (Show, Eq)
 
 instance Binary UserComment where

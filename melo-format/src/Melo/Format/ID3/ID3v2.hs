@@ -123,10 +123,9 @@ newId3v2 tags =
     }
 
 framesFromTags :: Tags -> Frames v
-framesFromTags (Tags tags) =
-  if V.length tags == 0
-    then impureThrow $ MetadataWriteError "ID3v2 must contain at least one frame"
-    else Frames $ createFrame <$> NE.fromList (V.toList tags)
+framesFromTags (Tags tags) = case V.toList tags of
+  [] -> impureThrow $ MetadataWriteError "ID3v2 must contain at least one frame"
+  (t:ts) -> Frames $ createFrame <$> t :| ts
 
 createFrame :: (Text, Text) -> Frame v
 createFrame (k, v) =
@@ -152,7 +151,7 @@ instance (GetFrame v, PutFrame v) => MetadataLocator (ID3v2 v) where
       Left _ -> Nothing
       Right (_, _, header) -> case version header of
         version | version == id3v2Version @v -> pure 0
-        _ -> Nothing
+        _unknownVersion -> Nothing
 
   hLocate h = do
     hSeek h AbsoluteSeek 0
@@ -373,7 +372,7 @@ fromTagKey :: Text -> FrameId
 fromTagKey k = case T.split (== ';') k of
   [fid, desc] -> UserDefinedId fid desc
   [fid] -> PreDefinedId fid
-  _ -> error "invlid id3v2 key"
+  _invalidFrameId -> error "invlid id3v2 key"
 
 class GetFrameId (v :: ID3v2Version) where
   getFrameId :: FrameHeader v -> TextEncoding -> Get FrameId
@@ -451,7 +450,7 @@ mkFrameContent fid enc t = case fid of
     cid = \case
       i | T.isPrefixOf "T" i -> TextFrame enc t
       i | T.isPrefixOf "W" i -> UrlFrame enc t
-      _ -> OtherFrame BS.empty
+      _otherFrame -> OtherFrame BS.empty
 
 putFrameContent :: forall v. PutFrame v => FrameId -> FrameContent v -> Put
 putFrameContent f (TextFrame enc content) = putTextContent @v f enc content
@@ -462,7 +461,7 @@ extractFrameContent :: Frame v -> Maybe (FrameId, [Text])
 extractFrameContent Frame {frameId, frameContent} = case frameContent of
   TextFrame _ vs -> Just (frameId, vs)
   UrlFrame _ vs -> Just (frameId, vs)
-  _ -> Nothing
+  _otherFrame -> Nothing
 
 createFrameContent :: FrameId -> Text -> FrameContent v
 createFrameContent frameId val =
@@ -486,7 +485,7 @@ instance GetTextContent v where
   getTextContent FrameHeader {frameId, frameSize} frameId' enc = do
     let fidSz = case frameId' of
           UserDefinedId _ t -> fromIntegral $ T.length t
-          _ -> 0
+          _otherFrameId -> 0
     let sz = frameSize - 1 - fidSz
     bs <- BS.dropWhile (== 0) <$> getByteString (fromIntegral sz)
     let enc' = if "W" `T.isPrefixOf` frameId then NullTerminated else enc
@@ -511,7 +510,7 @@ instance PutFrame v => PutTextContent v where
       UserDefinedId _ desc -> do
         putByteString (encodeID3Text enc desc)
         putByteString (terminator enc)
-      _ -> pure ()
+      _otherFrameId -> pure ()
     let contentBytes = BS.intercalate (terminator enc) (fmap encodeUtf8 content)
     putByteString contentBytes
 

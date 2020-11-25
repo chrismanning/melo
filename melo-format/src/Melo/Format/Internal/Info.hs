@@ -18,7 +18,7 @@ class InfoReader a where
 newtype SampleRate = SampleRate Integer
   deriving (Show, Eq, Generic)
 
-data Channels = Mono | Stereo | JointStereo | MultiChannel ChannelMask
+data Channels = Mono | Stereo | JointStereo | MultiChannel !ChannelMask
   deriving (Show, Eq, Generic)
 
 data ChannelMask = ChannelMask

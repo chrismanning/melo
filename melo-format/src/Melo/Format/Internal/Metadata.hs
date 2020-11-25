@@ -17,9 +17,9 @@ import Melo.Format.Mapping
 data MetadataFileFactory m = MetadataFileFactory
   { priority :: !Int,
     fileId :: !MetadataFileId,
-    readMetadataFile :: FilePath -> m MetadataFile,
-    writeMetadataFile :: MetadataFile -> FilePath -> m (),
-    detectFile :: FilePath -> m Bool
+    readMetadataFile :: !(FilePath -> m MetadataFile),
+    writeMetadataFile :: !(MetadataFile -> FilePath -> m ()),
+    detectFile :: !(FilePath -> m Bool)
   }
   deriving (Generic)
 

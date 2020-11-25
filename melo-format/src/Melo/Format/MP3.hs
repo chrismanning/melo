@@ -33,12 +33,12 @@ import System.FilePath
 import System.IO
 
 data MP3 = MP3
-  { frameHeader :: FrameHeader,
-    id3v1 :: Maybe ID3.ID3v1,
-    id3v2_3 :: Maybe ID3.ID3v2_3,
-    id3v2_4 :: Maybe ID3.ID3v2_4,
-    apev1 :: Maybe APEv1,
-    apev2 :: Maybe APEv2
+  { frameHeader :: !FrameHeader,
+    id3v1 :: !(Maybe ID3.ID3v1),
+    id3v2_3 :: !(Maybe ID3.ID3v2_3),
+    id3v2_4 :: !(Maybe ID3.ID3v2_4),
+    apev1 :: !(Maybe APEv1),
+    apev2 :: !(Maybe APEv2)
   }
   deriving (Show, Eq)
 
@@ -163,18 +163,18 @@ instance I.InfoReader MP3 where
       convertChannels Mono = I.Mono
 
 data FrameHeader = FrameHeader
-  { mpegAudioVersion :: MpegVersion,
-    layer :: Layer,
-    bitRate :: BitRate,
-    sampleRate :: Int,
-    padding :: Bool,
-    private :: Bool,
-    channels :: Channels,
-    modeExtension :: Word8,
-    copyrighted :: Bool,
-    original :: Bool,
-    emphasis :: Word8,
-    crc :: Maybe Word16
+  { mpegAudioVersion :: !MpegVersion,
+    layer :: !Layer,
+    bitRate :: !BitRate,
+    sampleRate :: !Int,
+    padding :: !Bool,
+    private :: !Bool,
+    channels :: !Channels,
+    modeExtension :: !Word8,
+    copyrighted :: !Bool,
+    original :: !Bool,
+    emphasis :: !Word8,
+    crc :: !(Maybe Word16)
   }
   deriving (Show, Eq)
 
@@ -283,7 +283,7 @@ putLayer Layer1 = BP.putWord8 2 0b11
 putLayer Layer2 = BP.putWord8 2 0b10
 putLayer Layer3 = BP.putWord8 2 0b01
 
-data BitRate = VBR Int | CBR Int
+data BitRate = VBR !Int | CBR !Int
   deriving (Show, Eq)
 
 bitRateIndex :: H.HashMap (MpegVersion, Layer) (V.Vector Int)

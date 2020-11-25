@@ -105,11 +105,11 @@ instance Binary OggVorbis where
       getIdent =
         get >>= \case
           OggPage header (IdentificationHeader ident) s -> pure $ OggPage header ident s
-          _ -> fail "expected vorbis identification header"
+          _otherPage -> fail "expected vorbis identification header"
       getComments =
         get >>= \case
           OggPage header (CommentsHeader vc) s -> pure $ OggPage header vc s
-          _ -> fail "expected vorbis comments header"
+          _otherPage -> fail "expected vorbis comments header"
   put (OggVorbis ident fvc) =
     put (IdentificationHeader <$> ident) >> put (CommentsHeader <$> fvc)
 

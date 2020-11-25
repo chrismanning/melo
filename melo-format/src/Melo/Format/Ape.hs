@@ -23,7 +23,6 @@ import qualified Data.Binary.Bits.Put as BP
 import Data.Binary.Get
 import Data.Binary.Put
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as BC
 import qualified Data.ByteString.Lazy as L
 import Data.Coerce
 import Data.Text (Text)
@@ -124,7 +123,7 @@ apeV2Id = MetadataId "APEv2"
 getTextItem :: TagItem -> Vector (Text, Text)
 getTextItem t = case t of
   TagItem k (TagItemValue (TextTag vs)) -> fmap (k,) vs
-  _ -> V.empty
+  _otherwise -> V.empty
 
 instance Binary APEv2 where
   get = do
@@ -158,7 +157,7 @@ instance Binary APE where
     let bs = runPut $ V.forM_ (items a) put
     case version a of
       V2 -> put $ mkHeader a $ fromIntegral . L.length $ bs
-      _ -> return ()
+      V1 -> return ()
     putLazyByteString bs
     put $ mkFooter a $ fromIntegral . L.length $ bs
 
@@ -395,7 +394,7 @@ putTagItemValue (TagItemValue t) = case t of
 
 putValueList :: Vector Text -> Put
 putValueList vals =
-  putByteString $ BS.intercalate (BC.pack "\0") $ V.toList (fmap encodeUtf8 vals)
+  putByteString $ BS.intercalate "\0" $ V.toList (fmap encodeUtf8 vals)
 
 createApeTags :: Tags -> Vector TagItem
 createApeTags (Tags tags) = fmap (uncurry mkTextTagItem) tags

@@ -5,12 +5,12 @@ import Data.List.NonEmpty
 import Data.Text
 
 data FieldMappings = FieldMappings
-  { ape :: FieldMapping,
-    id3v1 :: FieldMapping,
-    id3v2_3 :: FieldMapping,
-    id3v2_4 :: FieldMapping,
-    riff :: FieldMapping,
-    vorbis :: FieldMapping
+  { ape :: !FieldMapping,
+    id3v1 :: !FieldMapping,
+    id3v2_3 :: !FieldMapping,
+    id3v2_4 :: !FieldMapping,
+    riff :: !FieldMapping,
+    vorbis :: !FieldMapping
   }
 
 instance Default FieldMappings where
@@ -26,8 +26,8 @@ instance Default FieldMappings where
 
 data FieldMapping
   = FieldMapping
-      { toCanonicalForm :: Text,
-        fieldMatcher :: Text -> Bool
+      { toCanonicalForm :: !Text,
+        fieldMatcher :: !(Text -> Bool)
       }
   | NoFieldMapping
 

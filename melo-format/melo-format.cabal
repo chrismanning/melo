@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: ab3309cb25714761817e0ca99dcf56b722908b08dc907219c620d72a0a19263f
+-- hash: 958a09c02524e26d4f795922b1b46c67dad6826e96c6408a009f2853aff8ceab
 
 name:           melo-format
 version:        0.1.0.0
@@ -57,7 +57,7 @@ library
   hs-source-dirs:
       src
   default-extensions: ApplicativeDo BangPatterns BinaryLiterals ConstraintKinds DataKinds DefaultSignatures DeriveAnyClass DeriveFoldable DeriveFunctor DeriveGeneric DeriveLift DeriveTraversable DerivingStrategies DuplicateRecordFields EmptyCase ExistentialQuantification FlexibleContexts FlexibleInstances FunctionalDependencies GADTs GeneralizedNewtypeDeriving InstanceSigs KindSignatures LambdaCase MultiParamTypeClasses MultiWayIf NamedFieldPuns OverloadedLabels OverloadedStrings PatternSynonyms RankNTypes RecordWildCards ScopedTypeVariables StandaloneDeriving TemplateHaskell TupleSections TypeApplications TypeFamilies TypeFamilyDependencies TypeOperators ViewPatterns
-  ghc-options: -O2 -Wall -Wcompat -fno-warn-name-shadowing -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wnoncanonical-monad-instances
+  ghc-options: -O2 -Wall -Wcompat -fno-warn-name-shadowing -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wnoncanonical-monad-instances -fwrite-ide-info -hiedir=../.hie
   build-depends:
       array
     , base >=4.7 && <5
@@ -90,7 +90,7 @@ executable melo-detect
   hs-source-dirs:
       app/detect
   default-extensions: ApplicativeDo BangPatterns BinaryLiterals ConstraintKinds DataKinds DefaultSignatures DeriveAnyClass DeriveFoldable DeriveFunctor DeriveGeneric DeriveLift DeriveTraversable DerivingStrategies DuplicateRecordFields EmptyCase ExistentialQuantification FlexibleContexts FlexibleInstances FunctionalDependencies GADTs GeneralizedNewtypeDeriving InstanceSigs KindSignatures LambdaCase MultiParamTypeClasses MultiWayIf NamedFieldPuns OverloadedLabels OverloadedStrings PatternSynonyms RankNTypes RecordWildCards ScopedTypeVariables StandaloneDeriving TemplateHaskell TupleSections TypeApplications TypeFamilies TypeFamilyDependencies TypeOperators ViewPatterns
-  ghc-options: -O2 -Wall -Wcompat -fno-warn-name-shadowing -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wnoncanonical-monad-instances
+  ghc-options: -O2 -Wall -Wcompat -fno-warn-name-shadowing -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wnoncanonical-monad-instances -fwrite-ide-info -hiedir=../.hie
   build-depends:
       base >=4.7 && <5
     , extra
@@ -120,7 +120,7 @@ test-suite melo-format-test
   hs-source-dirs:
       test
   default-extensions: ApplicativeDo BangPatterns BinaryLiterals ConstraintKinds DataKinds DefaultSignatures DeriveAnyClass DeriveFoldable DeriveFunctor DeriveGeneric DeriveLift DeriveTraversable DerivingStrategies DuplicateRecordFields EmptyCase ExistentialQuantification FlexibleContexts FlexibleInstances FunctionalDependencies GADTs GeneralizedNewtypeDeriving InstanceSigs KindSignatures LambdaCase MultiParamTypeClasses MultiWayIf NamedFieldPuns OverloadedLabels OverloadedStrings PatternSynonyms RankNTypes RecordWildCards ScopedTypeVariables StandaloneDeriving TemplateHaskell TupleSections TypeApplications TypeFamilies TypeFamilyDependencies TypeOperators ViewPatterns
-  ghc-options: -O2 -Wall -Wcompat -fno-warn-name-shadowing -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wnoncanonical-monad-instances -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -O2 -Wall -Wcompat -fno-warn-name-shadowing -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wnoncanonical-monad-instances -fwrite-ide-info -hiedir=../.hie -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
     , base16-bytestring

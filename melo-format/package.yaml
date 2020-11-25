@@ -94,6 +94,8 @@ ghc-options:
   - -Wincomplete-uni-patterns
   - -Wredundant-constraints
   - -Wnoncanonical-monad-instances
+  - -fwrite-ide-info
+  - -hiedir=../.hie
 
 default-extensions:
   - ApplicativeDo

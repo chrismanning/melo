@@ -139,21 +139,21 @@ replaceMetadata (Flac flacMetadata) Metadata {formatId, tags} = case formatId of
   fid
     | fid == vorbisCommentsId ->
       MkFlac (replaceVorbisCommentBlock flacMetadata tags)
-  _ -> impureThrow $ IncompatibleFormat flacFileId formatId
+  _otherwise -> impureThrow $ IncompatibleFormat flacFileId formatId
 replaceMetadata (FlacWithID3v2_3 id3v23 flacMetadata) Metadata {formatId, tags} = case formatId of
   fid | fid == id3v23Id -> MkFlacWithID3v2_3 (replaceWithTags id3v23 tags) flacMetadata
   fid | fid == id3v24Id -> MkFlacWithID3v2_4 (replaceWithTags (changeVersion id3v23) tags) flacMetadata
   fid
     | fid == vorbisCommentsId ->
       MkFlacWithID3v2_3 id3v23 (replaceVorbisCommentBlock flacMetadata tags)
-  _ -> impureThrow $ IncompatibleFormat flacFileId formatId
+  _otherwise -> impureThrow $ IncompatibleFormat flacFileId formatId
 replaceMetadata (FlacWithID3v2_4 id3v24 flacMetadata) Metadata {formatId, tags} = case formatId of
   fid | fid == id3v23Id -> MkFlacWithID3v2_3 (replaceWithTags (changeVersion id3v24) tags) flacMetadata
   fid | fid == id3v24Id -> MkFlacWithID3v2_4 (replaceWithTags id3v24 tags) flacMetadata
   fid
     | fid == vorbisCommentsId ->
       MkFlacWithID3v2_4 id3v24 (replaceVorbisCommentBlock flacMetadata tags)
-  _ -> impureThrow $ IncompatibleFormat flacFileId formatId
+  _otherwise -> impureThrow $ IncompatibleFormat flacFileId formatId
 
 replaceVorbisCommentBlock :: FlacMetadata -> Tags -> FlacMetadata
 replaceVorbisCommentBlock flacMetadata tags =
@@ -304,7 +304,7 @@ vorbisComment (FlacMetadata _ blocks) = findVcs $ V.toList blocks
     findVcs [] = Nothing
     findVcs (m : ms) = case m of
       VorbisCommentBlock _ vcs -> Just vcs
-      _ -> findVcs ms
+      _otherBlock -> findVcs ms
 
 instance Binary FlacMetadata where
   get = do
