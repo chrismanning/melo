@@ -161,6 +161,19 @@ CREATE TABLE melo.artist_stage (
 
 
 --
+-- Name: collection; Type: TABLE; Schema: melo; Owner: -
+--
+
+CREATE TABLE melo.collection (
+    id uuid DEFAULT melo.uuid_generate_v4() NOT NULL,
+    root_uri text NOT NULL,
+    name text NOT NULL,
+    watch boolean NOT NULL,
+    kind text NOT NULL
+);
+
+
+--
 -- Name: genre; Type: TABLE; Schema: melo; Owner: -
 --
 
@@ -327,6 +340,14 @@ ALTER TABLE ONLY melo.artist_stage
 
 
 --
+-- Name: collection collection_pk; Type: CONSTRAINT; Schema: melo; Owner: -
+--
+
+ALTER TABLE ONLY melo.collection
+    ADD CONSTRAINT collection_pk PRIMARY KEY (id);
+
+
+--
 -- Name: genre genre_name_key; Type: CONSTRAINT; Schema: melo; Owner: -
 --
 
@@ -425,6 +446,27 @@ CREATE UNIQUE INDEX artist_musicbrainz_id_uindex ON melo.artist USING btree (mus
 --
 
 CREATE UNIQUE INDEX artist_name_disambiguation_uindex ON melo.artist USING btree (name, disambiguation);
+
+
+--
+-- Name: collection_id_uindex; Type: INDEX; Schema: melo; Owner: -
+--
+
+CREATE UNIQUE INDEX collection_id_uindex ON melo.collection USING btree (id);
+
+
+--
+-- Name: collection_name_uindex; Type: INDEX; Schema: melo; Owner: -
+--
+
+CREATE UNIQUE INDEX collection_name_uindex ON melo.collection USING btree (name);
+
+
+--
+-- Name: collection_root_uri_uindex; Type: INDEX; Schema: melo; Owner: -
+--
+
+CREATE UNIQUE INDEX collection_root_uri_uindex ON melo.collection USING btree (root_uri);
 
 
 --
@@ -646,4 +688,5 @@ ALTER TABLE ONLY melo.track_stage
 
 INSERT INTO public.schema_migrations (version) VALUES
     ('20200505222518'),
-    ('20200626210715');
+    ('20200626210715'),
+    ('20201129174644');

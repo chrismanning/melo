@@ -29,6 +29,7 @@ import Database.Beam.Postgres (PgJSONB (..))
 import Melo.Common.FileSystem
 import Melo.Common.Logging
 import Melo.Common.Metadata
+import Melo.Common.Uri
 import qualified Melo.Database.Model as DB
 import Melo.Format ()
 import qualified Melo.Format as F
@@ -381,7 +382,7 @@ data SourceGroup' m = SourceGroup'
 getParentUri :: Text -> Text
 getParentUri srcUri = case parseURI (T.unpack srcUri) of
   Just uri -> case uriScheme uri of
-    "file:" -> T.pack $ show $ Ty.fileUri $ takeDirectory $ unEscapeString (uriPath uri)
+    "file:" -> T.pack $ show $ fileUri $ takeDirectory $ unEscapeString (uriPath uri)
     _ -> srcUri
   Nothing -> srcUri
 

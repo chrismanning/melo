@@ -10,7 +10,6 @@ module Melo.Library.Source.Types
     AudioRange (..),
     Source (..),
     ImportStats (..),
-    fileUri,
   )
 where
 
@@ -26,6 +25,7 @@ import qualified Data.Text as T
 import Database.Beam
 import Database.Beam.Postgres as PgB
 import Melo.Common.Metadata
+import Melo.Common.Uri
 import qualified Melo.Database.Model as DB
 import Melo.Format.Info
 import Melo.Format.Metadata
@@ -117,16 +117,6 @@ instance From NewSource (DB.SourceT (QExpr Postgres s)) where
         time_range = val_ $ timeRange =<< (s ^. #range),
         scanned = currentTimestamp_
       }
-
-fileUri :: FilePath -> URI
-fileUri p =
-  URI
-    { uriScheme = "file:",
-      uriAuthority = Nothing,
-      uriPath = escapeURIString (\c -> isUnreserved c || c == '/') p,
-      uriQuery = "",
-      uriFragment = ""
-    }
 
 sampleRange :: AudioRange -> Maybe (PgRange PgInt8Range Int64)
 sampleRange (SampleRange range) = Just (toPgRange range)

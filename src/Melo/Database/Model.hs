@@ -6,7 +6,6 @@ module Melo.Database.Model where
 
 import Control.Lens as L hiding ((.=))
 import Data.Aeson as A
-import Data.Aeson.Types (parseMaybe)
 import Data.Attoparsec.ByteString.Char8
 import qualified Data.ByteString.Lazy as L
 import Data.Char
@@ -30,7 +29,8 @@ import Database.PostgreSQL.Simple.ToField
 import Database.PostgreSQL.Simple.TypeInfo.Static (interval, jsonbOid)
 
 data MeloDb f = MeloDb
-  { source :: f (TableEntity SourceT),
+  { collection :: f (TableEntity CollectionT),
+    source :: f (TableEntity SourceT),
     genre :: f (TableEntity GenreT),
     artist :: f (TableEntity ArtistT),
     artist_stage :: f (TableEntity ArtistStageT),
@@ -81,6 +81,38 @@ meloDb =
                 }
             )
       }
+
+data CollectionT (f :: Type -> Type) = Collection
+  { id :: Columnar f UUID,
+    root_uri :: Columnar f Text,
+    name :: Columnar f Text,
+    watch :: Columnar f Bool,
+    kind :: Columnar f Text
+  }
+  deriving (Generic, Beamable)
+
+instance Table CollectionT where
+  data PrimaryKey CollectionT f
+    = CollectionKey (Columnar f UUID)
+    deriving (Generic, Beamable)
+
+  primaryKey = CollectionKey . view #id
+
+type Collection = CollectionT Identity
+
+type CollectionKey = PrimaryKey CollectionT Identity
+
+deriving instance Show Collection
+
+deriving instance Eq Collection
+
+deriving instance Show CollectionKey
+
+deriving instance Eq CollectionKey
+
+deriving instance Ord CollectionKey
+
+deriving instance Hashable CollectionKey
 
 data GenreT (f :: Type -> Type) = Genre
   { id :: Columnar f UUID,

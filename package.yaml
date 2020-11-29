@@ -56,6 +56,7 @@ library:
   - exceptions
   - extra
   - filepath
+  - fsnotify
   - fused-effects
   - fused-effects-exceptions
   - fused-effects-th
