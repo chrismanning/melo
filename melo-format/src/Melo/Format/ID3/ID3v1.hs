@@ -15,15 +15,9 @@ import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as C8
 import qualified Data.ByteString.Lazy as L
 import Data.Char
 import Data.Functor
-import Data.List
-  ( elemIndex,
-    genericIndex,
-    genericLength,
-  )
 import Data.Maybe
 import Data.Text as T
 import Data.Text.Encoding
@@ -31,6 +25,7 @@ import qualified Data.Vector as V
 import GHC.Generics
 import Melo.Format.ID3.ID3v1Genre
 import Melo.Format.Internal.BinaryUtil
+import Melo.Format.Internal.Encoding
 import Melo.Format.Internal.Locate
 import Melo.Format.Internal.Metadata
 import Melo.Format.Internal.Tag
@@ -137,7 +132,7 @@ getID3v1 = do
   artist <- getTag 30
   album <- getTag 30
   year <- T.filter isDigit <$> getTag 4
-  when (T.length year == 0) (F.fail "Year must contain at least one digit")
+  when (T.empty == year) (F.fail "Year must contain at least one digit")
   hasTrackNum <- isID3v1_1 <$> lookAhead (getByteString 30)
   comment <- getTag (if hasTrackNum then 28 else 30)
   track <-
@@ -148,7 +143,7 @@ getID3v1 = do
       else return Nothing
   genreIndex <- getWord8
   when
-    (genreIndex > genericLength genres)
+    (fromIntegral genreIndex >= V.length genres)
     (F.fail $ "Unknown genre index " ++ show genreIndex)
   return $
     ID3v1
@@ -158,7 +153,7 @@ getID3v1 = do
         year,
         comment,
         track,
-        genre = genres `genericIndex` genreIndex
+        genre = genres V.! fromIntegral genreIndex
       }
 
 getTag :: Int -> Get Text
@@ -185,14 +180,12 @@ putID3v1 id3 = do
     Nothing -> putTag 30 (comment id3)
   putWord8 genreIndex
   where
-    genreIndex = maybe 0 fromIntegral $ elemIndex (genre id3) genres
+    genreIndex = maybe 0 fromIntegral $ V.elemIndex (genre id3) genres
 
 putTag :: Int -> Text -> Put
 putTag n t =
   putLazyByteString $
     L.take (fromIntegral n) (L.fromStrict (encodeLatin1 t) <> L.repeat 0)
-  where
-    encodeLatin1 a = C8.pack $ T.unpack a
 
 hReplaceID3v1 :: Handle -> ID3v1 -> IO ()
 hReplaceID3v1 h id3 = do

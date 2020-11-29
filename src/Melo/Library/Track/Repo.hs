@@ -1,3 +1,4 @@
+{-# LANGUAGE StrictData #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Library.Track.Repo where
@@ -6,8 +7,8 @@ import Control.Algebra
 import Control.Effect.Lift
 import Control.Effect.Reader
 import Control.Lens ((^.))
+import Data.Containers.ListUtils (nubOrd)
 import Data.Int (Int16)
-import Data.List
 import Data.Text (Text)
 import Data.Time (NominalDiffTime)
 import Database.Beam
@@ -27,7 +28,7 @@ data NewTrack = NewTrack
     albumId :: DB.AlbumKey,
     length :: Maybe NominalDiffTime
   }
-  deriving (Generic, Eq, Show)
+  deriving (Generic, Eq, Ord, Show)
 
 data TrackRepository :: Effect where
   GetAllTracks :: TrackRepository m [DB.Track]
@@ -86,13 +87,13 @@ instance
     GetAllTracks -> ctx $$> getAll tbl
     GetTracks ks -> ctx $$> getByKeys tbl ks
     DeleteTracks ks -> ctx $$> deleteByKeys tbl ks
-    GetTrackSource k -> undefined
-    GetTrackArtists k -> undefined
-    GetTrackAlbum k -> undefined
-    GetTrackGenres k -> undefined
-    SearchTracks t -> undefined
+    GetTrackSource k -> error "unimplemented"
+    GetTrackArtists k -> error "unimplemented"
+    GetTrackAlbum k -> error "unimplemented"
+    GetTrackGenres k -> error "unimplemented"
+    SearchTracks t -> error "unimplemented"
     InsertTracks ts' -> do
-      let !ts = nub ts'
+      let !ts = nubOrd ts'
       let q =
             runPgInsertReturningList $
               insertReturning

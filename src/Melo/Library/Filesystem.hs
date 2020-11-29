@@ -62,7 +62,7 @@ runImporter sess conn =
     . runError
       ( \(e :: MetadataException) -> do
           $(logError) $ "Uncaught error: " <> show e
-          undefined
+          error "unimplemented"
       )
       pure
     . runReader conn

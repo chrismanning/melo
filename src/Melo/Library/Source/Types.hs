@@ -1,4 +1,5 @@
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE StrictData #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Library.Source.Types

@@ -7,8 +7,7 @@ import Control.Algebra
 import Control.Effect.Lift
 import Control.Effect.Reader
 import Control.Lens ((^.))
-import Data.Functor
-import Data.List
+import Data.Containers.ListUtils (nubOrd)
 import Data.Text (Text)
 import Database.Beam
 import Database.Beam.Postgres as Pg
@@ -70,12 +69,12 @@ instance
     GetAllAlbums -> ctx $$> getAll tbl
     GetAlbums ks -> ctx $$> getByKeys tbl ks
     DeleteAlbums ks -> ctx $$> deleteByKeys tbl ks
-    GetAlbumGenres k -> undefined
-    GetAlbumArtists k -> undefined
-    GetAlbumTracks k -> undefined
-    SearchAlbums k -> undefined
+    GetAlbumGenres k -> error "unimplemented"
+    GetAlbumArtists k -> error "unimplemented"
+    GetAlbumTracks k -> error "unimplemented"
+    SearchAlbums k -> error "unimplemented"
     InsertAlbums as' -> do
-      let !as = nub as'
+      let !as = nubOrd as'
       let q =
             runPgInsertReturningList $
               insertReturning

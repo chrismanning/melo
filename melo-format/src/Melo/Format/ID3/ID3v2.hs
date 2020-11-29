@@ -125,7 +125,7 @@ newId3v2 tags =
 framesFromTags :: Tags -> Frames v
 framesFromTags (Tags tags) = case V.toList tags of
   [] -> impureThrow $ MetadataWriteError "ID3v2 must contain at least one frame"
-  (t:ts) -> Frames $ createFrame <$> t :| ts
+  (t : ts) -> Frames $ createFrame <$> t :| ts
 
 createFrame :: (Text, Text) -> Frame v
 createFrame (k, v) =

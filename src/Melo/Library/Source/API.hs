@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE StrictData #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Library.Source.API where
@@ -6,7 +7,7 @@ module Melo.Library.Source.API where
 import Basement.From
 import Control.Algebra
 import Control.Applicative
-import Control.Lens hiding (from, (|>))
+import Control.Lens hiding (from, lens, (|>))
 import Control.Monad
 import Data.Aeson as A
 import Data.Coerce
@@ -43,7 +44,7 @@ resolveSources ::
   (Has SourceRepository sig m) =>
   SourcesArgs ->
   Res e m [Source (Res e m)]
-resolveSources (SourceArgs (Just SourceWhere{..})) =
+resolveSources (SourceArgs (Just SourceWhere {..})) =
   case id of
     Just idExpr -> case idExpr of
       WhereEqExpr (EqExpr x) -> case fromText x of
@@ -52,7 +53,7 @@ resolveSources (SourceArgs (Just SourceWhere{..})) =
       WhereInExpr (InExpr x) -> case allJust (fmap fromText x) of
         Just uuids -> lift $ fmap from <$> getSources (DB.SourceKey <$> uuids)
         Nothing -> fail $ "invalid source id in " <> show x
-      _ -> fail "invalid where clause for Source.id"
+      _unknownWhere -> fail "invalid where clause for Source.id"
     Nothing -> case sourceUri of
       Just sourceUriExpr -> case sourceUriExpr of
         WhereEqExpr (EqExpr x) -> case parseURI (T.unpack x) of
@@ -61,13 +62,13 @@ resolveSources (SourceArgs (Just SourceWhere{..})) =
         WhereInExpr (InExpr x) -> case allJust (fmap (parseURI . T.unpack) x) of
           Just uris -> lift $ fmap from <$> getSourcesByUri uris
           Nothing -> fail $ "invalid source id in " <> show x
-        _ -> fail "invalid where clause for Source.sourceUri"
+        _unknownWhere -> fail "invalid where clause for Source.sourceUri"
       Nothing -> lift $ fmap (fmap from) getAllSources
-    where
-      allJust :: [Maybe a] -> Maybe [a]
-      allJust [] = Just []
-      allJust (Just a:as) = fmap (a :) (allJust as)
-      allJust (Nothing:_) = Nothing
+  where
+    allJust :: [Maybe a] -> Maybe [a]
+    allJust [] = Just []
+    allJust (Just a : as) = fmap (a :) (allJust as)
+    allJust (Nothing : _) = Nothing
 resolveSources _ =
   lift $
     fmap (fmap from) getAllSources
@@ -118,18 +119,19 @@ uriToFilePath uri =
     "file:" -> Just $ unEscapeString (uriPath uri)
     _ -> Nothing
 
-data SourcesArgs = SourceArgs {
-  where' :: Maybe SourceWhere
-} deriving (Generic)
+data SourcesArgs = SourceArgs
+  { where' :: Maybe SourceWhere
+  }
+  deriving (Generic)
 
 instance GQLType SourcesArgs where
   type KIND SourcesArgs = INPUT
 
 data SourceWhere = SourceWhere
   { id :: Maybe Where,
---    format :: Maybe Where,
---    metadata :: Maybe Metadata,
---    sourceName :: Maybe Where,
+    --    format :: Maybe Where,
+    --    metadata :: Maybe Metadata,
+    --    sourceName :: Maybe Where,
     sourceUri :: Maybe Where
   }
   deriving (Generic)
@@ -137,49 +139,50 @@ data SourceWhere = SourceWhere
 instance GQLType SourceWhere where
   type KIND SourceWhere = INPUT
 
-data Where = WhereEqExpr EqExpr |
-  WhereNotEqExpr NotEqExpr |
-  WhereContainsExpr ContainsExpr |
-  WhereInExpr InExpr
-    deriving (Generic)
+data Where
+  = WhereEqExpr EqExpr
+  | WhereNotEqExpr NotEqExpr
+  | WhereContainsExpr ContainsExpr
+  | WhereInExpr InExpr
+  deriving (Generic)
 
 instance GQLType Where where
   type KIND Where = INPUT
 
-newtype EqExpr = EqExpr {
-  eq :: Text
-} deriving (Generic)
+newtype EqExpr = EqExpr
+  { eq :: Text
+  }
+  deriving (Generic)
 
 instance GQLType EqExpr where
   type KIND EqExpr = INPUT
 
-newtype NotEqExpr = NotEqExpr {
-  notEq :: Text
-} deriving (Generic)
+newtype NotEqExpr = NotEqExpr
+  { notEq :: Text
+  }
+  deriving (Generic)
 
 instance GQLType NotEqExpr where
   type KIND NotEqExpr = INPUT
 
-newtype ContainsExpr = ContainsExpr {
-  contains :: Text
-} deriving (Generic)
+newtype ContainsExpr = ContainsExpr
+  { contains :: Text
+  }
+  deriving (Generic)
 
 instance GQLType ContainsExpr where
   type KIND ContainsExpr = INPUT
 
-newtype InExpr = InExpr {
-  in' :: [Text]
-} deriving (Generic)
+newtype InExpr = InExpr
+  { in' :: [Text]
+  }
+  deriving (Generic)
 
 instance GQLType InExpr where
   type KIND InExpr = INPUT
 
 data TimeUnit = Seconds | Milliseconds | Nanoseconds
   deriving (Generic)
-
-getSourceLength :: Monad m => URI -> TimeUnit -> m Float
-getSourceLength uri unit = do
-  undefined
 
 data Metadata = Metadata
   { tags :: [(Text, Text)],
@@ -212,28 +215,24 @@ instance From DB.Source Metadata where
           }
 
 mapTags :: F.Metadata -> MappedTags
-mapTags metadata =
+mapTags F.Metadata {tags, lens} =
   MappedTags
-    { artistName = mfilter (not . null) $ Just (V.toList $ ts ^. tag M.trackArtistTag),
-      trackTitle = ts ^. tag M.trackTitle ^? _head,
-      albumTitle = ts ^. tag M.album ^? _head,
-      date = ts ^. tag M.year ^? _head,
-      genre = mfilter (not . null) $ Just (V.toList $ ts ^. tag M.genre),
-      albumArtist = mfilter (not . null) $ Just (V.toList $ ts ^. tag M.albumArtistTag),
-      trackNumber = ts ^. tag M.trackNumber ^? _head,
-      totalTracks = ts ^. tag M.totalTracksTag ^? _head <|> ts ^. tag M.trackTotalTag ^? _head,
-      discNumber = ts ^. tag M.discNumberTag ^? _head,
-      totalDiscs = ts ^. tag M.totalDiscsTag ^? _head <|> ts ^. tag M.discTotalTag ^? _head,
-      comment = ts ^. tag M.commentTag ^? _head,
-      musicbrainzArtistId = mfilter (not . null) $ Just (V.toList $ ts ^. tag MB.artistIdTag),
-      musicbrainzAlbumArtistId = mfilter (not . null) $ Just (V.toList $ ts ^. tag MB.albumArtistIdTag),
-      musicbrainzAlbumId = ts ^. tag MB.releaseIdTag ^? _head,
-      musicbrainzTrackId = ts ^. tag MB.trackIdTag ^? _head
+    { artistName = mfilter (not . null) $ Just (V.toList $ tags ^. lens M.trackArtistTag),
+      trackTitle = tags ^? lens M.trackTitle . _head,
+      albumTitle = tags ^? lens M.album . _head,
+      date = tags ^? lens M.year . _head,
+      genre = mfilter (not . null) $ Just (V.toList $ tags ^. lens M.genre),
+      albumArtist = mfilter (not . null) $ Just (V.toList $ tags ^. lens M.albumArtistTag),
+      trackNumber = tags ^? lens M.trackNumber . _head,
+      totalTracks = tags ^? lens M.totalTracksTag . _head <|> tags ^? lens M.trackTotalTag . _head,
+      discNumber = tags ^? lens M.discNumberTag . _head,
+      totalDiscs = tags ^? lens M.totalDiscsTag . _head <|> tags ^? lens M.discTotalTag . _head,
+      comment = tags ^? lens M.commentTag . _head,
+      musicbrainzArtistId = mfilter (not . null) $ Just (V.toList $ tags ^. lens MB.artistIdTag),
+      musicbrainzAlbumArtistId = mfilter (not . null) $ Just (V.toList $ tags ^. lens MB.albumArtistIdTag),
+      musicbrainzAlbumId = tags ^? lens MB.releaseIdTag . _head,
+      musicbrainzTrackId = tags ^? lens MB.trackIdTag . _head
     }
-  where
-    ts :: F.Tags
-    ts = metadata ^. #tags
-    tag = F.lens metadata
 
 data MappedTags = MappedTags
   { artistName :: Maybe [Text],
@@ -344,7 +343,7 @@ groupSources = fmap trSrcGrp . toList . foldl' acc S.empty
               if getParentUri (src ^. #sourceUri) == g ^. #groupParentUri && g ^. #groupTags == groupedTags
                 then gs |> (g & #sources <>~ S.singleton src)
                 else gs |> g |> newGroup
-            _ -> S.singleton newGroup
+            _empty -> S.singleton newGroup
     trSrcGrp :: SourceGroup' (Res e m) -> SourceGroup (Res e m)
     trSrcGrp g =
       SourceGroup
@@ -359,8 +358,8 @@ groupSources = fmap trSrcGrp . toList . foldl' acc S.empty
         case uriToFilePath uri of
           Just dir -> do
             imgPath <- findCoverImage dir
-            undefined
-          Nothing -> undefined
+            error "unimplemented"
+          Nothing -> error "unimplemented"
       Nothing -> pure Nothing
 
 findCoverImage :: Has FileSystem sig m => FilePath -> m (Maybe FilePath)
@@ -369,7 +368,7 @@ findCoverImage p = do
   if isDir
     then do
       entries <- listDirectory p
-      undefined
+      error "unimplemented"
     else pure Nothing
 
 data SourceGroup' m = SourceGroup'
@@ -539,24 +538,25 @@ updateSourcesImpl (UpdateSourcesArgs updates) = do
     resolveMetadata (SetMappedTags m) metadata = metadata {F.tags = setTagsFromMapped (F.lens metadata) (F.Tags V.empty) m}
       where
         setTagsFromMapped :: (F.TagMapping -> F.TagLens) -> F.Tags -> MappedTagsInput -> F.Tags
-        setTagsFromMapped tag ts MappedTagsInput {..} = ts
-          & tag M.trackArtistTag .~ maybe V.empty (V.fromList . filter (not . T.null)) artistName
-          & tag M.trackTitle .~  maybe V.empty V.singleton (mfilter (not . T.null) trackTitle)
-          & tag M.album .~ maybe V.empty V.singleton (mfilter (not . T.null) albumTitle)
-          & tag M.year .~ maybe V.empty V.singleton (mfilter (not . T.null) date)
-          & tag M.genre .~ maybe V.empty (V.fromList . filter (not . T.null)) genre
-          & tag M.albumArtistTag .~ maybe V.empty (V.fromList . filter (not . T.null)) albumArtist
-          & tag M.trackNumber .~ maybe V.empty V.singleton (mfilter (not . T.null) trackNumber)
-          & tag M.totalTracksTag .~ maybe V.empty V.singleton (mfilter (not . T.null) totalTracks)
-          & tag M.trackTotalTag .~ maybe V.empty V.singleton (mfilter (not . T.null) totalTracks)
-          & tag M.discNumberTag .~ maybe V.empty V.singleton (mfilter (not . T.null) discNumber)
-          & tag M.totalDiscsTag .~ maybe V.empty V.singleton (mfilter (not . T.null) totalDiscs)
-          & tag M.discTotalTag .~ maybe V.empty V.singleton (mfilter (not . T.null) totalDiscs)
-          & tag M.commentTag .~ maybe V.empty V.singleton (mfilter (not . T.null) comment)
-          & tag MB.artistIdTag .~ maybe V.empty (V.fromList . filter (not . T.null)) musicbrainzArtistId
-          & tag MB.albumArtistIdTag .~ maybe V.empty (V.fromList . filter (not . T.null)) musicbrainzAlbumArtistId
-          & tag MB.albumIdTag .~ maybe V.empty V.singleton (mfilter (not . T.null) musicbrainzAlbumId)
-          & tag MB.trackIdTag .~ maybe V.empty V.singleton (mfilter (not . T.null) musicbrainzTrackId)
+        setTagsFromMapped tag ts MappedTagsInput {..} =
+          ts
+            & tag M.trackArtistTag .~ maybe V.empty (V.fromList . filter (not . T.null)) artistName
+            & tag M.trackTitle .~ maybe V.empty V.singleton (mfilter (not . T.null) trackTitle)
+            & tag M.album .~ maybe V.empty V.singleton (mfilter (not . T.null) albumTitle)
+            & tag M.year .~ maybe V.empty V.singleton (mfilter (not . T.null) date)
+            & tag M.genre .~ maybe V.empty (V.fromList . filter (not . T.null)) genre
+            & tag M.albumArtistTag .~ maybe V.empty (V.fromList . filter (not . T.null)) albumArtist
+            & tag M.trackNumber .~ maybe V.empty V.singleton (mfilter (not . T.null) trackNumber)
+            & tag M.totalTracksTag .~ maybe V.empty V.singleton (mfilter (not . T.null) totalTracks)
+            & tag M.trackTotalTag .~ maybe V.empty V.singleton (mfilter (not . T.null) totalTracks)
+            & tag M.discNumberTag .~ maybe V.empty V.singleton (mfilter (not . T.null) discNumber)
+            & tag M.totalDiscsTag .~ maybe V.empty V.singleton (mfilter (not . T.null) totalDiscs)
+            & tag M.discTotalTag .~ maybe V.empty V.singleton (mfilter (not . T.null) totalDiscs)
+            & tag M.commentTag .~ maybe V.empty V.singleton (mfilter (not . T.null) comment)
+            & tag MB.artistIdTag .~ maybe V.empty (V.fromList . filter (not . T.null)) musicbrainzArtistId
+            & tag MB.albumArtistIdTag .~ maybe V.empty (V.fromList . filter (not . T.null)) musicbrainzAlbumArtistId
+            & tag MB.albumIdTag .~ maybe V.empty V.singleton (mfilter (not . T.null) musicbrainzAlbumId)
+            & tag MB.trackIdTag .~ maybe V.empty V.singleton (mfilter (not . T.null) musicbrainzTrackId)
     resolveMetadata (SetTags ps) metadata = metadata {F.tags = F.Tags $ V.fromList $ ps <&> \(UpdatePair k v) -> (k, v)}
 
 data SourceUpdate' = SourceUpdate'

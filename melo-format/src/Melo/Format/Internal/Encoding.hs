@@ -11,11 +11,10 @@ where
 import Control.Exception.Safe
 import Control.Monad.Fail as Fail
 import Data.ByteString as BS
-import qualified Data.ByteString.Char8 as C8
+import Data.Char (isLatin1)
 import Data.Text as T
 import Data.Text.Encoding
 import Data.Text.Encoding.Error
-import Debug.Trace
 import GHC.IO.Unsafe
 
 decodeUtf8OrFail :: MonadFail m => ByteString -> m Text
@@ -31,17 +30,9 @@ decodeUtf16WithBOMOrFail :: MonadFail m => ByteString -> m Text
 decodeUtf16WithBOMOrFail bs =
   let bom = BS.take 2 bs
    in case bom of
-        "\xFF\xFE" -> do
-          --          traceM "Little endian string detected"
-          --          traceM $ "UTF16LE: " ++ show (BS.drop 2 bs)
-          decodeUtf16LEOrFail (BS.drop 2 bs)
-        "\xFE\xFF" -> do
-          --          traceM "Big endian string detected"
-          --          traceM $ "UTF16BE: " ++ show (BS.drop 2 bs)
-          decodeUtf16BEOrFail (BS.drop 2 bs)
-        _ -> do
-          --          traceM "No BOM detected; assuming UTF16BE"
-          decodeUtf16BEOrFail bs
+        "\xFF\xFE" -> decodeUtf16LEOrFail (BS.drop 2 bs)
+        "\xFE\xFF" -> decodeUtf16BEOrFail (BS.drop 2 bs)
+        _noBom -> decodeUtf16BEOrFail bs
 
 decodeUtfOrFail :: MonadFail m => Either UnicodeException Text -> m Text
 decodeUtfOrFail = \case
@@ -52,10 +43,10 @@ decodeUtf' ::
   (OnDecodeError -> ByteString -> Text) ->
   ByteString ->
   Either UnicodeException Text
-decodeUtf' f = unsafePerformIO . tryDeep . pure . f strictDecode
+decodeUtf' f = unsafeDupablePerformIO . tryDeep . pure . f strictDecode
 
 encodeLatin1 :: Text -> ByteString
-encodeLatin1 = C8.pack . T.unpack
+encodeLatin1 = encodeUtf8 . T.filter isLatin1
 
 utf16BeBom :: ByteString
 utf16BeBom = "\xFE\xFF"

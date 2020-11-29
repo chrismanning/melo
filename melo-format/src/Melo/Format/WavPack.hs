@@ -10,7 +10,9 @@ module Melo.Format.WavPack
   )
 where
 
+import Data.Binary
 import Data.Binary.Get
+import Data.Binary.Put
 import Data.Bits
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as L
@@ -22,7 +24,6 @@ import GHC.Records
 import Lens.Micro
 import qualified Melo.Format.Ape as Ape
 import qualified Melo.Format.ID3 as ID3
-import Melo.Format.Internal.Binary
 import Melo.Format.Internal.BinaryUtil
 import Melo.Format.Internal.Info
   ( Info (..),
@@ -39,23 +40,27 @@ wavPack =
   MetadataFileFactory
     { priority = 100,
       fileId = wavPackFileKind,
-      readMetadataFile = \p -> do
-        wv <- withBinaryFile p ReadMode hReadWavPack
-        pure
-          MetadataFile
-            { metadata = wavPackMetadata wv,
-              audioInfo = info wv,
-              fileId = wavPackFileKind,
-              filePath = p
-            },
       detectFile = \p -> withBinaryFile p ReadMode $ \h -> do
         hSeek h AbsoluteSeek 0
         buf <- BS.hGet h 4
-        pure $ buf == ckId
+        pure $ buf == ckId,
+      readMetadataFile = readWavPackFile,
+      writeMetadataFile = writeWavPackFile
     }
 
 wavPackFileKind :: MetadataFileId
 wavPackFileKind = MetadataFileId "WavPack"
+
+readWavPackFile :: FilePath -> IO MetadataFile
+readWavPackFile p = do
+  wv <- withBinaryFile p ReadMode hReadWavPack
+  pure
+    MetadataFile
+      { metadata = wavPackMetadata wv,
+        audioInfo = info wv,
+        fileId = wavPackFileKind,
+        filePath = p
+      }
 
 wavPackMetadata :: WavPack -> H.HashMap MetadataId Metadata
 wavPackMetadata wv = case wavPackTags wv of
@@ -68,6 +73,10 @@ wavPackMetadata wv = case wavPackTags wv of
         (metadataFormat @ID3.ID3v1 ^. #formatId, extractMetadata id3v1)
       ]
 
+writeWavPackFile :: MetadataFile -> FilePath -> IO ()
+writeWavPackFile f p = do
+  error "unimplemented"
+
 data WavPack = WavPack
   { wavPackInfo :: !WavPackInfo,
     wavPackTags :: !WavPackTags
@@ -76,16 +85,16 @@ data WavPack = WavPack
 
 instance InfoReader WavPack where
   info wv =
-    let wi = wavPackInfo wv
+    let WavPackInfo {..} = wavPackInfo wv
      in Info
-          { sampleRate = I.SampleRate $ fromIntegral $ fromMaybe 0 $ getField @"sampleRate" wi,
-            channels = case getField @"channels" wi of
+          { sampleRate = I.SampleRate $ fromIntegral $ fromMaybe 0 sampleRate,
+            channels = case channels of
               Mono -> I.Mono
               Stereo -> I.Stereo
               JointStereo -> I.JointStereo
               MultiChannel _ -> I.MultiChannel I.ChannelMask,
-            totalSamples = fromIntegral <$> getField @"totalSamples" wi,
-            bitsPerSample = Just $ fromIntegral $ sampleSize wi,
+            totalSamples = fromIntegral <$> totalSamples,
+            bitsPerSample = Just $ fromIntegral sampleSize,
             quality = Nothing -- TODO wavpack quality
           }
 
@@ -102,12 +111,12 @@ instance MetadataLocator WavPackInfo where
   hLocate h = do
     hSeek h AbsoluteSeek 0
     buf <- BS.hGet h 32
-    return $ case runGetOrFail bget (L.fromStrict buf) of
+    return $ case runGetOrFail get (L.fromStrict buf) of
       Right (_, _, _ :: WavPackInfo) -> Just 0
       Left _ -> Nothing
 
-instance BinaryGet WavPackInfo where
-  bget = do
+instance Binary WavPackInfo where
+  get = do
     expectGetEq (getByteString $ BS.length ckId) ckId "Expected ckId `wvpk`"
     skip 6
     blockIndex8 <- getWord8
@@ -129,6 +138,8 @@ instance BinaryGet WavPackInfo where
           sampleRate = getSampleRate flags,
           audioType = getAudioType flags
         }
+  put i = do
+    error "unimplemented"
 
 forty :: Word8 -> Word32 -> Word64
 forty u8 l32 =
@@ -202,22 +213,24 @@ data WavPackTags
   = NoTags
   | JustAPE !Ape.APEv2
   | JustID3v1 !ID3.ID3v1
-  | Both Ape.APEv2 !ID3.ID3v1
+  | Both !Ape.APEv2 !ID3.ID3v1
   deriving (Show, Eq)
 
-instance BinaryGet WavPackTags where
-  bget = do
+instance Binary WavPackTags where
+  get = do
     what <- lookAhead $ getByteString 8
     if BS.isPrefixOf Ape.preamble what
       then do
-        ape <- bget :: Get Ape.APEv2
+        ape <- get :: Get Ape.APEv2
         isEmpty >>= \case
           True -> return $ JustAPE ape
-          False -> Both ape <$> bget
+          False -> Both ape <$> get
       else
         if BS.isPrefixOf ID3.iD3v1Id what
-          then JustID3v1 <$> bget
+          then JustID3v1 <$> get
           else return NoTags
+  put wv = do
+    error "unimplemented"
 
 instance MetadataLocator WavPackTags where
   hLocate h = do
@@ -235,13 +248,6 @@ instance MetadataLocator WavPackTags where
             findApe h >>= \case
               Nothing -> return $ Just id3pos
               Just apepos -> return $ Just apepos
-
---instance TagReader WavPackTags where
---  tags = \case
---    JustAPE ape -> readTags ape
---    JustID3v1 id3v1 -> readTags id3v1
---    Both ape _ -> readTags ape
---    NoTags -> Tags []
 
 findApe :: Handle -> IO (Maybe Natural)
 findApe h = do

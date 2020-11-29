@@ -1,3 +1,5 @@
+{-# LANGUAGE StrictData #-}
+
 module Melo.Library.Album.Types where
 
 import Basement.From
@@ -29,7 +31,7 @@ data NewAlbum = NewAlbum
     yearReleased :: Maybe Text,
     length :: NominalDiffTime
   }
-  deriving (Generic, Eq, Show)
+  deriving (Generic, Eq, Ord, Show)
 
 instance From MB.Release NewAlbum where
   from mbRelease =
@@ -47,5 +49,6 @@ instance From NewAlbum (DB.AlbumT (QExpr Postgres s)) where
         title = val_ (a ^. #title),
         comment = nothing_,
         year_released = val_ (a ^. #yearReleased),
-        length = val_ (DB.Interval $ a ^. #length)
+        length = val_ (DB.Interval $ a ^. #length),
+        musicbrainz_id = nothing_
       }

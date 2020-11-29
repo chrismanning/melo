@@ -1,4 +1,5 @@
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE StrictData #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Database.Model where

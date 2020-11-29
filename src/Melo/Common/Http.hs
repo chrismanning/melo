@@ -57,9 +57,9 @@ getWithJson ::
 getWithJson opts url = send (GetWithJson opts url)
 
 data HttpClientException
-  = HttpClientException HttpException
-  | JsonException Wr.JSONError
-  | UnknownHttpError SomeException
+  = HttpClientException !HttpException
+  | JsonException !Wr.JSONError
+  | UnknownHttpError !SomeException
   deriving (Show, Exception)
 
 instance From SomeException HttpClientException where

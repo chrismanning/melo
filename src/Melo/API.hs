@@ -1,4 +1,5 @@
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE StrictData #-}
 
 module Melo.API where
 
@@ -16,6 +17,7 @@ import Data.Morpheus
 import Data.Morpheus.Types
 import Data.Pool
 import qualified Data.Text as T
+import Data.Text.Encoding (encodeUtf8)
 import Data.Text.Lazy.Encoding (decodeUtf8)
 import Data.Typeable
 import Data.UUID
@@ -86,7 +88,7 @@ runResolverE conn =
     . runError
       ( \(e :: F.MetadataException) -> do
           $(logError) ("Uncaught metadata error: " <> show e)
-          undefined
+          error "unimplemented"
       )
       pure
     . runSavepoint
@@ -140,7 +142,7 @@ streamSourceIO pool k = withResource pool $ \conn ->
                       pure $
                         Just
                           FileInfo
-                            { fileName = C8.pack $ takeFileName path,
+                            { fileName = encodeUtf8 $ T.pack $ takeFileName path,
                               fileContentType = "",
                               fileContent = c
                             }

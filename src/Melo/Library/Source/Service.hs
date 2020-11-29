@@ -37,7 +37,7 @@ getSourcesByUriPrefix ::
   ) =>
   URI ->
   m [Source]
-getSourcesByUriPrefix p = undefined
+getSourcesByUriPrefix p = error "unimplemented"
 
 length' :: (Foldable f, Num a) => f b -> a
 length' = foldl' (const . (+ 1)) 0

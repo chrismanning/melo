@@ -1,3 +1,5 @@
+{-# LANGUAGE StrictData #-}
+
 module Melo.Library.Artist.Types where
 
 import Basement.From
@@ -53,7 +55,8 @@ instance From NewArtist (DB.ArtistT (QExpr Postgres s)) where
         disambiguation = val_ (a ^. #disambiguation),
         country = val_ (alphaThreeLower <$> a ^. #country),
         bio = val_ (a ^. #bio),
-        short_bio = val_ (a ^. #shortBio)
+        short_bio = val_ (a ^. #shortBio),
+        musicbrainz_id = nothing_
       }
 
 data NewArtist = NewArtist
@@ -63,7 +66,7 @@ data NewArtist = NewArtist
     bio :: Maybe Text,
     shortBio :: Maybe Text
   }
-  deriving (Generic, Eq, Show)
+  deriving (Generic, Eq, Ord, Show)
 
 instance From MB.Artist NewArtist where
   from a =
@@ -105,7 +108,7 @@ data NewStagedArtist = NewStagedArtist
     bio :: Maybe Text,
     shortBio :: Maybe Text
   }
-  deriving (Generic, Eq, Show)
+  deriving (Generic, Eq, Ord, Show)
 
 instance From MB.Artist NewStagedArtist where
   from a =
@@ -128,7 +131,8 @@ instance From NewStagedArtist (DB.ArtistStageT (QExpr Postgres s)) where
         short_bio = val_ (a ^. #shortBio),
         ref_artist_id = nothing_,
         ref_album_id = nothing_,
-        ref_track_id = nothing_
+        ref_track_id = nothing_,
+        musicbrainz_id = nothing_
       }
 
 data Reviewed a

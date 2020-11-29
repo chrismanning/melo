@@ -1,3 +1,4 @@
+{-# LANGUAGE StrictData #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Library.Track.Service where
@@ -18,6 +19,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Time
 import Data.Traversable
+import Data.Vector ((!?))
 import qualified Data.Vector as V
 import Database.Beam as B hiding (char, insert)
 import Database.Beam.Backend.SQL.BeamExtensions as B
@@ -31,6 +33,7 @@ import Melo.Database.Query
 import Melo.Format.Info
 import Melo.Format.Internal.Metadata
 import qualified Melo.Format.Mapping as M
+import Melo.Format.Metadata (TagLens)
 import Melo.Library.Album.Repo
 import Melo.Library.Album.Service
 import Melo.Library.Artist.Repo
@@ -45,7 +48,7 @@ data Track = Track
   }
 
 instance From DB.Track Track where
-  from = undefined
+  from = error "unimplemented"
 
 data TrackService :: Effect where
   ImportTracks :: [Source] -> TrackService m [Track]
@@ -74,7 +77,7 @@ instance
   alg hdl (R other) ctx = TrackServiceIOC (alg (runTrackServiceIOC . hdl) other ctx)
 
 newTracks :: Source -> NewTrack
-newTracks ms = undefined
+newTracks ms = error "unimplemented"
 
 --newTracks :: [(DB.TrackSourceKey, MetadataId, Text)] -> [NewTrackSource] -> [NewTrack]
 --newTracks ks tss = let srcMetadata = H.fromList $ fmap (\(k, mid, s) -> (s, (mid, k))) ks in
@@ -93,23 +96,17 @@ newTracks ms = undefined
 --  Just metadata -> pure $ catMaybes [metadataTrack metadata k (f ^. #audioInfo) (f ^. #filePath)]
 
 metadataTrack :: Metadata -> DB.SourceKey -> DB.AlbumKey -> Info -> FilePath -> NewTrack
-metadataTrack m sk ak i p = do
-  let t = m ^. #tags
-  let tag = lens m
-  let trackTitle = case V.toList $ t ^. tag M.trackTitle of
-        (title : _) -> title
-        _ -> ""
-  let trackNumber = case V.toList $ t ^. tag M.trackNumber of
-        (tnum : _) -> parseTrackNumber tnum
-        _ -> parseTrackNumberFromFileName p
-  let trackComment = case V.toList $ t ^. tag M.commentTag of
-        [comment] -> Just comment
-        _ -> Nothing
-  let discNumber = case V.toList $ t ^. tag M.discNumberTag of
-        (dnum : _) -> parseDiscNumber dnum
-        _ -> case V.toList $ t ^. tag M.trackNumber of
-          (tnum : _) -> parseDiscNumberFromTrackNumber tnum
-          _ -> Nothing
+metadataTrack Metadata {tags, lens} sk ak i p = do
+  let trackTitle = fromMaybe "" (tags ^? lens M.trackTitle . _head)
+  let trackNumber = case tags ^? lens M.trackNumber . _head of
+        Just tnum -> parseTrackNumber tnum
+        Nothing -> parseTrackNumberFromFileName p
+  let trackComment = tags ^? lens M.commentTag . _head
+  let discNumber = case tags ^? lens M.discNumberTag . _head of
+        Just dnum -> parseDiscNumber dnum
+        _noDiscNum -> case tags ^? lens M.trackNumber . _head of
+          Just tnum -> parseDiscNumberFromTrackNumber tnum
+          _noTrackNum -> Nothing
   NewTrack
     { title = trackTitle,
       trackNumber = trackNumber,
@@ -132,7 +129,7 @@ metadataTrack m sk ak i p = do
 --    artists <- identifyArtists m
 --    --    let x = artists ^.. #country
 --    -- _newArtists
---    undefined
+--    error "unimplemented"
 
 --fileAlbums :: (Monad m) => MetadataFile -> m [NewAlbum]
 --fileAlbums f = case chooseMetadata (H.elems $ f ^. #metadata) of
@@ -142,7 +139,7 @@ metadataTrack m sk ak i p = do
 --    let tag = lens m
 --    let albumTitle = t ^. tag M.album
 --    --    _newAlbums
---    undefined
+--    error "unimplemented"
 
 data TrackNumber = TrackNumber
   { discNumber :: Maybe Int16,

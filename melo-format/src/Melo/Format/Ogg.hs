@@ -10,6 +10,8 @@ import Data.Bits
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as L
 import Data.Int
+import Data.List.NonEmpty (NonEmpty (..))
+import qualified Data.List.NonEmpty as NE
 import Data.List.Split
 import Data.STRef
 import Data.String
@@ -29,19 +31,19 @@ deriving instance Show a => Show (OggPage a)
 instance Binary a => Binary (OggPage a) where
   get = do
     Page {..} <- get
-    case runGetOrFail get $ L.fromStrict (head pageData) of
-      Right (_, _, a) -> pure $ OggPage pageHeader a (drop 1 pageData)
+    case runGetOrFail get $ L.fromStrict (NE.head pageData) of
+      Right (_, _, a) -> pure $ OggPage pageHeader a (NE.drop 1 pageData)
       Left (_, _, s) -> fail s
   put OggPage {..} =
     put $
-      Page header (L.toStrict (runPut (put page)) : otherSegments)
+      Page header (L.toStrict (runPut (put page)) :| otherSegments)
 
 capturePattern :: IsString s => s
 capturePattern = "OggS"
 
 data Page = Page
   { pageHeader :: !PageHeader,
-    pageData :: ![BS.ByteString]
+    pageData :: !(NE.NonEmpty BS.ByteString)
   }
 
 instance Binary Page where
@@ -51,8 +53,9 @@ instance Binary Page where
     numSegments <- getWord8
     segmentTable <- getByteString $ fromIntegral numSegments
     let pageLengths' = pageLengths (BS.unpack segmentTable)
-    pages <- mapM getByteString pageLengths'
-    pure $ Page pageHeader pages
+    mapM getByteString pageLengths' >>= \case
+      (page : pages) -> pure $ Page pageHeader (page :| pages)
+      [] -> fail "ogg page must contain at least one segment"
     where
       pageLengths :: [Word8] -> [Int]
       pageLengths table = sum . fmap fromIntegral <$> split (keepDelimsR $ dropFinalBlank $ whenElt (/= 255)) table

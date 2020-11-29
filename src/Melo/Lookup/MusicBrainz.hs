@@ -1,4 +1,5 @@
 {-# LANGUAGE PartialTypeSignatures #-}
+{-# LANGUAGE StrictData #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Lookup.MusicBrainz
@@ -56,11 +57,8 @@ import Data.Maybe
 import Data.String (IsString)
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Typeable
-import Data.Vector (Vector)
 import qualified Data.Vector as V
 import GHC.Generics (Generic)
-import Melo.Common.Cache
 import Melo.Common.Http
 import Melo.Common.Logging
 import Melo.Common.RateLimit
@@ -238,14 +236,12 @@ getArtistFromMetadata ::
   ) =>
   Metadata ->
   m [Artist]
-getArtistFromMetadata m = do
-  let tag = lens m
-  let ts = m ^. #tags
+getArtistFromMetadata Metadata {tags, lens} =
   runCullM P.id $
     cull $
-      getArtistByMusicBrainzId (V.toList $ ts ^. tag artistIdTag)
-        <|> getArtistByAlbum (ts ^. tag M.album ^? _head) (ts ^. tag M.albumArtist ^? _head)
-        <|> getArtistByTrackArtistName (ts ^. tag M.artist ^? _head)
+      getArtistByMusicBrainzId (V.toList $ tags ^. lens artistIdTag)
+        <|> getArtistByAlbum (tags ^? lens M.album . _head) (tags ^? lens M.albumArtist . _head)
+        <|> getArtistByTrackArtistName (tags ^? lens M.artist . _head)
 
 getArtistByMusicBrainzId ::
   ( Has MusicBrainzService sig m,
@@ -287,7 +283,7 @@ getArtistByTrackArtistName (Just trackArtist) = do
   $(logDebugShow) artists
   case artists of
     [] -> E.empty
-    _ -> pure artists
+    artists' -> pure artists'
 
 getReleaseFromMetadata ::
   ( Has MusicBrainzService sig m,
@@ -295,13 +291,11 @@ getReleaseFromMetadata ::
   ) =>
   Metadata ->
   m (Maybe Release)
-getReleaseFromMetadata m = do
-  let tag = lens m
-  let ts = m ^. #tags
+getReleaseFromMetadata Metadata {tags, lens} =
   runCullA $
     cull $
-      getReleaseByMusicBrainzId (V.toList $ ts ^. tag releaseIdTag)
-        <|> getReleaseByAlbum (ts ^. tag M.album ^? _head) (ts ^. tag M.albumArtist ^? _head)
+      getReleaseByMusicBrainzId (V.toList $ tags ^. lens releaseIdTag)
+        <|> getReleaseByAlbum (tags ^? lens M.album . _head) (tags ^? lens M.albumArtist . _head)
 
 getReleaseByMusicBrainzId ::
   ( Has MusicBrainzService sig m,
@@ -316,7 +310,7 @@ getReleaseByMusicBrainzId releaseIds = do
   $(logDebugShow) releases
   case releases of
     [release] -> pure release
-    _ -> E.empty
+    _noMatchingRelease -> E.empty
 
 getReleaseByAlbum ::
   ( Has MusicBrainzService sig m,
@@ -333,7 +327,7 @@ getReleaseByAlbum albumTitle albumArtist = do
   let releases' = filter (\release -> release ^. #score == Just 100) releases
   case releases' of
     [release] -> pure release
-    _ -> E.empty
+    _noMatchingRelease -> E.empty
 
 newtype MusicBrainzServiceIOC m a = MusicBrainzServiceIOC
   { runMusicBrainzServiceIOC :: HttpSessionIOC (RateLimitIOC m) a
@@ -457,7 +451,7 @@ instance
 --  deriving newtype (Applicative, Functor, Monad)
 --
 --instance Algebra (Cache :+: MusicBrainzService :+: sig) (CachedMusicBrainzServiceIOC m) where
---  alg hdl sig ctx = undefined
+--  alg hdl sig ctx = error "unimplemented"
 
 mbWreqDefaults :: Wr.Options
 mbWreqDefaults =

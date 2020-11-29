@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE StrictData #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Melo.GraphQL.Resolve where
@@ -121,7 +122,7 @@ instance (GObjectResolver m f ctx) => GObjectResolver m (M1 D d f) ctx where
 instance (GObjectResolver m f ctx) => GObjectResolver m (M1 C c f) ctx where
   resolveFieldValue' (M1 a) = resolveFieldValue' a
 
-instance (CoerceArgs (FieldArguments a), SingI n) => GObjectResolver m (M1 S ( 'MetaSel ( 'Just n) x y z) (Rec0 (Resolve m ctx a))) ctx where
+instance (CoerceArgs (FieldArguments a), SingI n) => GObjectResolver m (M1 S ('MetaSel ('Just n) x y z) (Rec0 (Resolve m ctx a))) ctx where
   resolveFieldValue' (M1 (K1 (Resolve r))) ctx (QL.Field _ name args selections)
     | name == fromSing (sing @n) = Just $ r ctx (coerceArgumentValues @(FieldArguments a) args) [s | QL.SelectionField s <- toList selections]
     | otherwise = Nothing

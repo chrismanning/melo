@@ -1,3 +1,4 @@
+{-# LANGUAGE StrictData #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -112,7 +113,8 @@ stageSourcesImpl (StageSourcesArgs ss) = lift $ do
           pure
             StagedSources
               { numberOfSourcesImported = Prelude.length srcs,
-                sources = pure (fmap from srcs)
+                sources = pure (fmap from srcs),
+                groups = pure []
               }
         _ -> pure mempty
       Nothing -> pure mempty

@@ -1,5 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE StrictData #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Melo.GraphQL.Introspect where
@@ -131,7 +132,7 @@ class GraphQLType a where
         fields = \(FieldsArgs inclDep) -> case typeKind @a of
           ObjectKind -> typeFields @a inclDep
           InterfaceKind -> typeFields @a inclDep
-          _ -> Nothing,
+          _kindWithNoFields -> Nothing,
         interfaces = interfaces @a,
         possibleTypes = possibleTypes @a,
         enumValues = \(EnumValuesArgs inclDep) -> typeEnumValues @a inclDep,
@@ -289,7 +290,7 @@ instance (Selector s, GraphQLType (FieldResultT a)) => GGraphQLInputFields' (M1 
 instance (GGraphQLInputFields' f, GGraphQLInputFields' g) => GGraphQLInputFields' (f :*: g) where
   inputFields' = inputFields' @f <> inputFields' @g
 
-instance (GGraphQLInputFields' f) => GGraphQLInputFields' (M1 C ( 'MetaCons x y 'True) f) where
+instance (GGraphQLInputFields' f) => GGraphQLInputFields' (M1 C ('MetaCons x y 'True) f) where
   inputFields' = inputFields' @f
 
 -- ENUM VALUES ---------------------------------
