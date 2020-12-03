@@ -60,7 +60,9 @@ data HttpClientException
   = HttpClientException !HttpException
   | JsonException !Wr.JSONError
   | UnknownHttpError !SomeException
-  deriving (Show, Exception)
+  deriving (Show)
+
+instance Exception HttpClientException
 
 instance From SomeException HttpClientException where
   from e =

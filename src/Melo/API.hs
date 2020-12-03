@@ -42,12 +42,16 @@ import Web.Scotty
 data Query m = Query
   { library :: m (LibraryQuery m)
   }
-  deriving (Generic, GQLType)
+  deriving (Generic)
+
+instance Typeable m => GQLType (Query m)
 
 data Mutation m = Mutation
   { library :: m (LibraryMutation m)
   }
-  deriving (Generic, GQLType)
+  deriving (Generic)
+
+instance Typeable m => GQLType (Mutation m)
 
 rootResolver :: ResolverE sig m => RootResolver m () Query Mutation Undefined
 rootResolver =

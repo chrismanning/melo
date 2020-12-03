@@ -29,7 +29,9 @@ data LibraryQuery m = LibraryQuery
   { sources :: SourcesArgs -> m [Source m],
     sourceGroups :: m [SourceGroup m]
   }
-  deriving (Generic, GQLType)
+  deriving (Generic)
+
+instance Typeable m => GQLType (LibraryQuery m)
 
 resolveLibrary ::
   forall sig m e.
@@ -49,7 +51,9 @@ data LibraryMutation (m :: Type -> Type) = LibraryMutation
   { stageSources :: StageSourcesArgs -> m (StagedSources m),
     updateSources :: UpdateSourcesArgs -> m UpdatedSources
   }
-  deriving (Generic, GQLType)
+  deriving (Generic)
+
+instance Typeable m => GQLType (LibraryMutation m)
 
 resolveLibraryMutation ::
   forall sig m e.
@@ -82,7 +86,9 @@ data StagedSources m = StagedSources
     groups :: m [SourceGroup m],
     numberOfSourcesImported :: Int
   }
-  deriving (Generic, GQLType)
+  deriving (Generic)
+
+instance Typeable m => GQLType (StagedSources m)
 
 instance Monad m => Semigroup (StagedSources m) where
   a <> b =

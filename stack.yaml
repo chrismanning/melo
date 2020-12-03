@@ -71,23 +71,18 @@ extra-deps:
   - fused-effects-1.1.0.0
   - fused-effects-exceptions-1.1.0.0
   - generic-aeson-0.2.0.10
-#  - graphql-0.5.1.0
   - harg-0.4.2.0
   - haskell-src-exts-1.23.0
-#  - haxl-2.1.2.0
   - higgledy-0.3.1.0
   - hsndfile-0.8.0
   - hsndfile-vector-0.5.2
   - linkedhashmap-0.4.0.0
   - log-warper-1.9.0
   - mime-0.4.0.2
-  - morpheus-graphql-0.15.1
-  - morpheus-graphql-core-0.15.1
+  - morpheus-graphql-0.16.0
+  - morpheus-graphql-core-0.16.0
   - named-0.3.0.1
   - network-uri-json-0.3.1.1
-  - polysemy-1.2.1.0
-  - polysemy-plugin-0.2.3.0
-  - polysemy-zoo-0.6.0.1
   - token-limiter-0.2.0.3
   - type-aligned-0.9.6
 

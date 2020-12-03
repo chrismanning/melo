@@ -250,7 +250,9 @@ instance MetadataLocator FrameHeader where
           else pure Nothing
 
 data MpegVersion = V2_5 | V2 | V1
-  deriving (Show, Eq, Ord, Generic, Hashable)
+  deriving (Show, Eq, Ord, Generic)
+
+instance Hashable MpegVersion
 
 getMpegVersion :: BG.BitGet MpegVersion
 getMpegVersion =
@@ -267,7 +269,9 @@ putMpegVersion V2 = BP.putWord8 2 0b10
 putMpegVersion V2_5 = BP.putWord8 2 0b00
 
 data Layer = Layer3 | Layer2 | Layer1
-  deriving (Show, Eq, Ord, Generic, Hashable)
+  deriving (Show, Eq, Ord, Generic)
+
+instance Hashable Layer
 
 getLayer :: BG.BitGet Layer
 getLayer =

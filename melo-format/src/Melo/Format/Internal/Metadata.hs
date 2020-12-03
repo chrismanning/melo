@@ -93,7 +93,9 @@ data MetadataFormatDesc = MetadataFormat
   { formatId :: !MetadataId,
     formatDesc :: !Text
   }
-  deriving (Generic, Hashable)
+  deriving (Generic)
+
+instance Hashable MetadataFormatDesc
 
 extractMetadata :: forall a. MetadataFormat a => a -> Metadata
 extractMetadata a =

@@ -83,7 +83,9 @@ data Source m = Source
     downloadUri :: Text,
     length :: m Float
   }
-  deriving (Generic, GQLType)
+  deriving (Generic)
+
+instance Typeable m => GQLType (Source m)
 
 instance Applicative m => From Ty.Source (Source m) where
   from s =
@@ -191,7 +193,9 @@ data Metadata = Metadata
     formatId :: Text,
     format :: Text
   }
-  deriving (Generic, GQLType)
+  deriving (Generic)
+
+instance GQLType Metadata
 
 instance From F.Metadata Metadata where
   from m =
@@ -252,7 +256,11 @@ data MappedTags = MappedTags
     musicbrainzAlbumId :: Maybe Text,
     musicbrainzTrackId :: Maybe Text
   }
-  deriving (Generic, ToJSON, GQLType)
+  deriving (Generic)
+
+instance ToJSON MappedTags
+
+instance GQLType MappedTags
 
 instance Default MappedTags where
   def =
@@ -292,7 +300,9 @@ data MappedTagsInput = MappedTagsInput
     musicbrainzAlbumId :: Maybe Text,
     musicbrainzTrackId :: Maybe Text
   }
-  deriving (Generic, ToJSON)
+  deriving (Generic)
+
+instance ToJSON MappedTagsInput
 
 instance GQLType MappedTagsInput where
   type KIND MappedTagsInput = INPUT
@@ -312,13 +322,17 @@ data SourceGroup m = SourceGroup
     sources :: [Source m],
     coverImage :: m (Maybe Image)
   }
-  deriving (Generic, GQLType)
+  deriving (Generic)
+
+instance Typeable m => GQLType (SourceGroup m)
 
 data Image = Image
   { fileName :: Text,
     downloadUri :: Text
   }
-  deriving (Generic, GQLType)
+  deriving (Generic)
+
+instance GQLType Image
 
 data SourceContent
   = Folder [SourceContent]
@@ -326,7 +340,9 @@ data SourceContent
       { fileName :: Text,
         downloadUri :: Text
       }
-  deriving (Generic, GQLType)
+  deriving (Generic)
+
+instance GQLType SourceContent
 
 groupSources :: forall m sig e. (Has FileSystem sig m) => [Source (Res e m)] -> [SourceGroup (Res e m)]
 groupSources = fmap trSrcGrp . toList . foldl' acc S.empty
@@ -398,7 +414,9 @@ data GroupTags = GroupTags
     musicbrainzAlbumArtistId :: Maybe [Text],
     musicbrainzAlbumId :: Maybe Text
   }
-  deriving (Eq, Generic, GQLType)
+  deriving (Eq, Generic)
+
+instance GQLType GroupTags
 
 groupMappedTags :: MappedTags -> GroupTags
 groupMappedTags m =
@@ -454,7 +472,8 @@ newtype UpdatedSources = UpdatedSources
   { results :: [UpdateSourceResult]
   }
   deriving (Generic)
-  deriving anyclass (GQLType)
+
+instance GQLType UpdatedSources
 
 instance Semigroup UpdatedSources where
   a <> b =
@@ -471,7 +490,9 @@ instance Monoid UpdatedSources where
 data UpdateSourceResult
   = UpdatedSource {id :: Text}
   | FailedSourceUpdate {id :: Text, msg :: Text}
-  deriving (Generic, GQLType)
+  deriving (Generic)
+
+instance GQLType UpdateSourceResult
 
 updateSourcesImpl ::
   forall sig m e.

@@ -26,13 +26,17 @@ import qualified Language.GraphQL.AST.Core as QL hiding (Query)
 import Melo.GraphQL.Introspect as I
 
 data GraphQLException = FieldNotFound {fieldName :: Text, typeName :: Text}
-  deriving (Show, Exception)
+  deriving (Show)
+
+instance Exception GraphQLException
 
 data Location = Location
   { line :: Int,
     column :: Int
   }
-  deriving (Eq, Show, Generic, ToJSON)
+  deriving (Eq, Show, Generic)
+
+instance ToJSON Location
 
 data Error = Error
   { message :: Text,
@@ -40,7 +44,9 @@ data Error = Error
     path :: [Text],
     extensions :: Maybe A.Value
   }
-  deriving (Eq, Show, Generic, ToJSON)
+  deriving (Eq, Show, Generic)
+
+instance ToJSON Error
 
 data Response = Response
   { _data :: A.Value,

@@ -84,13 +84,17 @@ newtype ArtistSearch = ArtistSearch
   { artist :: Text
   }
   deriving stock (Generic)
-  deriving anyclass (Hashable)
+
+instance Hashable ArtistSearch
 
 newtype ArtistSearchResult = ArtistSearchResult
   { artists :: Maybe [Artist]
   }
   deriving (Show, Generic)
-  deriving anyclass (FromJSON)
+
+instance Hashable ArtistSearchResult
+
+instance FromJSON ArtistSearchResult
 
 data Artist = Artist
   { id :: MusicBrainzId,
@@ -102,6 +106,8 @@ data Artist = Artist
   }
   deriving (Show, Generic)
 
+instance Hashable Artist
+
 instance FromJSON Artist where
   parseJSON = genericParseJSON mbAesonOptions
 
@@ -109,13 +115,18 @@ data ReleaseSearch = ReleaseSearch
   { albumArtist :: Maybe Text,
     albumTitle :: Maybe Text
   }
-  deriving (Generic, Default, Hashable)
+  deriving (Generic)
+
+instance Hashable ReleaseSearch
+
+instance Default ReleaseSearch
 
 newtype ReleaseSearchResult = ReleaseSearchResult
   { releases :: Maybe [Release]
   }
   deriving (Show, Generic)
-  deriving anyclass (FromJSON)
+
+instance FromJSON ReleaseSearchResult
 
 data Release = Release
   { id :: MusicBrainzId,
@@ -142,7 +153,7 @@ newtype ReleaseGroupSearchResult = ReleaseGroupSearchResult
   { releaseGroups :: Maybe [ReleaseGroup]
   }
   deriving (Show, Generic)
-  deriving anyclass (FromJSON)
+  deriving newtype (FromJSON)
 
 data ReleaseGroup = ReleaseGroup
   { id :: MusicBrainzId,
@@ -159,13 +170,16 @@ data RecordingSearch = RecordingSearch
     artist :: Maybe Text,
     album :: Maybe Text
   }
-  deriving (Show, Generic, Hashable)
+  deriving (Show, Generic)
+
+instance Hashable RecordingSearch
 
 newtype RecordingSearchResult = RecordingSearchResult
   { recordings :: Maybe [Recording]
   }
   deriving (Show, Generic)
-  deriving anyclass (FromJSON)
+
+instance FromJSON RecordingSearchResult
 
 data Recording = Recording
   { id :: MusicBrainzId,

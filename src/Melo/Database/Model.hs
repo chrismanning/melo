@@ -46,7 +46,9 @@ data MeloDb f = MeloDb
     album_artist_name :: f (TableEntity AlbumArtistNameT),
     artist_name :: f (TableEntity ArtistNameT)
   }
-  deriving (Generic, Database Postgres)
+  deriving (Generic)
+
+instance (Database Postgres) MeloDb
 
 meloDb :: DatabaseSettings Postgres MeloDb
 meloDb =
@@ -89,14 +91,18 @@ data CollectionT (f :: Type -> Type) = Collection
     watch :: Columnar f Bool,
     kind :: Columnar f Text
   }
-  deriving (Generic, Beamable)
+  deriving (Generic)
+
+instance Beamable CollectionT
 
 instance Table CollectionT where
   data PrimaryKey CollectionT f
     = CollectionKey (Columnar f UUID)
-    deriving (Generic, Beamable)
+    deriving (Generic)
 
   primaryKey = CollectionKey . view #id
+
+instance Beamable (PrimaryKey CollectionT)
 
 type Collection = CollectionT Identity
 
@@ -112,21 +118,25 @@ deriving instance Eq CollectionKey
 
 deriving instance Ord CollectionKey
 
-deriving instance Hashable CollectionKey
+instance Hashable CollectionKey
 
 data GenreT (f :: Type -> Type) = Genre
   { id :: Columnar f UUID,
     name :: Columnar f Text,
     description :: Columnar f (Maybe Text)
   }
-  deriving (Generic, Beamable)
+  deriving (Generic)
+
+instance Beamable GenreT
 
 instance Table GenreT where
   data PrimaryKey GenreT f
     = GenreKey (Columnar f UUID)
-    deriving (Generic, Beamable)
+    deriving (Generic)
 
   primaryKey = GenreKey . view #id
+
+instance Beamable (PrimaryKey GenreT)
 
 type Genre = GenreT Identity
 
@@ -142,7 +152,7 @@ deriving instance Eq GenreKey
 
 deriving instance Ord GenreKey
 
-deriving instance Hashable GenreKey
+instance Hashable GenreKey
 
 data ArtistT (f :: Type -> Type) = Artist
   { id :: Columnar f UUID,
@@ -153,15 +163,18 @@ data ArtistT (f :: Type -> Type) = Artist
     country :: Columnar f (Maybe Text),
     musicbrainz_id :: Columnar f (Maybe Text)
   }
-  deriving (Generic, Beamable)
+  deriving (Generic)
+
+instance Beamable ArtistT
 
 instance Table ArtistT where
   newtype PrimaryKey ArtistT f
     = ArtistKey (Columnar f UUID)
     deriving (Generic)
-    deriving anyclass (Beamable)
 
   primaryKey = ArtistKey . view #id
+
+instance Beamable (PrimaryKey ArtistT)
 
 type Artist = ArtistT Identity
 
@@ -191,15 +204,18 @@ data ArtistStageT (f :: Type -> Type) = ArtistStage
     ref_album_id :: PrimaryKey AlbumT (Nullable f),
     ref_track_id :: PrimaryKey TrackT (Nullable f)
   }
-  deriving (Generic, Beamable)
+  deriving (Generic)
+
+instance Beamable ArtistStageT
 
 instance Table ArtistStageT where
   newtype PrimaryKey ArtistStageT f
     = ArtistStageKey (Columnar f UUID)
     deriving (Generic)
-    deriving anyclass (Beamable)
 
   primaryKey = ArtistStageKey . view #id
+
+instance Beamable (PrimaryKey ArtistStageT)
 
 type ArtistStage = ArtistStageT Identity
 
@@ -222,15 +238,18 @@ data ArtistNameT (f :: Type -> Type) = ArtistName
     artist_id :: PrimaryKey ArtistT f,
     name :: Columnar f Text
   }
-  deriving (Generic, Beamable)
+  deriving (Generic)
+
+instance Beamable ArtistNameT
 
 instance Table ArtistNameT where
   newtype PrimaryKey ArtistNameT f
     = ArtistNameKey (Columnar f UUID)
     deriving (Generic)
-    deriving anyclass (Beamable)
 
   primaryKey = ArtistNameKey <$> view #artist_name_id
+
+instance Beamable (PrimaryKey ArtistNameT)
 
 type ArtistName = ArtistNameT Identity
 
@@ -252,14 +271,18 @@ data RelatedArtistT (f :: Type -> Type) = RelatedArtist
   { artist_id :: PrimaryKey ArtistT f,
     related_artist_id :: PrimaryKey ArtistT f
   }
-  deriving (Generic, Beamable)
+  deriving (Generic)
+
+instance Beamable RelatedArtistT
 
 instance Table RelatedArtistT where
   data PrimaryKey RelatedArtistT f
     = RelatedArtistKey (PrimaryKey ArtistT f) (PrimaryKey ArtistT f)
-    deriving (Generic, Beamable)
+    deriving (Generic)
 
   primaryKey = RelatedArtistKey <$> view #artist_id <*> view #related_artist_id
+
+instance Beamable (PrimaryKey RelatedArtistT)
 
 type RelatedArtist = RelatedArtistT Identity
 
@@ -275,7 +298,7 @@ deriving instance Eq RelatedArtistKey
 
 deriving instance Ord RelatedArtistKey
 
-deriving instance Hashable RelatedArtistKey
+instance Hashable RelatedArtistKey
 
 data AlbumT (f :: Type -> Type) = Album
   { id :: Columnar f UUID,
@@ -285,15 +308,18 @@ data AlbumT (f :: Type -> Type) = Album
     length :: Columnar f Interval,
     musicbrainz_id :: Columnar f (Maybe Text)
   }
-  deriving (Generic, Beamable)
+  deriving (Generic)
+
+instance Beamable AlbumT
 
 instance Table AlbumT where
   newtype PrimaryKey AlbumT f
     = AlbumKey (Columnar f UUID)
     deriving (Generic)
-    deriving anyclass (Beamable)
 
   primaryKey = AlbumKey . view #id
+
+instance Beamable (PrimaryKey AlbumT)
 
 type Album = AlbumT Identity
 
@@ -321,14 +347,18 @@ data AlbumStageT (f :: Type -> Type) = AlbumStage
     ref_album_id :: PrimaryKey AlbumT (Nullable f),
     ref_track_id :: PrimaryKey TrackT (Nullable f)
   }
-  deriving (Generic, Beamable)
+  deriving (Generic)
+
+instance Beamable AlbumStageT
 
 instance Table AlbumStageT where
-  data PrimaryKey AlbumStageT f
+  newtype PrimaryKey AlbumStageT f
     = AlbumStageKey (Columnar f UUID)
-    deriving (Generic, Beamable)
+    deriving (Generic)
 
   primaryKey = AlbumStageKey . view #id
+
+instance Beamable (PrimaryKey AlbumStageT)
 
 type AlbumStage = AlbumStageT Identity
 
@@ -344,20 +374,24 @@ deriving instance (Eq (Columnar f UUID)) => Eq (PrimaryKey AlbumStageT (f :: Typ
 
 deriving instance Ord AlbumStageKey
 
-deriving instance Hashable AlbumStageKey
+instance Hashable AlbumStageKey
 
 data AlbumArtistNameT (f :: Type -> Type) = AlbumArtistName
   { album_id :: PrimaryKey AlbumT f,
     artist_name_id :: PrimaryKey ArtistNameT f
   }
-  deriving (Generic, Beamable)
+  deriving (Generic)
+
+instance Beamable AlbumArtistNameT
 
 instance Table AlbumArtistNameT where
   data PrimaryKey AlbumArtistNameT f
     = AlbumArtistNameKey (PrimaryKey AlbumT f) (PrimaryKey ArtistNameT f)
-    deriving (Generic, Beamable)
+    deriving (Generic)
 
   primaryKey = AlbumArtistNameKey <$> view #album_id <*> view #artist_name_id
+
+instance Beamable (PrimaryKey AlbumArtistNameT)
 
 type AlbumArtistName = AlbumArtistNameT Identity
 
@@ -373,7 +407,7 @@ deriving instance Eq AlbumArtistNameKey
 
 deriving instance Ord AlbumArtistNameKey
 
-deriving instance Hashable AlbumArtistNameKey
+instance Hashable AlbumArtistNameKey
 
 albumArtistNameRelationship :: ManyToMany Postgres MeloDb ArtistNameT AlbumT
 albumArtistNameRelationship =
@@ -389,15 +423,18 @@ data TrackT (f :: Type -> Type) = Track
     source_id :: PrimaryKey SourceT f,
     length :: Columnar f Interval
   }
-  deriving (Generic, Beamable)
+  deriving (Generic)
+
+instance Beamable TrackT
 
 instance Table TrackT where
   newtype PrimaryKey TrackT f
     = TrackKey (Columnar f UUID)
     deriving (Generic)
-    deriving anyclass (Beamable)
 
   primaryKey = TrackKey . view #id
+
+instance Beamable (PrimaryKey TrackT)
 
 type Track = TrackT Identity
 
@@ -428,15 +465,18 @@ data TrackStageT (f :: Type -> Type) = TrackStage
     ref_album_id :: PrimaryKey AlbumT (Nullable f),
     ref_track_id :: PrimaryKey TrackT (Nullable f)
   }
-  deriving (Generic, Beamable)
+  deriving (Generic)
+
+instance Beamable TrackStageT
 
 instance Table TrackStageT where
   newtype PrimaryKey TrackStageT f
     = TrackStageKey (Columnar f UUID)
     deriving (Generic)
-    deriving anyclass (Beamable)
 
   primaryKey = TrackStageKey . view #id
+
+instance Beamable (PrimaryKey TrackStageT)
 
 type TrackStage = TrackStageT Identity
 
@@ -465,15 +505,18 @@ data SourceT (f :: Type -> Type) = Source
     sample_range :: Columnar f (Maybe (PgRange PgInt8Range Int64)),
     scanned :: Columnar f LocalTime
   }
-  deriving (Generic, Beamable)
+  deriving (Generic)
+
+instance Beamable SourceT
 
 instance Table SourceT where
   newtype PrimaryKey SourceT f
     = SourceKey (Columnar f UUID)
     deriving (Generic)
-    deriving anyclass (Beamable)
 
   primaryKey = SourceKey . view #id
+
+instance Beamable (PrimaryKey SourceT)
 
 type Source = SourceT Identity
 
@@ -544,14 +587,18 @@ data ArtistGenreT (f :: Type -> Type) = ArtistGenre
   { artist_id :: PrimaryKey ArtistT f,
     genre_id :: PrimaryKey GenreT f
   }
-  deriving (Generic, Beamable)
+  deriving (Generic)
+
+instance Beamable ArtistGenreT
 
 instance Table ArtistGenreT where
   data PrimaryKey ArtistGenreT f
     = ArtistGenreKey (PrimaryKey ArtistT f) (PrimaryKey GenreT f)
-    deriving (Generic, Beamable)
+    deriving (Generic)
 
   primaryKey = ArtistGenreKey <$> view #artist_id <*> view #genre_id
+
+instance Beamable (PrimaryKey ArtistGenreT)
 
 type ArtistGenre = ArtistGenreT Identity
 
@@ -567,20 +614,24 @@ deriving instance Eq ArtistGenreKey
 
 deriving instance Ord ArtistGenreKey
 
-deriving instance Hashable ArtistGenreKey
+instance Hashable ArtistGenreKey
 
 data AlbumGenreT (f :: Type -> Type) = AlbumGenre
   { album_id :: PrimaryKey AlbumT f,
     genre_id :: PrimaryKey GenreT f
   }
-  deriving (Generic, Beamable)
+  deriving (Generic)
+
+instance Beamable AlbumGenreT
 
 instance Table AlbumGenreT where
   data PrimaryKey AlbumGenreT f
     = AlbumGenreKey (PrimaryKey AlbumT f) (PrimaryKey GenreT f)
-    deriving (Generic, Beamable)
+    deriving (Generic)
 
   primaryKey = AlbumGenreKey <$> view #album_id <*> view #genre_id
+
+instance Beamable (PrimaryKey AlbumGenreT)
 
 type AlbumGenre = AlbumGenreT Identity
 
@@ -596,20 +647,24 @@ deriving instance Eq AlbumGenreKey
 
 deriving instance Ord AlbumGenreKey
 
-deriving instance Hashable AlbumGenreKey
+instance Hashable AlbumGenreKey
 
 data TrackArtistNameT (f :: Type -> Type) = TrackArtistName
   { track_id :: PrimaryKey TrackT f,
     artist_id :: PrimaryKey ArtistT f
   }
-  deriving (Generic, Beamable)
+  deriving (Generic)
+
+instance Beamable TrackArtistNameT
 
 instance Table TrackArtistNameT where
   data PrimaryKey TrackArtistNameT f
     = TrackArtistNameKey (PrimaryKey TrackT f) (PrimaryKey ArtistT f)
-    deriving (Generic, Beamable)
+    deriving (Generic)
 
   primaryKey = TrackArtistNameKey <$> view #track_id <*> view #artist_id
+
+instance Beamable (PrimaryKey TrackArtistNameT)
 
 type TrackArtistName = TrackArtistNameT Identity
 
@@ -625,20 +680,24 @@ deriving instance Eq TrackArtistNameKey
 
 deriving instance Ord TrackArtistNameKey
 
-deriving instance Hashable TrackArtistNameKey
+instance Hashable TrackArtistNameKey
 
 data TrackGenreT (f :: Type -> Type) = TrackGenre
   { track_id :: PrimaryKey TrackT f,
     genre_id :: PrimaryKey GenreT f
   }
-  deriving (Generic, Beamable)
+  deriving (Generic)
+
+instance Beamable TrackGenreT
 
 instance Table TrackGenreT where
   data PrimaryKey TrackGenreT f
     = TrackGenreKey (PrimaryKey TrackT f) (PrimaryKey GenreT f)
-    deriving (Generic, Beamable)
+    deriving (Generic)
 
   primaryKey = TrackGenreKey <$> view #track_id <*> view #genre_id
+
+instance Beamable (PrimaryKey TrackGenreT)
 
 type TrackGenre = TrackGenreT Identity
 
@@ -654,7 +713,7 @@ deriving instance Eq TrackGenreKey
 
 deriving instance Ord TrackGenreKey
 
-deriving instance Hashable TrackGenreKey
+instance Hashable TrackGenreKey
 
 data IntervalRange
 

@@ -83,8 +83,6 @@ library:
   - newtype-generics
   - path
   - path-io
-  - polysemy
-  - polysemy-plugin
   - postgresql-simple
   - range
   - resource-pool
@@ -196,13 +194,13 @@ default-extensions:
 - ConstraintKinds
 - DataKinds
 - DefaultSignatures
-- DeriveAnyClass
 - DeriveFoldable
 - DeriveFunctor
 - DeriveGeneric
 - DeriveLift
 - DeriveTraversable
 - DerivingStrategies
+- DerivingVia
 - DuplicateRecordFields
 - EmptyCase
 - ExistentialQuantification
