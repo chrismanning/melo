@@ -207,7 +207,8 @@ CREATE TABLE melo.source (
     idx bigint NOT NULL,
     time_range melo.intervalrange,
     sample_range int8range,
-    scanned timestamp without time zone
+    scanned timestamp without time zone,
+    collection_id uuid NOT NULL
 );
 
 
@@ -590,6 +591,14 @@ ALTER TABLE ONLY melo.related_artist
 
 
 --
+-- Name: source source_collection_id_fk; Type: FK CONSTRAINT; Schema: melo; Owner: -
+--
+
+ALTER TABLE ONLY melo.source
+    ADD CONSTRAINT source_collection_id_fk FOREIGN KEY (collection_id) REFERENCES melo.collection(id) ON DELETE CASCADE;
+
+
+--
 -- Name: track track_album_id_fkey; Type: FK CONSTRAINT; Schema: melo; Owner: -
 --
 
@@ -689,4 +698,5 @@ ALTER TABLE ONLY melo.track_stage
 INSERT INTO public.schema_migrations (version) VALUES
     ('20200505222518'),
     ('20200626210715'),
-    ('20201129174644');
+    ('20201129174644'),
+    ('20201204000250');

@@ -43,4 +43,4 @@ length' :: (Foldable f, Num a) => f b -> a
 length' = foldl' (const . (+ 1)) 0
 
 modificationTime :: NewImportSource -> IO LocalTime
-modificationTime (FileSource f) = utcToLocalTime utc <$> getModificationTime (f ^. #filePath)
+modificationTime (FileSource _ f) = utcToLocalTime utc <$> getModificationTime (f ^. #filePath)

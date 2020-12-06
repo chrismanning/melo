@@ -9,7 +9,6 @@ import Control.Carrier.Lift
 import Control.Carrier.Reader
 import Control.Lens ((^.))
 import Control.Monad.IO.Class
-import qualified Data.ByteString.Char8 as C8
 import qualified Data.ByteString.Lazy as LB
 import Data.ByteString.Lazy.Char8
 import Data.Maybe
@@ -18,6 +17,7 @@ import Data.Morpheus.Types
 import Data.Pool
 import qualified Data.Text as T
 import Data.Text.Encoding (encodeUtf8)
+import qualified Data.Text.Lazy as LT
 import Data.Text.Lazy.Encoding (decodeUtf8)
 import Data.Typeable
 import Data.UUID
@@ -30,14 +30,16 @@ import qualified Melo.Database.Model as DB
 import Melo.Database.Transaction
 import qualified Melo.Format.Error as F
 import Melo.Library.API
-import Melo.Library.Service
+import Melo.Library.Collection.FileSystem.WatchService
+import Melo.Library.Collection.Repo
 import Melo.Library.Source.Repo
+import Network.HTTP.Types.Header
 import Network.HTTP.Types.Status
 import Network.URI
 import Network.Wai.Middleware.Cors
 import Network.Wai.Parse (FileInfo (..))
 import System.FilePath (takeFileName)
-import Web.Scotty
+import Web.Scotty.Trans
 
 data Query m = Query
   { library :: m (LibraryQuery m)
@@ -82,10 +84,31 @@ type ResolverE sig m =
     Has FileSystem sig m,
     Has SourceRepository sig m,
     Has (Error F.MetadataException) sig m,
-    Has LibraryService sig m,
-    Has MetadataService sig m
+    Has MetadataService sig m,
+    Has CollectionRepository sig m
   )
 
+runResolverE ::
+  (Has (Lift IO) sig m) =>
+  t ->
+  CollectionRepositoryIOC
+    ( SourceRepositoryIOC
+        ( FileSystemIOC
+            ( MetadataServiceIOC
+                ( SavepointC
+                    ( ErrorC
+                        F.MetadataException
+                        ( LoggingIOC
+                            ( ReaderC t m
+                            )
+                        )
+                    )
+                )
+            )
+        )
+    )
+    a ->
+  m a
 runResolverE conn =
   runReader conn
     . runStdoutLogging
@@ -99,9 +122,9 @@ runResolverE conn =
     . runMetadataServiceIO
     . runFileSystemIO
     . runSourceRepositoryIO
-    . runLibraryServiceIO
+    . runCollectionRepositoryIO
 
-api :: Pool Connection -> ScottyM ()
+api :: MonadIO m => Pool Connection -> ScottyT LT.Text m ()
 api pool = do
   middleware (cors (const $ Just simpleCorsResourcePolicy {corsRequestHeaders = ["Content-Type"]}))
   matchAny "/api" $ do

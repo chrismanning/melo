@@ -81,6 +81,12 @@ meloDb =
                 { track_id = TrackKey $ fieldNamed "track_id",
                   genre_id = GenreKey $ fieldNamed "genre_id"
                 }
+            ),
+        source =
+          modifyTableFields @SourceT
+            ( tableModification
+                { collection_id = CollectionKey $ fieldNamed "collection_id"
+                }
             )
       }
 
@@ -503,7 +509,8 @@ data SourceT (f :: Type -> Type) = Source
     idx :: Columnar f Int16,
     time_range :: Columnar f (Maybe (PgRange IntervalRange Interval)),
     sample_range :: Columnar f (Maybe (PgRange PgInt8Range Int64)),
-    scanned :: Columnar f LocalTime
+    scanned :: Columnar f LocalTime,
+    collection_id :: PrimaryKey CollectionT f
   }
   deriving (Generic)
 

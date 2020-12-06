@@ -7,12 +7,11 @@ import Control.Effect.Reader
 import Control.Monad.IO.Class
 import qualified Control.Monad.Reader as R
 import Database.Beam
---import Database.Beam.Query.Internal
 import Database.Beam.Postgres
+import GHC.Records
 import qualified Language.Haskell.TH.Syntax as TH (Exp, Q)
 import Melo.Common.Logging
 import Melo.Database.Model
-import GHC.Records
 
 type QL = Q Postgres MeloDb
 
@@ -35,6 +34,7 @@ runPgDebug q = do
   sendIO $ runBeamPostgresDebug (runStdoutLogging . $(logDebug)) conn q
 
 type HasConnection c = HasField "connection" c Connection
+
 type MonadConnectionReader m c = (R.MonadReader c m, HasConnection c)
 
 runPgDebugIO ::
@@ -66,7 +66,8 @@ getAll ::
 getAll tbl = runPgDebug (runSelectReturningList (selectAll tbl))
 
 getAllIO ::
-  ( R.MonadReader c m, HasConnection c,
+  ( R.MonadReader c m,
+    HasConnection c,
     MonadIO m,
     Table tbl,
     FromBackendRow Postgres (tbl Identity)

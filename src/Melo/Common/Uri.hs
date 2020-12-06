@@ -11,3 +11,9 @@ fileUri p =
       uriQuery = "",
       uriFragment = ""
     }
+
+uriToFilePath :: URI -> Maybe FilePath
+uriToFilePath uri =
+  case uriScheme uri of
+    "file:" -> Just $ unEscapeString (uriPath uri)
+    _ -> Nothing

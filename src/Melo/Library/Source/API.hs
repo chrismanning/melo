@@ -35,6 +35,7 @@ import Melo.Format ()
 import qualified Melo.Format as F
 import qualified Melo.Format.Mapping as M
 import Melo.Format.Metadata ()
+import Melo.GraphQL.Where
 import Melo.Library.Source.Repo
 import qualified Melo.Library.Source.Types as Ty
 import qualified Melo.Lookup.MusicBrainz as MB
@@ -116,12 +117,6 @@ getSourceName srcUri = fromMaybe srcUri $ do
   uri <- parseURI (T.unpack srcUri)
   T.pack . takeFileName <$> uriToFilePath uri
 
-uriToFilePath :: URI -> Maybe FilePath
-uriToFilePath uri =
-  case uriScheme uri of
-    "file:" -> Just $ unEscapeString (uriPath uri)
-    _ -> Nothing
-
 data SourcesArgs = SourceArgs
   { where' :: Maybe SourceWhere
   }
@@ -132,57 +127,12 @@ instance GQLType SourcesArgs where
 
 data SourceWhere = SourceWhere
   { id :: Maybe Where,
-    --    format :: Maybe Where,
-    --    metadata :: Maybe Metadata,
-    --    sourceName :: Maybe Where,
     sourceUri :: Maybe Where
   }
   deriving (Generic)
 
 instance GQLType SourceWhere where
   type KIND SourceWhere = INPUT
-
-data Where
-  = WhereEqExpr EqExpr
-  | WhereNotEqExpr NotEqExpr
-  | WhereContainsExpr ContainsExpr
-  | WhereInExpr InExpr
-  deriving (Generic)
-
-instance GQLType Where where
-  type KIND Where = INPUT
-
-newtype EqExpr = EqExpr
-  { eq :: Text
-  }
-  deriving (Generic)
-
-instance GQLType EqExpr where
-  type KIND EqExpr = INPUT
-
-newtype NotEqExpr = NotEqExpr
-  { notEq :: Text
-  }
-  deriving (Generic)
-
-instance GQLType NotEqExpr where
-  type KIND NotEqExpr = INPUT
-
-newtype ContainsExpr = ContainsExpr
-  { contains :: Text
-  }
-  deriving (Generic)
-
-instance GQLType ContainsExpr where
-  type KIND ContainsExpr = INPUT
-
-newtype InExpr = InExpr
-  { in' :: [Text]
-  }
-  deriving (Generic)
-
-instance GQLType InExpr where
-  type KIND InExpr = INPUT
 
 data TimeUnit = Seconds | Milliseconds | Nanoseconds
   deriving (Generic)

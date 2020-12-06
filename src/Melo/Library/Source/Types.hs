@@ -29,17 +29,19 @@ import Melo.Common.Uri
 import qualified Melo.Database.Model as DB
 import Melo.Format.Info
 import Melo.Format.Metadata
+import Melo.Library.Collection.Types
 import Network.URI hiding (escapeString)
 import Numeric.Natural
 
-data NewImportSource = FileSource MetadataFile | CueFileSource
+data NewImportSource = FileSource CollectionRef MetadataFile | CueFileSource
   deriving (Eq, Show)
 
 data MetadataImportSource = MetadataImportSource
   { metadata :: Metadata,
     audioInfo :: Info,
     src :: URI,
-    metadataFileId :: MetadataFileId
+    metadataFileId :: MetadataFileId,
+    collection :: CollectionRef
   }
   deriving (Show, Generic)
 
@@ -52,32 +54,36 @@ instance TryFrom NewImportSource MetadataImportSource where
         { audioInfo = getInfo s,
           metadata,
           src,
-          metadataFileId = getMetadataFileId s
+          metadataFileId = getMetadataFileId s,
+          collection = getCollectionRef s
         }
 
 getSourceUri :: NewImportSource -> URI
-getSourceUri (FileSource f) = fileUri (f ^. #filePath)
+getSourceUri (FileSource _ f) = fileUri (f ^. #filePath)
 
 getFileSourceUri :: MetadataFile -> URI
 getFileSourceUri f = fileUri (f ^. #filePath)
 
 getAllMetadata :: NewImportSource -> [Metadata]
-getAllMetadata (FileSource f) = H.elems $ getFileMetadata f
+getAllMetadata (FileSource _ f) = H.elems $ getFileMetadata f
 
 getMetadata :: MetadataId -> NewImportSource -> Maybe Metadata
-getMetadata mid (FileSource f) = H.lookup mid $ getFileMetadata f
+getMetadata mid (FileSource _ f) = H.lookup mid $ getFileMetadata f
 
 getFileMetadata :: MetadataFile -> H.HashMap MetadataId Metadata
 getFileMetadata f = f ^. #metadata
 
 getInfo :: NewImportSource -> Info
-getInfo (FileSource f) = getFileInfo f
+getInfo (FileSource _ f) = getFileInfo f
 
 getFileInfo :: MetadataFile -> Info
 getFileInfo f = f ^. #audioInfo
 
 getMetadataFileId :: NewImportSource -> MetadataFileId
-getMetadataFileId (FileSource f) = f ^. #fileId
+getMetadataFileId (FileSource _ f) = f ^. #fileId
+
+getCollectionRef :: NewImportSource -> CollectionRef
+getCollectionRef (FileSource ref _) = ref
 
 data NewSource = NewSource
   { kind :: Text,
@@ -85,7 +91,8 @@ data NewSource = NewSource
     tags :: Tags,
     source :: Text,
     idx :: Maybe Int16,
-    range :: Maybe AudioRange
+    range :: Maybe AudioRange,
+    collection :: CollectionRef
   }
   deriving (Show, Eq, Generic)
 
@@ -101,7 +108,8 @@ instance From MetadataImportSource NewSource where
         source = T.pack $ show $ ms ^. #src,
         -- TODO multi-track files
         idx = Nothing,
-        range = Nothing
+        range = Nothing,
+        collection = ms ^. #collection
       }
 
 instance From NewSource (DB.SourceT (QExpr Postgres s)) where
@@ -115,7 +123,8 @@ instance From NewSource (DB.SourceT (QExpr Postgres s)) where
         idx = val_ $ fromMaybe (-1 :: Int16) (s ^. #idx),
         sample_range = val_ $ sampleRange =<< (s ^. #range),
         time_range = val_ $ timeRange =<< (s ^. #range),
-        scanned = currentTimestamp_
+        scanned = currentTimestamp_,
+        collection_id = val_ $ DB.CollectionKey (s ^. #collection . coerced)
       }
 
 sampleRange :: AudioRange -> Maybe (PgRange PgInt8Range Int64)

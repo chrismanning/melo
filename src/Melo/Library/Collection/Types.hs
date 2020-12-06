@@ -1,8 +1,10 @@
 module Melo.Library.Collection.Types where
 
 import Basement.From
+import Data.Hashable
 import Data.Text (Text)
 import qualified Data.Text as T
+import Data.UUID
 import Database.Beam
 import Database.Beam.Postgres as PgB
 import Melo.Common.Uri
@@ -16,15 +18,21 @@ data NewCollection = NewFilesystemCollection
   deriving (Show, Eq)
 
 instance From NewCollection (DB.CollectionT (QExpr Postgres s)) where
-  from c = DB.Collection {
-    id = default_,
-    root_uri = val_ $ T.pack $ show $ rootUri c,
-    name = val_ $ name c,
-    watch = val_ $ watch c,
-    kind = kind c
-  }
+  from c =
+    DB.Collection
+      { id = default_,
+        root_uri = val_ $ T.pack $ show $ rootUri c,
+        name = val_ $ name c,
+        watch = val_ $ watch c,
+        kind = kind c
+      }
     where
-    rootUri NewFilesystemCollection{rootPath} = fileUri rootPath
-    kind NewFilesystemCollection {} = "filesystem"
+      rootUri NewFilesystemCollection {rootPath} = fileUri rootPath
+      kind NewFilesystemCollection {} = "filesystem"
 
 type UpdateCollection = DB.Collection
+
+newtype CollectionRef = CollectionRef UUID
+  deriving (Show, Eq, Ord, Generic)
+
+instance Hashable CollectionRef
