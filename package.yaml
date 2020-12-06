@@ -1,10 +1,10 @@
 name:                melo
 version:             0.1.0.0
 github:              "chrismanning/melo"
-license:             BSD3
+license:             AGPL-3.0-only
 author:              "Chris Manning"
 maintainer:          "cmanning999@gmail.com"
-copyright:           "2019 Chris Manning"
+copyright:           "2020 Chris Manning"
 
 extra-source-files:
 - README.md
