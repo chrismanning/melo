@@ -31,7 +31,7 @@ runPgDebug ::
   m a
 runPgDebug q = do
   conn <- ask
-  sendIO $ runBeamPostgresDebug (runStdoutLogging . $(logDebug)) conn q
+  sendIO $ runBeamPostgresDebug $(logDebugIO) conn q
 
 type HasConnection c = HasField "connection" c Connection
 
@@ -45,7 +45,7 @@ runPgDebugIO ::
   m a
 runPgDebugIO q = do
   conn <- R.asks (getField @"connection")
-  liftIO $ runBeamPostgresDebug (runStdoutLogging . $(logDebug)) conn q
+  liftIO $ runBeamPostgresDebug $(logDebugIO) conn q
 
 runPgDebug' :: TH.Q TH.Exp
 runPgDebug' =

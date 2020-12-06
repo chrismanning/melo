@@ -64,6 +64,6 @@ instance
       getFactory mfid = case F.metadataFileFactoryIO mfid of
         Just fact -> pure fact
         Nothing -> do
-          runStdoutLogging $ $(logError) $ T.pack "unknown metadata file id '" <> coerce mfid <> "'"
+          $(logErrorIO) $ T.pack "unknown metadata file id '" <> coerce mfid <> "'"
           throwIO F.UnknownFormat
   alg hdl (R other) ctx = MetadataServiceIOC (alg (runMetadataServiceIOC . hdl) other ctx)

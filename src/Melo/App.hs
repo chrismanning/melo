@@ -47,8 +47,8 @@ app = do
   pool <- createPool (connect connInfo) close 1 20 10
 
   forkIO $
-    catchAny (initApp pool) (\e -> runStdoutLogging $ $(logWarn) $ "error initialising app: " <> show e)
-  runStdoutLogging $ $(logInfo) ("starting web server" :: String)
+    catchAny (initApp pool) (\e -> $(logWarnIO) $ "error initialising app: " <> show e)
+  $(logInfoIO) ("starting web server" :: String)
   scottyT 5000 id (api pool)
 
 initApp :: Pool Connection -> IO ()
@@ -88,3 +88,4 @@ initCollections = do
         Just rootPath -> startWatching ref rootPath
         Nothing -> pure ()
     rescanCollection ref
+    $(logInfo) ("collections initialised" :: String)

@@ -81,7 +81,7 @@ instance
 
 handleEventIO :: Pool Connection -> CollectionRef -> FS.Event -> IO ()
 handleEventIO pool ref event = do
-  runStdoutLogging $ $(logDebug) $ "handling fs event " <> show event
+  $(logDebugIO) $ "handling fs event " <> show event
   _threadId <- forkIO $
     runStdoutLogging $
       runFileSystemIO $

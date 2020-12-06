@@ -14,6 +14,15 @@ module Melo.Common.Logging
     logErrorShow,
     runStdoutLogging,
     LoggingIOC (..),
+    logIO,
+    logDebugIO,
+    logDebugShowIO,
+    logInfoIO,
+    logInfoShowIO,
+    logWarnIO,
+    logWarnShowIO,
+    logErrorIO,
+    logErrorShowIO,
     initLogging,
   )
 where
@@ -108,6 +117,42 @@ logErrorShow = logShow Wlog.Error
 
 runStdoutLogging :: LoggingIOC m a -> m a
 runStdoutLogging = runLoggingIOC
+
+logIOImpl :: (From s LogMessage) => String -> Int -> s -> IO ()
+logIOImpl ln severity msg = let (LogMessage s) = from msg in
+  Wlog.logM (Wlog.LoggerName $ T.pack ln) (toEnum severity) s
+
+logIO :: Wlog.Severity -> Q Exp
+logIO severity =
+  [|logIOImpl $(qLocation >>= liftString . loc_module) $(TH.lift $ fromEnum severity)|]
+
+logShowIO :: Wlog.Severity -> Q Exp
+logShowIO severity =
+  [|logIOImpl $(qLocation >>= liftString . loc_module) $(TH.lift $ fromEnum severity) . ((LT.pack . show) :: Show a => a -> LT.Text)|]
+
+logDebugIO :: Q Exp
+logDebugIO = logIO Wlog.Debug
+
+logDebugShowIO :: Q Exp
+logDebugShowIO = logShowIO Wlog.Debug
+
+logInfoIO :: Q Exp
+logInfoIO = logIO Wlog.Info
+
+logInfoShowIO :: Q Exp
+logInfoShowIO = logShowIO Wlog.Info
+
+logWarnIO :: Q Exp
+logWarnIO = logIO Wlog.Warning
+
+logWarnShowIO :: Q Exp
+logWarnShowIO = logShowIO Wlog.Warning
+
+logErrorIO :: Q Exp
+logErrorIO = logIO Wlog.Error
+
+logErrorShowIO :: Q Exp
+logErrorShowIO = logShowIO Wlog.Error
 
 initLogging :: MonadIO m => m ()
 initLogging = do
