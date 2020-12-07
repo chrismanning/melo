@@ -43,9 +43,9 @@ import Network.URI
 import System.FilePath
 
 resolveSources ::
-  (Has SourceRepository sig m) =>
+  (Has SourceRepository sig m, WithOperation o) =>
   SourcesArgs ->
-  Res e m [Source (Res e m)]
+  Resolver o e m [Source (Resolver o e m)]
 resolveSources (SourceArgs (Just SourceWhere {..})) =
   case id of
     Just idExpr -> case idExpr of

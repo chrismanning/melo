@@ -145,8 +145,8 @@ deleteByKeys _ [] = pure ()
 deleteByKeys tbl ks =
   let q = delete tbl (\t -> primaryKey t `in_` (val_ <$> ks))
    in do
-     sendIO $ $(logInfoIO) $ "deleting entities with keys " <> show ks
-     runPgDebug (runDelete q)
+        sendIO $ $(logInfoIO) $ "deleting entities with keys " <> show ks
+        runPgDebug (runDelete q)
 
 deleteByKeysIO ::
   ( MonadConnectionReader m c,

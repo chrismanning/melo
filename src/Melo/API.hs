@@ -7,10 +7,12 @@ import Control.Algebra
 import Control.Carrier.Error.Church
 import Control.Carrier.Lift
 import Control.Carrier.Reader
+import Control.Concurrent.STM
 import Control.Lens ((^.))
 import Control.Monad.IO.Class
 import qualified Data.ByteString.Lazy as LB
 import Data.ByteString.Lazy.Char8
+import qualified Data.HashMap.Strict as H
 import Data.Maybe
 import Data.Morpheus
 import Data.Morpheus.Types
@@ -30,14 +32,18 @@ import qualified Melo.Database.Model as DB
 import Melo.Database.Transaction
 import qualified Melo.Format.Error as F
 import Melo.Library.API
+import Melo.Library.Collection.FileSystem.Service
 import Melo.Library.Collection.FileSystem.WatchService
 import Melo.Library.Collection.Repo
+import Melo.Library.Collection.Service
+import Melo.Library.Collection.Types
 import Melo.Library.Source.Repo
 import Network.HTTP.Types.Header
 import Network.HTTP.Types.Status
 import Network.URI
 import Network.Wai.Middleware.Cors
 import Network.Wai.Parse (FileInfo (..))
+import qualified System.FSNotify as FS
 import System.FilePath (takeFileName)
 import Web.Scotty.Trans
 
@@ -66,14 +72,17 @@ rootResolver =
 gqlApi :: forall sig m. (ResolverE sig m, Typeable m) => ByteString -> m ByteString
 gqlApi = interpreter (rootResolver @sig @m)
 
-gqlApiIO :: Pool Connection -> ByteString -> IO ByteString
-gqlApiIO pool r = runStdoutLogging $
+gqlApiIO :: TVar (H.HashMap CollectionRef FS.StopListening) -> Pool Connection -> ByteString -> IO ByteString
+gqlApiIO collectionWatchState pool r = runStdoutLogging $
   runReader pool $
-    runTransaction $
-      withTransaction $ \conn ->
-        runResolverE conn $ do
-          $(logDebug) $ "Handling GraphQL request: " <> r
-          gqlApi r
+    runReader collectionWatchState $
+      runFileSystemIO $
+        runFileSystemWatchServiceIO $
+          runTransaction $
+            withTransaction $ \conn ->
+              runResolverE conn $ do
+                $(logDebug) $ "Handling GraphQL request: " <> r
+                gqlApi r
 
 type ResolverE sig m =
   ( Has (Lift IO) sig m,
@@ -85,21 +94,25 @@ type ResolverE sig m =
     Has SourceRepository sig m,
     Has (Error F.MetadataException) sig m,
     Has MetadataService sig m,
-    Has CollectionRepository sig m
+    Has CollectionRepository sig m,
+    Has CollectionService sig m,
+    Has FileSystemService sig m
   )
 
 runResolverE ::
   (Has (Lift IO) sig m) =>
   t ->
-  CollectionRepositoryIOC
-    ( SourceRepositoryIOC
-        ( FileSystemIOC
-            ( MetadataServiceIOC
-                ( SavepointC
-                    ( ErrorC
-                        F.MetadataException
-                        ( LoggingIOC
-                            ( ReaderC t m
+  CollectionServiceIOC
+    ( CollectionRepositoryIOC
+        ( FileSystemServiceIOC
+            ( SourceRepositoryIOC
+                ( MetadataServiceIOC
+                    ( SavepointC
+                        ( ErrorC
+                            F.MetadataException
+                            ( LoggingIOC
+                                ( ReaderC t m
+                                )
                             )
                         )
                     )
@@ -120,16 +133,17 @@ runResolverE conn =
       pure
     . runSavepoint
     . runMetadataServiceIO
-    . runFileSystemIO
     . runSourceRepositoryIO
+    . runFileSystemServiceIO
     . runCollectionRepositoryIO
+    . runCollectionServiceIO
 
-api :: MonadIO m => Pool Connection -> ScottyT LT.Text m ()
-api pool = do
+api :: MonadIO m => TVar (H.HashMap CollectionRef FS.StopListening) -> Pool Connection -> ScottyT LT.Text m ()
+api collectionWatchState pool = do
   middleware (cors (const $ Just simpleCorsResourcePolicy {corsRequestHeaders = ["Content-Type"]}))
   matchAny "/api" $ do
     setHeader "Content-Type" "application/json; charset=utf-8"
-    raw =<< (liftIO . gqlApiIO pool =<< body)
+    raw =<< (liftIO . gqlApiIO collectionWatchState pool =<< body)
   get "/graphiql" $ do
     setHeader "Content-Type" "text/html; charset=utf-8"
     file "graphiql.html"

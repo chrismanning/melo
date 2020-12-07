@@ -22,6 +22,7 @@ import Melo.Common.Logging
 import Melo.Common.Metadata
 import Melo.Library.Collection.API
 import Melo.Library.Collection.Repo
+import Melo.Library.Collection.Service
 import Melo.Library.Source.API
 import Melo.Library.Source.Repo
 import Network.URI
@@ -41,7 +42,7 @@ resolveLibrary ::
     Has CollectionRepository sig m,
     Has FileSystem sig m
   ) =>
-  ResolveQ e m LibraryQuery
+  ResolverQ e m LibraryQuery
 resolveLibrary =
   lift $
     pure
@@ -53,7 +54,8 @@ resolveLibrary =
 
 data LibraryMutation (m :: Type -> Type) = LibraryMutation
   { stageSources :: StageSourcesArgs -> m (StagedSources m),
-    updateSources :: UpdateSourcesArgs -> m UpdatedSources
+    updateSources :: UpdateSourcesArgs -> m UpdatedSources,
+    addCollection :: AddCollectionArgs -> m (Collection m)
   }
   deriving (Generic)
 
@@ -65,15 +67,18 @@ resolveLibraryMutation ::
     Has (Lift IO) sig m,
     Has (Reader Connection) sig m,
     Has Logging sig m,
-    Has MetadataService sig m
+    Has MetadataService sig m,
+    Has CollectionService sig m,
+    Has CollectionRepository sig m
   ) =>
-  ResolveM e (m :: Type -> Type) LibraryMutation
+  ResolverM e (m :: Type -> Type) LibraryMutation
 resolveLibraryMutation =
   lift $
     pure
       LibraryMutation
         { stageSources = stageSourcesImpl @sig @m,
-          updateSources = updateSourcesImpl @sig @m
+          updateSources = updateSourcesImpl @sig @m,
+          addCollection = addCollectionImpl @sig @m
         }
 
 newtype StageSourcesArgs = StageSourcesArgs

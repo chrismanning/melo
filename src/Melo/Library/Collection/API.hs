@@ -19,6 +19,8 @@ import Melo.Format ()
 import Melo.Format.Metadata ()
 import Melo.GraphQL.Where
 import Melo.Library.Collection.Repo
+import Melo.Library.Collection.Service
+import Melo.Library.Collection.Types
 import Melo.Library.Source.API as SrcApi
 import qualified Melo.Library.Source.Repo as SrcRepo
 import Network.URI
@@ -68,8 +70,9 @@ data Collection m = Collection
   }
   deriving (Generic)
 
-instance Typeable m => GQLType (Collection m) where
-  type KIND (Collection m) = INTERFACE
+instance Typeable m => GQLType (Collection m)
+
+--  type KIND (Collection m) = INTERFACE
 
 --instance Applicative m => From Ty.Collection (Collection m) where
 --  from s =
@@ -84,8 +87,10 @@ instance Typeable m => GQLType (Collection m) where
 --      }
 
 instance
-  Has SrcRepo.SourceRepository sig m =>
-  From DB.Collection (Collection (Resolver QUERY e m))
+  ( Has SrcRepo.SourceRepository sig m,
+    WithOperation o
+  ) =>
+  From DB.Collection (Collection (Resolver o e m))
   where
   from s =
     Collection
@@ -124,3 +129,27 @@ data CollectionWhere = CollectionWhere
 
 instance GQLType CollectionWhere where
   type KIND CollectionWhere = INPUT
+
+data AddCollectionArgs = AddCollectionArgs
+  { newCollection :: NewCollection
+  }
+  deriving (Generic)
+
+instance GQLType AddCollectionArgs where
+  type KIND AddCollectionArgs = INPUT
+
+addCollectionImpl ::
+  forall sig m e.
+  ( Has CollectionService sig m,
+    Has CollectionRepository sig m,
+    Has SrcRepo.SourceRepository sig m
+  ) =>
+  AddCollectionArgs ->
+  MutRes e m (Collection (MutRes e m))
+addCollectionImpl AddCollectionArgs {..} = do
+  CollectionRef ref <- lift $ addCollection newCollection
+  cs <- lift $ getCollections [DB.CollectionKey ref]
+  let cs' = from <$> cs
+  case cs' of
+    (c : _) -> pure c
+    [] -> fail "failed to add collection"

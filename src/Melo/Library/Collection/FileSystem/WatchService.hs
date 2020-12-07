@@ -119,13 +119,14 @@ handleEvent ref event =
       pure ()
     FS.Removed p _ isDir -> do
       let uri = fileUri p
-      if isDir then do
-        $(logInfo) $ "directory removed " <> p
-        refs <- getSourceKeysByUriPrefix uri
-        deleteSources refs
-      else do
-        $(logInfo) $ "file removed " <> p
-        refs <- getSourceKeysByUri [uri]
-        deleteSources refs
+      if isDir
+        then do
+          $(logInfo) $ "directory removed " <> p
+          refs <- getSourceKeysByUriPrefix uri
+          deleteSources refs
+        else do
+          $(logInfo) $ "file removed " <> p
+          refs <- getSourceKeysByUri [uri]
+          deleteSources refs
     FS.Unknown p _ s ->
       $(logWarn) $ "unknown file system event on path " <> p <> ": " <> s

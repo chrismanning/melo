@@ -46,14 +46,14 @@ app = do
           }
   pool <- createPool (connect connInfo) close 1 20 10
 
-  forkIO $
-    catchAny (initApp pool) (\e -> $(logWarnIO) $ "error initialising app: " <> show e)
-  $(logInfoIO) ("starting web server" :: String)
-  scottyT 5000 id (api pool)
-
-initApp :: Pool Connection -> IO ()
-initApp pool = do
   collectionWatchState :: TVar (H.HashMap CollectionRef FS.StopListening) <- atomically $ newTVar H.empty
+  forkIO $
+    catchAny (initApp collectionWatchState pool) (\e -> $(logWarnIO) $ "error initialising app: " <> show e)
+  $(logInfoIO) ("starting web server" :: String)
+  scottyT 5000 id (api collectionWatchState pool)
+
+initApp :: TVar (H.HashMap CollectionRef FS.StopListening) -> Pool Connection -> IO ()
+initApp collectionWatchState pool = do
   runReader collectionWatchState $
     runStdoutLogging $
       runFileSystemIO $

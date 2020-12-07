@@ -49,8 +49,8 @@ instance
       case cs of
         [DB.Collection {..}] -> do
           let ref = CollectionRef id
-          _ <- scanPath ref rootPath
-          when watch $ startWatching ref rootPath
+          _ <- scanPath ref (T.unpack rootPath)
+          when watch $ startWatching ref (T.unpack rootPath)
           pure $ ctx $> ref
         _otherwise -> error "unexpected insertCollections result"
     L (RescanCollection ref@(CollectionRef id)) -> do

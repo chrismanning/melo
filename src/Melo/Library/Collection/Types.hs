@@ -2,6 +2,8 @@ module Melo.Library.Collection.Types where
 
 import Basement.From
 import Data.Hashable
+import Data.Morpheus.Kind
+import Data.Morpheus.Types
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.UUID
@@ -11,11 +13,14 @@ import Melo.Common.Uri
 import qualified Melo.Database.Model as DB
 
 data NewCollection = NewFilesystemCollection
-  { rootPath :: FilePath,
+  { rootPath :: Text,
     name :: Text,
     watch :: Bool
   }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
+
+instance GQLType NewCollection where
+  type KIND NewCollection = INPUT
 
 instance From NewCollection (DB.CollectionT (QExpr Postgres s)) where
   from c =
@@ -27,7 +32,7 @@ instance From NewCollection (DB.CollectionT (QExpr Postgres s)) where
         kind = kind c
       }
     where
-      rootUri NewFilesystemCollection {rootPath} = fileUri rootPath
+      rootUri NewFilesystemCollection {rootPath} = fileUri $ T.unpack rootPath
       kind NewFilesystemCollection {} = "filesystem"
 
 type UpdateCollection = DB.Collection
