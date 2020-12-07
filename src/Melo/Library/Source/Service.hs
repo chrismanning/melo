@@ -32,12 +32,12 @@ importSources ss = do
   pure (mapMaybe tryFrom srcs)
 
 getSourcesByUriPrefix ::
-  ( Has Repo.SourceRepository sig m,
-    Has Logging sig m
-  ) =>
+  Has Repo.SourceRepository sig m =>
   URI ->
   m [Source]
-getSourcesByUriPrefix p = error "unimplemented"
+getSourcesByUriPrefix prefix = do
+  srcs <- Repo.getSourcesByUriPrefix prefix
+  pure (mapMaybe tryFrom srcs)
 
 length' :: (Foldable f, Num a) => f b -> a
 length' = foldl' (const . (+ 1)) 0

@@ -24,8 +24,8 @@ import Melo.Common.Effect
 import Melo.Common.FileSystem
 import Melo.Common.Logging
 import Melo.Common.Metadata
+import Melo.Common.Uri
 import Melo.Database.Transaction
-import qualified Melo.Format as F
 import qualified Melo.Format.Error as F
 import Melo.Library.Collection.FileSystem.Service
 import Melo.Library.Collection.Types
@@ -101,7 +101,8 @@ handleEventIO pool ref event = do
 
 handleEvent ::
   ( Has Logging sig m,
-    Has FileSystemService sig m
+    Has FileSystemService sig m,
+    Has SourceRepository sig m
   ) =>
   CollectionRef ->
   FS.Event ->
@@ -113,12 +114,18 @@ handleEvent ref event =
       scanPath ref p
       pure ()
     FS.Modified p _ _ -> do
-      $(logWarn) $ "file/directory modified; scanning " <> p
+      $(logInfo) $ "file/directory modified; scanning " <> p
       scanPath ref p
       pure ()
-    FS.Removed p t _ -> do
-      $(logWarn) $ "file removed " <> p
-
-    --      deleteSources []
+    FS.Removed p _ isDir -> do
+      let uri = fileUri p
+      if isDir then do
+        $(logInfo) $ "directory removed " <> p
+        refs <- getSourceKeysByUriPrefix uri
+        deleteSources refs
+      else do
+        $(logInfo) $ "file removed " <> p
+        refs <- getSourceKeysByUri [uri]
+        deleteSources refs
     FS.Unknown p _ s ->
       $(logWarn) $ "unknown file system event on path " <> p <> ": " <> s

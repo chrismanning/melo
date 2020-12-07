@@ -26,6 +26,9 @@ data SourceRepository :: Effect where
   GetAllSources :: SourceRepository m [DB.Source]
   GetSources :: [DB.SourceKey] -> SourceRepository m [DB.Source]
   GetSourcesByUri :: [URI] -> SourceRepository m [DB.Source]
+  GetSourceKeysByUri :: [URI] -> SourceRepository m [DB.SourceKey]
+  GetSourcesByUriPrefix :: URI -> SourceRepository m [DB.Source]
+  GetSourceKeysByUriPrefix :: URI -> SourceRepository m [DB.SourceKey]
   InsertSources :: [NewSource] -> SourceRepository m [DB.Source]
   DeleteSources :: [DB.SourceKey] -> SourceRepository m ()
   UpdateSources :: [UpdateSource] -> SourceRepository m ()
@@ -51,6 +54,21 @@ instance
     L (GetSourcesByUri []) -> pure $ ctx $> []
     L (GetSourcesByUri fs) -> SourceRepositoryIOC $ do
       let q = filter_ (\t -> t ^. #source_uri `in_` fmap (val_ . T.pack . show) fs) (all_ $ DB.meloDb ^. #source)
+      r <- $(runPgDebug') (runSelectReturningList (select q))
+      pure $ ctx $> r
+    L (GetSourceKeysByUri []) -> pure $ ctx $> []
+    L (GetSourceKeysByUri fs) -> SourceRepositoryIOC $ do
+      let q = primaryKey <$> filter_ (\t -> t ^. #source_uri `in_` fmap (val_ . T.pack . show) fs) (all_ $ DB.meloDb ^. #source)
+      r <- $(runPgDebug') (runSelectReturningList (select q))
+      pure $ ctx $> r
+    L (GetSourcesByUriPrefix uri) -> SourceRepositoryIOC $ do
+      let prefix = T.pack $ show uri
+      let q = filter_ (\t -> (t ^. #source_uri) `startsWith_` val_ prefix) (all_ $ DB.meloDb ^. #source)
+      r <- $(runPgDebug') (runSelectReturningList (select q))
+      pure $ ctx $> r
+    L (GetSourceKeysByUriPrefix uri) -> SourceRepositoryIOC $ do
+      let prefix = T.pack $ show uri
+      let q = primaryKey <$> filter_ (\t -> (t ^. #source_uri) `startsWith_` val_ prefix) (all_ $ DB.meloDb ^. #source)
       r <- $(runPgDebug') (runSelectReturningList (select q))
       pure $ ctx $> r
     L (InsertSources []) -> pure $ ctx $> []

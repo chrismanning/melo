@@ -6,8 +6,9 @@ module Melo.Library.Source.Types
   ( NewImportSource (..),
     MetadataImportSource (..),
     NewSource (..),
-    UpdateSource (..),
+    UpdateSource,
     AudioRange (..),
+    SourceRef,
     Source (..),
     ImportStats (..),
   )
@@ -146,8 +147,10 @@ toPgRangeBound :: Bound a -> PgRangeBound a
 toPgRangeBound (Bound a R.Inclusive) = PgB.inclusive a
 toPgRangeBound (Bound a R.Exclusive) = PgB.exclusive a
 
+type SourceRef = DB.SourceKey
+
 data Source = Source
-  { ref :: DB.SourceKey,
+  { ref :: SourceRef,
     metadata :: Metadata,
     source :: URI,
     range :: Maybe AudioRange

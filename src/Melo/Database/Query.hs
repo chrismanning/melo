@@ -6,6 +6,7 @@ import Control.Effect.Lift
 import Control.Effect.Reader
 import Control.Monad.IO.Class
 import qualified Control.Monad.Reader as R
+import Data.String (IsString)
 import Database.Beam
 import Database.Beam.Postgres
 import GHC.Records
@@ -134,7 +135,8 @@ deleteByKeys ::
   ( Has (Reader Connection) sig m,
     Has (Lift IO) sig m,
     Table tbl,
-    SqlValableTable Postgres (PrimaryKey tbl)
+    SqlValableTable Postgres (PrimaryKey tbl),
+    Show (PrimaryKey tbl Identity)
   ) =>
   DatabaseEntity Postgres db (TableEntity tbl) ->
   [PrimaryKey tbl Identity] ->
@@ -142,7 +144,9 @@ deleteByKeys ::
 deleteByKeys _ [] = pure ()
 deleteByKeys tbl ks =
   let q = delete tbl (\t -> primaryKey t `in_` (val_ <$> ks))
-   in runPgDebug (runDelete q)
+   in do
+     sendIO $ $(logInfoIO) $ "deleting entities with keys " <> show ks
+     runPgDebug (runDelete q)
 
 deleteByKeysIO ::
   ( MonadConnectionReader m c,
@@ -157,3 +161,12 @@ deleteByKeysIO _ [] = pure ()
 deleteByKeysIO tbl ks =
   let q = delete tbl (\t -> primaryKey t `in_` (val_ <$> ks))
    in runPgDebugIO (runDelete q)
+
+startsWith_ ::
+  QPgExpr s text ->
+  QPgExpr s text ->
+  QPgExpr s Bool
+startsWith_ = customExpr_ startsWithImpl
+  where
+    startsWithImpl :: (Monoid text, IsString text) => text -> text -> text
+    startsWithImpl a b = "starts_with(" <> a <> ", " <> b <> ")"
