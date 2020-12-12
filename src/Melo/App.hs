@@ -53,7 +53,7 @@ app = do
   scottyT 5000 id (api collectionWatchState pool)
 
 initApp :: TVar (H.HashMap CollectionRef FS.StopListening) -> Pool Connection -> IO ()
-initApp collectionWatchState pool = do
+initApp collectionWatchState pool =
   runReader collectionWatchState $
     runStdoutLogging $
       runFileSystemIO $
@@ -62,7 +62,7 @@ initApp collectionWatchState pool = do
             runTransaction $
               withTransaction $ \conn ->
                 runReader conn $
-                  runError (\(e :: MetadataException) -> $(logError) $ "uncaught exception: " <> show e) pure $
+                  runError (\(e :: MetadataException) -> $(logError) $ "uncaught metadata exception: " <> show e) pure $
                     runMetadataServiceIO $
                       runSavepoint $
                         runSourceRepositoryIO $
@@ -79,6 +79,7 @@ initCollections ::
   ) =>
   m ()
 initCollections = do
+  $(logInfo) ("initialising collections" :: String)
   collections <- getAllCollections
   forM_ collections $ \c@DB.Collection {..} -> do
     $(logDebugShow) c
