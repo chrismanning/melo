@@ -6,6 +6,7 @@ module Melo.API where
 import Control.Algebra
 import Control.Carrier.Error.Church
 import Control.Carrier.Lift
+import Control.Effect.Exception
 import Control.Carrier.Reader
 import Control.Concurrent.STM
 import Control.Lens ((^.))
@@ -38,7 +39,6 @@ import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Service
 import Melo.Library.Collection.Types
 import Melo.Library.Source.Repo
-import Network.HTTP.Types.Header
 import Network.HTTP.Types.Status
 import Network.URI
 import Network.Wai.Middleware.Cors
@@ -128,7 +128,7 @@ runResolverE conn =
     . runError
       ( \(e :: F.MetadataException) -> do
           $(logError) ("Uncaught metadata error: " <> show e)
-          error "unimplemented"
+          throwIO e
       )
       pure
     . runSavepoint
