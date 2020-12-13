@@ -51,10 +51,6 @@ extra-deps:
     commit: 53394d71f9412821b217816c83defd42d53fec32
   - github: jcberentsen/Haxl
     commit: 587ac10827b28327f03c89081d9797b8953780fc
-  - github: caraus-ecms/graphql
-    commit: 613e929d91dfc46ecfc5e28479098ce52aeb56f6
-  - github: aycanirican/hweblib
-    commit: aeda1f04c292bcd4648f395a6d2494685d2ca402
   - barbies-2.0.0.0
   - conduit-audio-0.2.0.3
   - conduit-audio-lame-0.1.2.1
