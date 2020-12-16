@@ -29,7 +29,11 @@ chooseMetadata ms =
 
 data MetadataService :: Effect where
   OpenMetadataFile :: FilePath -> MetadataService m F.MetadataFile
+  OpenMetadataFile' :: FilePath -> MetadataService m (Either F.MetadataException F.MetadataFile)
+  OpenMetadataFileByExt :: FilePath -> MetadataService m F.MetadataFile
+  OpenMetadataFileByExt' :: FilePath -> MetadataService m (Either F.MetadataException F.MetadataFile)
   ReadMetadataFile :: F.MetadataFileId -> FilePath -> MetadataService m F.MetadataFile
+  ReadMetadataFile' :: F.MetadataFileId -> FilePath -> MetadataService m (Either F.MetadataException F.MetadataFile)
   WriteMetadataFile :: F.MetadataFile -> FilePath -> MetadataService m F.MetadataFile
 
 makeSmartConstructors ''MetadataService
@@ -51,8 +55,23 @@ instance
   where
   alg _ (L sig) ctx =
     ctx $$!> case sig of
-      OpenMetadataFile path -> handle (throwError @F.MetadataException) (sendIO $ F.openMetadataFile path)
+      OpenMetadataFile path -> handle (throwError @F.MetadataException) do
+        $(logDebug) $ "opening metadata file " <> path
+        sendIO $ F.openMetadataFile path
+      OpenMetadataFile' path -> try do
+        $(logDebug) $ "opening metadata file " <> path
+        sendIO $ F.openMetadataFile path
+      OpenMetadataFileByExt path -> handle (throwError @F.MetadataException) do
+        $(logDebug) $ "opening metadata file " <> path
+        sendIO $ F.openMetadataFileByExt path
+      OpenMetadataFileByExt' path -> try do
+        $(logDebug) $ "opening metadata file " <> path
+        sendIO $ F.openMetadataFileByExt path
       ReadMetadataFile mfid path -> handle (throwError @F.MetadataException) $ sendIO do
+        F.MetadataFileFactory {readMetadataFile} <- getFactory mfid
+        readMetadataFile path
+      ReadMetadataFile' mfid@(F.MetadataFileId fid) path -> try $ sendIO do
+        $(logDebugIO) $ "reading file " <> T.pack path <> " as " <> fid
         F.MetadataFileFactory {readMetadataFile} <- getFactory mfid
         readMetadataFile path
       WriteMetadataFile mf path -> handle (throwError @F.MetadataException) $ sendIO do

@@ -9,6 +9,7 @@ module Melo.Format.Metadata
     MetadataFileFactory (..),
     MetadataFileId (..),
     openMetadataFile,
+    openMetadataFileByExt,
     mkMetadata,
     module Melo.Format.Internal.Tag,
     metadataFileFactoryIO,
@@ -33,6 +34,7 @@ import Melo.Format.MP3 (MP3, mp3)
 import Melo.Format.OggVorbis (OggVorbis, oggVorbis)
 import Melo.Format.Vorbis
 import Melo.Format.WavPack (WavPack, wavPack)
+import System.FilePath
 
 type SupportedFormats = '[Flac, MP3, OggVorbis, WavPack]
 
@@ -45,10 +47,21 @@ metadataFileFactoryIO mfid = find (\f -> f ^. #fileId == mfid) metadataFileFacto
 openMetadataFile :: FilePath -> IO MetadataFile
 openMetadataFile p = do
   let fmts = sortOn (Down . (^. #priority)) metadataFileFactoriesIO
+  -- TODO improve performance - use ext only?
   fs <- filterM (\factory -> factory ^. #detectFile $ p) fmts
   case fs of
     [] -> throwIO UnknownFormat
     (factory : _) -> factory ^. #readMetadataFile $ p
+
+openMetadataFileByExt :: FilePath -> IO MetadataFile
+openMetadataFileByExt p =
+  case takeExtension p of
+    ".flac" -> flac ^. #readMetadataFile $ p
+    ".mp3" -> mp3 ^. #readMetadataFile $ p
+    ".ogg" -> oggVorbis ^. #readMetadataFile $ p
+    ".wv" -> wavPack ^. #readMetadataFile $ p
+    ".wvpk" -> wavPack ^. #readMetadataFile $ p
+    _unknownExtension -> throwIO UnknownFormat
 
 mkMetadata :: MetadataId -> Tags -> Maybe Metadata
 mkMetadata = mk' @SupportedMetadataFormats

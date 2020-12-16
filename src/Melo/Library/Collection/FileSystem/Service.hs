@@ -67,23 +67,29 @@ instance
                 pure mempty
               else do
                 $(logDebug) $ "Importing " <> show files
-                mfs <- catMaybes <$> mapM openMetadataFile' files
+                mfs <- catMaybes <$> mapM openMetadataFile'' files
                 $(logDebug) $ "Opened " <> show mfs
                 importSources (FileSource ref <$> mfs)
           else
             if isFile
               then do
-                mf <- openMetadataFile' p
+                mf <- openMetadataFile'' p
                 importSources (FileSource ref <$> maybeToList mf)
               else pure mempty
       $(logInfo) $ "Import finished: " <> show srcs
       pure (ctx $> srcs)
     R other -> FileSystemServiceIOC (alg (runFileSystemServiceIOC . hdl) other ctx)
     where
-      openMetadataFile' :: FilePath -> FileSystemServiceIOC m (Maybe F.MetadataFile)
-      openMetadataFile' p = catchError @F.MetadataException (Just <$> openMetadataFile p) $ \e -> do
-        $(logError) $ "Could not open " <> p <> ": " <> show e
-        pure Nothing
+      openMetadataFile'' :: FilePath -> FileSystemServiceIOC m (Maybe F.MetadataFile)
+      openMetadataFile'' p = openMetadataFileByExt' p >>= \case
+        Right mf -> pure $ Just mf
+        Left e -> do
+          $(logWarn) $ "Could not open by extension" <> p <> ": " <> show e
+          openMetadataFile' p >>= \case
+            Left e -> do
+              $(logError) $ "Could not open " <> p <> ": " <> show e
+              pure Nothing
+            Right mf -> pure $ Just mf
 
 listDirectoryAbs :: Has FileSystem sig m => FilePath -> m [FilePath]
 listDirectoryAbs p = do

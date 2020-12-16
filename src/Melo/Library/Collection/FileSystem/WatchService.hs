@@ -91,7 +91,7 @@ handleEventIO pool ref event = do
               runReader conn $
                 runError
                   (\(e :: F.MetadataException) -> $(logError) $ "error handling file system event: " <> show e)
-                  (const $ pure ())
+                  pure
                   $ runMetadataServiceIO $
                     runSavepoint $
                       runSourceRepositoryIO $

@@ -53,6 +53,7 @@ library:
   - dependent-sum
   - directory
   - directory-tree
+  - either
   - exceptions
   - extra
   - filepath
