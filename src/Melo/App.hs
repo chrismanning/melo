@@ -89,4 +89,4 @@ initCollections = do
         Just rootPath -> startWatching ref rootPath
         Nothing -> pure ()
     rescanCollection ref
-    $(logInfo) ("collections initialised" :: String)
+  $(logInfo) ("collections initialised" :: String)
