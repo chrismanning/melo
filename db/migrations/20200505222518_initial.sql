@@ -1,9 +1,5 @@
 -- migrate:up
 
-create schema melo;
-
-set search_path = melo;
-
 create extension if not exists pgcrypto;
 create extension if not exists "uuid-ossp";
 
@@ -163,3 +159,4 @@ create table track_stage
 
 -- migrate:down
 
+drop schema melo;
