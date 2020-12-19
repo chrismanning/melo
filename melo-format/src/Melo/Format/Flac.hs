@@ -47,7 +47,7 @@ import GHC.Generics
 import GHC.Records
 import Lens.Micro
 import Melo.Format.Error
-import Melo.Format.ID3.ID3v2
+import Melo.Format.ID3.ID3v2 as ID3v2
 import Melo.Format.Internal.Binary
 import Melo.Format.Internal.BinaryUtil
 import Melo.Format.Internal.Info
@@ -266,24 +266,18 @@ hFindFlac h = do
     skipId3 = do
       pos <- hTell h
       hLocate @ID3v2_4 h >>= \case
-        Just id3v24loc -> findId3End @ID3v2_4 id3v24loc >>= hSeek h AbsoluteSeek
+        Just id3v24loc -> findId3End id3v24loc >>= hSeek h AbsoluteSeek
         Nothing -> do
           hSeek h AbsoluteSeek pos
           hLocate @ID3v2_3 h >>= \case
-            Just id3v23loc -> findId3End @ID3v2_3 id3v23loc >>= hSeek h AbsoluteSeek
+            Just id3v23loc -> findId3End id3v23loc >>= hSeek h AbsoluteSeek
             Nothing -> do
               hSeek h AbsoluteSeek pos
               pure ()
-    findId3End ::
-      forall id3 a.
-      (BinaryGet id3, MetadataFormat id3, Integral a) =>
-      a ->
-      IO Integer
     findId3End loc = do
       hSeek h AbsoluteSeek (fromIntegral loc)
-      id3 <- bdecodeOrThrowIO @id3 =<< hGetFileContents h
-      let flacLoc = fromIntegral loc + metadataSize id3
-      pure flacLoc
+      id3Size <- runGet ID3v2.getId3v2Size <$!> L.hGet h ID3v2.headerSize
+      pure $ fromIntegral loc + id3Size + fromIntegral ID3v2.headerSize
     findFlac flacLoc = do
       hSeek h AbsoluteSeek flacLoc
       buf <- BS.hGet h 4

@@ -15,6 +15,7 @@ module Melo.Format.ID3.ID3v2
     fromSyncSafe,
     toSyncSafe,
     changeVersion,
+    getId3v2Size,
   )
 where
 
@@ -34,6 +35,7 @@ import Data.Foldable as F
 import Data.Functor
 import Data.List.NonEmpty as NE
 import Data.Maybe
+import Data.String (IsString)
 import Data.Text as T
 import Data.Text.Encoding
 import qualified Data.Vector as V
@@ -97,6 +99,9 @@ id3v2SizeWithHeader ID3v2 {..} =
     + foldlFrames (\c f -> c + calculateFrameSize f) 0 frames
     + toInteger paddingSize
 
+getId3v2Size :: Get Integer
+getId3v2Size = fromSyncSafe . totalSize <$!> get
+
 type ID3v2_4 = ID3v2 'ID3v24
 
 id3v24Id :: MetadataId
@@ -154,8 +159,9 @@ instance (GetFrame v, PutFrame v) => MetadataLocator (ID3v2 v) where
         _unknownVersion -> Nothing
 
   hLocate h = do
+    -- TODO ID3v2 can also appear at the end of a file
     hSeek h AbsoluteSeek 0
-    bs <- hGetFileContents h
+    bs <- L.hGet h headerSize
     pure $ fromIntegral <$> locate @(ID3v2 v) bs
 
 instance (GetFrame v, PutFrame v) => Binary (ID3v2 v) where
@@ -204,14 +210,17 @@ data Header = Header
 headerSize :: Int
 headerSize = 10
 
+id3v2Identifier :: IsString s => s
+id3v2Identifier = "ID3"
+
 instance Binary Header where
   get = isolate headerSize $ do
-    expectGetEq (getByteString 3) "ID3" "Expected ID3v2 identifier"
+    expectGetEq (getByteString 3) id3v2Identifier "Expected ID3v2 identifier"
     header <- Header <$> get <*> get <*> get
     expect (isReadable (flags header)) "Unrecognised ID3v2 flags found"
     pure header
   put Header {..} = do
-    putByteString "ID3"
+    putByteString id3v2Identifier
     put version
     put flags
     put totalSize

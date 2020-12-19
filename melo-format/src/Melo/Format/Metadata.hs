@@ -47,7 +47,6 @@ metadataFileFactoryIO mfid = find (\f -> f ^. #fileId == mfid) metadataFileFacto
 openMetadataFile :: FilePath -> IO MetadataFile
 openMetadataFile p = do
   let fmts = sortOn (Down . (^. #priority)) metadataFileFactoriesIO
-  -- TODO improve performance - use ext only?
   fs <- filterM (\factory -> factory ^. #detectFile $ p) fmts
   case fs of
     [] -> throwIO UnknownFormat
