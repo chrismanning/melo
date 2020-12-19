@@ -81,15 +81,16 @@ instance
     R other -> FileSystemServiceIOC (alg (runFileSystemServiceIOC . hdl) other ctx)
     where
       openMetadataFile'' :: FilePath -> FileSystemServiceIOC m (Maybe F.MetadataFile)
-      openMetadataFile'' p = openMetadataFileByExt' p >>= \case
-        Right mf -> pure $ Just mf
-        Left e -> do
-          $(logWarn) $ "Could not open by extension" <> p <> ": " <> show e
-          openMetadataFile' p >>= \case
-            Left e -> do
-              $(logError) $ "Could not open " <> p <> ": " <> show e
-              pure Nothing
-            Right mf -> pure $ Just mf
+      openMetadataFile'' p =
+        openMetadataFileByExt' p >>= \case
+          Right mf -> pure $ Just mf
+          Left e -> do
+            $(logWarn) $ "Could not open by extension" <> p <> ": " <> show e
+            openMetadataFile' p >>= \case
+              Left e -> do
+                $(logError) $ "Could not open " <> p <> ": " <> show e
+                pure Nothing
+              Right mf -> pure $ Just mf
 
 listDirectoryAbs :: Has FileSystem sig m => FilePath -> m [FilePath]
 listDirectoryAbs p = do

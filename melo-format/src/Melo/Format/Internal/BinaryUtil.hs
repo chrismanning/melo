@@ -9,6 +9,7 @@ module Melo.Format.Internal.BinaryUtil
     expectGet_,
     expectGetEq,
     hGetFileContents,
+    findSubstring,
   )
 where
 
@@ -19,7 +20,9 @@ import Data.Binary
 import qualified Data.Binary.Bits.Get as BG
 import Data.Binary.Get
 import Data.Binary.Put
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as L
+import Data.Int
 import Data.Text as T
 import Data.Text.Encoding
 import Melo.Format.Internal.Encoding
@@ -66,3 +69,16 @@ hGetFileContents :: Handle -> IO L.ByteString
 hGetFileContents h = do
   len <- hFileSize h
   L.hGet h (fromIntegral len)
+
+findSubstring :: BS.ByteString -> L.ByteString -> Maybe Int64
+findSubstring n h
+  | n == BS.empty = Just 0
+  | h == L.empty = Nothing
+  | otherwise = case BS.uncons n of
+    Nothing -> Nothing
+    Just (head, tail) -> case L.findIndex (== head) h of
+      Just i ->
+        if L.take (fromIntegral $ BS.length tail) (L.drop (i + 1) h) == L.fromStrict tail
+          then Just i
+          else (+ i) <$> findSubstring n (L.drop (i + 1) h)
+      Nothing -> Nothing

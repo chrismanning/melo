@@ -6,9 +6,9 @@ module Melo.API where
 import Control.Algebra
 import Control.Carrier.Error.Church
 import Control.Carrier.Lift
-import Control.Effect.Exception
 import Control.Carrier.Reader
 import Control.Concurrent.STM
+import Control.Effect.Exception
 import Control.Lens ((^.))
 import Control.Monad.IO.Class
 import qualified Data.ByteString.Lazy as LB
