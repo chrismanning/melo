@@ -13,6 +13,7 @@ import Melo.Common.Effect
 import Melo.Common.FileSystem
 import Melo.Common.Logging
 import Melo.Common.Metadata
+import Melo.Common.NaturalSort
 import Melo.Database.Transaction
 import qualified Melo.Format as F
 import qualified Melo.Format.Error as F
@@ -99,4 +100,4 @@ instance
 listDirectoryAbs :: Has FileSystem sig m => FilePath -> m [FilePath]
 listDirectoryAbs p = do
   es <- listDirectory p
-  pure $ (p </>) <$> es
+  pure $ (p </>) <$> sortNaturalBy id es
