@@ -3,24 +3,34 @@
 module Melo.Library.Collection.Service where
 
 import Control.Algebra
+import Control.Carrier.Error.Church
 import Control.Carrier.Reader
+import Control.Concurrent
+import Control.Concurrent.STM
 import Control.Effect.Lift
 import Control.Effect.TH
 import Control.Monad
 import Data.Functor
+import qualified Data.HashMap.Strict as H
 import Data.Maybe (listToMaybe)
+import Data.Pool
 import qualified Data.Text as T
-import Melo.Common.Concurrent
+import Database.PostgreSQL.Simple (Connection)
 import Melo.Common.Effect
+import Melo.Common.FileSystem (runFileSystemIO)
 import Melo.Common.Logging
+import Melo.Common.Metadata
 import Melo.Common.Uri
 import qualified Melo.Database.Model as DB
 import Melo.Database.Transaction
+import Melo.Format.Error
 import Melo.Library.Collection.FileSystem.Service
 import Melo.Library.Collection.FileSystem.WatchService
 import Melo.Library.Collection.Repo as Repo
 import Melo.Library.Collection.Types
+import Melo.Library.Source.Repo
 import Network.URI
+import qualified System.FSNotify as FS
 
 data CollectionService :: Effect where
   AddCollection :: NewCollection -> CollectionService m CollectionRef
@@ -43,6 +53,8 @@ instance
     Has FileSystemWatchService sig m,
     Has Transaction sig m,
     Has (Lift IO) sig m,
+    Has (Reader (Pool Connection)) sig m,
+    Has (Reader (TVar (H.HashMap CollectionRef FS.StopListening))) sig m,
     Has Logging sig m
   ) =>
   Algebra (CollectionService :+: sig) (CollectionServiceIOC m)
@@ -52,14 +64,30 @@ instance
       $(logInfo) $ "Adding collection " <> name
       $(logDebug) $ "Adding collection " <> show c
       cs <- Repo.insertCollections [c]
+      pool <- ask @(Pool Connection)
+      collectionWatchState <- ask @(TVar (H.HashMap CollectionRef FS.StopListening))
       case cs of
         [DB.Collection {..}] -> do
           let ref = CollectionRef id
-          _ <- forkIO $
-            withTransaction $ \conn ->
-              runReader conn $
-                runSavepoint $
-                  scanPath ref (T.unpack rootPath)
+          _ <- sendIO $
+            forkIO $
+              runReader collectionWatchState $
+                runStdoutLogging $
+                  runFileSystemIO $
+                    runReader pool $
+                      runTransaction $
+                        withTransaction $ \conn ->
+                          runReader conn $
+                            runFileSystemWatchServiceIO $
+                              runError (\(e :: MetadataException) -> $(logError) $ "uncaught metadata exception: " <> show e) pure $
+                                runSavepoint $
+                                  runMetadataServiceIO $
+                                    runSourceRepositoryIO $
+                                      runFileSystemServiceIO $
+                                        runCollectionRepositoryIO $
+                                          runCollectionServiceIO $
+                                            void $
+                                              scanPath ref (T.unpack rootPath)
           when watch $ startWatching ref (T.unpack rootPath)
           pure $ ctx $> ref
         _otherwise -> error "unexpected insertCollections result"
