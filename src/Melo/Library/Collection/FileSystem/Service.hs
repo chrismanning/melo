@@ -48,7 +48,7 @@ instance
   Algebra (FileSystemService :+: sig) (FileSystemServiceIOC m)
   where
   alg hdl sig ctx = case sig of
-    L (ScanPath ref p') -> fmap (ctx $>) $ handle handleScanException $ withSavepoint $ do
+    L (ScanPath ref p') -> fmap (ctx $>) $ handle handleScanException $ do
       -- TODO IO error handling
       p <- canonicalizePath p'
       $(logInfo) $ "Importing " <> p
@@ -66,14 +66,14 @@ instance
                 -- TODO load file(s) referenced in cuefile
                 $(logWarn) $ "Cue file found in " <> show p <> "; skipping..."
                 pure mempty
-              else do
+              else withSavepoint do
                 $(logDebug) $ "Importing " <> show files
                 mfs <- catMaybes <$> mapM openMetadataFile'' files
                 $(logDebug) $ "Opened " <> show mfs
                 importSources (FileSource ref <$> mfs)
           else
             if isFile
-              then do
+              then withSavepoint do
                 mf <- openMetadataFile'' p
                 importSources (FileSource ref <$> maybeToList mf)
               else pure mempty

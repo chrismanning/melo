@@ -17,34 +17,6 @@ CREATE SCHEMA melo;
 
 
 --
--- Name: pgcrypto; Type: EXTENSION; Schema: -; Owner: -
---
-
-CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA melo;
-
-
---
--- Name: EXTENSION pgcrypto; Type: COMMENT; Schema: -; Owner: -
---
-
-COMMENT ON EXTENSION pgcrypto IS 'cryptographic functions';
-
-
---
--- Name: uuid-ossp; Type: EXTENSION; Schema: -; Owner: -
---
-
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA melo;
-
-
---
--- Name: EXTENSION "uuid-ossp"; Type: COMMENT; Schema: -; Owner: -
---
-
-COMMENT ON EXTENSION "uuid-ossp" IS 'generate universally unique identifiers (UUIDs)';
-
-
---
 -- Name: intervalrange; Type: TYPE; Schema: melo; Owner: -
 --
 
@@ -195,6 +167,15 @@ CREATE TABLE melo.related_artist (
 
 
 --
+-- Name: schema_migrations; Type: TABLE; Schema: melo; Owner: -
+--
+
+CREATE TABLE melo.schema_migrations (
+    version character varying(255) NOT NULL
+);
+
+
+--
 -- Name: source; Type: TABLE; Schema: melo; Owner: -
 --
 
@@ -264,15 +245,6 @@ CREATE TABLE melo.track_stage (
     ref_artist_id uuid,
     ref_album_id uuid,
     ref_track_id uuid
-);
-
-
---
--- Name: schema_migrations; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.schema_migrations (
-    version character varying(255) NOT NULL
 );
 
 
@@ -373,6 +345,14 @@ ALTER TABLE ONLY melo.related_artist
 
 
 --
+-- Name: schema_migrations schema_migrations_pkey; Type: CONSTRAINT; Schema: melo; Owner: -
+--
+
+ALTER TABLE ONLY melo.schema_migrations
+    ADD CONSTRAINT schema_migrations_pkey PRIMARY KEY (version);
+
+
+--
 -- Name: source source_pkey; Type: CONSTRAINT; Schema: melo; Owner: -
 --
 
@@ -418,14 +398,6 @@ ALTER TABLE ONLY melo.track
 
 ALTER TABLE ONLY melo.track_stage
     ADD CONSTRAINT track_stage_pkey PRIMARY KEY (id);
-
-
---
--- Name: schema_migrations schema_migrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.schema_migrations
-    ADD CONSTRAINT schema_migrations_pkey PRIMARY KEY (version);
 
 
 --
@@ -695,7 +667,7 @@ ALTER TABLE ONLY melo.track_stage
 -- Dbmate schema migrations
 --
 
-INSERT INTO public.schema_migrations (version) VALUES
+INSERT INTO melo.schema_migrations (version) VALUES
     ('20200505222518'),
     ('20200626210715'),
     ('20201129174644'),
