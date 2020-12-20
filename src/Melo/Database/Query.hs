@@ -8,6 +8,7 @@ import Control.Lens
 import Control.Monad.IO.Class
 import qualified Control.Monad.Reader as R
 import Data.String (IsString)
+import Data.Text (Text)
 import Database.Beam
 import Database.Beam.Postgres
 import Database.Beam.Schema.Tables
@@ -34,7 +35,11 @@ runPgDebug ::
   m a
 runPgDebug q = do
   conn <- ask
-  sendIO $ runBeamPostgresDebug $(logDebugIO) conn q
+  sendIO do
+    $(logDebugIO) ("before query" :: Text)
+    !r <- runBeamPostgresDebug $(logDebugIO) conn q
+    $(logDebugIO) ("after query" :: Text)
+    pure r
 
 type HasConnection c = HasField "connection" c Connection
 
@@ -48,7 +53,11 @@ runPgDebugIO ::
   m a
 runPgDebugIO q = do
   conn <- R.asks (getField @"connection")
-  liftIO $ runBeamPostgresDebug $(logDebugIO) conn q
+  liftIO do
+    $(logDebugIO) ("before query" :: Text)
+    !r <- runBeamPostgresDebug $(logDebugIO) conn q
+    $(logDebugIO) ("after query" :: Text)
+    pure r
 
 runPgDebug' :: TH.Q TH.Exp
 runPgDebug' =

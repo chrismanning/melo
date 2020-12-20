@@ -73,16 +73,19 @@ gqlApi :: forall sig m. (ResolverE sig m, Typeable m) => ByteString -> m ByteStr
 gqlApi = interpreter (rootResolver @sig @m)
 
 gqlApiIO :: TVar (H.HashMap CollectionRef FS.StopListening) -> Pool Connection -> ByteString -> IO ByteString
-gqlApiIO collectionWatchState pool r = runStdoutLogging $
-  runReader pool $
+gqlApiIO collectionWatchState pool rq = runStdoutLogging do
+  $(logInfo) ("handling graphql request" :: T.Text)
+  $(logDebug) $ "graphql request: " <> rq
+  rs <- runReader pool $
     runReader collectionWatchState $
       runFileSystemIO $
         runFileSystemWatchServiceIO $
           runTransaction $
             withTransaction $ \conn ->
-              runResolverE conn $ do
-                $(logDebug) $ "Handling GraphQL request: " <> r
-                gqlApi r
+              runResolverE conn $
+                gqlApi rq
+  $(logInfo) ("finished handling graphql request" :: T.Text)
+  pure rs
 
 type ResolverE sig m =
   ( Has (Lift IO) sig m,
