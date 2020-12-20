@@ -4,11 +4,13 @@ module Melo.Database.Query where
 
 import Control.Effect.Lift
 import Control.Effect.Reader
+import Control.Lens
 import Control.Monad.IO.Class
 import qualified Control.Monad.Reader as R
 import Data.String (IsString)
 import Database.Beam
 import Database.Beam.Postgres
+import Database.Beam.Schema.Tables
 import GHC.Records
 import qualified Language.Haskell.TH.Syntax as TH (Exp, Q)
 import Melo.Common.Logging
@@ -161,6 +163,20 @@ deleteByKeysIO _ [] = pure ()
 deleteByKeysIO tbl ks =
   let q = delete tbl (\t -> primaryKey t `in_` (val_ <$> ks))
    in runPgDebugIO (runDelete q)
+
+deleteAll ::
+  forall sig m tbl db.
+  ( Has (Reader Connection) sig m,
+    Has (Lift IO) sig m,
+    Table tbl
+  ) =>
+  DatabaseEntity Postgres db (TableEntity tbl) ->
+  m ()
+deleteAll tbl =
+  let q = delete tbl (const $ val_ True)
+   in do
+        sendIO $ $(logInfoIO) $ "deleting all " <> tbl ^. dbEntityDescriptor . dbEntityName <> " entities"
+        runPgDebug (runDelete q)
 
 startsWith_ ::
   QPgExpr s text ->

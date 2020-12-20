@@ -55,13 +55,13 @@ resolveLibrary =
 data LibraryMutation (m :: Type -> Type) = LibraryMutation
   { stageSources :: StageSourcesArgs -> m (StagedSources m),
     updateSources :: UpdateSourcesArgs -> m UpdatedSources,
-    addCollection :: AddCollectionArgs -> m (Collection m)
+    collection :: m (CollectionMutation m)
   }
   deriving (Generic)
 
 instance Typeable m => GQLType (LibraryMutation m)
 
-resolveLibraryMutation ::
+libraryMutation ::
   forall sig m e.
   ( Has SourceRepository sig m,
     Has (Lift IO) sig m,
@@ -72,13 +72,13 @@ resolveLibraryMutation ::
     Has CollectionRepository sig m
   ) =>
   ResolverM e (m :: Type -> Type) LibraryMutation
-resolveLibraryMutation =
+libraryMutation =
   lift $
     pure
       LibraryMutation
         { stageSources = stageSourcesImpl @sig @m,
           updateSources = updateSourcesImpl @sig @m,
-          addCollection = addCollectionImpl @sig @m
+          collection = collectionMutation @sig @m
         }
 
 newtype StageSourcesArgs = StageSourcesArgs

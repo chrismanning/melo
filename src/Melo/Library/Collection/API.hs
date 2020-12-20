@@ -8,6 +8,7 @@ import Basement.From
 import Control.Algebra
 import Control.Lens hiding (from, lens, (|>))
 import Data.Generics.Labels ()
+import Data.Kind
 import Data.Morpheus.Kind
 import Data.Morpheus.Types
 import Data.Text (Text)
@@ -18,6 +19,7 @@ import qualified Melo.Database.Model as DB
 import Melo.Format ()
 import Melo.Format.Metadata ()
 import Melo.GraphQL.Where
+import Melo.Common.Logging
 import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Service
 import Melo.Library.Collection.Types
@@ -130,6 +132,30 @@ data CollectionWhere = CollectionWhere
 instance GQLType CollectionWhere where
   type KIND CollectionWhere = INPUT
 
+data CollectionMutation (m :: Type -> Type) = CollectionMutation
+  { add :: AddCollectionArgs -> m (Collection m),
+    delete :: DeleteCollectionArgs -> m (),
+    deleteAll :: m ()
+  }
+  deriving (Generic)
+
+instance Typeable m => GQLType (CollectionMutation m)
+
+collectionMutation :: forall sig m e.
+  ( Has CollectionRepository sig m,
+    Has CollectionService sig m,
+    Has SrcRepo.SourceRepository sig m,
+    Has Logging sig m
+  ) => ResolverM e (m :: Type -> Type) CollectionMutation
+collectionMutation =
+  lift $
+    pure
+      CollectionMutation
+        { add = addCollectionImpl @sig @m,
+          delete = deleteCollectionImpl @sig @m,
+          deleteAll = deleteAllCollectionsImpl @sig @m
+        }
+
 data AddCollectionArgs = AddCollectionArgs
   { newCollection :: NewCollection
   }
@@ -153,3 +179,23 @@ addCollectionImpl AddCollectionArgs {..} = do
   case cs' of
     (c : _) -> pure c
     [] -> fail "failed to add collection"
+
+data DeleteCollectionArgs = DeleteCollectionArgs
+  { id :: Text
+  }
+  deriving (Generic)
+
+instance GQLType DeleteCollectionArgs where
+  type KIND DeleteCollectionArgs = INPUT
+
+deleteCollectionImpl :: forall sig m e.
+  (Has CollectionRepository sig m, Has Logging sig m) =>
+  DeleteCollectionArgs -> Resolver MUTATION e m ()
+deleteCollectionImpl DeleteCollectionArgs {..} =
+  case fromText id of
+    Just uuid -> lift $ deleteCollections [DB.CollectionKey uuid]
+    Nothing -> lift $ $(logWarn) $ "invalid UUID " <> id
+
+deleteAllCollectionsImpl :: forall sig m e. (Has CollectionRepository sig m) =>
+  MutRes e m ()
+deleteAllCollectionsImpl = lift deleteAllCollections

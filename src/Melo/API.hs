@@ -65,7 +65,7 @@ rootResolver :: ResolverE sig m => RootResolver m () Query Mutation Undefined
 rootResolver =
   RootResolver
     { queryResolver = Query {library = resolveLibrary},
-      mutationResolver = Mutation {library = resolveLibraryMutation},
+      mutationResolver = Mutation {library = libraryMutation},
       subscriptionResolver = Undefined
     }
 

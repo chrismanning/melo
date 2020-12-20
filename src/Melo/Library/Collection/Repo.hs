@@ -27,6 +27,7 @@ data CollectionRepository :: Effect where
   GetCollectionsByUri :: [URI] -> CollectionRepository m [DB.Collection]
   InsertCollections :: [NewCollection] -> CollectionRepository m [DB.Collection]
   DeleteCollections :: [DB.CollectionKey] -> CollectionRepository m ()
+  DeleteAllCollections :: CollectionRepository m ()
   UpdateCollections :: [UpdateCollection] -> CollectionRepository m ()
 
 makeSmartConstructors ''CollectionRepository
@@ -65,6 +66,7 @@ instance
         $(runPgDebug') (Pg.runPgInsertReturningList q)
       pure $ ctx $> r
     L (DeleteCollections ks) -> ctx $$> deleteByKeys tbl ks
+    L DeleteAllCollections -> ctx $$> deleteAll tbl
     L (UpdateCollections us) -> do
       forM_ us $ \u -> do
         let q = save tbl u
