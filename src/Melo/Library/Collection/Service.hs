@@ -3,6 +3,7 @@
 module Melo.Library.Collection.Service where
 
 import Control.Algebra
+import Control.Carrier.Reader
 import Control.Effect.Lift
 import Control.Effect.TH
 import Control.Monad
@@ -14,6 +15,7 @@ import Melo.Common.Effect
 import Melo.Common.Logging
 import Melo.Common.Uri
 import qualified Melo.Database.Model as DB
+import Melo.Database.Transaction
 import Melo.Library.Collection.FileSystem.Service
 import Melo.Library.Collection.FileSystem.WatchService
 import Melo.Library.Collection.Repo as Repo
@@ -39,6 +41,7 @@ instance
   ( Has CollectionRepository sig m,
     Has FileSystemService sig m,
     Has FileSystemWatchService sig m,
+    Has Transaction sig m,
     Has (Lift IO) sig m,
     Has Logging sig m
   ) =>
@@ -52,7 +55,11 @@ instance
       case cs of
         [DB.Collection {..}] -> do
           let ref = CollectionRef id
-          _ <- forkIO $ scanPath ref (T.unpack rootPath)
+          _ <- forkIO $
+            withTransaction $ \conn ->
+              runReader conn $
+                runSavepoint $
+                  scanPath ref (T.unpack rootPath)
           when watch $ startWatching ref (T.unpack rootPath)
           pure $ ctx $> ref
         _otherwise -> error "unexpected insertCollections result"
