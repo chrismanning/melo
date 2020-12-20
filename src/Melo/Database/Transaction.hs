@@ -64,7 +64,8 @@ instance
     mask $ \restore -> do
       sp <- sendIO $ Pg.newSavepoint conn
       r <- restore (hdl (t <$ ctx)) `onException` cleanUp conn sp
-      sendIO (Pg.releaseSavepoint conn sp) `catch` \err ->
+      sendIO (Pg.releaseSavepoint conn sp) `catch` \err -> do
+        $(logError) $ "release savepoint failed: " <> show err
         if Pg.isFailedTransactionError err
           then sendIO $ Pg.rollbackToAndReleaseSavepoint conn sp
           else throwIO err

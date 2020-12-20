@@ -63,8 +63,8 @@ initApp collectionWatchState pool =
               withTransaction $ \conn ->
                 runReader conn $
                   runError (\(e :: MetadataException) -> $(logError) $ "uncaught metadata exception: " <> show e) pure $
-                    runMetadataServiceIO $
-                      runSavepoint $
+                    runSavepoint $
+                      runMetadataServiceIO $
                         runSourceRepositoryIO $
                           runFileSystemServiceIO $
                             runCollectionRepositoryIO $

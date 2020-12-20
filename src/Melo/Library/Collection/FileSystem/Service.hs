@@ -47,7 +47,7 @@ instance
   Algebra (FileSystemService :+: sig) (FileSystemServiceIOC m)
   where
   alg hdl sig ctx = case sig of
-    L (ScanPath ref p') -> withSavepoint do
+    L (ScanPath ref p') -> fmap (ctx $>) $ handle handleScanException $ withSavepoint $ do
       -- TODO IO error handling
       p <- canonicalizePath p'
       $(logInfo) $ "Importing " <> p
@@ -77,7 +77,7 @@ instance
                 importSources (FileSource ref <$> maybeToList mf)
               else pure mempty
       $(logInfo) $ "Import finished: " <> show srcs
-      pure (ctx $> srcs)
+      pure srcs
     R other -> FileSystemServiceIOC (alg (runFileSystemServiceIOC . hdl) other ctx)
     where
       openMetadataFile'' :: FilePath -> FileSystemServiceIOC m (Maybe F.MetadataFile)
@@ -85,12 +85,16 @@ instance
         openMetadataFileByExt' p >>= \case
           Right mf -> pure $ Just mf
           Left e -> do
-            $(logWarn) $ "Could not open by extension" <> p <> ": " <> show e
+            $(logWarn) $ "Could not open by extension " <> p <> ": " <> show e
             openMetadataFile' p >>= \case
               Left e -> do
                 $(logError) $ "Could not open " <> p <> ": " <> show e
                 pure Nothing
               Right mf -> pure $ Just mf
+      handleScanException :: SomeException -> FileSystemServiceIOC m [Source]
+      handleScanException e = do
+        $(logError) $ "error during scan: " <> show e
+        pure []
 
 listDirectoryAbs :: Has FileSystem sig m => FilePath -> m [FilePath]
 listDirectoryAbs p = do
