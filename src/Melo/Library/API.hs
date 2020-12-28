@@ -69,7 +69,8 @@ libraryMutation ::
     Has Logging sig m,
     Has MetadataService sig m,
     Has CollectionService sig m,
-    Has CollectionRepository sig m
+    Has CollectionRepository sig m,
+    Has FileSystem sig m
   ) =>
   ResolverM e (m :: Type -> Type) LibraryMutation
 libraryMutation =

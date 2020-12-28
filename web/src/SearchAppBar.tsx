@@ -1,4 +1,4 @@
-import React from 'react';
+import React, {MouseEventHandler} from 'react';
 import AppBar from '@material-ui/core/AppBar';
 import Toolbar from '@material-ui/core/Toolbar';
 import IconButton from '@material-ui/core/IconButton';
@@ -8,6 +8,8 @@ import { createStyles, fade, Theme, makeStyles } from '@material-ui/core/styles'
 import MenuIcon from '@material-ui/icons/Menu';
 import SearchIcon from '@material-ui/icons/Search';
 import {useScrollTrigger} from "@material-ui/core";
+import {Link as RouterLink} from 'react-router-dom';
+import Link from '@material-ui/core/Link';
 
 const useStyles = makeStyles((theme: Theme) =>
   createStyles({
@@ -16,9 +18,14 @@ const useStyles = makeStyles((theme: Theme) =>
     },
     menuButton: {
       marginRight: theme.spacing(2),
+      [theme.breakpoints.up('sm')]: {
+        display: 'none',
+      },
     },
     title: {
       flexGrow: 1,
+      color: theme.palette.common.white,
+      // color: 'white',
       display: 'none',
       [theme.breakpoints.up('sm')]: {
         display: 'block',
@@ -85,32 +92,35 @@ export default function SearchAppBar() {
   return (
     <>
       <ElevationScroll>
-        <AppBar className={classes.root} position="sticky">
+        <AppBar className={classes.root} position="sticky" >
           <Toolbar>
-            <IconButton
-              edge="start"
-              className={classes.menuButton}
-              color="inherit"
-              aria-label="open drawer"
-            >
-              <MenuIcon />
-            </IconButton>
-            <Typography className={classes.title} variant="h6" noWrap>
-              Melo
-            </Typography>
-            <div className={classes.search}>
-              <div className={classes.searchIcon}>
-                <SearchIcon />
-              </div>
-              <InputBase
-                placeholder="Search…"
-                classes={{
-                  root: classes.inputRoot,
-                  input: classes.inputInput,
-                }}
-                inputProps={{ 'aria-label': 'search' }}
-              />
-            </div>
+            {/*<IconButton*/}
+            {/*  edge="start"*/}
+            {/*  className={classes.menuButton}*/}
+            {/*  color="inherit"*/}
+            {/*  aria-label="open drawer"*/}
+            {/*  onClick={props.onMenuClick}*/}
+            {/*>*/}
+            {/*  <MenuIcon />*/}
+            {/*</IconButton>*/}
+
+            <Link variant="h6" className={classes.title} to="/" component={RouterLink as any}>Melo</Link>
+            {/*<Typography className={classes.title} variant="h6" noWrap>*/}
+            {/*  Melo*/}
+            {/*</Typography>*/}
+            {/*<div className={classes.search}>*/}
+            {/*  <div className={classes.searchIcon}>*/}
+            {/*    <SearchIcon />*/}
+            {/*  </div>*/}
+            {/*  <InputBase*/}
+            {/*    placeholder="Search…"*/}
+            {/*    classes={{*/}
+            {/*      root: classes.inputRoot,*/}
+            {/*      input: classes.inputInput,*/}
+            {/*    }}*/}
+            {/*    inputProps={{ 'aria-label': 'search' }}*/}
+            {/*  />*/}
+            {/*</div>*/}
           </Toolbar>
         </AppBar>
       </ElevationScroll>

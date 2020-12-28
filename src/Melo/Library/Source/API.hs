@@ -261,9 +261,10 @@ instance GQLType MappedTagsInput where
 
 resolveSourceGroups ::
   ( Has SourceRepository sig m,
-    Has FileSystem sig m
+    Has FileSystem sig m,
+    WithOperation o
   ) =>
-  Res e m [SourceGroup (Res e m)]
+  Resolver o e m [SourceGroup (Resolver o e m)]
 resolveSourceGroups = lift $ groupSources <$!> fmap (fmap from) getAllSources
 
 data SourceGroup m = SourceGroup
@@ -294,7 +295,7 @@ data SourceContent
 
 instance GQLType SourceContent
 
-groupSources :: forall m sig e. (Has FileSystem sig m) => [Source (Res e m)] -> [SourceGroup (Res e m)]
+groupSources :: forall m sig e o. (Has FileSystem sig m, WithOperation o) => [Source (Resolver o e m)] -> [SourceGroup (Resolver o e m)]
 groupSources = fmap trSrcGrp . toList . foldl' acc S.empty
   where
     acc gs' src =
@@ -311,15 +312,15 @@ groupSources = fmap trSrcGrp . toList . foldl' acc S.empty
                 then gs |> (g & #sources <>~ S.singleton src)
                 else gs |> g |> newGroup
             _empty -> S.singleton newGroup
-    trSrcGrp :: SourceGroup' (Res e m) -> SourceGroup (Res e m)
+    trSrcGrp :: SourceGroup' (Resolver o e m) -> SourceGroup (Resolver o e m)
     trSrcGrp g =
       SourceGroup
         { groupTags = g ^. #groupTags,
           groupParentUri = g ^. #groupParentUri,
           sources = toList $ g ^. #sources,
-          coverImage = lift $ pure Nothing -- coverImageImpl g
+          coverImage = lift $ coverImageImpl g
         }
-    coverImageImpl :: SourceGroup' (Res e m) -> m (Maybe Image)
+    coverImageImpl :: SourceGroup' (Resolver o e m) -> m (Maybe Image)
     coverImageImpl g = case parseURI $ T.unpack $ g ^. #groupParentUri of
       Just uri ->
         case uriToFilePath uri of

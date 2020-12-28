@@ -392,12 +392,12 @@ const CommandButton = (props: TableEditColumn.CommandProps) => {
     </IconButton>
   )
   return (<>
-    {props.id == "delete" &&
+    {props.id === "delete" &&
     <CommandIconButton>
         <DeleteIcon/>
     </CommandIconButton>
     }
-    {props.id == "add" &&
+    {props.id === "add" &&
     <CommandIconButton>
         <AddIcon/>
     </CommandIconButton>
@@ -475,8 +475,10 @@ export default function SourceMetadataEditor(props: SourceMetadataEditorProps) {
         <LinearProgress/>
       )}
       {error && (
-        <Typography>Error retrieving source metadata: {error.message}</Typography>
-      )}
+        <Alert severity="error">
+          <AlertTitle>Failed to load tags</AlertTitle>
+          {error.message}
+        </Alert>)}
       {srcs && (
         <>
           <Tabs
@@ -493,10 +495,10 @@ export default function SourceMetadataEditor(props: SourceMetadataEditorProps) {
           </Tabs>
 
           <>
-            {value == 0 && (
+            {value === 0 && (
               <BasicEditor data={srcs} onFailure={props.onFailure} onSuccess={props.onSuccess}/>
             )}
-            {value == 1 && (
+            {value === 1 && (
               <AdvancedEditor data={srcs}
                               onFailure={props.onFailure} onSuccess={props.onSuccess}/>
             )}

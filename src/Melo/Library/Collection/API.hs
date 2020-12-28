@@ -19,6 +19,7 @@ import qualified Melo.Database.Model as DB
 import Melo.Format ()
 import Melo.Format.Metadata ()
 import Melo.GraphQL.Where
+import Melo.Common.FileSystem
 import Melo.Common.Logging
 import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Service
@@ -29,7 +30,8 @@ import Network.URI
 
 resolveCollections ::
   ( Has CollectionRepository sig m,
-    Has SrcRepo.SourceRepository sig m
+    Has SrcRepo.SourceRepository sig m,
+    Has FileSystem sig m
   ) =>
   CollectionsArgs ->
   ResolverQ e m [Collection (Resolver QUERY e m)]
@@ -68,7 +70,8 @@ data Collection m = Collection
     name :: Text,
     watch :: Bool,
     kind :: Text,
-    sources :: SourcesArgs -> m [SrcApi.Source m]
+    sources :: SourcesArgs -> m [SrcApi.Source m],
+    sourceGroups :: m [SrcApi.SourceGroup m]
   }
   deriving (Generic)
 
@@ -90,6 +93,7 @@ instance Typeable m => GQLType (Collection m)
 
 instance
   ( Has SrcRepo.SourceRepository sig m,
+    Has FileSystem sig m,
     WithOperation o
   ) =>
   From DB.Collection (Collection (Resolver o e m))
@@ -101,7 +105,8 @@ instance
         rootUri = s ^. #root_uri,
         watch = s ^. #watch,
         kind = s ^. #kind,
-        sources = SrcApi.resolveSources
+        sources = SrcApi.resolveSources,
+        sourceGroups = SrcApi.resolveSourceGroups
       }
 
 data LocalFileCollection m = LocalFileCollection
@@ -145,6 +150,7 @@ collectionMutation :: forall sig m e.
   ( Has CollectionRepository sig m,
     Has CollectionService sig m,
     Has SrcRepo.SourceRepository sig m,
+    Has FileSystem sig m,
     Has Logging sig m
   ) => ResolverM e (m :: Type -> Type) CollectionMutation
 collectionMutation =
@@ -168,7 +174,8 @@ addCollectionImpl ::
   forall sig m e.
   ( Has CollectionService sig m,
     Has CollectionRepository sig m,
-    Has SrcRepo.SourceRepository sig m
+    Has SrcRepo.SourceRepository sig m,
+    Has FileSystem sig m
   ) =>
   AddCollectionArgs ->
   MutRes e m (Collection (MutRes e m))

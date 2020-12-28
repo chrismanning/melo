@@ -4,7 +4,15 @@ export interface Data {
 
 export interface Library {
   sources?: [SourceItem],
-  sourceGroups?: [SourceGroup]
+  sourceGroups?: [SourceGroup],
+  collections?: [Collection],
+}
+
+export interface Collection {
+  id: string,
+  name: string,
+  sourceGroups?: [SourceGroup],
+  sources?: [SourceItem],
 }
 
 export interface SourceGroup {

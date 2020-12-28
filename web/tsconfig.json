@@ -19,7 +19,8 @@
     "noEmit": true,
     "jsx": "react",
     "strictNullChecks": true,
-    "downlevelIteration": true
+    "downlevelIteration": true,
+    "noFallthroughCasesInSwitch": true
   },
   "include": [
     "src"
