@@ -104,7 +104,7 @@ export default function SearchAppBar() {
             {/*  <MenuIcon />*/}
             {/*</IconButton>*/}
 
-            <Link variant="h6" className={classes.title} to="/" component={RouterLink as any}>Melo</Link>
+            <Link variant="h6" underline="none" className={classes.title} to="/" component={RouterLink as any}>Melo</Link>
             {/*<Typography className={classes.title} variant="h6" noWrap>*/}
             {/*  Melo*/}
             {/*</Typography>*/}

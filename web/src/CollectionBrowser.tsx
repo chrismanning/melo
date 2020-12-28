@@ -234,10 +234,10 @@ export default function CollectionBrowser({collectionId}: { collectionId: string
       handleListItemClick(event, indices, groupIndex)
     }
     return <>
-      <ListSubheader component="div" key={`sourceGroup-${groupIndex}`}>
+      <ListItem key={`sourceGroup-${groupIndex}`}>
         <SourceListSubheader sourceGroup={sourceGroup} collapsed={collapsedGroups.has(groupIndex)}
                              onToggleCollapse={toggleCollapseGroup} onClick={handleSubheaderClick}/>
-      </ListSubheader>
+      </ListItem>
       <Collapse in={!collapsedGroups.has(groupIndex)}>
         {sourceListItems}
       </Collapse>
@@ -247,7 +247,8 @@ export default function CollectionBrowser({collectionId}: { collectionId: string
   const handleClose = () => setOpenMetadataEditor(false)
   const handleSubmit = () => {
     setOpenMetadataEditor(false)
-    refetch().then(_ => {})
+    refetch().then(_ => {
+    })
   }
   let selectedSrcIds = [...selectedSrcs].map(src => src.id)
   return <>
@@ -330,6 +331,7 @@ const useStyles = makeStyles((theme: Theme) =>
     },
     listSection: {
       padding: theme.spacing(1),
+      width: '100%',
     },
     ul: {
       backgroundColor: 'inherit',
