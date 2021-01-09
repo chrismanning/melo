@@ -8,6 +8,7 @@ import Control.Carrier.Lift
 import Control.Carrier.Reader
 import Control.Concurrent.STM
 import Control.Monad.IO.Class
+import Control.Monad.Trans.Control (MonadBaseControl)
 import Data.ByteString.Lazy.Char8
 import qualified Data.HashMap.Strict as H
 import Data.Morpheus
@@ -37,9 +38,8 @@ import Melo.Library.Source.Service
 import Network.HTTP.Types.Status
 import Network.Wai.Middleware.Cors
 import qualified System.FSNotify as FS
-import System.FilePath (takeFileName, takeDirectory, pathSeparator)
+import System.FilePath (pathSeparator, takeDirectory, takeFileName)
 import Web.Scotty.Trans
-import Control.Monad.Trans.Control (MonadBaseControl)
 
 data Query m = Query
   { library :: m (LibraryQuery m)

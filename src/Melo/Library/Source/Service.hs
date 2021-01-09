@@ -7,8 +7,8 @@ import Control.Algebra
 import Control.Lens hiding (from, lens)
 import Data.Foldable
 import Data.Maybe
-import Data.Time
 import qualified Data.Text as T
+import Data.Time
 import Melo.Common.Logging
 import qualified Melo.Library.Source.Repo as Repo
 import Melo.Library.Source.Types

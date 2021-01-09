@@ -101,19 +101,21 @@ instance (Applicative m, Has FileSystem sig m, WithOperation o) => From Ty.Sourc
         length = pure 100,
         coverImage = lift $ coverImageImpl s
       }
-      where
-        coverImageImpl :: Ty.Source -> m (Maybe Image)
-        coverImageImpl src = 
-           case uriToFilePath (src ^. #source) of
-             Just path ->
-               findCoverImage (takeDirectory path) >>= \case
-                 Nothing -> pure Nothing
-                 Just imgPath ->
-                   pure $ Just Image {
-                     fileName = T.pack $ takeFileName imgPath,
-                     downloadUri = "/source/" <> toText (src ^. #ref . coerced) <> "/image"
-                   }
-             Nothing -> error "unimplemented"
+    where
+      coverImageImpl :: Ty.Source -> m (Maybe Image)
+      coverImageImpl src =
+        case uriToFilePath (src ^. #source) of
+          Just path ->
+            findCoverImage (takeDirectory path) >>= \case
+              Nothing -> pure Nothing
+              Just imgPath ->
+                pure $
+                  Just
+                    Image
+                      { fileName = T.pack $ takeFileName imgPath,
+                        downloadUri = "/source/" <> toText (src ^. #ref . coerced) <> "/image"
+                      }
+          Nothing -> error "unimplemented"
 
 instance (Applicative m, Has FileSystem sig m, WithOperation o) => From DB.Source (Source (Resolver o e m)) where
   from s =
@@ -136,10 +138,12 @@ instance (Applicative m, Has FileSystem sig m, WithOperation o) => From DB.Sourc
               findCoverImage (takeDirectory path) >>= \case
                 Nothing -> pure Nothing
                 Just imgPath ->
-                  pure $ Just Image {
-                    fileName = T.pack $ takeFileName imgPath,
-                    downloadUri = "/source/" <> toText (src ^. #id) <> "/image"
-                  }
+                  pure $
+                    Just
+                      Image
+                        { fileName = T.pack $ takeFileName imgPath,
+                          downloadUri = "/source/" <> toText (src ^. #id) <> "/image"
+                        }
             Nothing -> error "unimplemented"
         Nothing -> pure Nothing
 
@@ -362,10 +366,12 @@ groupSources = fmap trSrcGrp . toList . foldl' acc S.empty
                 case S.lookup 0 $ g ^. #sources of
                   Nothing -> pure Nothing
                   Just src ->
-                    pure $ Just Image {
-                      fileName = T.pack $ takeFileName imgPath,
-                      downloadUri = "/source/" <> (src ^. #id) <> "/image"
-                    }
+                    pure $
+                      Just
+                        Image
+                          { fileName = T.pack $ takeFileName imgPath,
+                            downloadUri = "/source/" <> (src ^. #id) <> "/image"
+                          }
           Nothing -> error "unimplemented"
       Nothing -> pure Nothing
 

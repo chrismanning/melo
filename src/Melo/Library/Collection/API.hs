@@ -15,12 +15,12 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.UUID (fromText, toText)
 import Database.Beam as B hiding (char, insert)
+import Melo.Common.FileSystem
+import Melo.Common.Logging
 import qualified Melo.Database.Model as DB
 import Melo.Format ()
 import Melo.Format.Metadata ()
 import Melo.GraphQL.Where
-import Melo.Common.FileSystem
-import Melo.Common.Logging
 import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Service
 import Melo.Library.Collection.Types
@@ -146,13 +146,15 @@ data CollectionMutation (m :: Type -> Type) = CollectionMutation
 
 instance Typeable m => GQLType (CollectionMutation m)
 
-collectionMutation :: forall sig m e.
+collectionMutation ::
+  forall sig m e.
   ( Has CollectionRepository sig m,
     Has CollectionService sig m,
     Has SrcRepo.SourceRepository sig m,
     Has FileSystem sig m,
     Has Logging sig m
-  ) => ResolverM e (m :: Type -> Type) CollectionMutation
+  ) =>
+  ResolverM e (m :: Type -> Type) CollectionMutation
 collectionMutation =
   lift $
     pure
@@ -195,14 +197,18 @@ data DeleteCollectionArgs = DeleteCollectionArgs
 instance GQLType DeleteCollectionArgs where
   type KIND DeleteCollectionArgs = INPUT
 
-deleteCollectionImpl :: forall sig m e.
+deleteCollectionImpl ::
+  forall sig m e.
   (Has CollectionRepository sig m, Has Logging sig m) =>
-  DeleteCollectionArgs -> Resolver MUTATION e m ()
+  DeleteCollectionArgs ->
+  Resolver MUTATION e m ()
 deleteCollectionImpl DeleteCollectionArgs {..} =
   case fromText id of
     Just uuid -> lift $ deleteCollections [DB.CollectionKey uuid]
     Nothing -> lift $ $(logWarn) $ "invalid UUID " <> id
 
-deleteAllCollectionsImpl :: forall sig m e. (Has CollectionRepository sig m) =>
+deleteAllCollectionsImpl ::
+  forall sig m e.
+  (Has CollectionRepository sig m) =>
   MutRes e m ()
 deleteAllCollectionsImpl = lift deleteAllCollections

@@ -45,37 +45,38 @@ instance
   Algebra (FileSystemService :+: sig) (FileSystemServiceIOC m)
   where
   alg hdl sig ctx = case sig of
-    L (ScanPath ref p') -> fmap (ctx $>) $ handle handleScanException $ do
-      -- TODO IO error handling
-      p <- canonicalizePath p'
-      $(logInfo) $ "Importing " <> p
-      isDir <- doesDirectoryExist p
-      isFile <- doesFileExist p
-      srcs <-
-        if isDir
-          then do
-            $(logDebug) $ p <> " is directory; recursing..."
-            dirs <- filterM doesDirectoryExist =<< listDirectoryAbs p
-            mapM_ (scanPath ref) dirs
-            files <- filterM doesFileExist =<< listDirectoryAbs p
-            if any ((== ".cue") . takeExtension) files
-              then do
-                -- TODO load file(s) referenced in cuefile
-                $(logWarn) $ "Cue file found in " <> show p <> "; skipping..."
-                pure mempty
-              else withSavepoint do
-                $(logDebug) $ "Importing " <> show files
-                mfs <- catMaybes <$> mapM openMetadataFile'' files
-                $(logDebug) $ "Opened " <> show mfs
-                importSources (FileSource ref <$> mfs)
-          else
-            if isFile
-              then withSavepoint do
-                mf <- openMetadataFile'' p
-                importSources (FileSource ref <$> maybeToList mf)
-              else pure mempty
-      $(logInfo) $ "Import finished: " <> show srcs
-      pure srcs
+    L (ScanPath ref p') -> fmap (ctx $>) $
+      handle handleScanException $ do
+        -- TODO IO error handling
+        p <- canonicalizePath p'
+        $(logInfo) $ "Importing " <> p
+        isDir <- doesDirectoryExist p
+        isFile <- doesFileExist p
+        srcs <-
+          if isDir
+            then do
+              $(logDebug) $ p <> " is directory; recursing..."
+              dirs <- filterM doesDirectoryExist =<< listDirectoryAbs p
+              mapM_ (scanPath ref) dirs
+              files <- filterM doesFileExist =<< listDirectoryAbs p
+              if any ((== ".cue") . takeExtension) files
+                then do
+                  -- TODO load file(s) referenced in cuefile
+                  $(logWarn) $ "Cue file found in " <> show p <> "; skipping..."
+                  pure mempty
+                else withSavepoint do
+                  $(logDebug) $ "Importing " <> show files
+                  mfs <- catMaybes <$> mapM openMetadataFile'' files
+                  $(logDebug) $ "Opened " <> show mfs
+                  importSources (FileSource ref <$> mfs)
+            else
+              if isFile
+                then withSavepoint do
+                  mf <- openMetadataFile'' p
+                  importSources (FileSource ref <$> maybeToList mf)
+                else pure mempty
+        $(logInfo) $ "Import finished: " <> show srcs
+        pure srcs
     R other -> FileSystemServiceIOC (alg (runFileSystemServiceIOC . hdl) other ctx)
     where
       openMetadataFile'' :: FilePath -> FileSystemServiceIOC m (Maybe F.MetadataFile)
