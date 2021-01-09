@@ -66,9 +66,7 @@ getLazyByteStringUpTo n =
   getLazyByteString (fromIntegral n) <|> getRemainingLazyByteString
 
 hGetFileContents :: Handle -> IO L.ByteString
-hGetFileContents h = do
-  len <- hFileSize h
-  L.hGet h (fromIntegral len)
+hGetFileContents = L.hGetContents
 
 findSubstring :: BS.ByteString -> L.ByteString -> Maybe Int64
 findSubstring n h

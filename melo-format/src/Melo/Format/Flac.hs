@@ -276,7 +276,7 @@ hFindFlac h = do
               pure ()
     findId3End loc = do
       hSeek h AbsoluteSeek (fromIntegral loc)
-      id3Size <- runGet ID3v2.getId3v2Size <$!> L.hGet h ID3v2.headerSize
+      id3Size <- runGet ID3v2.getId3v2Size <$!> (L.fromStrict <$> BS.hGet h ID3v2.headerSize)
       pure $ fromIntegral loc + id3Size + fromIntegral ID3v2.headerSize
     findFlac flacLoc = do
       hSeek h AbsoluteSeek flacLoc

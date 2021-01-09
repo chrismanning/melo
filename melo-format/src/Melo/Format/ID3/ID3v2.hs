@@ -161,8 +161,8 @@ instance (GetFrame v, PutFrame v) => MetadataLocator (ID3v2 v) where
   hLocate h = do
     -- TODO ID3v2 can also appear at the end of a file
     hSeek h AbsoluteSeek 0
-    bs <- L.hGet h headerSize
-    pure $ fromIntegral <$> locate @(ID3v2 v) bs
+    bs <- BS.hGet h headerSize
+    pure $ fromIntegral <$> locate @(ID3v2 v) (L.fromStrict bs)
 
 instance (GetFrame v, PutFrame v) => Binary (ID3v2 v) where
   get = do
