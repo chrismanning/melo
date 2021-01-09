@@ -37,6 +37,7 @@ oggVorbis =
     { priority = 100,
       fileId = oggVorbisFileId,
       detectFile = \p -> withBinaryFile p ReadMode $ \h -> do
+        hSeek h AbsoluteSeek 0
         buf <- hGetFileContents h
         pure $ isRight $ runGetOrFail @(OggPage Header) get buf,
       readMetadataFile = readOggVorbisFile,

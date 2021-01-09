@@ -68,9 +68,7 @@ getLazyByteStringUpTo n =
   getLazyByteString (fromIntegral n) <|> getRemainingLazyByteString
 
 hGetFileContents :: Handle -> IO L.ByteString
-hGetFileContents h = do
-  hSeek h AbsoluteSeek 0
-  hGetFileContentsN L.smallChunkSize h
+hGetFileContents = hGetFileContentsN L.smallChunkSize
 
 hGetFileContentsN :: Int -> Handle -> IO L.ByteString
 hGetFileContentsN k h = lazyRead
