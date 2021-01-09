@@ -118,7 +118,7 @@ logErrorShow = logShow Wlog.Error
 runStdoutLogging :: LoggingIOC m a -> m a
 runStdoutLogging = runLoggingIOC
 
-logIOImpl :: (From s LogMessage) => String -> Int -> s -> IO ()
+logIOImpl :: (From s LogMessage, MonadIO m) => String -> Int -> s -> m ()
 logIOImpl ln severity msg =
   let (LogMessage s) = from msg
    in Wlog.logM (Wlog.LoggerName $ T.pack ln) (toEnum severity) s

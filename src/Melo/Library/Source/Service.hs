@@ -8,6 +8,7 @@ import Control.Lens hiding (from, lens)
 import Data.Foldable
 import Data.Maybe
 import Data.Time
+import qualified Data.Text as T
 import Melo.Common.Logging
 import qualified Melo.Library.Source.Repo as Repo
 import Melo.Library.Source.Types
@@ -44,3 +45,13 @@ length' = foldl' (const . (+ 1)) 0
 
 modificationTime :: NewImportSource -> IO LocalTime
 modificationTime (FileSource _ f) = utcToLocalTime utc <$> getModificationTime (f ^. #filePath)
+
+getSourceFilePath :: (Has Repo.SourceRepository sig m) => SourceRef -> m (Maybe FilePath)
+getSourceFilePath k = do
+  s <- listToMaybe <$> Repo.getSources [k]
+  case s >>= parseURI . T.unpack . (^. #source_uri) of
+    Nothing -> pure Nothing
+    Just uri ->
+      case uriScheme uri of
+        "file:" -> pure (Just $ unEscapeString $ uriPath uri)
+        _otherScheme -> pure Nothing

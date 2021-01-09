@@ -4,24 +4,18 @@
 module Melo.API where
 
 import Control.Algebra
-import Control.Carrier.Error.Church
 import Control.Carrier.Lift
 import Control.Carrier.Reader
 import Control.Concurrent.STM
-import Control.Effect.Exception
-import Control.Lens ((^.))
 import Control.Monad.IO.Class
-import qualified Data.ByteString.Lazy as LB
 import Data.ByteString.Lazy.Char8
 import qualified Data.HashMap.Strict as H
-import Data.Maybe
 import Data.Morpheus
 import Data.Morpheus.Types
 import Data.Pool
+import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Text.Encoding (encodeUtf8)
 import qualified Data.Text.Lazy as LT
-import Data.Text.Lazy.Encoding (decodeUtf8)
 import Data.Typeable
 import Data.UUID
 import Database.Beam.Postgres (Connection)
@@ -31,21 +25,21 @@ import Melo.Common.Logging
 import Melo.Common.Metadata
 import qualified Melo.Database.Model as DB
 import Melo.Database.Transaction
-import qualified Melo.Format.Error as F
 import Melo.Library.API
 import Melo.Library.Collection.FileSystem.Service
 import Melo.Library.Collection.FileSystem.WatchService
 import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Service
 import Melo.Library.Collection.Types
+import qualified Melo.Library.Source.API as API
 import Melo.Library.Source.Repo
+import Melo.Library.Source.Service
 import Network.HTTP.Types.Status
-import Network.URI
 import Network.Wai.Middleware.Cors
-import Network.Wai.Parse (FileInfo (..))
 import qualified System.FSNotify as FS
-import System.FilePath (takeFileName)
+import System.FilePath (takeFileName, takeDirectory, pathSeparator)
 import Web.Scotty.Trans
+import Control.Monad.Trans.Control (MonadBaseControl)
 
 data Query m = Query
   { library :: m (LibraryQuery m)
@@ -95,7 +89,6 @@ type ResolverE sig m =
     Has Logging sig m,
     Has FileSystem sig m,
     Has SourceRepository sig m,
-    Has (Error F.MetadataException) sig m,
     Has MetadataService sig m,
     Has CollectionRepository sig m,
     Has CollectionService sig m,
@@ -111,11 +104,8 @@ runResolverE ::
             ( SourceRepositoryIOC
                 ( MetadataServiceIOC
                     ( SavepointC
-                        ( ErrorC
-                            F.MetadataException
-                            ( LoggingIOC
-                                ( ReaderC t m
-                                )
+                        ( LoggingIOC
+                            ( ReaderC t m
                             )
                         )
                     )
@@ -128,12 +118,6 @@ runResolverE ::
 runResolverE conn =
   runReader conn
     . runStdoutLogging
-    . runError
-      ( \(e :: F.MetadataException) -> do
-          $(logError) ("Uncaught metadata error: " <> show e)
-          throwIO e
-      )
-      pure
     . runSavepoint
     . runMetadataServiceIO
     . runSourceRepositoryIO
@@ -141,7 +125,7 @@ runResolverE conn =
     . runCollectionRepositoryIO
     . runCollectionServiceIO
 
-api :: MonadIO m => TVar (H.HashMap CollectionRef FS.StopListening) -> Pool Connection -> ScottyT LT.Text m ()
+api :: (MonadIO m, MonadBaseControl IO m) => TVar (H.HashMap CollectionRef FS.StopListening) -> Pool Connection -> ScottyT LT.Text m ()
 api collectionWatchState pool = do
   middleware (cors (const $ Just simpleCorsResourcePolicy {corsRequestHeaders = ["Content-Type"]}))
   matchAny "/api" $ do
@@ -155,42 +139,51 @@ api collectionWatchState pool = do
     case fromASCIIBytes srcId of
       Nothing -> status badRequest400
       Just uuid -> do
-        fileInfo <- liftIO $ streamSourceIO pool (DB.SourceKey uuid)
-        case fileInfo of
-          Nothing -> status notFound404
-          Just fileInfo -> do
-            setHeader "Content-Type" (decodeUtf8 $ LB.fromStrict $ fileContentType fileInfo)
-            let fileName' = decodeUtf8 $ LB.fromStrict $ fileName fileInfo
+        getSourceFilePathIO pool (DB.SourceKey uuid) >>= \case
+          Nothing -> do
+            $(logWarnIO) $ "No local file found for source " <> show uuid
+            status notFound404
+          Just path -> do
+            $(logInfoIO) $ "Opening file '" <> path <> "' for streaming"
+            file path
+            let fileName' = LT.pack $ takeFileName path
             setHeader "Content-Disposition" ("attachment; filename=\"" <> fileName' <> "\"")
-            raw (fileContent fileInfo)
+  get "/source/:id/image" do
+    srcId <- param "id"
+    case fromASCIIBytes srcId of
+      Nothing -> status badRequest400
+      Just uuid -> do
+        findCoverImageIO pool (DB.SourceKey uuid) >>= \case
+          Nothing -> do
+            $(logWarnIO) $ "No cover image found for source " <> srcId
+            status notFound404
+          Just path -> do
+            $(logInfoIO) $ "Found cover image " <> path <> " for source " <> show uuid
+            file path
+            let fileName' = LT.pack $ takeFileName path
+            setHeader "Content-Disposition" ("attachment; filename=\"" <> fileName' <> "\"")
 
-streamSourceIO :: Pool Connection -> DB.SourceKey -> IO (Maybe (FileInfo LB.ByteString))
-streamSourceIO pool k = withResource pool $ \conn ->
-  runReader conn $
-    runStdoutLogging $
-      runFileSystemIO $
-        runSourceRepositoryIO $ do
-          s <- listToMaybe <$> getSources [k]
-          case s >>= parseURI . T.unpack . (^. #source_uri) of
-            Nothing -> pure Nothing
-            Just uri -> do
-              $(logDebug) $ "Source URI: " <> show uri
-              case uriScheme uri of
-                "file:" -> do
-                  let path = unEscapeString $ uriPath uri
-                  $(logInfo) $ "Opening file '" <> path <> "' for streaming"
-                  x <- doesFileExist path
-                  if x
-                    then do
-                      c <- sendIO $ LB.readFile path
-                      pure $
-                        Just
-                          FileInfo
-                            { fileName = encodeUtf8 $ T.pack $ takeFileName path,
-                              fileContentType = "",
-                              fileContent = c
-                            }
-                    else pure Nothing
-                scheme -> do
-                  $(logError) $ "Unsupported URI scheme " <> scheme
-                  pure Nothing
+getSourceFilePathIO :: (MonadIO m, MonadBaseControl IO m) => Pool Connection -> DB.SourceKey -> m (Maybe FilePath)
+getSourceFilePathIO pool k = withResource pool $ \conn ->
+  liftIO $
+    runReader conn $
+      runStdoutLogging $
+        runFileSystemIO $
+          runSourceRepositoryIO $
+            getSourceFilePath k
+
+findCoverImageIO :: (MonadIO m, MonadBaseControl IO m) => Pool Connection -> DB.SourceKey -> m (Maybe FilePath)
+findCoverImageIO pool k = withResource pool $ \conn ->
+  liftIO $
+    runReader conn $
+      runStdoutLogging $
+        runFileSystemIO $
+          runSourceRepositoryIO $ do
+            getSourceFilePath k >>= \case
+              Nothing -> do
+                $(logWarn) $ "No local file found for source " <> show k
+                pure Nothing
+              Just path -> do
+                $(logInfo) $ "Locating cover image for source " <> show k
+                let dir = takeDirectory path
+                fmap (\f -> dir <> (pathSeparator : f)) <$> API.findCoverImage dir

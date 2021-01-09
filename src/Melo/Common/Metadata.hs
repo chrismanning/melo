@@ -4,7 +4,6 @@ module Melo.Common.Metadata where
 
 import Control.Algebra
 import Control.Applicative
-import Control.Effect.Error
 import Control.Effect.Exception
 import Control.Effect.Lift
 import Control.Effect.TH
@@ -28,13 +27,10 @@ chooseMetadata ms =
     <|> find (\Metadata {..} -> formatId == F.id3v1Id) ms
 
 data MetadataService :: Effect where
-  OpenMetadataFile :: FilePath -> MetadataService m F.MetadataFile
-  OpenMetadataFile' :: FilePath -> MetadataService m (Either F.MetadataException F.MetadataFile)
-  OpenMetadataFileByExt :: FilePath -> MetadataService m F.MetadataFile
-  OpenMetadataFileByExt' :: FilePath -> MetadataService m (Either F.MetadataException F.MetadataFile)
-  ReadMetadataFile :: F.MetadataFileId -> FilePath -> MetadataService m F.MetadataFile
-  ReadMetadataFile' :: F.MetadataFileId -> FilePath -> MetadataService m (Either F.MetadataException F.MetadataFile)
-  WriteMetadataFile :: F.MetadataFile -> FilePath -> MetadataService m F.MetadataFile
+  OpenMetadataFile :: FilePath -> MetadataService m (Either F.MetadataException F.MetadataFile)
+  OpenMetadataFileByExt :: FilePath -> MetadataService m (Either F.MetadataException F.MetadataFile)
+  ReadMetadataFile :: F.MetadataFileId -> FilePath -> MetadataService m (Either F.MetadataException F.MetadataFile)
+  WriteMetadataFile :: F.MetadataFile -> FilePath -> MetadataService m (Either F.MetadataException F.MetadataFile)
 
 makeSmartConstructors ''MetadataService
 
@@ -48,33 +44,23 @@ runMetadataServiceIO = runMetadataServiceIOC
 
 instance
   ( Has (Lift IO) sig m,
-    Has (Throw F.MetadataException) sig m,
     Has Logging sig m
   ) =>
   Algebra (MetadataService :+: sig) (MetadataServiceIOC m)
   where
   alg _ (L sig) ctx =
     ctx $$!> case sig of
-      OpenMetadataFile path -> handle (throwError @F.MetadataException) do
+      OpenMetadataFile path -> try do
         $(logDebug) $ "opening metadata file " <> path
         sendIO $ F.openMetadataFile path
-      OpenMetadataFile' path -> try do
-        $(logDebug) $ "opening metadata file " <> path
-        sendIO $ F.openMetadataFile path
-      OpenMetadataFileByExt path -> handle (throwError @F.MetadataException) do
+      OpenMetadataFileByExt path -> try do
         $(logDebug) $ "opening metadata file " <> path
         sendIO $ F.openMetadataFileByExt path
-      OpenMetadataFileByExt' path -> try do
-        $(logDebug) $ "opening metadata file " <> path
-        sendIO $ F.openMetadataFileByExt path
-      ReadMetadataFile mfid path -> handle (throwError @F.MetadataException) $ sendIO do
-        F.MetadataFileFactory {readMetadataFile} <- getFactory mfid
-        readMetadataFile path
-      ReadMetadataFile' mfid@(F.MetadataFileId fid) path -> try $ sendIO do
+      ReadMetadataFile mfid@(F.MetadataFileId fid) path -> try $ sendIO do
         $(logDebugIO) $ "reading file " <> T.pack path <> " as " <> fid
         F.MetadataFileFactory {readMetadataFile} <- getFactory mfid
         readMetadataFile path
-      WriteMetadataFile mf path -> handle (throwError @F.MetadataException) $ sendIO do
+      WriteMetadataFile mf path -> try $ sendIO do
         F.MetadataFileFactory {writeMetadataFile, readMetadataFile} <- getFactory (mf ^. #fileId)
         writeMetadataFile mf path
         readMetadataFile path

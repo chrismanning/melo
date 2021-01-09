@@ -3,7 +3,6 @@
 module Melo.Library.Collection.FileSystem.Service where
 
 import Control.Algebra
-import Control.Effect.Catch
 import Control.Effect.Exception
 import Control.Effect.TH
 import Control.Monad
@@ -16,7 +15,6 @@ import Melo.Common.Metadata
 import Melo.Common.NaturalSort
 import Melo.Database.Transaction
 import qualified Melo.Format as F
-import qualified Melo.Format.Error as F
 import Melo.Library.Collection.Types
 import Melo.Library.Source.Repo
 import Melo.Library.Source.Service
@@ -38,7 +36,6 @@ runFileSystemServiceIO = runFileSystemServiceIOC
 
 instance
   ( Has (Lift IO) sig m,
-    Has (Catch F.MetadataException) sig m,
     Has MetadataService sig m,
     Has SourceRepository sig m,
     Has Savepoint sig m,
@@ -83,11 +80,11 @@ instance
     where
       openMetadataFile'' :: FilePath -> FileSystemServiceIOC m (Maybe F.MetadataFile)
       openMetadataFile'' p =
-        openMetadataFileByExt' p >>= \case
+        openMetadataFileByExt p >>= \case
           Right mf -> pure $ Just mf
           Left e -> do
             $(logWarn) $ "Could not open by extension " <> p <> ": " <> show e
-            openMetadataFile' p >>= \case
+            openMetadataFile p >>= \case
               Left e -> do
                 $(logError) $ "Could not open " <> p <> ": " <> show e
                 pure Nothing

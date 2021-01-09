@@ -5,15 +5,18 @@ module Melo.Common.FileSystem where
 import Control.Algebra
 import Control.Carrier.Lift
 import Control.Effect.TH
+import Data.ByteString as BS
 import Melo.Common.Effect
 import Melo.Common.Logging
 import qualified System.Directory as Dir
+import System.IO
 
 data FileSystem :: Effect where
   DoesFileExist :: FilePath -> FileSystem m Bool
   DoesDirectoryExist :: FilePath -> FileSystem m Bool
   ListDirectory :: FilePath -> FileSystem m [FilePath]
   CanonicalizePath :: FilePath -> FileSystem m FilePath
+  ReadFile :: FilePath -> FileSystem m ByteString
 
 makeSmartConstructors ''FileSystem
 
@@ -37,4 +40,5 @@ instance
       DoesDirectoryExist p -> Dir.doesDirectoryExist p
       ListDirectory p -> Dir.listDirectory p
       CanonicalizePath p -> Dir.canonicalizePath p
+      ReadFile p -> withBinaryFile p ReadMode BS.hGetContents
   alg hdl (R other) ctx = FileSystemIOC (alg (runFileSystemIOC . hdl) other ctx)

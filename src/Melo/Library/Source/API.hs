@@ -40,10 +40,10 @@ import Melo.Library.Source.Repo
 import qualified Melo.Library.Source.Types as Ty
 import qualified Melo.Lookup.MusicBrainz as MB
 import Network.URI
-import System.FilePath
+import System.FilePath as P
 
 resolveSources ::
-  (Has SourceRepository sig m, WithOperation o) =>
+  (Has SourceRepository sig m, Has FileSystem sig m, WithOperation o) =>
   SourcesArgs ->
   Resolver o e m [Source (Resolver o e m)]
 resolveSources (SourceArgs (Just SourceWhere {..})) =
@@ -82,13 +82,14 @@ data Source m = Source
     sourceName :: Text,
     sourceUri :: Text,
     downloadUri :: Text,
-    length :: m Float
+    length :: m Float,
+    coverImage :: m (Maybe Image)
   }
   deriving (Generic)
 
 instance Typeable m => GQLType (Source m)
 
-instance Applicative m => From Ty.Source (Source m) where
+instance (Applicative m, Has FileSystem sig m, WithOperation o) => From Ty.Source (Source (Resolver o e m)) where
   from s =
     Source
       { id = toText $ s ^. #ref . coerced,
@@ -97,10 +98,24 @@ instance Applicative m => From Ty.Source (Source m) where
         sourceName = getSourceName (T.pack $ show $ s ^. #source),
         sourceUri = T.pack $ show $ s ^. #source,
         downloadUri = "/source/" <> toText (s ^. #ref . coerced),
-        length = pure 100
+        length = pure 100,
+        coverImage = lift $ coverImageImpl s
       }
+      where
+        coverImageImpl :: Ty.Source -> m (Maybe Image)
+        coverImageImpl src = 
+           case uriToFilePath (src ^. #source) of
+             Just path ->
+               findCoverImage (takeDirectory path) >>= \case
+                 Nothing -> pure Nothing
+                 Just imgPath ->
+                   pure $ Just Image {
+                     fileName = T.pack $ takeFileName imgPath,
+                     downloadUri = "/source/" <> toText (src ^. #ref . coerced) <> "/image"
+                   }
+             Nothing -> error "unimplemented"
 
-instance Applicative m => From DB.Source (Source m) where
+instance (Applicative m, Has FileSystem sig m, WithOperation o) => From DB.Source (Source (Resolver o e m)) where
   from s =
     Source
       { id = toText (s ^. #id),
@@ -109,8 +124,24 @@ instance Applicative m => From DB.Source (Source m) where
         sourceName = getSourceName (s ^. #source_uri),
         sourceUri = s ^. #source_uri,
         downloadUri = "/source/" <> toText (s ^. #id),
-        length = pure 100
+        length = pure 100,
+        coverImage = lift $ coverImageImpl s
       }
+    where
+      coverImageImpl :: DB.Source -> m (Maybe Image)
+      coverImageImpl src = case parseURI $ T.unpack $ src ^. #source_uri of
+        Just uri ->
+          case uriToFilePath uri of
+            Just path ->
+              findCoverImage (takeDirectory path) >>= \case
+                Nothing -> pure Nothing
+                Just imgPath ->
+                  pure $ Just Image {
+                    fileName = T.pack $ takeFileName imgPath,
+                    downloadUri = "/source/" <> toText (src ^. #id) <> "/image"
+                  }
+            Nothing -> error "unimplemented"
+        Nothing -> pure Nothing
 
 getSourceName :: Text -> Text
 getSourceName srcUri = fromMaybe srcUri $ do
@@ -324,9 +355,17 @@ groupSources = fmap trSrcGrp . toList . foldl' acc S.empty
     coverImageImpl g = case parseURI $ T.unpack $ g ^. #groupParentUri of
       Just uri ->
         case uriToFilePath uri of
-          Just dir -> do
-            imgPath <- findCoverImage dir
-            error "unimplemented"
+          Just dir ->
+            findCoverImage dir >>= \case
+              Nothing -> pure Nothing
+              Just imgPath ->
+                case S.lookup 0 $ g ^. #sources of
+                  Nothing -> pure Nothing
+                  Just src ->
+                    pure $ Just Image {
+                      fileName = T.pack $ takeFileName imgPath,
+                      downloadUri = "/source/" <> (src ^. #id) <> "/image"
+                    }
           Nothing -> error "unimplemented"
       Nothing -> pure Nothing
 
@@ -336,8 +375,18 @@ findCoverImage p = do
   if isDir
     then do
       entries <- listDirectory p
-      error "unimplemented"
+      pure $
+        find (\e -> P.takeBaseName e == "cover" && isImage e) entries
+          <|> find (\e -> P.takeBaseName e == "front" && isImage e) entries
+          <|> find (\e -> P.takeBaseName e == "folder" && isImage e) entries
     else pure Nothing
+  where
+    isImage :: FilePath -> Bool
+    isImage p =
+      let ext = takeExtension p
+       in ext == ".jpeg"
+            || ext == ".jpg"
+            || ext == ".png"
 
 data SourceGroup' m = SourceGroup'
   { groupTags :: GroupTags,
@@ -452,7 +501,7 @@ updateSourcesImpl ::
     Has MetadataService sig m
   ) =>
   UpdateSourcesArgs ->
-  MutRes e m UpdatedSources
+  ResolverM e m UpdatedSources
 updateSourcesImpl (UpdateSourcesArgs updates) = do
   updates' <- lift $ enrich updates
   results <- lift $ forM updates' updateSource
@@ -469,29 +518,37 @@ updateSourcesImpl (UpdateSourcesArgs updates) = do
           case parseURI (T.unpack $ originalSource ^. #source_uri) >>= uriToFilePath of
             Just path -> do
               let metadataFileId = F.MetadataFileId $ originalSource ^. #kind
-              -- TODO catch exceptions with fused-effects-exceptions
-              f <-
-                readMetadataFile metadataFileId path
-                  <&> #metadata . each %~ resolveMetadata updateTags
-              $(logDebug) $ "saving metadata: " <> show (f ^. #metadata)
-              f <- writeMetadataFile f path
-              case chooseMetadata (H.elems (f ^. #metadata)) of
-                Nothing -> do
-                  let msg = T.pack $ "unable to choose metadata format for source '" <> show id <> "'"
+              readMetadataFile metadataFileId path >>= \case
+                Left e -> do
+                  let msg = "error reading metadata file: " <> T.pack (show e)
                   $(logError) msg
                   pure $ FailedSourceUpdate {id, msg}
-                Just metadata -> do
-                  let F.Tags tags = F.tags metadata
-                  let updatedSource =
-                        originalSource
-                          { DB.metadata = PgJSONB $ DB.SourceMetadata tags,
-                            DB.metadata_format = coerce $ F.formatId metadata
-                          }
-                  updateSources [updatedSource]
-                  pure
-                    UpdatedSource
-                      { id = toText key
-                      }
+                Right f -> do
+                  let !f' = f & #metadata . each %~ resolveMetadata updateTags
+                  $(logDebug) $ "saving metadata: " <> show (f' ^. #metadata)
+                  writeMetadataFile f' path >>= \case
+                    Left e -> do
+                      let msg = "error writing metadata file: " <> T.pack (show e)
+                      $(logError) msg
+                      pure $ FailedSourceUpdate {id, msg}
+                    Right f'' ->
+                      case chooseMetadata (H.elems (f'' ^. #metadata)) of
+                        Nothing -> do
+                          let msg = T.pack $ "unable to choose metadata format for source '" <> show id <> "'"
+                          $(logError) msg
+                          pure $ FailedSourceUpdate {id, msg}
+                        Just metadata -> do
+                          let F.Tags tags = F.tags metadata
+                          let updatedSource =
+                                originalSource
+                                  { DB.metadata = PgJSONB $ DB.SourceMetadata tags,
+                                    DB.metadata_format = coerce $ F.formatId metadata
+                                  }
+                          updateSources [updatedSource]
+                          pure
+                            UpdatedSource
+                              { id = toText key
+                              }
             Nothing -> do
               let msg = T.pack $ "invalid source id '" <> show id <> "'"
               $(logError) msg
