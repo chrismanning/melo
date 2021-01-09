@@ -22,9 +22,11 @@ import Data.Binary.Get
 import Data.Binary.Put
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as L
+import qualified Data.ByteString.Lazy.Internal as L
 import Data.Int
 import Data.Text as T
 import Data.Text.Encoding
+import GHC.IO.Unsafe (unsafeInterleaveIO)
 import Melo.Format.Internal.Encoding
 import System.IO
 import Text.Printf
@@ -66,7 +68,21 @@ getLazyByteStringUpTo n =
   getLazyByteString (fromIntegral n) <|> getRemainingLazyByteString
 
 hGetFileContents :: Handle -> IO L.ByteString
-hGetFileContents = L.hGetContents
+hGetFileContents h = do
+  hSeek h AbsoluteSeek 0
+  hGetFileContentsN L.smallChunkSize h
+
+hGetFileContentsN :: Int -> Handle -> IO L.ByteString
+hGetFileContentsN k h = lazyRead
+  where
+    lazyRead = unsafeInterleaveIO loop
+
+    loop = do
+      c <- BS.hGetSome h k -- only blocks if there is no data available
+      if BS.null c
+        then -- do not close
+          return L.Empty
+        else L.Chunk c <$> lazyRead
 
 findSubstring :: BS.ByteString -> L.ByteString -> Maybe Int64
 findSubstring n h

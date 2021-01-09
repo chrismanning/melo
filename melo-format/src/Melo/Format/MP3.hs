@@ -25,6 +25,7 @@ import Melo.Format.Ape (APEv1 (..), APEv2 (..))
 import Melo.Format.Error
 import qualified Melo.Format.ID3 as ID3
 import Melo.Format.Internal.Binary
+import Melo.Format.Internal.BinaryUtil
 import qualified Melo.Format.Internal.Info as I
 import Melo.Format.Internal.Locate
 import Melo.Format.Internal.Metadata
@@ -244,7 +245,7 @@ instance MetadataLocator FrameHeader where
     where
       findHeader pos = do
         hSeek h AbsoluteSeek pos
-        bs <- L.hGetContents h
+        bs <- hGetFileContents h
         if isRight $ bdecodeOrFail @FrameHeader bs
           then pure $ Just (fromIntegral pos)
           else pure Nothing

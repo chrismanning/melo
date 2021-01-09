@@ -13,6 +13,7 @@ import Data.Binary.Get
 import Data.Binary.Put
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as L
+import Data.Either (isRight)
 import qualified Data.Foldable as F
 import qualified Data.HashMap.Strict as H
 import Lens.Micro
@@ -36,11 +37,8 @@ oggVorbis =
     { priority = 100,
       fileId = oggVorbisFileId,
       detectFile = \p -> withBinaryFile p ReadMode $ \h -> do
-        hSeek h AbsoluteSeek 0
         buf <- hGetFileContents h
-        pure $ case runGetOrFail get buf of
-          Right (_, _, !(_ :: OggPage Header)) -> True
-          Left _ -> False,
+        pure $ isRight $ runGetOrFail @(OggPage Header) get buf,
       readMetadataFile = readOggVorbisFile,
       writeMetadataFile = writeOggVorbisFile
     }
