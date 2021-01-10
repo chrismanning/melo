@@ -1,7 +1,6 @@
 module Melo.Format.Internal.Tag where
 
 import Data.Foldable
-import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe
 import Data.Text (Text)
@@ -13,6 +12,9 @@ import Melo.Format.Mapping
 
 newtype Tags = Tags (Vector (Text, Text))
   deriving (Show, Eq, Generic)
+
+emptyTags :: Tags
+emptyTags = Tags V.empty
 
 lookupTag :: Text -> Tags -> [Text]
 lookupTag n (Tags ts) = V.toList $ fmap snd . V.filter ((== n) . fst) $ ts
@@ -35,13 +37,20 @@ getMappedTagIndices s (TagMapping ms) t =
    in V.concat $ NE.toList (fmap (getTagIndices t) ms')
   where
     getTagIndices :: Tags -> FieldMapping -> Vector Int
+    getTagIndices _ NoFieldMapping = V.empty
     getTagIndices (Tags tags) fm = let f = (fieldMatcher fm . fst) in V.findIndices f tags
 
 setMappedTag :: (Functor f, Foldable f) => FieldMappingSelector -> TagMapping -> f Text -> Tags -> Tags
-setMappedTag s tm@(TagMapping (fm :| _)) vs t@(Tags tags) =
+setMappedTag s tm@(TagMapping ms) vs t@(Tags tags) =
   let is = getMappedTagIndices s tm t
       ft = V.ifilter (\i _ -> not (V.elem i is)) tags
-   in Tags (ft <> V.fromList (toList (vs <&> (toCanonicalForm (s fm),))))
+      fm = ms ^.. each . filtered (\m -> case s m of
+              NoFieldMapping -> False
+              _ -> True
+            )
+   in case fm of
+    (m : _) -> Tags (ft <> V.fromList (toList (vs <&> (toCanonicalForm (s m),))))
+    [] -> t
 
 mappedTag :: FieldMappingSelector -> TagMapping -> TagLens
 mappedTag s m f tags = (\vs -> setMappedTag s m vs tags) <$> f (getMappedTag s m tags)
