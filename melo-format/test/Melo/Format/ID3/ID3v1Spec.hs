@@ -182,9 +182,6 @@ spec =
       it "fails to parse missing year" $ do
         id3v1 <- readID3v1Tags "test/Melo/id3v1/id3v1_014_year_F.mp3"
         evaluate id3v1 `shouldThrow` anyErrorCall
-      it "fails to parse invalid genre" $ do
-        id3v1 <- readID3v1Tags "test/Melo/id3v1/id3v1_270_genre_F.mp3"
-        evaluate id3v1 `shouldThrow` anyErrorCall
     context "remove ID3v1" $ do
       it "does nothing to untagged file" $
         withTempCopyOf "test/Melo/id3v1/no_tag.mp3" $
