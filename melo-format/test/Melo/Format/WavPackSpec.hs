@@ -35,7 +35,7 @@ spec =
       h <- openBinaryFile "test/Melo/silence-1s-id3v1.wv" ReadMode
       wv <- hReadWavPack h
       wv `shouldSatisfy` \case
-        WavPack _ (JustID3v1 (ID3v1 {title = "Title", artist = "Artist", album = "Album", year = "2003", comment = "Comment", track = Nothing, genre = "Hip-Hop"})) ->
+        WavPack _ (JustID3v1 (ID3v1 {title = "Title", artist = "Artist", album = "Album", year = "2003", comment = "Comment", track = Nothing, genre = Just "Hip-Hop"})) ->
           True
         _ -> False
       hClose h
@@ -43,5 +43,5 @@ spec =
       h <- openBinaryFile "test/Melo/silence-1s-ape-id3v1.wv" ReadMode
       wv <- hReadWavPack h
       let wvTags = wavPackTags wv
-      wvTags `shouldBe` Both (APEv2 (fromList [TextTagItem "encoder" (singleton "WavPack 5.1.0")])) (ID3v1 {title = "Title", artist = "Artist", album = "Album", year = "2003", comment = "Comment", track = Nothing, genre = "Hip-Hop"})
+      wvTags `shouldBe` Both (APEv2 (fromList [TextTagItem "encoder" (singleton "WavPack 5.1.0")])) (ID3v1 {title = "Title", artist = "Artist", album = "Album", year = "2003", comment = "Comment", track = Nothing, genre = Just "Hip-Hop"})
       hClose h

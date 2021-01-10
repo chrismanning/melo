@@ -54,7 +54,7 @@ data ID3v1 = ID3v1
     year :: !Text,
     comment :: !Text,
     track :: !(Maybe Word8),
-    genre :: !Text
+    genre :: !(Maybe Text)
   }
   deriving (Show, Eq, Generic)
 
@@ -78,7 +78,9 @@ instance MetadataFormat ID3v1 where
               let fm = headTagMapping trackNumberTag
               track' <- track id3
               pure (toCanonicalForm $ id3v1 fm, T.pack $ show track'),
-            tag genreTag genre
+            do
+              g <- genre id3
+              tag genreTag (const g)
           ]
     where
       tag tm sel =
@@ -92,7 +94,7 @@ instance MetadataFormat ID3v1 where
         year = saveTag yearTag,
         comment = saveTag commentTag,
         track = readMaybe $ T.unpack $ saveTag trackNumberTag,
-        genre = saveTag genreTag
+        genre = Just $ saveTag genreTag
       }
     where
       saveTag tm =
@@ -142,9 +144,6 @@ getID3v1 = do
         Just <$> getWord8
       else return Nothing
   genreIndex <- getWord8
-  when
-    (fromIntegral genreIndex >= V.length genres)
-    (F.fail $ "Unknown genre index " ++ show genreIndex)
   return $
     ID3v1
       { title,
@@ -153,7 +152,7 @@ getID3v1 = do
         year,
         comment,
         track,
-        genre = genres V.! fromIntegral genreIndex
+        genre = genres V.!? fromIntegral genreIndex
       }
 
 getTag :: Int -> Get Text
@@ -166,21 +165,23 @@ iD3v1Id :: BS.ByteString
 iD3v1Id = "TAG"
 
 putID3v1 :: ID3v1 -> Put
-putID3v1 id3 = do
+putID3v1 ID3v1 {..} = do
   putByteString iD3v1Id
-  putTag 30 (title id3)
-  putTag 30 (artist id3)
-  putTag 30 (album id3)
-  putTag 4 (year id3)
-  case track id3 of
+  putTag 30 title
+  putTag 30 artist
+  putTag 30 album
+  putTag 4 year
+  case track of
     Just track' -> do
-      putTag 28 (comment id3)
+      putTag 28 comment
       putWord8 0
       putWord8 track'
-    Nothing -> putTag 30 (comment id3)
+    Nothing -> putTag 30 comment
   putWord8 genreIndex
   where
-    genreIndex = maybe 0 fromIntegral $ V.elemIndex (genre id3) genres
+    genreIndex = case genre of
+      Just genre' -> maybe 0xFF fromIntegral $ V.elemIndex genre' genres
+      Nothing -> 0xFF
 
 putTag :: Int -> Text -> Put
 putTag n t =
