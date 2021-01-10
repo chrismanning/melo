@@ -39,7 +39,9 @@ oggVorbis =
       detectFile = \p -> withBinaryFile p ReadMode $ \h -> do
         hSeek h AbsoluteSeek 0
         buf <- hGetFileContents h
-        pure $ isRight $ runGetOrFail @(OggPage Header) get buf,
+        let !r = isRight $ runGetOrFail @(OggPage Header) get buf
+        hSeek h AbsoluteSeek 0
+        pure r,
       readMetadataFile = readOggVorbisFile,
       writeMetadataFile = writeOggVorbisFile
     }
