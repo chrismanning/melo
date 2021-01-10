@@ -258,3 +258,25 @@ discTotalTag =
     def
       { vorbis = caseInsensitiveMapping "DISCTOTAL"
       }
+
+encodedBy :: TagMapping
+encodedBy =
+  singletonTagMapping
+    def
+      { ape = caseInsensitiveMapping "EncodedBy",
+        id3v2_3 = caseSensitiveMapping "TENC",
+        id3v2_4 = caseSensitiveMapping "TENC",
+        riff = caseSensitiveMapping "IENC",
+        vorbis = caseInsensitiveMapping "ENCODEDBY"
+      }
+
+language :: TagMapping
+language =
+  singletonTagMapping
+    def
+      { ape = caseInsensitiveMapping "Language",
+        id3v2_3 = caseSensitiveMapping "TLAN",
+        id3v2_4 = caseSensitiveMapping "TLAN",
+        riff = caseSensitiveMapping "ILNG",
+        vorbis = caseInsensitiveMapping "LANGUAGE"
+      }

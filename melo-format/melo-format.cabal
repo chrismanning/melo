@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 92ac0a19b16533b804a0ebca44503979b7f44472c6f0b1b9886cbedfc1dc2815
+-- hash: 199f79d209d25eefee76a1bd1daee69351eb336f0435b16589314c0d69f2c270
 
 name:           melo-format
 version:        0.1.0.0
@@ -132,6 +132,7 @@ test-suite melo-format-test
     , hspec
     , hspec-expectations-lifted
     , melo-format
+    , microlens
     , safe-exceptions
     , temporary
     , text

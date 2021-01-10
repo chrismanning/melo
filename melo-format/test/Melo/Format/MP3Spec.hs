@@ -3,8 +3,14 @@ module Melo.Format.MP3Spec where
 import Control.Exception.Safe
 import qualified Data.ByteString as BS
 import qualified Data.HashMap.Strict as H
+import qualified Data.Vector as V
+import Lens.Micro
+import Melo.Format.ID3.ID3v1
+import Melo.Format.ID3.ID3v2
 import qualified Melo.Format.Info as I
+import Melo.Format.Internal.Metadata
 import Melo.Format.MP3
+import Melo.Format.Mapping as M
 import Melo.Format.Metadata
 import System.Directory
 import System.FilePath
@@ -68,3 +74,88 @@ spec =
         !origContents <- withBinaryFile origFile ReadMode $ \h ->
           BS.hGet h (fromIntegral origFileSize)
         writtenContents `shouldSatisfy` (== origContents)
+    it "reads mp3 file with id3v1" $ do
+      MetadataFile {..} <- readMp3File "test/Melo/id3v1/id3v1_001_basic.mp3"
+      fileId `shouldBe` MetadataFileId "MP3"
+      let tag = metadataLens @ID3v1
+      metadata
+        `shouldBe` H.singleton
+          id3v1Id
+          ( metadataFactory @ID3v1
+              ( emptyTags
+                  & tag M.trackTitle .~ V.singleton "Title"
+                  & tag M.artist .~ V.singleton "Artist"
+                  & tag M.album .~ V.singleton "Album"
+                  & tag M.year .~ V.singleton "2003"
+                  & tag M.commentTag .~ V.singleton "Comment"
+                  & tag M.genre .~ V.singleton "Hip-Hop"
+              )
+          )
+      audioInfo
+        `shouldBe` I.Info
+          { sampleRate = I.SampleRate 32000,
+            channels = I.Mono,
+            totalSamples = Nothing,
+            bitsPerSample = Nothing,
+            quality = Just "CBR 64"
+          }
+    it "reads mp3 file with id3v2.3" $ do
+      MetadataFile {..} <- readMp3File "test/Melo/silence-1s-id3v23.mp3"
+      fileId `shouldBe` MetadataFileId "MP3"
+      metadata
+        `shouldBe` H.singleton
+          id3v23Id
+          ( metadataFactory @ID3v2_3
+              ( Tags
+                  ( V.fromList
+                      [ ("TALB", "イロハニホヘト チリヌルヲ ワカヨタレソ ツネナラム ウヰノオクヤマ ケフコエテ アサキユメミシ ヱヒモセスン"),
+                        ("TPE1", "κόσμε"),
+                        ("TENC", "lame"),
+                        ("TCON", "Psychedelic Rock"),
+                        ("TLAN", "english"),
+                        ("TIT2", "В чащах юга жил бы цитрус? Да, но фальшивый экземпляр!"),
+                        ("TRCK", "04"),
+                        ("TYER", "2011"),
+                        ("WXXX;", "http://google.com")
+                      ]
+                  )
+              )
+          )
+      audioInfo
+        `shouldBe` I.Info
+          { sampleRate = I.SampleRate 44100,
+            channels = I.Mono,
+            totalSamples = Nothing,
+            bitsPerSample = Nothing,
+            quality = Just "CBR 64"
+          }
+    it "reads mp3 file with id3v2.4" $ do
+      MetadataFile {..} <- readMp3File "test/Melo/silence-1s-id3v24.mp3"
+      fileId `shouldBe` MetadataFileId "MP3"
+      metadata
+        `shouldBe` H.singleton
+          id3v24Id
+          ( metadataFactory @ID3v2_4
+              ( Tags
+                  ( V.fromList
+                      [ ("TALB", "イロハニホヘト チリヌルヲ ワカヨタレソ ツネナラム ウヰノオクヤマ ケフコエテ アサキユメミシ ヱヒモセスン"),
+                        ("TPE1", "κόσμε"),
+                        ("TENC", "lame"),
+                        ("TCON", "Psychedelic Rock"),
+                        ("TLAN", "english"),
+                        ("TIT2", "В чащах юга жил бы цитрус? Да, но фальшивый экземпляр!"),
+                        ("TRCK", "04"),
+                        ("TDRC", "2011"),
+                        ("WXXX;", "http://google.com")
+                      ]
+                  )
+              )
+          )
+      audioInfo
+        `shouldBe` I.Info
+          { sampleRate = I.SampleRate 44100,
+            channels = I.Mono,
+            totalSamples = Nothing,
+            bitsPerSample = Nothing,
+            quality = Just "CBR 64"
+          }

@@ -79,6 +79,7 @@ tests:
     - filepath
     - hspec
     - hspec-expectations-lifted
+    - microlens
     - safe-exceptions
     - temporary
     - text

@@ -143,7 +143,6 @@ tests:
     - containers
     - fused-effects
     - generic-lens
-    - graphql
     - haxl
     - hspec
     - hspec-expectations-lifted
