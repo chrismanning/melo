@@ -235,11 +235,11 @@ instance MetadataLocator FrameHeader where
   hLocate h =
     hLocateGet' @ID3.ID3v2_3 h >>= \case
       Just id3v2 ->
-        findHeader (metadataSize id3v2 + fromIntegral ID3.headerSize)
+        findHeader (metadataSize id3v2)
       Nothing ->
         hLocateGet' @ID3.ID3v2_4 h >>= \case
           Just id3v2 ->
-            findHeader (metadataSize id3v2 + fromIntegral ID3.headerSize)
+            findHeader (metadataSize id3v2)
           Nothing ->
             findHeader 0
     where
