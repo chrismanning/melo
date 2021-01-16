@@ -11,7 +11,6 @@ import qualified Data.Binary.Bits.Put as BP
 import Data.Binary.Put
 import Data.ByteString
 import qualified Data.ByteString.Lazy as L
-import Data.Either (isRight)
 import Data.HashMap.Strict ((!))
 import qualified Data.HashMap.Strict as H
 import Data.Hashable
@@ -24,8 +23,6 @@ import Lens.Micro
 import Melo.Format.Ape (APEv1 (..), APEv2 (..))
 import Melo.Format.Error
 import qualified Melo.Format.ID3 as ID3
-import Melo.Format.Internal.Binary
-import Melo.Format.Internal.BinaryUtil
 import qualified Melo.Format.Internal.Info as I
 import Melo.Format.Internal.Locate
 import Melo.Format.Internal.Metadata
@@ -245,10 +242,10 @@ instance MetadataLocator FrameHeader where
     where
       findHeader pos = do
         hSeek h AbsoluteSeek pos
-        bs <- hGetFileContents h
-        if isRight $ bdecodeOrFail @FrameHeader bs
-          then pure $ Just (fromIntegral pos)
-          else pure Nothing
+        bs <- L.hGet h (4 * 1024)
+        case locateBinaryLazy @FrameHeader bs of
+          Just n -> pure $ Just (fromIntegral (n + fromInteger pos))
+          Nothing -> pure Nothing
 
 data MpegVersion = V2_5 | V2 | V1
   deriving (Show, Eq, Ord, Generic)

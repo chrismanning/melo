@@ -159,3 +159,64 @@ spec =
             bitsPerSample = Nothing,
             quality = Just "CBR 64"
           }
+    it "reads mp3 file with id3v2.3 and extra padding" $ do
+      MetadataFile {..} <- readMp3File "test/Melo/silence-1s-id3v23-extra-padding.mp3"
+      fileId `shouldBe` MetadataFileId "MP3"
+      metadata
+        `shouldBe` H.singleton
+          id3v23Id
+          ( metadataFactory @ID3v2_3
+              ( Tags
+                  ( V.fromList
+                      [ ("TALB", "イロハニホヘト チリヌルヲ ワカヨタレソ ツネナラム ウヰノオクヤマ ケフコエテ アサキユメミシ ヱヒモセスン"),
+                        ("TPE1", "κόσμε"),
+                        ("TENC", "lame"),
+                        ("TCON", "Psychedelic Rock"),
+                        ("TLAN", "english"),
+                        ("TIT2", "В чащах юга жил бы цитрус? Да, но фальшивый экземпляр!"),
+                        ("TRCK", "04"),
+                        ("TYER", "2011"),
+                        ("WXXX;", "http://google.com")
+                      ]
+                  )
+              )
+          )
+      audioInfo
+        `shouldBe` I.Info
+          { sampleRate = I.SampleRate 44100,
+            channels = I.Mono,
+            totalSamples = Nothing,
+            bitsPerSample = Nothing,
+            quality = Just "CBR 64"
+          }
+
+    it "reads mp3 file with id3v2.4 and extra padding" $ do
+      MetadataFile {..} <- readMp3File "test/Melo/silence-1s-id3v24-extra-padding.mp3"
+      fileId `shouldBe` MetadataFileId "MP3"
+      metadata
+        `shouldBe` H.singleton
+          id3v24Id
+          ( metadataFactory @ID3v2_4
+              ( Tags
+                  ( V.fromList
+                      [ ("TALB", "イロハニホヘト チリヌルヲ ワカヨタレソ ツネナラム ウヰノオクヤマ ケフコエテ アサキユメミシ ヱヒモセスン"),
+                        ("TPE1", "κόσμε"),
+                        ("TENC", "lame"),
+                        ("TCON", "Psychedelic Rock"),
+                        ("TLAN", "english"),
+                        ("TIT2", "В чащах юга жил бы цитрус? Да, но фальшивый экземпляр!"),
+                        ("TRCK", "04"),
+                        ("TDRC", "2011"),
+                        ("WXXX;", "http://google.com")
+                      ]
+                  )
+              )
+          )
+      audioInfo
+        `shouldBe` I.Info
+          { sampleRate = I.SampleRate 44100,
+            channels = I.Mono,
+            totalSamples = Nothing,
+            bitsPerSample = Nothing,
+            quality = Just "CBR 64"
+          }

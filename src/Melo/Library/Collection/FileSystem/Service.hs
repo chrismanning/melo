@@ -15,6 +15,7 @@ import Melo.Common.Metadata
 import Melo.Common.NaturalSort
 import Melo.Database.Transaction
 import qualified Melo.Format as F
+import qualified Melo.Format.Error as F
 import Melo.Library.Collection.Types
 import Melo.Library.Source.Repo
 import Melo.Library.Source.Service
@@ -83,13 +84,16 @@ instance
       openMetadataFile'' p =
         openMetadataFileByExt p >>= \case
           Right mf -> pure $ Just mf
-          Left e -> do
+          Left e@F.UnknownFormat -> do
             $(logWarn) $ "Could not open by extension " <> p <> ": " <> show e
             openMetadataFile p >>= \case
               Left e -> do
                 $(logError) $ "Could not open " <> p <> ": " <> show e
                 pure Nothing
               Right mf -> pure $ Just mf
+          Left e -> do
+            $(logError) $ "Could not open by extension " <> p <> ": " <> show e
+            pure Nothing
       handleScanException :: SomeException -> FileSystemServiceIOC m [Source]
       handleScanException e = do
         $(logError) $ "error during scan: " <> show e
