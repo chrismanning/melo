@@ -118,7 +118,7 @@ instance MetadataFormat ID3v2_4 where
   replaceWithTags id3 tags = id3 & #frames .~ framesFromTags tags
   metadataSize = id3v2SizeWithHeader
 
-newId3v2 :: Tags -> ID3v2 v
+newId3v2 :: DefaultEncoding v => Tags -> ID3v2 v
 newId3v2 tags =
   ID3v2
     { headerFlags = HeaderFlags 0,
@@ -127,14 +127,14 @@ newId3v2 tags =
       frames = framesFromTags tags
     }
 
-framesFromTags :: Tags -> Frames v
+framesFromTags :: DefaultEncoding v => Tags -> Frames v
 framesFromTags (Tags tags) = case V.toList tags of
   [] -> impureThrow $ MetadataWriteError "ID3v2 must contain at least one frame"
   (t : ts) -> Frames $ createFrame <$> t :| ts
 
-createFrame :: (Text, Text) -> Frame v
+createFrame :: forall (v :: ID3v2Version). DefaultEncoding v => (Text, Text) -> Frame v
 createFrame (k, v) =
-  let frameId = fromTagKey k
+  let frameId = fromTagKey @v k
    in Frame
         { frameId = frameId,
           frameFlags = FrameHeaderFlags 0,
@@ -180,7 +180,7 @@ instance (GetFrame v, PutFrame v) => Binary (ID3v2 v) where
       getExtendedHeader = do
         extendedHeaderSize <- fromSyncSafe <$> get
         getByteString extendedHeaderSize
-  put id3@ID3v2 {..} = do
+  put ID3v2 {..} = do
     let id3data = runPut $ do
           if hasExtendedHeader headerFlags
             then do
@@ -188,7 +188,7 @@ instance (GetFrame v, PutFrame v) => Binary (ID3v2 v) where
               put extendedHeader
             else pure ()
           putFrames frames
-    let id3v2size = id3v2SizeWithHeader id3 - toInteger headerSize
+    let id3v2size = L.length id3data + fromIntegral paddingSize
     let header =
           Header
             { version = id3v2Version @v,
@@ -292,7 +292,7 @@ newtype Frames (v :: ID3v2Version) = Frames (NonEmpty (Frame v))
 foldlFrames :: (b -> Frame v -> b) -> b -> Frames v -> b
 foldlFrames f z (Frames frms) = F.foldl' f z frms
 
-type GetFrame v = (GetFrameHeader v, GetEncoding v, GetFrameId v, GetTextContent v, Version v)
+type GetFrame v = (GetFrameHeader v, GetEncoding v, Version v)
 
 getFrames :: (GetFrame v, PutFrame v) => Header -> Get (Frames v)
 getFrames Header {flags} = Frames <$> getFrames'
@@ -333,7 +333,8 @@ instance (GetFrame v, PutFrame v) => Binary (Frame v) where
       then do
         enc <- getEncoding @v
         frameId' <- getFrameId @v header enc
-        Frame frameId' frameFlags . mkFrameContent frameId' enc <$> getTextContent header frameId' enc
+        let enc' = if "W" `T.isPrefixOf` frameId then NullTerminated else enc
+        Frame frameId' frameFlags . mkFrameContent frameId' enc <$> getTextContent header frameId' enc'
       else do
         frameId' <- getFrameId @v header NullTerminated
         frameContent <- OtherFrame <$> getByteString (fromIntegral frameSize)
@@ -345,7 +346,7 @@ instance (GetFrame v, PutFrame v) => Binary (Frame v) where
   put Frame {..} = do
     let fid = case frameId of
           PreDefinedId fid' -> fid'
-          UserDefinedId fid' _ -> fid'
+          UserDefinedId fid' _enc _ -> fid'
     let frameContentData = runPut $ putFrameContent frameId frameContent
     let frameSize = fromIntegral $ L.length frameContentData
     let header :: FrameHeader v =
@@ -370,34 +371,40 @@ changeFrameVersion Frame {..} =
 
 data FrameId
   = PreDefinedId !Text
-  | UserDefinedId !Text !Text
+  | UserDefinedId !Text !TextEncoding !Text
   deriving (Show, Eq)
 
 toTagKey :: FrameId -> Text
 toTagKey (PreDefinedId fid) = fid
-toTagKey (UserDefinedId fid1 fid2) = fid1 <> ";" <> fid2
+toTagKey (UserDefinedId fid1 _enc fid2) = fid1 <> ";" <> fid2
 
-fromTagKey :: Text -> FrameId
+class DefaultEncoding (v :: ID3v2Version) where
+  defaultEncoding :: TextEncoding
+
+instance DefaultEncoding 'ID3v23 where
+  defaultEncoding = NullTerminated
+
+instance DefaultEncoding 'ID3v24 where
+  defaultEncoding = UTF8
+
+fromTagKey :: forall (v :: ID3v2Version). DefaultEncoding v => Text -> FrameId
 fromTagKey k = case T.split (== ';') k of
-  [fid, desc] -> UserDefinedId fid desc
+  [fid, desc] -> UserDefinedId fid (defaultEncoding @v) desc
   [fid] -> PreDefinedId fid
   _invalidFrameId -> error "invlid id3v2 key"
 
-class GetFrameId (v :: ID3v2Version) where
-  getFrameId :: FrameHeader v -> TextEncoding -> Get FrameId
-
-instance GetFrameId v where
-  getFrameId header@FrameHeader {frameId} enc =
-    if T.isSuffixOf "XXX" frameId
-      then UserDefinedId frameId <$> getUserDefinedFrameId header enc
-      else pure $ PreDefinedId frameId
+getFrameId :: forall (v :: ID3v2Version). FrameHeader v -> TextEncoding -> Get FrameId
+getFrameId header@FrameHeader {frameId} enc =
+  if T.isSuffixOf "XXX" frameId
+    then UserDefinedId frameId enc <$> getUserDefinedFrameId header enc
+    else pure $ PreDefinedId frameId
 
 getUserDefinedFrameId :: FrameHeader v -> TextEncoding -> Get Text
 getUserDefinedFrameId header enc = do
   let sz = frameSize header
   bs <- lookAhead $ getByteString $ fromIntegral sz
   let uid = fst (BS.breakSubstring (terminator enc) bs)
-  skip $ BS.length uid
+  skip $ BS.length uid + BS.length (terminator enc)
   decodeID3Text enc uid
 
 data FrameHeader (v :: ID3v2Version) = FrameHeader
@@ -454,7 +461,7 @@ data FrameContent (v :: ID3v2Version)
 mkFrameContent :: FrameId -> TextEncoding -> [Text] -> FrameContent v
 mkFrameContent fid enc t = case fid of
   PreDefinedId i -> cid i
-  UserDefinedId i _ -> cid i
+  UserDefinedId i _enc _ -> cid i
   where
     cid = \case
       i | T.isPrefixOf "T" i -> TextFrame enc t
@@ -487,18 +494,15 @@ changeContentVersion (TextFrame enc content) = TextFrame enc content
 changeContentVersion (UrlFrame enc content) = UrlFrame enc content
 changeContentVersion (OtherFrame content) = OtherFrame content
 
-class GetTextContent (v :: ID3v2Version) where
-  getTextContent :: FrameHeader v -> FrameId -> TextEncoding -> Get [Text]
-
-instance GetTextContent v where
-  getTextContent FrameHeader {frameId, frameSize} frameId' enc = do
-    let fidSz = case frameId' of
-          UserDefinedId _ t -> fromIntegral $ T.length t
-          _otherFrameId -> 0
-    let sz = frameSize - 1 - fidSz
-    bs <- BS.dropWhile (== 0) <$> getByteString (fromIntegral sz)
-    let enc' = if "W" `T.isPrefixOf` frameId then NullTerminated else enc
-    mapM (decodeID3Text enc') (splitFields (terminator enc') bs)
+getTextContent :: forall (v :: ID3v2Version). FrameHeader v -> FrameId -> TextEncoding -> Get [Text]
+getTextContent FrameHeader {frameId, frameSize} frameId' enc = do
+  let fidSz = case frameId' of
+        UserDefinedId _ frameIdEnc t -> fromIntegral $ BS.length (encodeID3Text frameIdEnc t)
+        _otherFrameId -> 0
+  let sz = frameSize - 1 - fidSz
+  bs <- getByteString (fromIntegral sz)
+  let enc' = if "W" `T.isPrefixOf` frameId then NullTerminated else enc
+  mapM (decodeID3Text enc') (splitFields (terminator enc) bs)
 
 splitFields :: ByteString -> ByteString -> [ByteString]
 splitFields term fields
@@ -516,12 +520,14 @@ instance PutFrame v => PutTextContent v where
   putTextContent frameId enc content = do
     putEncoding @v enc
     case frameId of
-      UserDefinedId _ desc -> do
-        putByteString (encodeID3Text enc desc)
-        putByteString (terminator enc)
+      UserDefinedId _ enc desc -> putByteString (encodeID3Text enc desc)
       _otherFrameId -> pure ()
-    let contentBytes = BS.intercalate (terminator enc) (fmap encodeUtf8 content)
-    putByteString contentBytes
+    putByteString encodedText
+    where
+      encodedText = BS.concat (fmap (encodeID3Text contentEncoding) content)
+      contentEncoding = case T.take 1 (toTagKey frameId) of
+        "W" -> NullTerminated
+        _ignore -> enc
 
 data TextEncoding = NullTerminated | UCS2 | UTF16 | UTF16BE | UTF8
   deriving (Show, Eq)
@@ -541,11 +547,14 @@ decodeID3Text UTF16 bs = decodeUtf16WithBOMOrFail bs
 decodeID3Text UCS2 bs = decodeUtf16WithBOMOrFail bs
 
 encodeID3Text :: TextEncoding -> Text -> ByteString
-encodeID3Text NullTerminated t = encodeLatin1 t
-encodeID3Text UTF8 t = encodeUtf8 t
-encodeID3Text UTF16BE t = encodeUtf16BE t
-encodeID3Text UTF16 t = utf16LeBom <> encodeUtf16LE t
-encodeID3Text UCS2 t = utf16LeBom <> encodeUtf16LE t
+encodeID3Text enc t = encodedText <> terminator enc
+  where
+    encodedText = case enc of
+      NullTerminated -> encodeLatin1 t
+      UTF8 -> encodeUtf8 t
+      UTF16BE -> encodeUtf16BE t
+      UTF16 -> utf16LeBom <> encodeUtf16LE t
+      UCS2 -> utf16LeBom <> encodeUtf16LE t
 
 class GetEncoding (v :: ID3v2Version) where
   getEncoding :: Get TextEncoding

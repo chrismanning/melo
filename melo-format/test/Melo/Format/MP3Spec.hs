@@ -74,6 +74,32 @@ spec =
         !origContents <- withBinaryFile origFile ReadMode $ \h ->
           BS.hGet h (fromIntegral origFileSize)
         writtenContents `shouldSatisfy` (== origContents)
+    it "writes mp3 file with id3v2.3" $ do
+      let origFile = "test/Melo/silence-1s-id3v23.mp3"
+      orig <- readMp3File origFile
+      bracket (openBinaryTempFile "test/Melo/" "silence-1s-id3v23.mp3") (removeFile . fst) $ \(tmpfile, h') -> do
+        hClose h'
+        writeMp3File orig tmpfile
+        writtenFileSize <- getFileSize tmpfile
+        origFileSize <- getFileSize origFile
+        !writtenContents <- withBinaryFile tmpfile ReadMode $ \h ->
+          BS.hGet h (fromIntegral writtenFileSize)
+        !origContents <- withBinaryFile origFile ReadMode $ \h ->
+          BS.hGet h (fromIntegral origFileSize)
+        writtenContents `shouldBe` origContents
+    it "writes mp3 file with id3v2.4" $ do
+      let origFile = "test/Melo/silence-1s-id3v24.mp3"
+      orig <- readMp3File origFile
+      bracket (openBinaryTempFile "test/Melo/" "silence-1s-id3v24.mp3") (removeFile . fst) $ \(tmpfile, h') -> do
+        hClose h'
+        writeMp3File orig tmpfile
+        writtenFileSize <- getFileSize tmpfile
+        origFileSize <- getFileSize origFile
+        !writtenContents <- withBinaryFile tmpfile ReadMode $ \h ->
+          BS.hGet h (fromIntegral writtenFileSize)
+        !origContents <- withBinaryFile origFile ReadMode $ \h ->
+          BS.hGet h (fromIntegral origFileSize)
+        writtenContents `shouldBe` origContents
     it "reads mp3 file with id3v1" $ do
       MetadataFile {..} <- readMp3File "test/Melo/id3v1/id3v1_001_basic.mp3"
       fileId `shouldBe` MetadataFileId "MP3"

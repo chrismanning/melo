@@ -23,3 +23,9 @@ thumb
 sketch
 
 .hie
+
+# ghc profiling
+*.aux
+*.prof
+*.ps
+*.hp
