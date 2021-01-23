@@ -18,6 +18,9 @@ import System.Directory
 getAllSources :: Has Repo.SourceRepository sig m => m [Source]
 getAllSources = mapMaybe tryFrom <$> Repo.getAllSources
 
+getSource :: Has Repo.SourceRepository sig m => SourceRef -> m (Maybe Source)
+getSource ref = (>>= tryFrom) . listToMaybe <$> Repo.getSources [ref]
+
 importSources ::
   ( Has Repo.SourceRepository sig m,
     Has Logging sig m

@@ -153,7 +153,8 @@ data Source = Source
   { ref :: SourceRef,
     metadata :: Metadata,
     source :: URI,
-    range :: Maybe AudioRange
+    range :: Maybe AudioRange,
+    collectionRef :: DB.CollectionKey
   }
   deriving (Generic, Show)
 
@@ -168,6 +169,7 @@ instance TryFrom DB.Source Source where
         { ref = primaryKey s,
           range = Nothing,
           source = uri,
+          collectionRef = s ^. #collection_id,
           metadata
         }
 

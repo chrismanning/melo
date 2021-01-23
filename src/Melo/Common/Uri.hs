@@ -1,4 +1,10 @@
-module Melo.Common.Uri where
+module Melo.Common.Uri
+  ( fileUri,
+    uriToFilePath,
+    parseURI,
+    URI,
+  )
+where
 
 import Network.URI
 
