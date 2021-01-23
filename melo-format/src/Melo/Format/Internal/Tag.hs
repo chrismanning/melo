@@ -44,13 +44,17 @@ setMappedTag :: (Functor f, Foldable f) => FieldMappingSelector -> TagMapping ->
 setMappedTag s tm@(TagMapping ms) vs t@(Tags tags) =
   let is = getMappedTagIndices s tm t
       ft = V.ifilter (\i _ -> not (V.elem i is)) tags
-      fm = ms ^.. each . filtered (\m -> case s m of
-              NoFieldMapping -> False
-              _ -> True
-            )
+      fm =
+        ms
+          ^.. each
+            . filtered
+              ( \m -> case s m of
+                  NoFieldMapping -> False
+                  _ -> True
+              )
    in case fm of
-    (m : _) -> Tags (ft <> V.fromList (toList (vs <&> (toCanonicalForm (s m),))))
-    [] -> t
+        (m : _) -> Tags (ft <> V.fromList (toList (vs <&> (toCanonicalForm (s m),))))
+        [] -> t
 
 mappedTag :: FieldMappingSelector -> TagMapping -> TagLens
 mappedTag s m f tags = (\vs -> setMappedTag s m vs tags) <$> f (getMappedTag s m tags)

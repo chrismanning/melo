@@ -602,12 +602,13 @@ newtype SyncSafe = SyncSafe
   deriving (Eq, Show)
 
 fromSyncSafe :: forall a. (Num a, Bits a) => SyncSafe -> a
-fromSyncSafe (SyncSafe s) = let s' = fromIntegral <$> BS.unpack s in
-  go s' (BS.length s - 1)
+fromSyncSafe (SyncSafe s) =
+  let s' = fromIntegral <$> BS.unpack s
+   in go s' (BS.length s - 1)
   where
     go :: [a] -> Int -> a
     go [] _ = 0
-    go (x:xs) i = shiftL (x .&. 0x7F) (7 * i) .|. go xs (i - 1)
+    go (x : xs) i = shiftL (x .&. 0x7F) (7 * i) .|. go xs (i - 1)
 
 toSyncSafe :: (Integral a, Bits a) => a -> SyncSafe
 toSyncSafe a =
