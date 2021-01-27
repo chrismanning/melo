@@ -184,16 +184,16 @@ renderSourcePatterns basepath metadata pats =
 
 renderSourcePattern :: F.Metadata -> SourcePathPattern -> Maybe FilePath
 renderSourcePattern metadata@F.Metadata {..} = \case
-  Literal p -> Just p
-  OptionalMappingPattern mapping -> tags ^? lens mapping . _head . unpacked
-  DefaultMappingPattern mapping pat ->
-    renderSourcePattern metadata (OptionalMappingPattern mapping)
-      <|> renderSourcePattern metadata pat
+  LiteralPattern p -> Just p
+  GroupPattern pats -> Just $ fromMaybe "" (foldMap (renderSourcePattern metadata) pats)
+  MappingPattern mapping -> tags ^? lens mapping . _head . unpacked
+  DefaultPattern a b -> renderSourcePattern metadata a <|> renderSourcePattern metadata b
   PrintfPattern fmt pat ->
     printf fmt <$> renderSourcePattern metadata pat
 
 data SourcePathPattern
-  = Literal FilePath
-  | OptionalMappingPattern F.TagMapping
-  | DefaultMappingPattern F.TagMapping SourcePathPattern
+  = LiteralPattern FilePath
+  | GroupPattern (NonEmpty SourcePathPattern)
+  | MappingPattern F.TagMapping
+  | DefaultPattern SourcePathPattern SourcePathPattern
   | PrintfPattern String SourcePathPattern
