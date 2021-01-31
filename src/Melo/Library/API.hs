@@ -1,21 +1,16 @@
 {-# LANGUAGE StrictData #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Library.API where
 
-import Basement.From
-import Control.Algebra
-import Control.Effect.Lift
-import Control.Effect.Reader
 import Control.Lens hiding (from, (.=))
 import Control.Monad
+import Control.Monad.Reader
 import Data.Kind
 import Data.Morpheus.Kind
 import Data.Morpheus.Types
 import Data.Text as T hiding (null)
 import Database.Beam hiding (C)
-import Database.Beam.Postgres (Connection)
 import GHC.OverloadedLabels ()
 import Melo.Common.FileSystem
 import Melo.Common.Logging
@@ -37,19 +32,18 @@ data LibraryQuery m = LibraryQuery
 instance Typeable m => GQLType (LibraryQuery m)
 
 resolveLibrary ::
-  forall sig m e.
-  ( Has SourceRepository sig m,
-    Has CollectionRepository sig m,
-    Has FileSystem sig m
+  ( SourceRepository m,
+    CollectionRepository m,
+    FileSystem m
   ) =>
   ResolverQ e m LibraryQuery
 resolveLibrary =
   lift $
     pure
       LibraryQuery
-        { sources = resolveSources @sig @m,
-          sourceGroups = resolveSourceGroups @sig,
-          collections = resolveCollections @sig @m
+        { sources = resolveSources,
+          sourceGroups = resolveSourceGroups,
+          collections = resolveCollections
         }
 
 data LibraryMutation (m :: Type -> Type) = LibraryMutation
@@ -62,24 +56,23 @@ data LibraryMutation (m :: Type -> Type) = LibraryMutation
 instance Typeable m => GQLType (LibraryMutation m)
 
 libraryMutation ::
-  forall sig m e.
-  ( Has SourceRepository sig m,
-    Has (Lift IO) sig m,
-    Has (Reader Connection) sig m,
-    Has Logging sig m,
-    Has MetadataService sig m,
-    Has CollectionService sig m,
-    Has CollectionRepository sig m,
-    Has FileSystem sig m
+  ( MonadIO m,
+    SourceRepository m,
+    --    MonadReader Connection m,
+    Logging m,
+    MetadataService m,
+    CollectionService m,
+    CollectionRepository m,
+    FileSystem m
   ) =>
   ResolverM e (m :: Type -> Type) LibraryMutation
 libraryMutation =
   lift $
     pure
       LibraryMutation
-        { stageSources = stageSourcesImpl @sig @m,
-          updateSources = updateSourcesImpl @sig @m,
-          collection = collectionMutation @sig @m
+        { stageSources = stageSourcesImpl,
+          updateSources = updateSourcesImpl,
+          collection = collectionMutation
         }
 
 newtype StageSourcesArgs = StageSourcesArgs
@@ -116,10 +109,10 @@ instance (Semigroup (StagedSources m), Applicative m) => Monoid (StagedSources m
       }
 
 stageSourcesImpl ::
-  ( Has SourceRepository sig m {-, Has LibraryService sig m-}
+  ( SourceRepository m
   ) =>
   StageSourcesArgs ->
-  ResolveM e m StagedSources
+  ResolverM e m StagedSources
 stageSourcesImpl (StageSourcesArgs ss) = lift $ do
   x <- forM ss $ \s ->
     case parseURI (T.unpack s) of

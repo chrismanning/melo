@@ -39,6 +39,7 @@ library:
   - bytestring
   - cache
   - clock
+  - concurrency
   - conduit
   - conduit-audio
   - conduit-audio-lame
@@ -58,25 +59,23 @@ library:
   - extra
   - filepath
   - fsnotify
-  - fused-effects
-  - fused-effects-exceptions
-  - fused-effects-th
   - generic-aeson
   - generic-deriving
   - generic-lens
   - hashable
   - hashtables
-  - haxl
   - higgledy
   - http-client
   - http-client-tls
   - http-types
   - lens
+  - lifted-base
   - log-warper
   - monad-control
   - monad-logger
   - morpheus-graphql
   - mtl
+  - multistate
   - natural-sort
   - network-uri
   - network-uri-json
@@ -141,9 +140,7 @@ tests:
     - bytestring
     - conduit
     - containers
-    - fused-effects
     - generic-lens
-    - haxl
     - hspec
     - hspec-expectations-lifted
     - lens

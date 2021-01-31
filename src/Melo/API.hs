@@ -3,18 +3,12 @@
 
 module Melo.API where
 
-import Control.Algebra
-import Control.Carrier.Lift
-import Control.Carrier.Reader
-import Control.Concurrent.STM
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Control (MonadBaseControl)
 import Data.ByteString.Lazy.Char8
-import qualified Data.HashMap.Strict as H
 import Data.Morpheus
 import Data.Morpheus.Types
 import Data.Pool
-import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
 import Data.Typeable
@@ -31,13 +25,11 @@ import Melo.Library.Collection.FileSystem.Service
 import Melo.Library.Collection.FileSystem.WatchService
 import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Service
-import Melo.Library.Collection.Types
 import qualified Melo.Library.Source.API as API
 import Melo.Library.Source.Repo
 import Melo.Library.Source.Service
 import Network.HTTP.Types.Status
 import Network.Wai.Middleware.Cors
-import qualified System.FSNotify as FS
 import System.FilePath (pathSeparator, takeDirectory, takeFileName)
 import Web.Scotty.Trans
 
@@ -55,7 +47,7 @@ data Mutation m = Mutation
 
 instance Typeable m => GQLType (Mutation m)
 
-rootResolver :: ResolverE sig m => RootResolver m () Query Mutation Undefined
+rootResolver :: ResolverE m => RootResolver m () Query Mutation Undefined
 rootResolver =
   RootResolver
     { queryResolver = Query {library = resolveLibrary},
@@ -63,69 +55,69 @@ rootResolver =
       subscriptionResolver = Undefined
     }
 
-gqlApi :: forall sig m. (ResolverE sig m, Typeable m) => ByteString -> m ByteString
-gqlApi = interpreter (rootResolver @sig @m)
+gqlApi :: forall m. (ResolverE m, Typeable m) => ByteString -> m ByteString
+gqlApi = interpreter (rootResolver)
 
-gqlApiIO :: TVar (H.HashMap CollectionRef FS.StopListening) -> Pool Connection -> ByteString -> IO ByteString
+gqlApiIO :: CollectionWatchState -> Pool Connection -> ByteString -> IO ByteString
 gqlApiIO collectionWatchState pool rq = runStdoutLogging do
   $(logInfo) ("handling graphql request" :: T.Text)
   $(logDebug) $ "graphql request: " <> rq
-  rs <- runReader pool $
-    runReader collectionWatchState $
-      runFileSystemIO $
-        runFileSystemWatchServiceIO $
-          runTransaction $
-            withTransaction $ \conn ->
-              runResolverE conn $
-                gqlApi rq
+  !rs <- runFileSystemIO $
+    runTransaction pool $
+      withTransaction $ \conn ->
+        runStdoutLogging $
+          runSavepoint conn $
+            runMetadataServiceIO $
+              runSourceRepositoryIO conn $
+                runFileSystemServiceIO $
+                  runFileSystemWatchServiceIO pool collectionWatchState $
+                    runCollectionRepositoryIO conn $
+                      runCollectionServiceIO pool $
+                        gqlApi rq
   $(logInfo) ("finished handling graphql request" :: T.Text)
   pure rs
 
-type ResolverE sig m =
-  ( Has (Lift IO) sig m,
-    Has (Reader Connection) sig m,
-    Has Transaction sig m,
-    Has Savepoint sig m,
-    Has Logging sig m,
-    Has FileSystem sig m,
-    Has SourceRepository sig m,
-    Has MetadataService sig m,
-    Has CollectionRepository sig m,
-    Has CollectionService sig m,
-    Has FileSystemService sig m
+type ResolverE m =
+  ( MonadIO m,
+    Transaction m,
+    Savepoint m,
+    Logging m,
+    FileSystem m,
+    SourceRepository m,
+    MetadataService m,
+    CollectionRepository m,
+    CollectionService m,
+    FileSystemService m
   )
 
-runResolverE ::
-  (Has (Lift IO) sig m) =>
-  t ->
-  CollectionServiceIOC
-    ( CollectionRepositoryIOC
-        ( FileSystemServiceIOC
-            ( SourceRepositoryIOC
-                ( MetadataServiceIOC
-                    ( SavepointC
-                        ( LoggingIOC
-                            ( ReaderC t m
-                            )
-                        )
-                    )
-                )
-            )
-        )
-    )
-    a ->
-  m a
-runResolverE conn =
-  runReader conn
-    . runStdoutLogging
-    . runSavepoint
-    . runMetadataServiceIO
-    . runSourceRepositoryIO
-    . runFileSystemServiceIO
-    . runCollectionRepositoryIO
-    . runCollectionServiceIO
+--runResolverE ::
+--  Pool Connection ->
+--  Connection ->
+--  CollectionServiceT
+--    ( CollectionRepositoryT
+--        ( FileSystemServiceT
+--            ( SourceRepositoryT
+--                ( MetadataServiceT
+--                    ( SavepointT
+--                        ( LoggingT m
+--                        )
+--                    )
+--                )
+--            )
+--        )
+--    )
+--    a ->
+--  m a
+--runResolverE pool conn =
+--  runStdoutLogging
+--    . runSavepoint conn
+--    . runMetadataServiceIO
+--    . runSourceRepositoryIO conn
+--    . runFileSystemServiceIO
+--    . runCollectionRepositoryIO conn
+--    . runCollectionServiceIO pool
 
-api :: (MonadIO m, MonadBaseControl IO m) => TVar (H.HashMap CollectionRef FS.StopListening) -> Pool Connection -> ScottyT LT.Text m ()
+api :: (MonadIO m, MonadBaseControl IO m) => CollectionWatchState -> Pool Connection -> ScottyT LT.Text m ()
 api collectionWatchState pool = do
   middleware (cors (const $ Just simpleCorsResourcePolicy {corsRequestHeaders = ["Content-Type"]}))
   matchAny "/api" $ do
@@ -166,24 +158,22 @@ api collectionWatchState pool = do
 getSourceFilePathIO :: (MonadIO m, MonadBaseControl IO m) => Pool Connection -> DB.SourceKey -> m (Maybe FilePath)
 getSourceFilePathIO pool k = withResource pool $ \conn ->
   liftIO $
-    runReader conn $
-      runStdoutLogging $
-        runFileSystemIO $
-          runSourceRepositoryIO $
-            getSourceFilePath k
+    runStdoutLogging $
+      runFileSystemIO $
+        runSourceRepositoryIO conn $
+          getSourceFilePath k
 
 findCoverImageIO :: (MonadIO m, MonadBaseControl IO m) => Pool Connection -> DB.SourceKey -> m (Maybe FilePath)
 findCoverImageIO pool k = withResource pool $ \conn ->
   liftIO $
-    runReader conn $
-      runStdoutLogging $
-        runFileSystemIO $
-          runSourceRepositoryIO $ do
-            getSourceFilePath k >>= \case
-              Nothing -> do
-                $(logWarn) $ "No local file found for source " <> show k
-                pure Nothing
-              Just path -> do
-                $(logInfo) $ "Locating cover image for source " <> show k
-                let dir = takeDirectory path
-                fmap (\f -> dir <> (pathSeparator : f)) <$> API.findCoverImage dir
+    runStdoutLogging $
+      runFileSystemIO $
+        runSourceRepositoryIO conn $ do
+          getSourceFilePath k >>= \case
+            Nothing -> do
+              $(logWarn) $ "No local file found for source " <> show k
+              pure Nothing
+            Just path -> do
+              $(logInfo) $ "Locating cover image for source " <> show k
+              let dir = takeDirectory path
+              fmap (\f -> dir <> (pathSeparator : f)) <$> API.findCoverImage dir

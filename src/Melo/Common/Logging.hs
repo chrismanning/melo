@@ -13,7 +13,7 @@ module Melo.Common.Logging
     logError,
     logErrorShow,
     runStdoutLogging,
-    LoggingIOC (..),
+    LoggingT (..),
     logIO,
     logDebugIO,
     logDebugShowIO,
@@ -28,9 +28,13 @@ module Melo.Common.Logging
 where
 
 import Basement.From
-import Control.Algebra
-import Control.Carrier.Lift
+import Control.Concurrent.Classy
+import Control.Exception.Safe
+import Control.Monad.Base
 import Control.Monad.IO.Class
+import Control.Monad.Identity
+import Control.Monad.Trans
+import Control.Monad.Trans.Control
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as L
 import qualified Data.Text as T
@@ -39,11 +43,21 @@ import qualified Data.Text.Lazy as LT
 import Data.Time.Format
 import Language.Haskell.TH.Syntax (Exp, Loc (..), Q, liftString, qLocation)
 import qualified Language.Haskell.TH.Syntax as TH (Lift (lift))
-import Melo.Common.Effect
 import qualified System.Wlog as Wlog
+import Prelude hiding (log)
 
-data Logging :: Effect where
-  Log :: From s LogMessage => Wlog.LoggerName -> Wlog.Severity -> s -> Logging m ()
+class Monad m => Logging m where
+  log :: From s LogMessage => Wlog.LoggerName -> Wlog.Severity -> s -> m ()
+
+instance
+  {-# OVERLAPPABLE #-}
+  ( Monad (t m),
+    MonadTrans t,
+    Logging m
+  ) =>
+  Logging (t m)
+  where
+  log ln sev msg = lift (log ln sev msg)
 
 newtype LogMessage = LogMessage {msg :: T.Text}
 
@@ -65,23 +79,22 @@ instance From L.ByteString LogMessage where
 --instance From BB.Builder LogMessage where
 --  from = from . BL.toStrict . BB.toLazyByteString
 
-newtype LoggingIOC m a = LoggingIOC
-  { runLoggingIOC :: m a
+newtype LoggingT m a = LoggingT
+  { runLoggingT :: m a
   }
-  deriving newtype (Applicative, Functor, Monad)
+  deriving newtype (Applicative, Functor, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadMask, MonadThrow)
+  deriving (MonadTrans, MonadTransControl) via IdentityT
 
 instance
-  (Has (Lift IO) sig m, Algebra sig m) =>
-  Algebra (Logging :+: sig) (LoggingIOC m)
+  (MonadIO m) =>
+  Logging (LoggingT m)
   where
-  alg _ (L (Log ln severity msg)) ctx = do
+  log ln severity msg = do
     let LogMessage msg' = from msg
-    sendIO $ Wlog.logM ln severity msg'
-    pure ctx
-  alg hdl (R other) ctx = LoggingIOC $ alg (runLoggingIOC . hdl) other ctx
+    Wlog.logM ln severity msg'
 
-logImpl :: (From s LogMessage, Has Logging sig m) => String -> Int -> s -> m ()
-logImpl ln severity msg = send (Log (Wlog.LoggerName $ T.pack ln) (toEnum severity) msg)
+logImpl :: (From s LogMessage, Logging m) => String -> Int -> s -> m ()
+logImpl ln severity msg = log (Wlog.LoggerName $ T.pack ln) (toEnum severity) msg
 
 log_ :: Wlog.Severity -> Q Exp
 log_ severity =
@@ -115,8 +128,8 @@ logError = log_ Wlog.Error
 logErrorShow :: Q Exp
 logErrorShow = logShow Wlog.Error
 
-runStdoutLogging :: LoggingIOC m a -> m a
-runStdoutLogging = runLoggingIOC
+runStdoutLogging :: LoggingT m a -> m a
+runStdoutLogging = runLoggingT
 
 logIOImpl :: (From s LogMessage, MonadIO m) => String -> Int -> s -> m ()
 logIOImpl ln severity msg =

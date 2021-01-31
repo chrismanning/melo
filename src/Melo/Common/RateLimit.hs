@@ -2,47 +2,45 @@
 
 module Melo.Common.RateLimit where
 
-import Control.Algebra
-import Control.Carrier.Reader
 import Control.Concurrent.TokenLimiter
-import Control.Effect.Lift
-import Melo.Common.Effect
+import Control.Monad.IO.Class
+import Control.Monad.Reader
 
-waitReady :: Has RateLimit sig m => m ()
-waitReady = send WaitReady
+class Monad m => RateLimit m where
+  waitReady :: m ()
 
-data RateLimit :: Effect where
-  WaitReady :: RateLimit m ()
-
-newtype RateLimitIOC m a = RateLimitIOC
-  { runRateLimitIOC :: (ReaderC LimitConfig (ReaderC RateLimiter m)) a
+newtype RateLimitT m a = RateLimitT
+  { runRateLimitT :: ReaderT (LimitConfig, RateLimiter) m a
   }
-  deriving newtype (Applicative, Functor, Monad)
+  deriving newtype (Applicative, Functor, Monad, MonadIO, MonadTrans)
 
 instance
-  ( Has (Lift IO) sig m,
-    Algebra sig m
+  {-# OVERLAPPABLE #-}
+  ( Monad (t m),
+    MonadTrans t,
+    RateLimit m
   ) =>
-  Algebra (RateLimit :+: sig) (RateLimitIOC m)
+  RateLimit (t m)
   where
-  alg hdl sig ctx = case sig of
-    L WaitReady -> RateLimitIOC $ do
-      lc <- ask
-      rl <- ask
-      sendM $ waitDebit lc rl 1
-      pure ctx
-    R other ->
-      RateLimitIOC $
-        ReaderC $
-          \lc ->
-            ReaderC $ \rl ->
-              alg (runReader rl . runReader lc . runRateLimitIOC . hdl) other ctx
+  waitReady = lift waitReady
+
+instance MonadIO m => RateLimit (RateLimitT m) where
+  waitReady = RateLimitT $ do
+    (lc, rl) <- ask
+    liftIO $ waitDebit lc rl 1
 
 runRateLimitIO ::
-  Has (Lift IO) sig m =>
+  MonadIO m =>
   LimitConfig ->
-  RateLimitIOC m a ->
+  RateLimitT m a ->
   m a
 runRateLimitIO lc c = do
-  rl <- sendM $ newRateLimiter lc
-  runReader rl $ runReader lc $ runRateLimitIOC c
+  rl <- liftIO $ newRateLimiter lc
+  runRateLimitIO' lc rl c
+
+runRateLimitIO' ::
+  LimitConfig ->
+  RateLimiter ->
+  RateLimitT m a ->
+  m a
+runRateLimitIO' lc rl c = runReaderT (runRateLimitT c) (lc, rl)

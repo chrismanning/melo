@@ -5,7 +5,6 @@
 module Melo.Library.Collection.API where
 
 import Basement.From
-import Control.Algebra
 import Control.Lens hiding (from, lens, (|>))
 import Data.Generics.Labels ()
 import Data.Kind
@@ -29,9 +28,9 @@ import qualified Melo.Library.Source.Repo as SrcRepo
 import Network.URI
 
 resolveCollections ::
-  ( Has CollectionRepository sig m,
-    Has SrcRepo.SourceRepository sig m,
-    Has FileSystem sig m
+  ( CollectionRepository m,
+    SrcRepo.SourceRepository m,
+    FileSystem m
   ) =>
   CollectionsArgs ->
   ResolverQ e m [Collection (Resolver QUERY e m)]
@@ -92,8 +91,8 @@ instance Typeable m => GQLType (Collection m)
 --      }
 
 instance
-  ( Has SrcRepo.SourceRepository sig m,
-    Has FileSystem sig m,
+  ( SrcRepo.SourceRepository m,
+    FileSystem m,
     WithOperation o
   ) =>
   From DB.Collection (Collection (Resolver o e m))
@@ -147,21 +146,21 @@ data CollectionMutation (m :: Type -> Type) = CollectionMutation
 instance Typeable m => GQLType (CollectionMutation m)
 
 collectionMutation ::
-  forall sig m e.
-  ( Has CollectionRepository sig m,
-    Has CollectionService sig m,
-    Has SrcRepo.SourceRepository sig m,
-    Has FileSystem sig m,
-    Has Logging sig m
+  forall m e.
+  ( CollectionRepository m,
+    CollectionService m,
+    SrcRepo.SourceRepository m,
+    FileSystem m,
+    Logging m
   ) =>
   ResolverM e (m :: Type -> Type) CollectionMutation
 collectionMutation =
   lift $
     pure
       CollectionMutation
-        { add = addCollectionImpl @sig @m,
-          delete = deleteCollectionImpl @sig @m,
-          deleteAll = deleteAllCollectionsImpl @sig @m
+        { add = addCollectionImpl @m,
+          delete = deleteCollectionImpl @m,
+          deleteAll = deleteAllCollectionsImpl @m
         }
 
 data AddCollectionArgs = AddCollectionArgs
@@ -173,14 +172,14 @@ instance GQLType AddCollectionArgs where
   type KIND AddCollectionArgs = INPUT
 
 addCollectionImpl ::
-  forall sig m e.
-  ( Has CollectionService sig m,
-    Has CollectionRepository sig m,
-    Has SrcRepo.SourceRepository sig m,
-    Has FileSystem sig m
+  forall m e.
+  ( CollectionService m,
+    CollectionRepository m,
+    SrcRepo.SourceRepository m,
+    FileSystem m
   ) =>
   AddCollectionArgs ->
-  MutRes e m (Collection (MutRes e m))
+  ResolverM e m (Collection (Resolver MUTATION e m))
 addCollectionImpl AddCollectionArgs {..} = do
   CollectionRef ref <- lift $ addCollection newCollection
   cs <- lift $ getCollections [DB.CollectionKey ref]
@@ -198,17 +197,15 @@ instance GQLType DeleteCollectionArgs where
   type KIND DeleteCollectionArgs = INPUT
 
 deleteCollectionImpl ::
-  forall sig m e.
-  (Has CollectionRepository sig m, Has Logging sig m) =>
+  (CollectionRepository m, Logging m) =>
   DeleteCollectionArgs ->
-  Resolver MUTATION e m ()
+  ResolverM e m ()
 deleteCollectionImpl DeleteCollectionArgs {..} =
   case fromText id of
     Just uuid -> lift $ deleteCollections [DB.CollectionKey uuid]
     Nothing -> lift $ $(logWarn) $ "invalid UUID " <> id
 
 deleteAllCollectionsImpl ::
-  forall sig m e.
-  (Has CollectionRepository sig m) =>
-  MutRes e m ()
+  (CollectionRepository m) =>
+  ResolverM e m ()
 deleteAllCollectionsImpl = lift deleteAllCollections

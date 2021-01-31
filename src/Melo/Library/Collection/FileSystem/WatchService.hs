@@ -2,112 +2,95 @@
 
 module Melo.Library.Collection.FileSystem.WatchService where
 
-import Control.Algebra
-import Control.Carrier.Error.Church
-import Control.Carrier.Reader
-import Control.Concurrent
-import Control.Concurrent.STM
-import Control.Effect.Exception
-import Control.Effect.Lift
-import Control.Effect.Reader
-import Control.Effect.State
-import Control.Effect.TH
-import Control.Lens
+import Control.Concurrent.Classy
+import qualified Control.Concurrent.STM as C
+import Control.Exception.Safe
 import Control.Monad
-import Data.Functor
+import Control.Monad.Reader
+import Control.Monad.Trans.Control
 import Data.HashMap.Strict as H
-import Data.Maybe
 import Data.Pool
 import Data.Time (NominalDiffTime)
 import Database.PostgreSQL.Simple (Connection)
-import Melo.Common.Effect
 import Melo.Common.FileSystem
 import Melo.Common.Logging
 import Melo.Common.Metadata
 import Melo.Common.Uri
-import Melo.Database.Transaction
-import qualified Melo.Format.Error as F
 import Melo.Library.Collection.FileSystem.Service
 import Melo.Library.Collection.Types
 import Melo.Library.Source.Repo
-import Melo.Library.Source.Service
-import Melo.Library.Source.Types
 import System.FSNotify (Debounce (..), WatchConfig (..))
 import qualified System.FSNotify as FS
-import System.FilePath
 
-data FileSystemWatchService :: Effect where
-  StartWatching :: CollectionRef -> FilePath -> FileSystemWatchService m ()
-  StopWatching :: CollectionRef -> FileSystemWatchService m ()
-
-makeSmartConstructors ''FileSystemWatchService
-
-newtype FileSystemWatchServiceIOC m a = FileSystemWatchServiceIOC
-  { runFileSystemWatchServiceIOC :: m a
-  }
-  deriving (Functor, Applicative, Monad)
-
-runFileSystemWatchServiceIO :: FileSystemWatchServiceIOC m a -> m a
-runFileSystemWatchServiceIO = runFileSystemWatchServiceIOC
+class Monad m => FileSystemWatchService m where
+  startWatching :: CollectionRef -> FilePath -> m ()
+  stopWatching :: CollectionRef -> m ()
 
 instance
-  ( Has (Lift IO) sig m,
-    Has (Reader (Pool Connection)) sig m,
-    Has FileSystem sig m,
-    Has (Reader (TVar (H.HashMap CollectionRef FS.StopListening))) sig m,
-    Has Logging sig m
+  {-# OVERLAPPABLE #-}
+  ( Monad (t m),
+    MonadTrans t,
+    FileSystemWatchService m
   ) =>
-  Algebra (FileSystemWatchService :+: sig) (FileSystemWatchServiceIOC m)
+  FileSystemWatchService (t m)
   where
-  alg hdl sig ctx = case sig of
-    L (StartWatching ref p) -> do
-      $(logInfo) $ "starting to watch path " <> p
-      pool <- ask
-      stoppers <- ask @(TVar (H.HashMap CollectionRef FS.StopListening))
-      sendIO $
-        forkIO $
-          FS.withManagerConf (FS.defaultConfig {confDebounce = Debounce (0.100 :: NominalDiffTime)}) $ \watchManager -> do
-            stop <- FS.watchTree watchManager p (const True) (handleEventIO pool ref)
-            atomically $ modifyTVar' stoppers (H.insert ref stop)
-            forever $ threadDelay 1000000
-      pure ctx
-    L (StopWatching ref) -> do
-      stoppers <- ask @(TVar (H.HashMap CollectionRef FS.StopListening))
-      stoppers' <- sendIO $ atomically $ readTVar stoppers
-      ctx $$> case H.lookup ref stoppers' of
-        Just stop -> sendIO stop
-        Nothing -> pure ()
-    R other -> FileSystemWatchServiceIOC (alg (runFileSystemWatchServiceIOC . hdl) other ctx)
+  startWatching ref p = lift (startWatching ref p)
+  stopWatching = lift . stopWatching
 
-handleEventIO :: Pool Connection -> CollectionRef -> FS.Event -> IO ()
-handleEventIO pool ref event = do
-  $(logDebugIO) $ "handling fs event " <> show event
-  _threadId <- forkIO $
-    runStdoutLogging $
-      runFileSystemIO $
-        runReader pool $
-          runTransaction $
-            withTransaction $ \conn ->
-              runReader conn $
-                runError
-                  (\(e :: F.MetadataException) -> $(logError) $ "error handling file system event: " <> show e)
-                  pure
-                  $ runMetadataServiceIO $
-                    runSavepoint $
-                      runSourceRepositoryIO $
-                        runFileSystemServiceIO $
-                          handleEvent ref event
-  pure ()
+type CollectionWatchState = C.TVar (H.HashMap CollectionRef FS.StopListening)
+
+newtype FileSystemWatchServiceT m a = FileSystemWatchServiceT
+  { runFileSystemWatchServiceT :: ReaderT (Pool Connection, CollectionWatchState) m a
+  }
+  deriving (Functor, Applicative, Monad, MonadIO, MonadConc, MonadCatch, MonadMask, MonadThrow, MonadTrans, MonadTransControl)
+
+runFileSystemWatchServiceIO ::
+  Pool Connection -> CollectionWatchState -> FileSystemWatchServiceT m a -> m a
+runFileSystemWatchServiceIO pool watchState =
+  flip runReaderT (pool, watchState) . runFileSystemWatchServiceT
+
+instance
+  ( MonadIO m,
+    MonadMask m,
+    MonadConc m,
+    MonadBaseControl IO m,
+    MetadataService m,
+    FileSystem m,
+    Logging m
+  ) =>
+  FileSystemWatchService (FileSystemWatchServiceT m)
+  where
+  startWatching ref p = FileSystemWatchServiceT $
+    ReaderT $ \(pool, watchState) -> do
+      $(logInfo) $ "starting to watch path " <> p
+      liftBaseWith
+        ( \runInBase ->
+            void $
+              fork $
+                liftIO $
+                  FS.withManagerConf (FS.defaultConfig {confDebounce = Debounce (0.100 :: NominalDiffTime)}) $ \watchManager -> do
+                    stop <- FS.watchTree watchManager p (const True) (void . runInBase . handleEvent pool ref)
+                    C.atomically $ C.modifyTVar' watchState (H.insert ref stop)
+                    forever $ threadDelay 1000000
+        )
+  stopWatching ref = FileSystemWatchServiceT $
+    ReaderT $ \(_pool, watchState) -> do
+      stoppers' <- liftIO $ C.atomically $ C.readTVar watchState
+      case H.lookup ref stoppers' of
+        Just stop -> liftIO stop
+        Nothing -> pure ()
 
 handleEvent ::
-  ( Has Logging sig m,
-    Has FileSystemService sig m,
-    Has SourceRepository sig m
+  ( Logging m,
+    MonadIO m,
+    MonadMask m,
+    MonadConc m
   ) =>
+  Pool Connection ->
   CollectionRef ->
   FS.Event ->
   m ()
-handleEvent ref event =
+handleEvent pool ref event = runFileSystemServiceIO' pool $
   case event of
     FS.Added p _ _ -> do
       $(logInfo) $ "file/directory added; scanning " <> p

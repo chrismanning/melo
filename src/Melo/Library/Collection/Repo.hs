@@ -3,76 +3,91 @@
 module Melo.Library.Collection.Repo where
 
 import Basement.From
-import Control.Algebra
-import Control.Effect.Exception
-import Control.Effect.Reader
-import Control.Effect.TH
+import Control.Concurrent.Classy
+import qualified Control.Exception as E
+import Control.Exception.Safe
 import Control.Lens hiding (from)
 import Control.Monad
-import Data.Functor
+import Control.Monad.Base
+import Control.Monad.Reader
+import Control.Monad.Trans.Control
 import qualified Data.Text as T
 import Database.Beam as B hiding (char, insert)
 import Database.Beam.Postgres as Pg
 import Database.Beam.Postgres.Full as Pg
-import Melo.Common.Effect
 import Melo.Common.NaturalSort
 import qualified Melo.Database.Model as DB
 import Melo.Database.Query
 import Melo.Library.Collection.Types
 import Network.URI
 
-data CollectionRepository :: Effect where
-  GetAllCollections :: CollectionRepository m [DB.Collection]
-  GetCollections :: [DB.CollectionKey] -> CollectionRepository m [DB.Collection]
-  GetCollectionsByUri :: [URI] -> CollectionRepository m [DB.Collection]
-  InsertCollections :: [NewCollection] -> CollectionRepository m [DB.Collection]
-  DeleteCollections :: [DB.CollectionKey] -> CollectionRepository m ()
-  DeleteAllCollections :: CollectionRepository m ()
-  UpdateCollections :: [UpdateCollection] -> CollectionRepository m ()
-
-makeSmartConstructors ''CollectionRepository
-
-newtype CollectionRepositoryIOC m a = CollectionRepositoryIOC
-  { runCollectionRepositoryIOC :: m a
-  }
-  deriving newtype (Functor, Applicative, Monad)
-
 tbl :: DatabaseEntity Postgres DB.MeloDb (TableEntity DB.CollectionT)
 tbl = DB.meloDb ^. #collection
 
+class Monad m => CollectionRepository m where
+  getAllCollections :: m [DB.Collection]
+  getCollections :: [DB.CollectionKey] -> m [DB.Collection]
+  getCollectionsByUri :: [URI] -> m [DB.Collection]
+  insertCollections :: [NewCollection] -> m [DB.Collection]
+  deleteCollections :: [DB.CollectionKey] -> m ()
+  deleteAllCollections :: m ()
+  updateCollections :: [UpdateCollection] -> m ()
+
 instance
-  (Has (Lift IO) sig m, Has (Reader Connection) sig m) =>
-  Algebra (CollectionRepository :+: sig) (CollectionRepositoryIOC m)
+  {-# OVERLAPPABLE #-}
+  ( Monad (t m),
+    MonadTrans t,
+    CollectionRepository m
+  ) =>
+  CollectionRepository (t m)
   where
-  alg hdl sig ctx = case sig of
-    L GetAllCollections -> ctx $$> sortNaturalBy (^. #root_uri) <$> getAll tbl
-    L (GetCollections []) -> pure $ ctx $> []
-    L (GetCollections ks) -> ctx $$> getByKeys tbl ks
-    L (GetCollectionsByUri []) -> pure $ ctx $> []
-    L (GetCollectionsByUri fs) -> CollectionRepositoryIOC $ do
+  getAllCollections = lift getAllCollections
+  getCollections = lift . getCollections
+  getCollectionsByUri = lift . getCollectionsByUri
+  insertCollections = lift . insertCollections
+  deleteCollections = lift . deleteCollections
+  deleteAllCollections = lift deleteAllCollections
+  updateCollections = lift . updateCollections
+
+newtype CollectionRepositoryT m a = CollectionRepositoryT
+  { runCollectionRepositoryT :: ReaderT Connection m a
+  }
+  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadMask, MonadThrow, MonadTrans, MonadTransControl)
+
+instance MonadIO m => CollectionRepository (CollectionRepositoryT m) where
+  getAllCollections = CollectionRepositoryT $
+    ReaderT $ \conn ->
+      sortNaturalBy (^. #root_uri) <$> getAllIO conn tbl
+  getCollections ks = CollectionRepositoryT $
+    ReaderT $ \conn ->
+      getByKeysIO conn tbl ks
+  getCollectionsByUri [] = pure []
+  getCollectionsByUri fs = CollectionRepositoryT $
+    ReaderT $ \conn -> do
       let q = filter_ (\t -> t ^. #root_uri `in_` fmap (val_ . T.pack . show) fs) (all_ tbl)
-      r <- $(runPgDebug') (runSelectReturningList (select q))
-      pure $ ctx $> r
-    L (InsertCollections []) -> pure $ ctx $> []
-    L (InsertCollections ss) -> do
-      r <- do
-        expr <- evaluate (insertExpressions $ fmap from ss)
-        let q =
-              Pg.insertReturning
-                tbl
-                expr
-                Pg.onConflictDefault
-                (Just id)
-        $(runPgDebug') (Pg.runPgInsertReturningList q)
-      pure $ ctx $> r
-    L (DeleteCollections ks) -> ctx $$> deleteByKeys tbl ks
-    L DeleteAllCollections -> ctx $$> deleteAll tbl
-    L (UpdateCollections us) -> do
+      $(runPgDebugIO') conn (runSelectReturningList (select q)) <&> sortNaturalBy (^. #root_uri)
+  insertCollections [] = pure []
+  insertCollections ss = CollectionRepositoryT $
+    ReaderT $ \conn -> do
+      expr <- liftIO $ E.evaluate (insertExpressions $ fmap from ss)
+      let q =
+            Pg.insertReturning
+              tbl
+              expr
+              Pg.onConflictDefault
+              (Just id)
+      $(runPgDebugIO') conn (Pg.runPgInsertReturningList q) <&> sortNaturalBy (^. #root_uri)
+  deleteCollections ks = CollectionRepositoryT $
+    ReaderT $ \conn ->
+      deleteByKeysIO conn tbl ks
+  deleteAllCollections = CollectionRepositoryT $
+    ReaderT $ \conn ->
+      deleteAllIO conn tbl
+  updateCollections us = CollectionRepositoryT $
+    ReaderT $ \conn ->
       forM_ us $ \u -> do
         let q = save tbl u
-        $(runPgDebug') (runUpdate q)
-      pure ctx
-    R other -> CollectionRepositoryIOC (alg (runCollectionRepositoryIOC . hdl) other ctx)
+        $(runPgDebugIO') conn (runUpdate q)
 
-runCollectionRepositoryIO :: CollectionRepositoryIOC m a -> m a
-runCollectionRepositoryIO = runCollectionRepositoryIOC
+runCollectionRepositoryIO :: Connection -> CollectionRepositoryT m a -> m a
+runCollectionRepositoryIO conn = flip runReaderT conn . runCollectionRepositoryT

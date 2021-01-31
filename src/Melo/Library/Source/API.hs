@@ -5,7 +5,6 @@
 module Melo.Library.Source.API where
 
 import Basement.From
-import Control.Algebra
 import Control.Applicative
 import Control.Lens hiding (from, lens, (|>))
 import Control.Monad
@@ -43,7 +42,7 @@ import Network.URI
 import System.FilePath as P
 
 resolveSources ::
-  (Has SourceRepository sig m, Has FileSystem sig m, WithOperation o) =>
+  (SourceRepository m, FileSystem m, WithOperation o) =>
   SourcesArgs ->
   Resolver o e m [Source (Resolver o e m)]
 resolveSources (SourceArgs (Just SourceWhere {..})) =
@@ -89,7 +88,7 @@ data Source m = Source
 
 instance Typeable m => GQLType (Source m)
 
-instance (Applicative m, Has FileSystem sig m, WithOperation o) => From Ty.Source (Source (Resolver o e m)) where
+instance (Applicative m, FileSystem m, WithOperation o) => From Ty.Source (Source (Resolver o e m)) where
   from s =
     Source
       { id = toText $ s ^. #ref . coerced,
@@ -117,7 +116,7 @@ instance (Applicative m, Has FileSystem sig m, WithOperation o) => From Ty.Sourc
                       }
           Nothing -> error "unimplemented"
 
-instance (Applicative m, Has FileSystem sig m, WithOperation o) => From DB.Source (Source (Resolver o e m)) where
+instance (Applicative m, FileSystem m, WithOperation o) => From DB.Source (Source (Resolver o e m)) where
   from s =
     Source
       { id = toText (s ^. #id),
@@ -295,8 +294,8 @@ instance GQLType MappedTagsInput where
 --unmapTags :: MappedTags INPUT -> F.Tags
 
 resolveSourceGroups ::
-  ( Has SourceRepository sig m,
-    Has FileSystem sig m,
+  ( SourceRepository m,
+    FileSystem m,
     WithOperation o
   ) =>
   Resolver o e m [SourceGroup (Resolver o e m)]
@@ -330,7 +329,7 @@ data SourceContent
 
 instance GQLType SourceContent
 
-groupSources :: forall m sig e o. (Has FileSystem sig m, WithOperation o) => [Source (Resolver o e m)] -> [SourceGroup (Resolver o e m)]
+groupSources :: forall m e o. (FileSystem m, WithOperation o) => [Source (Resolver o e m)] -> [SourceGroup (Resolver o e m)]
 groupSources = fmap trSrcGrp . toList . foldl' acc S.empty
   where
     acc gs' src =
@@ -375,7 +374,7 @@ groupSources = fmap trSrcGrp . toList . foldl' acc S.empty
           Nothing -> error "unimplemented"
       Nothing -> pure Nothing
 
-findCoverImage :: Has FileSystem sig m => FilePath -> m (Maybe FilePath)
+findCoverImage :: FileSystem m => FilePath -> m (Maybe FilePath)
 findCoverImage p = do
   isDir <- doesDirectoryExist p
   if isDir
@@ -501,10 +500,10 @@ data UpdateSourceResult
 instance GQLType UpdateSourceResult
 
 updateSourcesImpl ::
-  forall sig m e.
-  ( Has SourceRepository sig m,
-    Has Logging sig m,
-    Has MetadataService sig m
+  forall m e.
+  ( SourceRepository m,
+    Logging m,
+    MetadataService m
   ) =>
   UpdateSourcesArgs ->
   ResolverM e m UpdatedSources

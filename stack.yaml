@@ -49,8 +49,6 @@ extra-deps:
       - beam-migrate
   - github: chrismanning/binary-bits
     commit: 53394d71f9412821b217816c83defd42d53fec32
-  - github: jcberentsen/Haxl
-    commit: 587ac10827b28327f03c89081d9797b8953780fc
   - barbies-2.0.0.0
   - conduit-audio-0.2.0.3
   - conduit-audio-lame-0.1.2.1
@@ -63,9 +61,6 @@ extra-deps:
   - dependent-sum-0.6.2.0
   - fastsum-0.1.1.1
   - fmt-0.6.1
-  - fused-effects-th-0.1.0.1
-  - fused-effects-1.1.0.0
-  - fused-effects-exceptions-1.1.0.0
   - generic-aeson-0.2.0.10
   - harg-0.4.2.0
   - haskell-src-exts-1.23.0

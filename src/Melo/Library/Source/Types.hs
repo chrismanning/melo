@@ -31,7 +31,6 @@ import qualified Melo.Database.Model as DB
 import Melo.Format.Info
 import Melo.Format.Metadata
 import Melo.Library.Collection.Types
-import Network.URI hiding (escapeString)
 import Numeric.Natural
 
 data NewImportSource = FileSource CollectionRef MetadataFile | CueFileSource

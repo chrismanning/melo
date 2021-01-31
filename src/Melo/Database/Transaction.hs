@@ -2,79 +2,129 @@
 
 module Melo.Database.Transaction where
 
-import Control.Algebra
-import Control.Carrier.Lift
-import Control.Carrier.Reader
-import Control.Effect.Exception
-import qualified Control.Exception.Safe as E
+import Control.Concurrent.Classy
+import Control.Exception.Safe as E
+import Control.Monad.Base
+import Control.Monad.Reader
+import Control.Monad.Trans.Control
 import Data.Pool as P
 import qualified Database.PostgreSQL.Simple as Pg
 import qualified Database.PostgreSQL.Simple.Transaction as Pg
-import Melo.Common.Effect
 import Melo.Common.Logging
 
-data Transaction :: Effect where
-  WithTransaction :: (Pg.Connection -> m a) -> Transaction m a
-
-withTransaction :: Has Transaction sig m => (Pg.Connection -> m a) -> m a
-withTransaction t = send (WithTransaction t)
-
-newtype TransactionC m a = TransactionC {runTransactionC :: m a}
-  deriving newtype (Applicative, Functor, Monad)
+class Monad m => Transaction m where
+  withTransaction :: (Pg.Connection -> m a) -> m a
 
 instance
-  (Has (Lift IO) sig m, Has Logging sig m, Has (Reader (Pool Pg.Connection)) sig m) =>
-  Algebra (Transaction :+: sig) (TransactionC m)
+  {-# OVERLAPPABLE #-}
+  ( Monad (t m),
+    MonadTransControl t,
+    Transaction m
+  ) =>
+  Transaction (t m)
   where
-  alg hdl (L (WithTransaction t)) ctx = do
-    pool <- ask
-    mask $ \restore -> do
-      (conn, localPool) <- sendIO $ takeResource pool
-      sendIO $ Pg.begin conn
-      r <- restore (hdl (t conn <$ ctx)) `onException` cleanUp conn localPool
-      sendIO $ Pg.commit conn
-      sendIO $ putResource localPool conn
-      return r
+  withTransaction ma = do
+    result <- liftWith \run ->
+      withTransaction $ run <$> ma
+    restoreT (pure result)
+
+newtype TransactionT m a = TransactionT {runTransactionT :: ReaderT (Pool Pg.Connection) m a}
+  deriving newtype
+    ( Applicative,
+      Functor,
+      Monad,
+      MonadBase b,
+      MonadBaseControl b,
+      MonadIO,
+      MonadConc,
+      MonadCatch,
+      MonadMask,
+      MonadThrow,
+      MonadTrans,
+      MonadTransControl
+    )
+
+instance
+  ( MonadIO m,
+    MonadMask m
+  ) =>
+  Transaction (TransactionT m)
+  where
+  withTransaction t =
+    TransactionT $
+      ReaderT $ \pool ->
+        E.mask $ \restore -> do
+          (conn, localPool) <- liftIO $ takeResource pool
+          liftIO $ Pg.begin conn
+          r <- restore (runTransaction pool $ t conn) `E.onException` (liftIO $ cleanUp conn localPool)
+          liftIO $ Pg.commit conn
+          liftIO $ putResource localPool conn
+          return r
     where
+      cleanUp :: Pg.Connection -> LocalPool Pg.Connection -> IO ()
       cleanUp conn localPool = do
-        $(logWarnShow) ("rolling back" :: String)
-        sendIO $ do
+        $(logWarnShowIO) ("rolling back" :: String)
+        liftIO $ do
           Pg.rollback conn `E.catch` \(_ :: IOError) -> return ()
           putResource localPool conn
-  alg hdl (R other) ctx = TransactionC (alg (runTransactionC . hdl) other ctx)
 
-runTransaction :: TransactionC m a -> m a
-runTransaction = runTransactionC
+runTransaction :: Pool Pg.Connection -> TransactionT m a -> m a
+runTransaction conn = (flip runReaderT) conn . runTransactionT
 
-data Savepoint :: Effect where
-  WithSavepoint :: m a -> Savepoint m a
-
-withSavepoint :: (Has Savepoint sig m) => m a -> m a
-withSavepoint t = send (WithSavepoint t)
-
-newtype SavepointC m a = SavepointC {runSavepointC :: m a}
-  deriving newtype (Applicative, Functor, Monad)
+class Monad m => Savepoint m where
+  withSavepoint :: m a -> m a
 
 instance
-  (Has (Lift IO) sig m, Has Logging sig m, Has (Reader Pg.Connection) sig m) =>
-  Algebra (Savepoint :+: sig) (SavepointC m)
+  {-# OVERLAPPABLE #-}
+  ( Monad (t m),
+    MonadTransControl t,
+    Savepoint m
+  ) =>
+  Savepoint (t m)
   where
-  alg hdl (L (WithSavepoint t)) ctx = do
-    conn <- ask
-    mask $ \restore -> do
-      sp <- sendIO $ Pg.newSavepoint conn
-      r <- restore (hdl (t <$ ctx)) `onException` cleanUp conn sp
-      sendIO (Pg.releaseSavepoint conn sp) `catch` \err -> do
-        $(logError) $ "release savepoint failed: " <> show err
-        if Pg.isFailedTransactionError err
-          then sendIO $ Pg.rollbackToAndReleaseSavepoint conn sp
-          else throwIO err
-      return r
+  withSavepoint ma = do
+    result <- liftWith \run ->
+      withSavepoint $ run ma
+    restoreT (pure result)
+
+newtype SavepointT m a = SavepointT {runSavepointT :: ReaderT Pg.Connection m a}
+  deriving newtype
+    ( Applicative,
+      Functor,
+      Monad,
+      MonadIO,
+      MonadBase b,
+      MonadBaseControl b,
+      MonadConc,
+      MonadCatch,
+      MonadMask,
+      MonadThrow,
+      MonadTrans,
+      MonadTransControl
+    )
+
+instance
+  ( MonadIO m,
+    Logging m,
+    MonadMask m
+  ) =>
+  Savepoint (SavepointT m)
+  where
+  withSavepoint t = SavepointT $
+    ReaderT $ \conn -> do
+      E.mask $ \restore -> do
+        sp <- liftIO $ Pg.newSavepoint conn
+        r <- restore (runSavepoint conn $ t) `E.onException` cleanUp conn sp
+        liftIO (Pg.releaseSavepoint conn sp) `E.catch` \err -> do
+          $(logError) $ "release savepoint failed: " <> show err
+          if Pg.isFailedTransactionError err
+            then liftIO $ Pg.rollbackToAndReleaseSavepoint conn sp
+            else E.throwIO err
+        return r
     where
       cleanUp conn sp = do
         $(logWarnShow) ("rolling back savepoint" :: String)
-        sendIO $ Pg.rollbackToAndReleaseSavepoint conn sp
-  alg hdl (R other) ctx = SavepointC (alg (runSavepointC . hdl) other ctx)
+        liftIO $ Pg.rollbackToAndReleaseSavepoint conn sp
 
-runSavepoint :: SavepointC m a -> m a
-runSavepoint = runSavepointC
+runSavepoint :: Pg.Connection -> SavepointT m a -> m a
+runSavepoint conn = flip runReaderT conn . runSavepointT

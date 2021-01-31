@@ -3,72 +3,54 @@
 module Melo.Library.Artist.Repo where
 
 import Basement.From
-import Control.Algebra
-import Control.Effect.Lift
-import Control.Effect.Reader
 import Control.Lens ((^.))
+import Control.Monad.Reader
+import Control.Monad.Trans.Control
 import Data.Containers.ListUtils (nubOrd)
 import Data.Text (Text)
 import Database.Beam
 import Database.Beam.Postgres as Pg
 import Database.Beam.Postgres.Full as Pg
-import Melo.Common.Effect
 import qualified Melo.Database.Model as DB
 import Melo.Database.Query
 import Melo.Library.Artist.Types
 
-data ArtistRepository :: Effect where
-  GetAllArtists :: ArtistRepository m [DB.Artist]
-  GetArtists :: [DB.ArtistKey] -> ArtistRepository m [DB.Artist]
-  GetArtistAlbums :: DB.ArtistKey -> ArtistRepository m [DB.Album]
-  GetArtistTracks :: DB.ArtistKey -> ArtistRepository m [DB.Track]
-  SearchArtists :: Text -> ArtistRepository m [DB.Artist]
-  InsertArtists :: [NewArtist] -> ArtistRepository m [DB.ArtistKey]
-  DeleteArtists :: [DB.ArtistKey] -> ArtistRepository m ()
+class Monad m => ArtistRepository m where
+  getAllArtists :: m [DB.Artist]
+  getArtists :: [DB.ArtistKey] -> m [DB.Artist]
+  getArtistAlbums :: DB.ArtistKey -> m [DB.Album]
+  getArtistTracks :: DB.ArtistKey -> m [DB.Track]
+  searchArtists :: Text -> m [DB.Artist]
+  insertArtists :: [NewArtist] -> m [DB.ArtistKey]
+  deleteArtists :: [DB.ArtistKey] -> m ()
 
-getAllArtists :: Has ArtistRepository sig m => m [DB.Artist]
-getAllArtists = send GetAllArtists
-
-getArtists :: Has ArtistRepository sig m => [DB.ArtistKey] -> m [DB.Artist]
-getArtists ks = send (GetArtists ks)
-
-getArtistAlbums :: Has ArtistRepository sig m => DB.ArtistKey -> m [DB.Album]
-getArtistAlbums k = send (GetArtistAlbums k)
-
-getArtistTracks :: Has ArtistRepository sig m => DB.ArtistKey -> m [DB.Track]
-getArtistTracks k = send (GetArtistTracks k)
-
-searchArtists :: Has ArtistRepository sig m => Text -> m [DB.Artist]
-searchArtists t = send (SearchArtists t)
-
-insertArtists :: Has ArtistRepository sig m => [NewArtist] -> m [DB.ArtistKey]
-insertArtists as = send (InsertArtists as)
-
-deleteArtists :: Has ArtistRepository sig m => [DB.ArtistKey] -> m ()
-deleteArtists ks = send (DeleteArtists ks)
-
-newtype ArtistRepositoryIOC m a = ArtistRepositoryIOC
-  { runArtistRepositoryIOC :: m a
+newtype ArtistRepositoryT m a = ArtistRepositoryT
+  { runArtistRepositoryT :: ReaderT Connection m a
   }
-  deriving newtype (Applicative, Functor, Monad)
+  deriving newtype (Applicative, Functor, Monad, MonadIO, MonadTrans, MonadTransControl)
 
 tbl :: DatabaseEntity Postgres DB.MeloDb (TableEntity DB.ArtistT)
 tbl = DB.meloDb ^. #artist
 
 instance
-  ( Has (Lift IO) sig m,
-    Has (Reader Connection) sig m
+  ( MonadIO m
   ) =>
-  Algebra (ArtistRepository :+: sig) (ArtistRepositoryIOC m)
+  ArtistRepository (ArtistRepositoryT m)
   where
-  alg _ (L sig) ctx = case sig of
-    GetAllArtists -> ctx $$> getAll tbl
-    GetArtists ks -> ctx $$> getByKeys tbl ks
-    DeleteArtists ks -> ctx $$> deleteByKeys tbl ks
-    GetArtistAlbums k -> error "unimplemented"
-    GetArtistTracks k -> error "unimplemented"
-    SearchArtists t -> error "unimplemented"
-    InsertArtists as' -> do
+  getAllArtists = ArtistRepositoryT $
+    ReaderT $ \conn ->
+      getAllIO conn tbl
+  getArtists ks = ArtistRepositoryT $
+    ReaderT $ \conn ->
+      getByKeysIO conn tbl ks
+  deleteArtists ks = ArtistRepositoryT $
+    ReaderT $ \conn ->
+      deleteByKeysIO conn tbl ks
+  getArtistAlbums k = error "unimplemented"
+  getArtistTracks k = error "unimplemented"
+  searchArtists t = error "unimplemented"
+  insertArtists as' = ArtistRepositoryT $
+    ReaderT $ \conn -> do
       let !as = nubOrd as'
       let q =
             runPgInsertReturningList $
@@ -84,8 +66,7 @@ instance
                     )
                 )
                 (Just primaryKey)
-      ctx $$> $(runPgDebug') q
-  alg hdl (R other) ctx = ArtistRepositoryIOC (alg (runArtistRepositoryIOC . hdl) other ctx)
+      $(runPgDebugIO') conn q
 
-runArtistRepositoryIO :: ArtistRepositoryIOC m a -> m a
-runArtistRepositoryIO = runArtistRepositoryIOC
+runArtistRepositoryIO :: Connection -> ArtistRepositoryT m a -> m a
+runArtistRepositoryIO conn = flip runReaderT conn . runArtistRepositoryT

@@ -2,26 +2,43 @@
 
 module Melo.Common.FileSystem where
 
-import Control.Algebra
-import Control.Carrier.Lift
-import Control.Effect.TH
+import Control.Concurrent.Classy
 import Control.Exception.Safe
-import Data.ByteString as BS
+import Control.Monad.Base
+import Control.Monad.Identity
+import Control.Monad.Trans
+import Control.Monad.Trans.Control
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 import GHC.IO.Exception
-import Melo.Common.Effect
-import Melo.Common.Logging
 import qualified System.Directory as Dir
-import System.FilePath
-import System.IO
+import qualified System.FilePath as P
+import System.IO hiding (readFile)
 import System.IO.Error hiding (catchIOError)
+import Prelude hiding (readFile)
 
-data FileSystem :: Effect where
-  DoesFileExist :: FilePath -> FileSystem m Bool
-  DoesDirectoryExist :: FilePath -> FileSystem m Bool
-  ListDirectory :: FilePath -> FileSystem m [FilePath]
-  CanonicalizePath :: FilePath -> FileSystem m FilePath
-  ReadFile :: FilePath -> FileSystem m ByteString
-  MovePath :: FilePath -> FilePath -> FileSystem m (Either MoveError ())
+class Monad m => FileSystem m where
+  doesFileExist :: FilePath -> m Bool
+  doesDirectoryExist :: FilePath -> m Bool
+  listDirectory :: FilePath -> m [FilePath]
+  canonicalizePath :: FilePath -> m FilePath
+  readFile :: FilePath -> m ByteString
+  movePath :: FilePath -> FilePath -> m (Either MoveError ())
+
+instance
+  {-# OVERLAPPABLE #-}
+  ( Monad (t m),
+    MonadTrans t,
+    FileSystem m
+  ) =>
+  FileSystem (t m)
+  where
+  doesFileExist = lift . doesFileExist
+  doesDirectoryExist = lift . doesDirectoryExist
+  listDirectory = lift . listDirectory
+  canonicalizePath = lift . canonicalizePath
+  readFile = lift . readFile
+  movePath a b = lift (movePath a b)
 
 data MoveError
   = WouldOverwrite
@@ -31,31 +48,26 @@ data MoveError
 
 instance Exception MoveError
 
-makeSmartConstructors ''FileSystem
-
-newtype FileSystemIOC m a = FileSystemIOC
-  { runFileSystemIOC :: m a
+newtype FileSystemT m a = FileSystemT
+  { runFileSystemT :: m a
   }
-  deriving newtype (Functor, Applicative, Monad)
+  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadThrow, MonadMask)
+  deriving (MonadTrans, MonadTransControl) via IdentityT
 
-runFileSystemIO :: FileSystemIOC m a -> m a
-runFileSystemIO = runFileSystemIOC
+runFileSystemIO :: FileSystemT m a -> m a
+runFileSystemIO = runFileSystemT
 
 instance
-  ( Has (Lift IO) sig m,
-    Has Logging sig m
+  ( MonadIO m
   ) =>
-  Algebra (FileSystem :+: sig) (FileSystemIOC m)
+  FileSystem (FileSystemT m)
   where
-  alg _ (L sig) ctx =
-    ctx $$!> sendIO case sig of
-      DoesFileExist p -> Dir.doesFileExist p
-      DoesDirectoryExist p -> Dir.doesDirectoryExist p
-      ListDirectory p -> Dir.listDirectory p
-      CanonicalizePath p -> Dir.canonicalizePath p
-      ReadFile p -> withBinaryFile p ReadMode BS.hGetContents
-      MovePath a b -> movePathIO a b
-  alg hdl (R other) ctx = FileSystemIOC (alg (runFileSystemIOC . hdl) other ctx)
+  doesFileExist p = liftIO $ Dir.doesFileExist p
+  doesDirectoryExist p = liftIO $ Dir.doesDirectoryExist p
+  listDirectory p = liftIO $ Dir.listDirectory p
+  canonicalizePath p = liftIO $ Dir.canonicalizePath p
+  readFile p = liftIO $ withBinaryFile p ReadMode BS.hGetContents
+  movePath a b = liftIO $ movePathIO a b
 
 movePathIO :: FilePath -> FilePath -> IO (Either MoveError ())
 movePathIO a b =
@@ -64,7 +76,7 @@ movePathIO a b =
     False -> do
       Dir.doesFileExist a >>= \case
         True -> do
-          Dir.createDirectoryIfMissing True (takeDirectory b)
+          Dir.createDirectoryIfMissing True (P.takeDirectory b)
           catchIOError (Right <$> Dir.renameFile a b) $ \e -> do
             case ioeGetErrorType e of
               UnsupportedOperation -> do

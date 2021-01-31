@@ -3,7 +3,6 @@
 module Melo.Library.Source.Service where
 
 import Basement.From
-import Control.Algebra
 import Control.Lens hiding (from, lens)
 import Data.Foldable
 import Data.Maybe
@@ -15,15 +14,15 @@ import Melo.Library.Source.Types
 import Network.URI
 import System.Directory
 
-getAllSources :: Has Repo.SourceRepository sig m => m [Source]
+getAllSources :: Repo.SourceRepository m => m [Source]
 getAllSources = mapMaybe tryFrom <$> Repo.getAllSources
 
-getSource :: Has Repo.SourceRepository sig m => SourceRef -> m (Maybe Source)
+getSource :: Repo.SourceRepository m => SourceRef -> m (Maybe Source)
 getSource ref = (>>= tryFrom) . listToMaybe <$> Repo.getSources [ref]
 
 importSources ::
-  ( Has Repo.SourceRepository sig m,
-    Has Logging sig m
+  ( Repo.SourceRepository m,
+    Logging m
   ) =>
   [NewImportSource] ->
   m [Source]
@@ -36,7 +35,7 @@ importSources ss = do
   pure (mapMaybe tryFrom srcs)
 
 getSourcesByUriPrefix ::
-  Has Repo.SourceRepository sig m =>
+  Repo.SourceRepository m =>
   URI ->
   m [Source]
 getSourcesByUriPrefix prefix = do
@@ -49,7 +48,7 @@ length' = foldl' (const . (+ 1)) 0
 modificationTime :: NewImportSource -> IO LocalTime
 modificationTime (FileSource _ f) = utcToLocalTime utc <$> getModificationTime (f ^. #filePath)
 
-getSourceFilePath :: (Has Repo.SourceRepository sig m) => SourceRef -> m (Maybe FilePath)
+getSourceFilePath :: (Repo.SourceRepository m) => SourceRef -> m (Maybe FilePath)
 getSourceFilePath k = do
   s <- listToMaybe <$> Repo.getSources [k]
   case s >>= parseURI . T.unpack . (^. #source_uri) of

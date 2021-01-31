@@ -2,17 +2,13 @@
 
 module Melo.Database.Query where
 
-import Control.Effect.Lift
-import Control.Effect.Reader
 import Control.Lens
 import Control.Monad.IO.Class
-import qualified Control.Monad.Reader as R
 import Data.String (IsString)
 import Data.Text (Text)
 import Database.Beam
 import Database.Beam.Postgres
 import Database.Beam.Schema.Tables
-import GHC.Records
 import qualified Language.Haskell.TH.Syntax as TH (Exp, Q)
 import Melo.Common.Logging
 import Melo.Database.Model
@@ -27,68 +23,32 @@ type ReusableQL = ReusableQ Postgres MeloDb
 
 type WithL = With Postgres MeloDb
 
-runPgDebug ::
-  ( Has (Lift IO) sig m,
-    Has (Reader Connection) sig m
-  ) =>
-  Pg a ->
-  m a
-runPgDebug q = do
-  conn <- ask
-  sendIO do
-    $(logDebugIO) ("before query" :: Text)
-    !r <- runBeamPostgresDebug $(logDebugIO) conn q
-    $(logDebugIO) ("after query" :: Text)
-    pure r
-
-type HasConnection c = HasField "connection" c Connection
-
-type MonadConnectionReader m c = (R.MonadReader c m, HasConnection c)
-
 runPgDebugIO ::
-  ( MonadIO m,
-    MonadConnectionReader m c
-  ) =>
+  (MonadIO m) =>
+  Connection ->
   Pg a ->
   m a
-runPgDebugIO q = do
-  conn <- R.asks (getField @"connection")
-  liftIO do
-    $(logDebugIO) ("before query" :: Text)
-    !r <- runBeamPostgresDebug $(logDebugIO) conn q
-    $(logDebugIO) ("after query" :: Text)
-    pure r
-
-runPgDebug' :: TH.Q TH.Exp
-runPgDebug' =
-  [|(\q -> do conn <- ask; sendIO $ runBeamPostgresDebug (runStdoutLogging . $(logDebug)) conn q)|]
+runPgDebugIO conn q = liftIO do
+  $(logDebugIO) ("before query" :: Text)
+  !r <- runBeamPostgresDebug $(logDebugIO) conn q
+  $(logDebugIO) ("after query" :: Text)
+  pure r
 
 runPgDebugIO' :: TH.Q TH.Exp
 runPgDebugIO' =
-  [|(\q -> do conn <- R.asks (getField @"connection"); liftIO $ runBeamPostgresDebug (runStdoutLogging . $(logDebug)) conn q)|]
-
-getAll ::
-  ( Has (Reader Connection) sig m,
-    Has (Lift IO) sig m,
-    Table tbl,
-    FromBackendRow Postgres (tbl Identity)
-  ) =>
-  DatabaseEntity Postgres MeloDb (TableEntity tbl) ->
-  m [tbl Identity]
-getAll tbl = runPgDebug (runSelectReturningList (selectAll tbl))
+  [|(\conn q -> liftIO $ runBeamPostgresDebug (runStdoutLogging . $(logDebug)) conn q)|]
 
 getAllIO ::
-  ( R.MonadReader c m,
-    HasConnection c,
-    MonadIO m,
+  ( MonadIO m,
     Table tbl,
     FromBackendRow Postgres (tbl Identity)
   ) =>
+  Connection ->
   DatabaseEntity Postgres MeloDb (TableEntity tbl) ->
   m [tbl Identity]
-getAllIO tbl = runPgDebugIO (runSelectReturningList (selectAll tbl))
+getAllIO conn tbl = runPgDebugIO conn (runSelectReturningList (selectAll tbl))
 
-getAllSorted o tbl = runPgDebug (runSelectReturningList (selectAllSorted o tbl))
+getAllSortedIO conn o tbl = runPgDebugIO conn (runSelectReturningList (selectAllSorted o tbl))
 
 selectAll ::
   Table tbl =>
@@ -103,35 +63,20 @@ selectAll = select . all_
 --  SqlSelect Postgres (tbl Identity)
 selectAllSorted o = select . orderBy_ (asc_ . o) . all_
 
-getByKeys ::
-  ( Has (Reader Connection) sig m,
-    Has (Lift IO) sig m,
-    Table tbl,
-    SqlValableTable Postgres (PrimaryKey tbl),
-    FromBackendRow Postgres (tbl Identity)
-  ) =>
-  DatabaseEntity Postgres MeloDb (TableEntity tbl) ->
-  [PrimaryKey tbl Identity] ->
-  m [tbl Identity]
-getByKeys _ [] = pure []
-getByKeys tbl ks =
-  let q = select (byKeys tbl ks)
-   in runPgDebug (runSelectReturningList q)
-
 getByKeysIO ::
-  ( MonadConnectionReader m c,
-    MonadIO m,
+  ( MonadIO m,
     Table tbl,
     SqlValableTable Postgres (PrimaryKey tbl),
     FromBackendRow Postgres (tbl Identity)
   ) =>
+  Connection ->
   DatabaseEntity Postgres MeloDb (TableEntity tbl) ->
   [PrimaryKey tbl Identity] ->
   m [tbl Identity]
-getByKeysIO _ [] = pure []
-getByKeysIO tbl ks =
+getByKeysIO _ _ [] = pure []
+getByKeysIO conn tbl ks =
   let q = select (byKeys tbl ks)
-   in runPgDebugIO (runSelectReturningList q)
+   in runPgDebugIO conn (runSelectReturningList q)
 
 byKeys ::
   ( Table tbl,
@@ -142,50 +87,33 @@ byKeys ::
   QL s (tbl (QPgExpr s))
 byKeys tbl ks = filter_ (\g -> primaryKey g `in_` (val_ <$> ks)) (all_ tbl)
 
-deleteByKeys ::
-  ( Has (Reader Connection) sig m,
-    Has (Lift IO) sig m,
-    Table tbl,
-    SqlValableTable Postgres (PrimaryKey tbl),
-    Show (PrimaryKey tbl Identity)
-  ) =>
-  DatabaseEntity Postgres db (TableEntity tbl) ->
-  [PrimaryKey tbl Identity] ->
-  m ()
-deleteByKeys _ [] = pure ()
-deleteByKeys tbl ks =
-  let q = delete tbl (\t -> primaryKey t `in_` (val_ <$> ks))
-   in do
-        sendIO $ $(logInfoIO) $ "deleting entities with keys " <> show ks
-        runPgDebug (runDelete q)
-
 deleteByKeysIO ::
-  ( MonadConnectionReader m c,
-    MonadIO m,
+  ( MonadIO m,
     Table tbl,
     SqlValableTable Postgres (PrimaryKey tbl)
   ) =>
+  Connection ->
   DatabaseEntity Postgres db (TableEntity tbl) ->
   [PrimaryKey tbl Identity] ->
   m ()
-deleteByKeysIO _ [] = pure ()
-deleteByKeysIO tbl ks =
+deleteByKeysIO _ _ [] = pure ()
+deleteByKeysIO conn tbl ks =
   let q = delete tbl (\t -> primaryKey t `in_` (val_ <$> ks))
-   in runPgDebugIO (runDelete q)
+   in runPgDebugIO conn (runDelete q)
 
-deleteAll ::
-  forall sig m tbl db.
-  ( Has (Reader Connection) sig m,
-    Has (Lift IO) sig m,
+deleteAllIO ::
+  forall m tbl db.
+  ( MonadIO m,
     Table tbl
   ) =>
+  Connection ->
   DatabaseEntity Postgres db (TableEntity tbl) ->
   m ()
-deleteAll tbl =
+deleteAllIO conn tbl =
   let q = delete tbl (const $ val_ True)
    in do
-        sendIO $ $(logInfoIO) $ "deleting all " <> tbl ^. dbEntityDescriptor . dbEntityName <> " entities"
-        runPgDebug (runDelete q)
+        $(logInfoIO) $ "deleting all " <> tbl ^. dbEntityDescriptor . dbEntityName <> " entities"
+        runPgDebugIO conn (runDelete q)
 
 startsWith_ ::
   QPgExpr s text ->

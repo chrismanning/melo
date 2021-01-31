@@ -3,24 +3,21 @@
 module Melo.Library.Artist.Service where
 
 import Basement.From
-import Control.Algebra
 import Control.Lens hiding (from, lens)
 import Data.Foldable
 import Data.Vector (fromList)
 import Melo.Common.Logging
-import qualified Melo.Database.Model as DB
 import qualified Melo.Format.Mapping as M
 import Melo.Format.Metadata
-import Melo.Library.Artist.Repo
 import Melo.Library.Artist.Staging.Repo
 import Melo.Library.Artist.Types
 import Melo.Library.Source.Types
 import qualified Melo.Lookup.MusicBrainz as MB
 
 importArtists ::
-  ( Has MB.MusicBrainzService sig m,
-    Has ArtistStagingRepository sig m,
-    Has Logging sig m
+  ( MB.MusicBrainzService m,
+    ArtistStagingRepository m,
+    Logging m
   ) =>
   [Source] ->
   m [StagedArtist]

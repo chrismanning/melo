@@ -3,77 +3,56 @@
 module Melo.Library.Album.Repo where
 
 import Basement.From
-import Control.Algebra
-import Control.Effect.Lift
-import Control.Effect.Reader
 import Control.Lens ((^.))
+import Control.Monad.Reader
+import Control.Monad.Trans.Control
 import Data.Containers.ListUtils (nubOrd)
 import Data.Text (Text)
 import Database.Beam
 import Database.Beam.Postgres as Pg
 import Database.Beam.Postgres.Full as Pg
-import Melo.Common.Effect
 import qualified Melo.Database.Model as DB
 import Melo.Database.Query
 import Melo.Library.Album.Types
 
-data AlbumRepository :: Effect where
-  GetAllAlbums :: AlbumRepository m [DB.Album]
-  GetAlbums :: [DB.AlbumKey] -> AlbumRepository m [DB.Album]
-  GetAlbumGenres :: DB.AlbumKey -> AlbumRepository m [DB.Genre]
-  GetAlbumArtists :: DB.AlbumKey -> AlbumRepository m [DB.Artist]
-  GetAlbumTracks :: DB.AlbumKey -> AlbumRepository m [DB.Track]
-  SearchAlbums :: Text -> AlbumRepository m [DB.Album]
-  InsertAlbums :: [NewAlbum] -> AlbumRepository m [DB.AlbumKey]
-  DeleteAlbums :: [DB.AlbumKey] -> AlbumRepository m ()
+class Monad m => AlbumRepository m where
+  getAllAlbums :: m [DB.Album]
+  getAlbums :: [DB.AlbumKey] -> m [DB.Album]
+  getAlbumGenres :: DB.AlbumKey -> m [DB.Genre]
+  getAlbumArtists :: DB.AlbumKey -> m [DB.Artist]
+  getAlbumTracks :: DB.AlbumKey -> m [DB.Track]
+  searchAlbums :: Text -> m [DB.Album]
+  insertAlbums :: [NewAlbum] -> m [DB.AlbumKey]
+  deleteAlbums :: [DB.AlbumKey] -> m ()
 
-getAllAlbums :: Has AlbumRepository sig m => m [DB.Album]
-getAllAlbums = send GetAllAlbums
-
-getAlbums :: Has AlbumRepository sig m => [DB.AlbumKey] -> m [DB.Album]
-getAlbums ks = send (GetAlbums ks)
-
-getAlbumGenres :: Has AlbumRepository sig m => DB.AlbumKey -> m [DB.Genre]
-getAlbumGenres k = send (GetAlbumGenres k)
-
-getAlbumArtists :: Has AlbumRepository sig m => DB.AlbumKey -> m [DB.Artist]
-getAlbumArtists k = send (GetAlbumArtists k)
-
-getAlbumTracks :: Has AlbumRepository sig m => DB.AlbumKey -> m [DB.Track]
-getAlbumTracks k = send (GetAlbumTracks k)
-
-searchAlbums :: Has AlbumRepository sig m => Text -> m [DB.Album]
-searchAlbums t = send (SearchAlbums t)
-
-insertAlbums :: Has AlbumRepository sig m => [NewAlbum] -> m [DB.AlbumKey]
-insertAlbums as = send (InsertAlbums as)
-
-deleteAlbums :: Has AlbumRepository sig m => [DB.AlbumKey] -> m ()
-deleteAlbums ks = send (DeleteAlbums ks)
-
-newtype AlbumRepositoryIOC m a = AlbumRepositoryIOC
-  { runAlbumRepositoryIOC :: m a
+newtype AlbumRepositoryT m a = AlbumRepositoryT
+  { runAlbumRepositoryT :: ReaderT Connection m a
   }
-  deriving newtype (Applicative, Functor, Monad)
+  deriving newtype (Applicative, Functor, Monad, MonadIO, MonadTrans, MonadTransControl)
 
 tbl :: DatabaseEntity Postgres DB.MeloDb (TableEntity DB.AlbumT)
 tbl = DB.meloDb ^. #album
 
 instance
-  ( Has (Lift IO) sig m,
-    Has (Reader Connection) sig m
+  ( MonadIO m
   ) =>
-  Algebra (AlbumRepository :+: sig) (AlbumRepositoryIOC m)
+  AlbumRepository (AlbumRepositoryT m)
   where
-  alg _ (L sig) ctx = case sig of
-    GetAllAlbums -> ctx $$> getAll tbl
-    GetAlbums ks -> ctx $$> getByKeys tbl ks
-    DeleteAlbums ks -> ctx $$> deleteByKeys tbl ks
-    GetAlbumGenres k -> error "unimplemented"
-    GetAlbumArtists k -> error "unimplemented"
-    GetAlbumTracks k -> error "unimplemented"
-    SearchAlbums k -> error "unimplemented"
-    InsertAlbums as' -> do
+  getAllAlbums = AlbumRepositoryT $
+    ReaderT $ \conn ->
+      getAllIO conn tbl
+  getAlbums ks = AlbumRepositoryT $
+    ReaderT $ \conn ->
+      getByKeysIO conn tbl ks
+  getAlbumGenres k = error "unimplemented"
+  getAlbumArtists k = error "unimplemented"
+  getAlbumTracks k = error "unimplemented"
+  deleteAlbums ks = AlbumRepositoryT $
+    ReaderT $ \conn ->
+      deleteByKeysIO conn tbl ks
+  searchAlbums k = error "unimplemented"
+  insertAlbums as' = AlbumRepositoryT $
+    ReaderT $ \conn -> do
       let !as = nubOrd as'
       let q =
             runPgInsertReturningList $
@@ -84,8 +63,7 @@ instance
                 )
                 Pg.onConflictDefault
                 (Just primaryKey)
-      ctx $$> $(runPgDebug') q
-  alg hdl (R other) ctx = AlbumRepositoryIOC (alg (runAlbumRepositoryIOC . hdl) other ctx)
+      $(runPgDebugIO') conn q
 
-runAlbumRepositoryIO :: AlbumRepositoryIOC m a -> m a
-runAlbumRepositoryIO = runAlbumRepositoryIOC
+runAlbumRepositoryIO :: Connection -> AlbumRepositoryT m a -> m a
+runAlbumRepositoryIO conn = flip runReaderT conn . runAlbumRepositoryT

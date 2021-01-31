@@ -2,16 +2,17 @@
 
 module Melo.Common.Metadata where
 
-import Control.Algebra
 import Control.Applicative
-import Control.Effect.Exception
-import Control.Effect.Lift
-import Control.Effect.TH
+import Control.Concurrent.Classy
+import Control.Exception.Safe
 import Control.Lens ((^.))
+import Control.Monad.Base
+import Control.Monad.Identity
+import Control.Monad.Trans
+import Control.Monad.Trans.Control
 import Data.Coerce
 import Data.Foldable
 import qualified Data.Text as T
-import Melo.Common.Effect
 import Melo.Common.Logging
 import Melo.Format (Metadata (..))
 import qualified Melo.Format as F
@@ -26,49 +27,59 @@ chooseMetadata ms =
     <|> find (\Metadata {..} -> formatId == F.id3v23Id) ms
     <|> find (\Metadata {..} -> formatId == F.id3v1Id) ms
 
-data MetadataService :: Effect where
-  OpenMetadataFile :: FilePath -> MetadataService m (Either F.MetadataException F.MetadataFile)
-  OpenMetadataFileByExt :: FilePath -> MetadataService m (Either F.MetadataException F.MetadataFile)
-  ReadMetadataFile :: F.MetadataFileId -> FilePath -> MetadataService m (Either F.MetadataException F.MetadataFile)
-  WriteMetadataFile :: F.MetadataFile -> FilePath -> MetadataService m (Either F.MetadataException F.MetadataFile)
-
-makeSmartConstructors ''MetadataService
-
-newtype MetadataServiceIOC m a = MetadataServiceIOC
-  { runMetadataServiceIOC :: m a
-  }
-  deriving newtype (Functor, Applicative, Monad)
-
-runMetadataServiceIO :: MetadataServiceIOC m a -> m a
-runMetadataServiceIO = runMetadataServiceIOC
+class Monad m => MetadataService m where
+  openMetadataFile :: FilePath -> m (Either F.MetadataException F.MetadataFile)
+  openMetadataFileByExt :: FilePath -> m (Either F.MetadataException F.MetadataFile)
+  readMetadataFile :: F.MetadataFileId -> FilePath -> m (Either F.MetadataException F.MetadataFile)
+  writeMetadataFile :: F.MetadataFile -> FilePath -> m (Either F.MetadataException F.MetadataFile)
 
 instance
-  ( Has (Lift IO) sig m,
-    Has Logging sig m
+  {-# OVERLAPPABLE #-}
+  ( Monad (t m),
+    MonadTrans t,
+    MetadataService m
   ) =>
-  Algebra (MetadataService :+: sig) (MetadataServiceIOC m)
+  MetadataService (t m)
   where
-  alg _ (L sig) ctx =
-    ctx $$!> case sig of
-      OpenMetadataFile path -> try do
-        $(logDebug) $ "opening metadata file " <> path
-        sendIO $ F.openMetadataFile path
-      OpenMetadataFileByExt path -> try do
-        $(logDebug) $ "opening metadata file " <> path
-        sendIO $ F.openMetadataFileByExt path
-      ReadMetadataFile mfid@(F.MetadataFileId fid) path -> try $ sendIO do
-        $(logDebugIO) $ "reading file " <> T.pack path <> " as " <> fid
-        F.MetadataFileFactory {readMetadataFile} <- getFactory mfid
-        readMetadataFile path
-      WriteMetadataFile mf path -> try $ sendIO do
-        F.MetadataFileFactory {writeMetadataFile, readMetadataFile} <- getFactory (mf ^. #fileId)
-        writeMetadataFile mf path
-        readMetadataFile path
-    where
-      getFactory :: F.MetadataFileId -> IO (F.MetadataFileFactory IO)
-      getFactory mfid = case F.metadataFileFactoryIO mfid of
-        Just fact -> pure fact
-        Nothing -> do
-          $(logErrorIO) $ T.pack "unknown metadata file id '" <> coerce mfid <> "'"
-          throwIO F.UnknownFormat
-  alg hdl (R other) ctx = MetadataServiceIOC (alg (runMetadataServiceIOC . hdl) other ctx)
+  openMetadataFile = lift . openMetadataFile
+  openMetadataFileByExt = lift . openMetadataFileByExt
+  readMetadataFile fid = lift . readMetadataFile fid
+  writeMetadataFile f = lift . writeMetadataFile f
+
+newtype MetadataServiceT m a = MetadataServiceT
+  { runMetadataServiceT :: m a
+  }
+  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadMask, MonadThrow)
+  deriving (MonadTrans, MonadTransControl) via IdentityT
+
+runMetadataServiceIO :: MetadataServiceT m a -> m a
+runMetadataServiceIO = runMetadataServiceT
+
+instance
+  ( MonadIO m
+  ) =>
+  MetadataService (MetadataServiceT m)
+  where
+  openMetadataFile path = liftIO $
+    try $ do
+      $(logDebugIO) $ "opening metadata file " <> path
+      F.openMetadataFile path
+  openMetadataFileByExt path = liftIO $
+    try $ do
+      $(logDebugIO) $ "opening metadata file " <> path
+      F.openMetadataFileByExt path
+  readMetadataFile mfid@(F.MetadataFileId fid) path = liftIO $ try do
+    $(logDebugIO) $ "reading file " <> T.pack path <> " as " <> fid
+    F.MetadataFileFactory {readMetadataFile} <- getFactory mfid
+    readMetadataFile path
+  writeMetadataFile mf path = liftIO $ try do
+    F.MetadataFileFactory {writeMetadataFile, readMetadataFile} <- getFactory (mf ^. #fileId)
+    writeMetadataFile mf path
+    readMetadataFile path
+
+getFactory :: F.MetadataFileId -> IO (F.MetadataFileFactory IO)
+getFactory mfid = case F.metadataFileFactoryIO mfid of
+  Just fact -> pure fact
+  Nothing -> do
+    $(logErrorIO) $ T.pack "unknown metadata file id '" <> coerce mfid <> "'"
+    throwIO F.UnknownFormat

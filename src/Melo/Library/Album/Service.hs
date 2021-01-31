@@ -3,17 +3,11 @@
 module Melo.Library.Album.Service where
 
 import Basement.From
-import Control.Algebra
-import Control.Carrier.Cull.Church
-import Control.Carrier.NonDet.Church
-import Control.Effect.Cull
-import Control.Effect.Empty as E
-import Control.Effect.NonDet
-import Control.Effect.Reader
-import Control.Effect.Sum
 import Control.Lens hiding (from, lens)
 import Control.Monad
-import Control.Monad.IO.Class
+import Control.Monad.Identity
+import Control.Monad.Trans
+import Control.Monad.Trans.Control
 import Country
 import Data.Default
 import Data.Foldable
@@ -37,31 +31,27 @@ import Melo.Library.Album.Types
 import Melo.Library.Source.Types
 import qualified Melo.Lookup.MusicBrainz as MB
 
-data AlbumService :: Effect where
-  ImportAlbums :: [Source] -> AlbumService m [Album]
+class Monad m => AlbumService m where
+  importAlbums :: [Source] -> m [Album]
 
-importAlbums :: Has AlbumService sig m => [Source] -> m [Album]
-importAlbums m = send (ImportAlbums m)
-
-newtype AlbumServiceIOC m a = AlbumServiceIOC
-  { runAlbumServiceIOC :: m a
+newtype AlbumServiceT m a = AlbumServiceT
+  { runAlbumServiceT :: m a
   }
   deriving newtype (Functor, Applicative, Monad)
+  deriving (MonadTrans, MonadTransControl) via IdentityT
 
 instance
-  ( Has AlbumRepository sig m,
-    Has Logging sig m,
-    Has MB.MusicBrainzService sig m
+  ( AlbumRepository m,
+    Logging m,
+    MB.MusicBrainzService m
   ) =>
-  Algebra (AlbumService :+: sig) (AlbumServiceIOC m)
+  AlbumService (AlbumServiceT m)
   where
-  alg _ (L sig) ctx = case sig of
-    ImportAlbums ms -> do
-      mbReleases <- catMaybes <$> mapM (MB.getReleaseFromMetadata . (^. #metadata)) ms
-      $(logDebugShow) mbReleases
-      albums <- insertAlbums (fmap from mbReleases) >>= getAlbums
-      pure (ctx $> fmap from albums)
-  alg hdl (R other) ctx = AlbumServiceIOC (alg (runAlbumServiceIOC . hdl) other ctx)
+  importAlbums ms = AlbumServiceT $ do
+    mbReleases <- catMaybes <$> mapM (MB.getReleaseFromMetadata . (^. #metadata)) ms
+    $(logDebugShow) mbReleases
+    albums <- insertAlbums (fmap from mbReleases) >>= getAlbums
+    pure $ fmap from albums
 
-runAlbumServiceIO :: AlbumServiceIOC m a -> m a
-runAlbumServiceIO = runAlbumServiceIOC
+runAlbumServiceIO :: AlbumServiceT m a -> m a
+runAlbumServiceIO = runAlbumServiceT

@@ -4,11 +4,11 @@
 module Melo.Library.Track.Service where
 
 import Basement.From
-import Control.Algebra
-import Control.Effect.Lift
-import Control.Effect.Reader
 import Control.Lens hiding (from, lens)
 import Control.Monad
+import Control.Monad.Identity
+import Control.Monad.Trans
+import Control.Monad.Trans.Control
 import Data.Attoparsec.Text
 import Data.Foldable
 import Data.Functor
@@ -50,31 +50,28 @@ data Track = Track
 instance From DB.Track Track where
   from = error "unimplemented"
 
-data TrackService :: Effect where
-  ImportTracks :: [Source] -> TrackService m [Track]
+class Monad m => TrackService m where
+  importTracks :: [Source] -> m [Track]
 
-importTracks :: Has TrackService sig m => [Source] -> m [Track]
-importTracks = send . ImportTracks
-
-newtype TrackServiceIOC m a = TrackServiceIOC
-  { runTrackServiceIOC :: m a
+newtype TrackServiceT m a = TrackServiceT
+  { runTrackServiceT :: m a
   }
   deriving newtype (Applicative, Functor, Monad)
+  deriving (MonadTrans, MonadTransControl) via IdentityT
 
-runTrackServiceIO :: TrackServiceIOC m a -> m a
-runTrackServiceIO = runTrackServiceIOC
+runTrackServiceIO :: TrackServiceT m a -> m a
+runTrackServiceIO = runTrackServiceT
 
 instance
-  ( Has TrackRepository sig m,
-    Has Logging sig m
+  ( TrackRepository m,
+    Logging m
   ) =>
-  Algebra (TrackService :+: sig) (TrackServiceIOC m)
+  TrackService (TrackServiceT m)
   where
-  alg _ (L (ImportTracks mss)) ctx = do
+  importTracks mss = TrackServiceT $ do
     let ts = fmap newTracks mss
     tracks <- insertTracks ts >>= getTracks
-    pure (ctx $> fmap from tracks)
-  alg hdl (R other) ctx = TrackServiceIOC (alg (runTrackServiceIOC . hdl) other ctx)
+    pure (fmap from tracks)
 
 newTracks :: Source -> NewTrack
 newTracks ms = error "unimplemented"

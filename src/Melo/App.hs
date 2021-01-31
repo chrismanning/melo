@@ -1,10 +1,6 @@
 module Melo.App where
 
-import Control.Algebra
-import Control.Carrier.Error.Church
-import Control.Carrier.Reader
-import Control.Concurrent
-import Control.Concurrent.STM
+import Control.Concurrent.Classy
 import Control.Exception.Safe
 import Control.Monad
 import qualified Data.HashMap.Strict as H
@@ -24,15 +20,12 @@ import Melo.Common.Metadata
 import Melo.Common.Uri
 import qualified Melo.Database.Model as DB
 import Melo.Database.Transaction
-import Melo.Format.Error (MetadataException)
 import Melo.Library.Collection.FileSystem.Service
 import Melo.Library.Collection.FileSystem.WatchService
 import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Service
 import Melo.Library.Collection.Types
 import Melo.Library.Source.Repo
-import Network.URI
-import qualified System.FSNotify as FS
 import Web.Scotty.Trans
 
 app :: IO ()
@@ -44,38 +37,33 @@ app = do
             connectPassword = "melo",
             connectDatabase = "melo"
           }
-  pool <- createPool (connect connInfo) close 1 20 10
+  pool <- createPool (connect connInfo) close 10 20 10
 
-  collectionWatchState :: TVar (H.HashMap CollectionRef FS.StopListening) <- atomically $ newTVar H.empty
-  forkIO $
+  collectionWatchState :: CollectionWatchState <- atomically $ newTVar H.empty
+  fork $
     catchAny (initApp collectionWatchState pool) (\e -> $(logWarnIO) $ "error initialising app: " <> show e)
   $(logInfoIO) ("starting web server" :: String)
   scottyT 5000 id (api collectionWatchState pool)
 
-initApp :: TVar (H.HashMap CollectionRef FS.StopListening) -> Pool Connection -> IO ()
+initApp :: CollectionWatchState -> Pool Connection -> IO ()
 initApp collectionWatchState pool =
-  runReader collectionWatchState $
-    runStdoutLogging $
-      runFileSystemIO $
-        runReader pool $
-          runFileSystemWatchServiceIO $
-            runTransaction $
-              withTransaction $ \conn ->
-                runReader conn $
-                  runError (\(e :: MetadataException) -> $(logError) $ "uncaught metadata exception: " <> show e) pure $
-                    runSavepoint $
-                      runMetadataServiceIO $
-                        runSourceRepositoryIO $
-                          runFileSystemServiceIO $
-                            runCollectionRepositoryIO $
-                              runCollectionServiceIO
-                                initCollections
+  runStdoutLogging $
+    runFileSystemIO $
+      runTransaction pool $
+        withTransaction $ \conn ->
+          runSavepoint conn $
+            runMetadataServiceIO $
+              runSourceRepositoryIO conn $
+                runFileSystemServiceIO $
+                  runCollectionRepositoryIO conn $
+                    runFileSystemWatchServiceIO pool collectionWatchState $
+                      runCollectionServiceIO pool initCollections
 
 initCollections ::
-  ( Has FileSystemWatchService sig m,
-    Has CollectionRepository sig m,
-    Has CollectionService sig m,
-    Has Logging sig m
+  ( FileSystemWatchService m,
+    CollectionRepository m,
+    CollectionService m,
+    Logging m
   ) =>
   m ()
 initCollections = do
