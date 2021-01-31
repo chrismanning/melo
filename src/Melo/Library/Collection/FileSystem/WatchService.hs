@@ -12,9 +12,7 @@ import Data.HashMap.Strict as H
 import Data.Pool
 import Data.Time (NominalDiffTime)
 import Database.PostgreSQL.Simple (Connection)
-import Melo.Common.FileSystem
 import Melo.Common.Logging
-import Melo.Common.Metadata
 import Melo.Common.Uri
 import Melo.Library.Collection.FileSystem.Service
 import Melo.Library.Collection.Types
@@ -54,8 +52,6 @@ instance
     MonadMask m,
     MonadConc m,
     MonadBaseControl IO m,
-    MetadataService m,
-    FileSystem m,
     Logging m
   ) =>
   FileSystemWatchService (FileSystemWatchServiceT m)
