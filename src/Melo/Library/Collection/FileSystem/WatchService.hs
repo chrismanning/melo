@@ -17,7 +17,7 @@ import Melo.Common.Uri
 import Melo.Library.Collection.FileSystem.Service
 import Melo.Library.Collection.Types
 import Melo.Library.Source.Repo
-import System.FSNotify (Debounce (..), WatchConfig (..))
+import System.FSNotify (ThreadingMode (..))
 import qualified System.FSNotify as FS
 
 class Monad m => FileSystemWatchService m where
@@ -64,7 +64,7 @@ instance
             void $
               fork $
                 liftIO $
-                  FS.withManagerConf (FS.defaultConfig {confDebounce = Debounce (0.100 :: NominalDiffTime)}) $ \watchManager -> do
+                  FS.withManagerConf (FS.defaultConfig {FS.confThreadingMode = ThreadPerEvent}) $ \watchManager -> do
                     stop <- FS.watchTree watchManager p (const True) (void . runInBase . handleEvent pool ref)
                     C.atomically $ C.modifyTVar' watchState (H.insert ref stop)
                     forever $ threadDelay 1000000
@@ -98,7 +98,7 @@ handleEvent pool ref event = runFileSystemServiceIO' pool $
       pure ()
     FS.Removed p _ isDir -> do
       let uri = fileUri p
-      if isDir
+      if isDir == FS.IsDirectory
         then do
           $(logInfo) $ "directory removed " <> p
           refs <- getSourceKeysByUriPrefix uri
@@ -107,5 +107,5 @@ handleEvent pool ref event = runFileSystemServiceIO' pool $
           $(logInfo) $ "file removed " <> p
           refs <- getSourceKeysByUri [uri]
           deleteSources refs
-    FS.Unknown p _ s ->
+    FS.Unknown p _ _ s ->
       $(logWarn) $ "unknown file system event on path " <> p <> ": " <> s

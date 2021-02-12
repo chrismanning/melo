@@ -49,6 +49,8 @@ extra-deps:
       - beam-migrate
   - github: chrismanning/binary-bits
     commit: 53394d71f9412821b217816c83defd42d53fec32
+  - github: chrismanning/hfsnotify
+    commit: 7ea33fa620699cc04a604d6c5669e52ca47a636d
   - barbies-2.0.0.0
   - conduit-audio-0.2.0.3
   - conduit-audio-lame-0.1.2.1
