@@ -64,7 +64,6 @@ library:
   - generic-lens
   - hashable
   - hashtables
-  - higgledy
   - http-client
   - http-client-tls
   - http-types
