@@ -4,7 +4,7 @@ github:              "chrismanning/melo"
 license:             BSD3
 author:              "Chris Manning"
 maintainer:          "cmanning999@gmail.com"
-copyright:           "2020 Chris Manning"
+copyright:           "2021 Chris Manning"
 
 extra-source-files:
 - README.md
