@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 199f79d209d25eefee76a1bd1daee69351eb336f0435b16589314c0d69f2c270
+-- hash: 136c37839dedeb972ef942dab41b34e5def957716b8b70f1e4ad97a390552a25
 
 name:           melo-format
 version:        0.1.0.0
@@ -13,7 +13,7 @@ homepage:       https://github.com/chrismanning/melo#readme
 bug-reports:    https://github.com/chrismanning/melo/issues
 author:         Chris Manning
 maintainer:     cmanning999@gmail.com
-copyright:      2020 Chris Manning
+copyright:      2021 Chris Manning
 license:        BSD3
 license-file:   LICENSE
 build-type:     Simple

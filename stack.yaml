@@ -70,6 +70,7 @@ extra-deps:
   - log-warper-1.9.0
   - mime-0.4.0.2
   - named-0.3.0.1
+  - network-multicast-0.3.2
   - network-uri-json-0.3.1.1
   - token-limiter-0.2.0.3
   - type-aligned-0.9.6

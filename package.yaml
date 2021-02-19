@@ -54,6 +54,7 @@ library:
   - dependent-sum
   - directory
   - directory-tree
+  - dns
   - either
   - exceptions
   - extra
@@ -67,6 +68,7 @@ library:
   - http-client
   - http-client-tls
   - http-types
+  - iproute
   - lens
   - lifted-base
   - log-warper
@@ -76,12 +78,16 @@ library:
   - mtl
   - multistate
   - natural-sort
+  - network
+  - network-bsd
+  - network-multicast
   - network-uri
   - network-uri-json
   - newtype-generics
   - path
   - path-io
   - postgresql-simple
+  - random
   - range
   - resource-pool
   - safe-exceptions
