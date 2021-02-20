@@ -10,7 +10,6 @@ import Control.Monad.Reader
 import Control.Monad.Trans.Control
 import Data.HashMap.Strict as H
 import Data.Pool
-import Data.Time (NominalDiffTime)
 import Database.PostgreSQL.Simple (Connection)
 import Melo.Common.Logging
 import Melo.Common.Uri
@@ -37,15 +36,15 @@ instance
 
 type CollectionWatchState = C.TVar (H.HashMap CollectionRef FS.StopListening)
 
-newtype FileSystemWatchServiceT m a = FileSystemWatchServiceT
-  { runFileSystemWatchServiceT :: ReaderT (Pool Connection, CollectionWatchState) m a
+newtype FileSystemWatchServiceIOT m a = FileSystemWatchServiceIOT
+  { runFileSystemWatchServiceIOT :: ReaderT (Pool Connection, CollectionWatchState) m a
   }
   deriving (Functor, Applicative, Monad, MonadIO, MonadConc, MonadCatch, MonadMask, MonadThrow, MonadTrans, MonadTransControl)
 
 runFileSystemWatchServiceIO ::
-  Pool Connection -> CollectionWatchState -> FileSystemWatchServiceT m a -> m a
+  Pool Connection -> CollectionWatchState -> FileSystemWatchServiceIOT m a -> m a
 runFileSystemWatchServiceIO pool watchState =
-  flip runReaderT (pool, watchState) . runFileSystemWatchServiceT
+  flip runReaderT (pool, watchState) . runFileSystemWatchServiceIOT
 
 instance
   ( MonadIO m,
@@ -54,9 +53,9 @@ instance
     MonadBaseControl IO m,
     Logging m
   ) =>
-  FileSystemWatchService (FileSystemWatchServiceT m)
+  FileSystemWatchService (FileSystemWatchServiceIOT m)
   where
-  startWatching ref p = FileSystemWatchServiceT $
+  startWatching ref p = FileSystemWatchServiceIOT $
     ReaderT $ \(pool, watchState) -> do
       $(logInfo) $ "starting to watch path " <> p
       liftBaseWith
@@ -69,7 +68,7 @@ instance
                     C.atomically $ C.modifyTVar' watchState (H.insert ref stop)
                     forever $ threadDelay 1000000
         )
-  stopWatching ref = FileSystemWatchServiceT $
+  stopWatching ref = FileSystemWatchServiceIOT $
     ReaderT $ \(_pool, watchState) -> do
       stoppers' <- liftIO $ C.atomically $ C.readTVar watchState
       case H.lookup ref stoppers' of

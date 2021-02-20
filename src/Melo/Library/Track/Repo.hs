@@ -37,8 +37,8 @@ class Monad m => TrackRepository m where
   insertTracks :: [NewTrack] -> m [DB.TrackKey]
   deleteTracks :: [DB.TrackKey] -> m ()
 
-newtype TrackRepositoryT m a = TrackRepositoryT
-  { runTrackRepositoryT :: ReaderT Connection m a
+newtype TrackRepositoryIOT m a = TrackRepositoryIOT
+  { runTrackRepositoryIOT :: ReaderT Connection m a
   }
   deriving newtype (Applicative, Functor, Monad)
 
@@ -48,23 +48,23 @@ tbl = DB.meloDb ^. #track
 instance
   ( MonadIO m
   ) =>
-  TrackRepository (TrackRepositoryT m)
+  TrackRepository (TrackRepositoryIOT m)
   where
-  getAllTracks = TrackRepositoryT $
+  getAllTracks = TrackRepositoryIOT $
     ReaderT $ \conn ->
       getAllIO conn tbl
-  getTracks ks = TrackRepositoryT $
+  getTracks ks = TrackRepositoryIOT $
     ReaderT $ \conn ->
       getByKeysIO conn tbl ks
   getTrackSource k = error "unimplemented"
   getTrackArtists k = error "unimplemented"
   getTrackAlbum k = error "unimplemented"
   getTrackGenres k = error "unimplemented"
-  deleteTracks ks = TrackRepositoryT $
+  deleteTracks ks = TrackRepositoryIOT $
     ReaderT $ \conn ->
       deleteByKeysIO conn tbl ks
   searchTracks t = error "unimplemented"
-  insertTracks ts' = TrackRepositoryT $
+  insertTracks ts' = TrackRepositoryIOT $
     ReaderT $ \conn -> do
       let !ts = nubOrd ts'
       let q =
@@ -91,5 +91,5 @@ newTrack t =
       length = fromMaybe_ (val_ (DB.Interval 0)) (val_ (DB.Interval <$> t ^. #length))
     }
 
-runTrackRepositoryIO :: Connection -> TrackRepositoryT m a -> m a
-runTrackRepositoryIO conn = flip runReaderT conn . runTrackRepositoryT
+runTrackRepositoryIO :: Connection -> TrackRepositoryIOT m a -> m a
+runTrackRepositoryIO conn = flip runReaderT conn . runTrackRepositoryIOT

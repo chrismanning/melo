@@ -28,7 +28,7 @@ instance
       withTransaction $ run <$> ma
     restoreT (pure result)
 
-newtype TransactionT m a = TransactionT {runTransactionT :: ReaderT (Pool Pg.Connection) m a}
+newtype TransactionIOT m a = TransactionIOT {runTransactionIOT :: ReaderT (Pool Pg.Connection) m a}
   deriving newtype
     ( Applicative,
       Functor,
@@ -48,10 +48,10 @@ instance
   ( MonadIO m,
     MonadMask m
   ) =>
-  Transaction (TransactionT m)
+  Transaction (TransactionIOT m)
   where
   withTransaction t =
-    TransactionT $
+    TransactionIOT $
       ReaderT $ \pool ->
         E.mask $ \restore -> do
           (conn, localPool) <- liftIO $ takeResource pool
@@ -68,8 +68,8 @@ instance
           Pg.rollback conn `E.catch` \(_ :: IOError) -> return ()
           putResource localPool conn
 
-runTransaction :: Pool Pg.Connection -> TransactionT m a -> m a
-runTransaction conn = (flip runReaderT) conn . runTransactionT
+runTransaction :: Pool Pg.Connection -> TransactionIOT m a -> m a
+runTransaction conn = (flip runReaderT) conn . runTransactionIOT
 
 class Monad m => Savepoint m where
   withSavepoint :: m a -> m a
@@ -87,7 +87,7 @@ instance
       withSavepoint $ run ma
     restoreT (pure result)
 
-newtype SavepointT m a = SavepointT {runSavepointT :: ReaderT Pg.Connection m a}
+newtype SavepointIOT m a = SavepointIOT {runSavepointIOT :: ReaderT Pg.Connection m a}
   deriving newtype
     ( Applicative,
       Functor,
@@ -108,9 +108,9 @@ instance
     Logging m,
     MonadMask m
   ) =>
-  Savepoint (SavepointT m)
+  Savepoint (SavepointIOT m)
   where
-  withSavepoint t = SavepointT $
+  withSavepoint t = SavepointIOT $
     ReaderT $ \conn -> do
       E.mask $ \restore -> do
         sp <- liftIO $ Pg.newSavepoint conn
@@ -126,5 +126,5 @@ instance
         $(logWarnShow) ("rolling back savepoint" :: String)
         liftIO $ Pg.rollbackToAndReleaseSavepoint conn sp
 
-runSavepoint :: Pg.Connection -> SavepointT m a -> m a
-runSavepoint conn = flip runReaderT conn . runSavepointT
+runSavepoint :: Pg.Connection -> SavepointIOT m a -> m a
+runSavepoint conn = flip runReaderT conn . runSavepointIOT

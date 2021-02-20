@@ -9,8 +9,8 @@ import Control.Monad.Reader
 class Monad m => RateLimit m where
   waitReady :: m ()
 
-newtype RateLimitT m a = RateLimitT
-  { runRateLimitT :: ReaderT (LimitConfig, RateLimiter) m a
+newtype RateLimitIOT m a = RateLimitIOT
+  { runRateLimitIOT :: ReaderT (LimitConfig, RateLimiter) m a
   }
   deriving newtype (Applicative, Functor, Monad, MonadIO, MonadTrans)
 
@@ -24,15 +24,15 @@ instance
   where
   waitReady = lift waitReady
 
-instance MonadIO m => RateLimit (RateLimitT m) where
-  waitReady = RateLimitT $ do
+instance MonadIO m => RateLimit (RateLimitIOT m) where
+  waitReady = RateLimitIOT $ do
     (lc, rl) <- ask
     liftIO $ waitDebit lc rl 1
 
 runRateLimitIO ::
   MonadIO m =>
   LimitConfig ->
-  RateLimitT m a ->
+  RateLimitIOT m a ->
   m a
 runRateLimitIO lc c = do
   rl <- liftIO $ newRateLimiter lc
@@ -41,6 +41,6 @@ runRateLimitIO lc c = do
 runRateLimitIO' ::
   LimitConfig ->
   RateLimiter ->
-  RateLimitT m a ->
+  RateLimitIOT m a ->
   m a
-runRateLimitIO' lc rl c = runReaderT (runRateLimitT c) (lc, rl)
+runRateLimitIO' lc rl c = runReaderT (runRateLimitIOT c) (lc, rl)

@@ -13,7 +13,7 @@ module Melo.Common.Logging
     logError,
     logErrorShow,
     runStdoutLogging,
-    LoggingT (..),
+    LoggingIOT (..),
     logIO,
     logDebugIO,
     logDebugShowIO,
@@ -79,15 +79,15 @@ instance From L.ByteString LogMessage where
 --instance From BB.Builder LogMessage where
 --  from = from . BL.toStrict . BB.toLazyByteString
 
-newtype LoggingT m a = LoggingT
-  { runLoggingT :: m a
+newtype LoggingIOT m a = LoggingIOT
+  { runLoggingIOT :: m a
   }
   deriving newtype (Applicative, Functor, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadMask, MonadThrow)
   deriving (MonadTrans, MonadTransControl) via IdentityT
 
 instance
   (MonadIO m) =>
-  Logging (LoggingT m)
+  Logging (LoggingIOT m)
   where
   log ln severity msg = do
     let LogMessage msg' = from msg
@@ -128,8 +128,8 @@ logError = log_ Wlog.Error
 logErrorShow :: Q Exp
 logErrorShow = logShow Wlog.Error
 
-runStdoutLogging :: LoggingT m a -> m a
-runStdoutLogging = runLoggingT
+runStdoutLogging :: LoggingIOT m a -> m a
+runStdoutLogging = runLoggingIOT
 
 logIOImpl :: (From s LogMessage, MonadIO m) => String -> Int -> s -> m ()
 logIOImpl ln severity msg =

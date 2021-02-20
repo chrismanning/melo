@@ -49,13 +49,13 @@ instance
   deleteCollection = lift . deleteCollection
   rescanCollection = lift . rescanCollection
 
-newtype CollectionServiceT m a = CollectionServiceT
-  { runCollectionServiceT :: ReaderT (Pool Connection) m a
+newtype CollectionServiceIOT m a = CollectionServiceIOT
+  { runCollectionServiceIOT :: ReaderT (Pool Connection) m a
   }
   deriving newtype (Functor, Applicative, Monad, MonadCatch, MonadMask, MonadThrow, MonadIO, MonadConc, MonadTrans, MonadTransControl)
 
-runCollectionServiceIO :: Pool Connection -> CollectionServiceT m a -> m a
-runCollectionServiceIO pool = flip runReaderT pool . runCollectionServiceT
+runCollectionServiceIO :: Pool Connection -> CollectionServiceIOT m a -> m a
+runCollectionServiceIO pool = flip runReaderT pool . runCollectionServiceIOT
 
 instance
   ( CollectionRepository m,
@@ -65,9 +65,9 @@ instance
     MonadIO m,
     Logging m
   ) =>
-  CollectionService (CollectionServiceT m)
+  CollectionService (CollectionServiceIOT m)
   where
-  addCollection c@NewFilesystemCollection {..} = CollectionServiceT $
+  addCollection c@NewFilesystemCollection {..} = CollectionServiceIOT $
     ReaderT $ \pool -> do
       $(logInfo) $ "Adding collection " <> name
       $(logDebug) $ "Adding collection " <> show c
@@ -94,13 +94,6 @@ instance
     stopWatching ref
     deleteCollections [DB.CollectionKey id]
     pure ()
-
-data SourceMoveError
-  = FileSystemMoveError MoveError
-  | PatternError
-  | NoSuchSource
-  | SourcePathError
-  deriving (Show)
 
 moveSourceWithPattern ::
   ( FileSystem m,
@@ -169,10 +162,3 @@ renderSourcePattern metadata@F.Metadata {..} = \case
   DefaultPattern a b -> renderSourcePattern metadata a <|> renderSourcePattern metadata b
   PrintfPattern fmt pat ->
     printf fmt <$> renderSourcePattern metadata pat
-
-data SourcePathPattern
-  = LiteralPattern FilePath
-  | GroupPattern (NonEmpty SourcePathPattern)
-  | MappingPattern F.TagMapping
-  | DefaultPattern SourcePathPattern SourcePathPattern
-  | PrintfPattern String SourcePathPattern

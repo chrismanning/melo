@@ -24,8 +24,8 @@ class Monad m => ArtistRepository m where
   insertArtists :: [NewArtist] -> m [DB.ArtistKey]
   deleteArtists :: [DB.ArtistKey] -> m ()
 
-newtype ArtistRepositoryT m a = ArtistRepositoryT
-  { runArtistRepositoryT :: ReaderT Connection m a
+newtype ArtistRepositoryIOT m a = ArtistRepositoryIOT
+  { runArtistRepositoryIOT :: ReaderT Connection m a
   }
   deriving newtype (Applicative, Functor, Monad, MonadIO, MonadTrans, MonadTransControl)
 
@@ -35,21 +35,21 @@ tbl = DB.meloDb ^. #artist
 instance
   ( MonadIO m
   ) =>
-  ArtistRepository (ArtistRepositoryT m)
+  ArtistRepository (ArtistRepositoryIOT m)
   where
-  getAllArtists = ArtistRepositoryT $
+  getAllArtists = ArtistRepositoryIOT $
     ReaderT $ \conn ->
       getAllIO conn tbl
-  getArtists ks = ArtistRepositoryT $
+  getArtists ks = ArtistRepositoryIOT $
     ReaderT $ \conn ->
       getByKeysIO conn tbl ks
-  deleteArtists ks = ArtistRepositoryT $
+  deleteArtists ks = ArtistRepositoryIOT $
     ReaderT $ \conn ->
       deleteByKeysIO conn tbl ks
   getArtistAlbums k = error "unimplemented"
   getArtistTracks k = error "unimplemented"
   searchArtists t = error "unimplemented"
-  insertArtists as' = ArtistRepositoryT $
+  insertArtists as' = ArtistRepositoryIOT $
     ReaderT $ \conn -> do
       let !as = nubOrd as'
       let q =
@@ -68,5 +68,5 @@ instance
                 (Just primaryKey)
       $(runPgDebugIO') conn q
 
-runArtistRepositoryIO :: Connection -> ArtistRepositoryT m a -> m a
-runArtistRepositoryIO conn = flip runReaderT conn . runArtistRepositoryT
+runArtistRepositoryIO :: Connection -> ArtistRepositoryIOT m a -> m a
+runArtistRepositoryIO conn = flip runReaderT conn . runArtistRepositoryIOT

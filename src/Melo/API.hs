@@ -93,13 +93,13 @@ type ResolverE m =
 --runResolverE ::
 --  Pool Connection ->
 --  Connection ->
---  CollectionServiceT
---    ( CollectionRepositoryT
---        ( FileSystemServiceT
---            ( SourceRepositoryT
---                ( MetadataServiceT
---                    ( SavepointT
---                        ( LoggingT m
+--  CollectionServiceIOT
+--    ( CollectionRepositoryIOT
+--        ( FileSystemServiceIOT
+--            ( SourceRepositoryIOT
+--                ( MetadataServiceIOT
+--                    ( SavepointIOT
+--                        ( LoggingIOT m
 --                        )
 --                    )
 --                )

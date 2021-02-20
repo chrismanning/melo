@@ -2,6 +2,7 @@ module Melo.Library.Collection.Types where
 
 import Basement.From
 import Data.Hashable
+import Data.List.NonEmpty
 import Data.Morpheus.Kind
 import Data.Morpheus.Types
 import Data.Text (Text)
@@ -9,8 +10,10 @@ import qualified Data.Text as T
 import Data.UUID
 import Database.Beam
 import Database.Beam.Postgres as PgB
+import Melo.Common.FileSystem
 import Melo.Common.Uri
 import qualified Melo.Database.Model as DB
+import qualified Melo.Format as F
 
 data NewCollection = NewFilesystemCollection
   { rootPath :: Text,
@@ -41,3 +44,17 @@ newtype CollectionRef = CollectionRef UUID
   deriving (Show, Eq, Ord, Generic)
 
 instance Hashable CollectionRef
+
+data SourceMoveError
+  = FileSystemMoveError MoveError
+  | PatternError
+  | NoSuchSource
+  | SourcePathError
+  deriving (Show)
+
+data SourcePathPattern
+  = LiteralPattern FilePath
+  | GroupPattern (NonEmpty SourcePathPattern)
+  | MappingPattern F.TagMapping
+  | DefaultPattern SourcePathPattern SourcePathPattern
+  | PrintfPattern String SourcePathPattern

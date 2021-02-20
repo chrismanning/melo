@@ -6,7 +6,7 @@ module Melo.Lookup.MusicBrainz
   ( MusicBrainzId (..),
     runMusicBrainzServiceIO,
     MusicBrainzService (..),
-    MusicBrainzServiceT (..),
+    MusicBrainzServiceIOT (..),
     Artist (..),
     ArtistCredit (..),
     ArtistSearch (..),
@@ -290,21 +290,21 @@ getReleaseByAlbum albumTitle albumArtist = do
     [release] -> pure $ Just release
     _noMatchingRelease -> pure A.empty
 
-newtype MusicBrainzServiceT m a = MusicBrainzServiceT
-  { runMusicBrainzServiceT :: HttpSessionT (RateLimitT m) a
+newtype MusicBrainzServiceIOT m a = MusicBrainzServiceIOT
+  { runMusicBrainzServiceIOT :: HttpSessionIOT (RateLimitIOT m) a
   }
   deriving newtype (Applicative, Functor, Monad, MonadIO)
 
-instance MonadTrans MusicBrainzServiceT where
-  lift m = MusicBrainzServiceT $ HttpSessionT $ ReaderT $ const $ RateLimitT $ ReaderT $ const m
+instance MonadTrans MusicBrainzServiceIOT where
+  lift m = MusicBrainzServiceIOT $ HttpSessionIOT $ ReaderT $ const $ RateLimitIOT $ ReaderT $ const m
 
 instance
   ( MonadIO m,
     Logging m
   ) =>
-  MusicBrainzService (MusicBrainzServiceT m)
+  MusicBrainzService (MusicBrainzServiceIOT m)
   where
-  searchReleases search = MusicBrainzServiceT $ do
+  searchReleases search = MusicBrainzServiceIOT $ do
     waitReady
     let qterms =
           catMaybes
@@ -322,7 +322,7 @@ instance
             $(logError) $ "error searching for matching releases: " <> show e
             pure []
           Right r -> pure $ fromMaybe [] $ r ^. Wr.responseBody . #releases
-  searchReleaseGroups search = MusicBrainzServiceT $ do
+  searchReleaseGroups search = MusicBrainzServiceIOT $ do
     waitReady
     let qterms =
           catMaybes
@@ -340,7 +340,7 @@ instance
             $(logError) $ "error searching for matching release groups: " <> show e
             pure []
           Right r -> pure $ fromMaybe [] $ r ^. Wr.responseBody . #releaseGroups
-  searchArtists search = MusicBrainzServiceT $ do
+  searchArtists search = MusicBrainzServiceIOT $ do
     waitReady
     let opts =
           mbWreqDefaults
@@ -351,7 +351,7 @@ instance
         $(logError) $ "error searching for matching artists: " <> show e
         pure []
       Right r -> pure $ fromMaybe [] $ r ^. Wr.responseBody . #artists
-  searchRecordings search = MusicBrainzServiceT $ do
+  searchRecordings search = MusicBrainzServiceIOT $ do
     waitReady
     let qterms =
           catMaybes
@@ -371,7 +371,7 @@ instance
             $(logError) $ "error searching for matching recordings: " <> show e
             pure []
           Right r -> pure $ fromMaybe [] $ r ^. Wr.responseBody . #recordings
-  getArtist artistId = MusicBrainzServiceT $ do
+  getArtist artistId = MusicBrainzServiceIOT $ do
     waitReady
     let opts = mbWreqDefaults
     let url = baseUrl <> "/artist/" <> artistId ^. coerced
@@ -380,7 +380,7 @@ instance
         $(logError) $ "error getting artist " <> show artistId <> ": " <> show e
         pure Nothing
       Right r -> pure $ r ^. Wr.responseBody
-  getArtistReleaseGroups artistId = MusicBrainzServiceT $ do
+  getArtistReleaseGroups artistId = MusicBrainzServiceIOT $ do
     waitReady
     let opts =
           mbWreqDefaults
@@ -392,7 +392,7 @@ instance
         $(logError) $ "error getting release groups for artist " <> show artistId <> ": " <> show e
         pure []
       Right r -> pure $ r ^. Wr.responseBody
-  getArtistReleases artistId = MusicBrainzServiceT $ do
+  getArtistReleases artistId = MusicBrainzServiceIOT $ do
     waitReady
     let opts =
           mbWreqDefaults
@@ -404,7 +404,7 @@ instance
         $(logError) $ "error getting releases for artist " <> show artistId <> ": " <> show e
         pure []
       Right r -> pure $ r ^. Wr.responseBody
-  getArtistRecordings artistId = MusicBrainzServiceT $ do
+  getArtistRecordings artistId = MusicBrainzServiceIOT $ do
     waitReady
     let opts =
           mbWreqDefaults
@@ -416,7 +416,7 @@ instance
         $(logError) $ "error getting recordings for artist " <> show artistId <> ": " <> show e
         pure []
       Right r -> pure $ r ^. Wr.responseBody
-  getRelease releaseId = MusicBrainzServiceT $ do
+  getRelease releaseId = MusicBrainzServiceIOT $ do
     waitReady
     let opts = mbWreqDefaults
     let url = baseUrl <> "/release/" <> releaseId ^. coerced
@@ -425,7 +425,7 @@ instance
         $(logError) $ "error getting release " <> show releaseId <> ": " <> show e
         pure Nothing
       Right r -> pure $ r ^. Wr.responseBody
-  getReleaseGroup releaseGroupId = MusicBrainzServiceT $ do
+  getReleaseGroup releaseGroupId = MusicBrainzServiceIOT $ do
     waitReady
     let opts = mbWreqDefaults
     let url = baseUrl <> "/release-group/" <> releaseGroupId ^. coerced
@@ -457,12 +457,12 @@ runMusicBrainzServiceIO ::
   ( MonadIO m
   ) =>
   WrS.Session ->
-  MusicBrainzServiceT m a ->
+  MusicBrainzServiceIOT m a ->
   m a
 runMusicBrainzServiceIO sess =
   runRateLimitIO mbRateLimitConfig
     . runHttpSession sess
-    . runMusicBrainzServiceT
+    . runMusicBrainzServiceIOT
 
 mbRateLimitConfig :: LimitConfig
 mbRateLimitConfig =

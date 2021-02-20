@@ -46,19 +46,19 @@ instance
   readMetadataFile fid = lift . readMetadataFile fid
   writeMetadataFile f = lift . writeMetadataFile f
 
-newtype MetadataServiceT m a = MetadataServiceT
-  { runMetadataServiceT :: m a
+newtype MetadataServiceIOT m a = MetadataServiceIOT
+  { runMetadataServiceIOT :: m a
   }
   deriving newtype (Functor, Applicative, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadMask, MonadThrow)
   deriving (MonadTrans, MonadTransControl) via IdentityT
 
-runMetadataServiceIO :: MetadataServiceT m a -> m a
-runMetadataServiceIO = runMetadataServiceT
+runMetadataServiceIO :: MetadataServiceIOT m a -> m a
+runMetadataServiceIO = runMetadataServiceIOT
 
 instance
   ( MonadIO m
   ) =>
-  MetadataService (MetadataServiceT m)
+  MetadataService (MetadataServiceIOT m)
   where
   openMetadataFile path = liftIO $
     try $ do

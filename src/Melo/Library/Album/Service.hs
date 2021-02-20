@@ -34,8 +34,8 @@ import qualified Melo.Lookup.MusicBrainz as MB
 class Monad m => AlbumService m where
   importAlbums :: [Source] -> m [Album]
 
-newtype AlbumServiceT m a = AlbumServiceT
-  { runAlbumServiceT :: m a
+newtype AlbumServiceIOT m a = AlbumServiceIOT
+  { runAlbumServiceIOT :: m a
   }
   deriving newtype (Functor, Applicative, Monad)
   deriving (MonadTrans, MonadTransControl) via IdentityT
@@ -45,13 +45,13 @@ instance
     Logging m,
     MB.MusicBrainzService m
   ) =>
-  AlbumService (AlbumServiceT m)
+  AlbumService (AlbumServiceIOT m)
   where
-  importAlbums ms = AlbumServiceT $ do
+  importAlbums ms = AlbumServiceIOT $ do
     mbReleases <- catMaybes <$> mapM (MB.getReleaseFromMetadata . (^. #metadata)) ms
     $(logDebugShow) mbReleases
     albums <- insertAlbums (fmap from mbReleases) >>= getAlbums
     pure $ fmap from albums
 
-runAlbumServiceIO :: AlbumServiceT m a -> m a
-runAlbumServiceIO = runAlbumServiceT
+runAlbumServiceIO :: AlbumServiceIOT m a -> m a
+runAlbumServiceIO = runAlbumServiceIOT

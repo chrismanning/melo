@@ -53,22 +53,22 @@ instance From DB.Track Track where
 class Monad m => TrackService m where
   importTracks :: [Source] -> m [Track]
 
-newtype TrackServiceT m a = TrackServiceT
-  { runTrackServiceT :: m a
+newtype TrackServiceIOT m a = TrackServiceIOT
+  { runTrackServiceIOT :: m a
   }
   deriving newtype (Applicative, Functor, Monad)
   deriving (MonadTrans, MonadTransControl) via IdentityT
 
-runTrackServiceIO :: TrackServiceT m a -> m a
-runTrackServiceIO = runTrackServiceT
+runTrackServiceIO :: TrackServiceIOT m a -> m a
+runTrackServiceIO = runTrackServiceIOT
 
 instance
   ( TrackRepository m,
     Logging m
   ) =>
-  TrackService (TrackServiceT m)
+  TrackService (TrackServiceIOT m)
   where
-  importTracks mss = TrackServiceT $ do
+  importTracks mss = TrackServiceIOT $ do
     let ts = fmap newTracks mss
     tracks <- insertTracks ts >>= getTracks
     pure (fmap from tracks)

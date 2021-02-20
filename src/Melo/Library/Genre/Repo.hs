@@ -30,8 +30,8 @@ class Monad m => GenreRepository m where
   insertGenres :: [NewGenre] -> m [DB.GenreKey]
   deleteGenres :: [DB.GenreKey] -> m ()
 
-newtype GenreRepositoryT m a = GenreRepositoryT
-  { runGenreRepositoryT :: ReaderT Connection m a
+newtype GenreRepositoryIOT m a = GenreRepositoryIOT
+  { runGenreRepositoryIOT :: ReaderT Connection m a
   }
   deriving newtype (Applicative, Functor, Monad, MonadIO, MonadTrans, MonadTransControl)
 
@@ -40,25 +40,25 @@ tbl = DB.meloDb ^. #genre
 
 instance
   (MonadIO m) =>
-  GenreRepository (GenreRepositoryT m)
+  GenreRepository (GenreRepositoryIOT m)
   where
-  getAllGenres = GenreRepositoryT $
+  getAllGenres = GenreRepositoryIOT $
     ReaderT $ \conn ->
       getAllIO conn tbl
-  getGenres ks = GenreRepositoryT $
+  getGenres ks = GenreRepositoryIOT $
     ReaderT $ \conn ->
       getByKeysIO conn tbl ks
-  deleteGenres ks = GenreRepositoryT $
+  deleteGenres ks = GenreRepositoryIOT $
     ReaderT $ \conn ->
       deleteByKeysIO conn tbl ks
   getGenresByName [] = pure []
-  getGenresByName ns = GenreRepositoryT $
+  getGenresByName ns = GenreRepositoryIOT $
     ReaderT $ \conn -> do
       let names = val_ <$> ns
       let q = select $ filter_ (\g -> g ^. #name `in_` names) (all_ tbl)
       $(runPgDebugIO') conn (runSelectReturningList q)
   searchGenres "" = pure []
-  searchGenres t = GenreRepositoryT $
+  searchGenres t = GenreRepositoryIOT $
     ReaderT $ \conn -> do
       let q = select $ do
             genre <- all_ (DB.meloDb ^. #genre)
@@ -66,7 +66,7 @@ instance
             pure genre
       $(runPgDebugIO') conn (runSelectReturningList q)
   getGenreArtists [] = pure []
-  getGenreArtists ks = GenreRepositoryT $
+  getGenreArtists ks = GenreRepositoryIOT $
     ReaderT $ \conn -> do
       let q = select $ do
             (g, a) <-
@@ -79,7 +79,7 @@ instance
             pure (primaryKey g, a)
       $(runPgDebugIO') conn (runSelectReturningList q)
   getGenreAlbums [] = pure []
-  getGenreAlbums ks = GenreRepositoryT $
+  getGenreAlbums ks = GenreRepositoryIOT $
     ReaderT $ \conn -> do
       let q = select $ do
             (g, a) <-
@@ -92,7 +92,7 @@ instance
             pure (primaryKey g, a)
       $(runPgDebugIO') conn (runSelectReturningList q)
   getGenreTracks [] = pure []
-  getGenreTracks ks = GenreRepositoryT $
+  getGenreTracks ks = GenreRepositoryIOT $
     ReaderT $ \conn -> do
       let q = select $ do
             (g, t) <-
@@ -105,7 +105,7 @@ instance
             pure (primaryKey g, t)
       $(runPgDebugIO') conn (runSelectReturningList q)
   insertGenres [] = pure []
-  insertGenres gs = GenreRepositoryT $
+  insertGenres gs = GenreRepositoryIOT $
     ReaderT $ \conn -> do
       let q =
             insertReturning
@@ -123,5 +123,5 @@ newGenres g =
       description = val_ $ g ^. #description
     }
 
-runGenreRepositoryIO :: Connection -> GenreRepositoryT m a -> m a
-runGenreRepositoryIO conn = flip runReaderT conn . runGenreRepositoryT
+runGenreRepositoryIO :: Connection -> GenreRepositoryIOT m a -> m a
+runGenreRepositoryIO conn = flip runReaderT conn . runGenreRepositoryIOT

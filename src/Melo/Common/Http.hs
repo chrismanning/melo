@@ -2,7 +2,7 @@
 
 module Melo.Common.Http
   ( Http (..),
-    HttpSessionT (..),
+    HttpSessionIOT (..),
     runNewHttpSession,
     runHttpSession,
     meloUserAgent,
@@ -56,8 +56,8 @@ instance From SomeException HttpClientException where
       HttpClientException <$> fromException @HttpException e
         <|> JsonException <$> fromException @Wr.JSONError e
 
-newtype HttpSessionT m a = HttpSessionT
-  { runHttpSessionT :: ReaderT WrS.Session m a
+newtype HttpSessionIOT m a = HttpSessionIOT
+  { runHttpSessionIOT :: ReaderT WrS.Session m a
   }
   deriving newtype (Applicative, Functor, Monad, MonadIO, MonadTrans)
 
@@ -65,9 +65,9 @@ instance
   ( MonadIO m,
     Logging m
   ) =>
-  Http (HttpSessionT m)
+  Http (HttpSessionIOT m)
   where
-  getWith opts url = HttpSessionT $
+  getWith opts url = HttpSessionIOT $
     ReaderT $ \sess -> do
       $(logDebugShowIO) url
       $(logDebugShowIO) opts
@@ -81,13 +81,13 @@ instance
       Left e -> pure $ Left (into @HttpClientException e)
       Right r -> pure $ mapLeft (into @HttpClientException) (Wr.asJSON r)
 
-runNewHttpSession :: MonadIO m => HttpSessionT m a -> m a
+runNewHttpSession :: MonadIO m => HttpSessionIOT m a -> m a
 runNewHttpSession m = do
   sess <- liftIO WrS.newSession
-  runReaderT (runHttpSessionT m) sess
+  runReaderT (runHttpSessionIOT m) sess
 
-runHttpSession :: WrS.Session -> HttpSessionT m a -> m a
-runHttpSession sess m = runReaderT (runHttpSessionT m) sess
+runHttpSession :: WrS.Session -> HttpSessionIOT m a -> m a
+runHttpSession sess m = runReaderT (runHttpSessionIOT m) sess
 
 meloUserAgent :: IsString s => s
 meloUserAgent = "melo/0.1.0.0 ( https://github.com/chrismanning/melo )"

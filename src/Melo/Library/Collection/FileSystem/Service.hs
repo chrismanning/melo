@@ -38,21 +38,21 @@ instance
   where
   scanPath ref p = lift (scanPath ref p)
 
-newtype FileSystemServiceT m a = FileSystemServiceT
-  { runFileSystemServiceT :: m a
+newtype FileSystemServiceIOT m a = FileSystemServiceIOT
+  { runFileSystemServiceIOT :: m a
   }
   deriving (Functor, Applicative, Monad, MonadBase b, MonadBaseControl b, MonadIO, MonadConc, MonadCatch, MonadMask, MonadThrow)
   deriving (MonadTrans, MonadTransControl) via IdentityT
 
-runFileSystemServiceIO :: FileSystemServiceT m a -> m a
-runFileSystemServiceIO = runFileSystemServiceT
+runFileSystemServiceIO :: FileSystemServiceIOT m a -> m a
+runFileSystemServiceIO = runFileSystemServiceIOT
 
 runFileSystemServiceIO' ::
   ( MonadIO m,
     MonadConc m
   ) =>
   Pool Connection ->
-  FileSystemServiceT (SourceRepositoryT (SavepointT (MetadataServiceT (FileSystemT (TransactionT m))))) a ->
+  FileSystemServiceIOT (SourceRepositoryIOT (SavepointIOT (MetadataServiceIOT (FileSystemIOT (TransactionIOT m))))) a ->
   m ()
 runFileSystemServiceIO' pool m = void $
   runTransaction pool $
@@ -64,7 +64,7 @@ forkFileSystemServiceIO ::
     MonadConc m
   ) =>
   Pool Connection ->
-  FileSystemServiceT (SourceRepositoryT (SavepointT (MetadataServiceT (FileSystemT (TransactionT m))))) a ->
+  FileSystemServiceIOT (SourceRepositoryIOT (SavepointIOT (MetadataServiceIOT (FileSystemIOT (TransactionIOT m))))) a ->
   m ()
 forkFileSystemServiceIO pool m = void $ fork $ runFileSystemServiceIO' pool m
 
@@ -77,9 +77,9 @@ instance
     FileSystem m,
     Logging m
   ) =>
-  FileSystemService (FileSystemServiceT m)
+  FileSystemService (FileSystemServiceIOT m)
   where
-  scanPath ref p' = FileSystemServiceT $
+  scanPath ref p' = FileSystemServiceIOT $
     handle handleScanException $ do
       p <- canonicalizePath p'
       $(logInfo) $ "Importing " <> p

@@ -51,8 +51,8 @@ instance
   deleteSources = lift . deleteSources
   updateSources = lift . updateSources
 
-newtype SourceRepositoryT m a = SourceRepositoryT
-  { runSourceRepositoryT :: ReaderT Pg.Connection m a
+newtype SourceRepositoryIOT m a = SourceRepositoryIOT
+  { runSourceRepositoryIOT :: ReaderT Pg.Connection m a
   }
   deriving newtype
     ( Functor,
@@ -74,37 +74,37 @@ tbl = DB.meloDb ^. #source
 
 instance
   (MonadIO m) =>
-  SourceRepository (SourceRepositoryT m)
+  SourceRepository (SourceRepositoryIOT m)
   where
-  getAllSources = SourceRepositoryT $
+  getAllSources = SourceRepositoryIOT $
     ReaderT $ \conn ->
       sortNaturalBy (^. #source_uri) <$> getAllIO conn tbl
   getSources [] = pure []
-  getSources ks = SourceRepositoryT $
+  getSources ks = SourceRepositoryIOT $
     ReaderT $ \conn ->
       getByKeysIO conn tbl ks
   getSourcesByUri [] = pure []
-  getSourcesByUri fs = SourceRepositoryT $
+  getSourcesByUri fs = SourceRepositoryIOT $
     ReaderT $ \conn -> do
       let q = filter_ (\t -> t ^. #source_uri `in_` fmap (val_ . T.pack . show) fs) (all_ $ DB.meloDb ^. #source)
       $(runPgDebugIO') conn (runSelectReturningList (select q))
   getSourceKeysByUri [] = pure []
-  getSourceKeysByUri fs = SourceRepositoryT $
+  getSourceKeysByUri fs = SourceRepositoryIOT $
     ReaderT $ \conn -> do
       let q = primaryKey <$> filter_ (\t -> t ^. #source_uri `in_` fmap (val_ . T.pack . show) fs) (all_ $ DB.meloDb ^. #source)
       $(runPgDebugIO') conn (runSelectReturningList (select q))
-  getSourcesByUriPrefix uri = SourceRepositoryT $
+  getSourcesByUriPrefix uri = SourceRepositoryIOT $
     ReaderT $ \conn -> do
       let prefix = T.pack $ show uri
       let q = filter_ (\t -> (t ^. #source_uri) `startsWith_` val_ prefix) (all_ $ DB.meloDb ^. #source)
       $(runPgDebugIO') conn (runSelectReturningList (select q))
-  getSourceKeysByUriPrefix uri = SourceRepositoryT $
+  getSourceKeysByUriPrefix uri = SourceRepositoryIOT $
     ReaderT $ \conn -> do
       let prefix = T.pack $ show uri
       let q = primaryKey <$> filter_ (\t -> (t ^. #source_uri) `startsWith_` val_ prefix) (all_ $ DB.meloDb ^. #source)
       $(runPgDebugIO') conn (runSelectReturningList (select q))
   insertSources [] = pure []
-  insertSources ss = SourceRepositoryT $
+  insertSources ss = SourceRepositoryIOT $
     ReaderT $ \conn -> do
       expr <- liftIO $ evaluate (insertExpressions $ fmap from ss)
       let q =
@@ -119,14 +119,14 @@ instance
               )
               (Just id)
       $(runPgDebugIO') conn (Pg.runPgInsertReturningList q)
-  deleteSources ks = SourceRepositoryT $
+  deleteSources ks = SourceRepositoryIOT $
     ReaderT $ \conn ->
       deleteByKeysIO conn tbl ks
-  updateSources us = SourceRepositoryT $
+  updateSources us = SourceRepositoryIOT $
     ReaderT $ \conn ->
       forM_ us $ \u -> do
         let q = save tbl u
         $(runPgDebugIO') conn (runUpdate q)
 
-runSourceRepositoryIO :: Connection -> SourceRepositoryT m a -> m a
-runSourceRepositoryIO conn = flip runReaderT conn . runSourceRepositoryT
+runSourceRepositoryIO :: Connection -> SourceRepositoryIOT m a -> m a
+runSourceRepositoryIO conn = flip runReaderT conn . runSourceRepositoryIOT

@@ -49,25 +49,25 @@ instance
   deleteAllCollections = lift deleteAllCollections
   updateCollections = lift . updateCollections
 
-newtype CollectionRepositoryT m a = CollectionRepositoryT
-  { runCollectionRepositoryT :: ReaderT Connection m a
+newtype CollectionRepositoryIOT m a = CollectionRepositoryIOT
+  { runCollectionRepositoryIOT :: ReaderT Connection m a
   }
   deriving newtype (Functor, Applicative, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadMask, MonadThrow, MonadTrans, MonadTransControl)
 
-instance MonadIO m => CollectionRepository (CollectionRepositoryT m) where
-  getAllCollections = CollectionRepositoryT $
+instance MonadIO m => CollectionRepository (CollectionRepositoryIOT m) where
+  getAllCollections = CollectionRepositoryIOT $
     ReaderT $ \conn ->
       sortNaturalBy (^. #root_uri) <$> getAllIO conn tbl
-  getCollections ks = CollectionRepositoryT $
+  getCollections ks = CollectionRepositoryIOT $
     ReaderT $ \conn ->
       getByKeysIO conn tbl ks
   getCollectionsByUri [] = pure []
-  getCollectionsByUri fs = CollectionRepositoryT $
+  getCollectionsByUri fs = CollectionRepositoryIOT $
     ReaderT $ \conn -> do
       let q = filter_ (\t -> t ^. #root_uri `in_` fmap (val_ . T.pack . show) fs) (all_ tbl)
       $(runPgDebugIO') conn (runSelectReturningList (select q)) <&> sortNaturalBy (^. #root_uri)
   insertCollections [] = pure []
-  insertCollections ss = CollectionRepositoryT $
+  insertCollections ss = CollectionRepositoryIOT $
     ReaderT $ \conn -> do
       expr <- liftIO $ E.evaluate (insertExpressions $ fmap from ss)
       let q =
@@ -77,17 +77,17 @@ instance MonadIO m => CollectionRepository (CollectionRepositoryT m) where
               Pg.onConflictDefault
               (Just id)
       $(runPgDebugIO') conn (Pg.runPgInsertReturningList q) <&> sortNaturalBy (^. #root_uri)
-  deleteCollections ks = CollectionRepositoryT $
+  deleteCollections ks = CollectionRepositoryIOT $
     ReaderT $ \conn ->
       deleteByKeysIO conn tbl ks
-  deleteAllCollections = CollectionRepositoryT $
+  deleteAllCollections = CollectionRepositoryIOT $
     ReaderT $ \conn ->
       deleteAllIO conn tbl
-  updateCollections us = CollectionRepositoryT $
+  updateCollections us = CollectionRepositoryIOT $
     ReaderT $ \conn ->
       forM_ us $ \u -> do
         let q = save tbl u
         $(runPgDebugIO') conn (runUpdate q)
 
-runCollectionRepositoryIO :: Connection -> CollectionRepositoryT m a -> m a
-runCollectionRepositoryIO conn = flip runReaderT conn . runCollectionRepositoryT
+runCollectionRepositoryIO :: Connection -> CollectionRepositoryIOT m a -> m a
+runCollectionRepositoryIO conn = flip runReaderT conn . runCollectionRepositoryIOT

@@ -48,19 +48,19 @@ data MoveError
 
 instance Exception MoveError
 
-newtype FileSystemT m a = FileSystemT
-  { runFileSystemT :: m a
+newtype FileSystemIOT m a = FileSystemIOT
+  { runFileSystemIOT :: m a
   }
   deriving newtype (Functor, Applicative, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadThrow, MonadMask)
   deriving (MonadTrans, MonadTransControl) via IdentityT
 
-runFileSystemIO :: FileSystemT m a -> m a
-runFileSystemIO = runFileSystemT
+runFileSystemIO :: FileSystemIOT m a -> m a
+runFileSystemIO = runFileSystemIOT
 
 instance
   ( MonadIO m
   ) =>
-  FileSystem (FileSystemT m)
+  FileSystem (FileSystemIOT m)
   where
   doesFileExist p = liftIO $ Dir.doesFileExist p
   doesDirectoryExist p = liftIO $ Dir.doesDirectoryExist p
