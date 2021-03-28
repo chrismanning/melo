@@ -117,16 +117,15 @@ writeFlacFile f newpath = do
     else writeFlacFile' oldpath newpath
   where
     writeFlacFile' oldpath newpath = do
-      !flac' <-
-        updateFlacWith (H.elems $ f ^. #metadata)
-          <$> withBinaryFile oldpath ReadMode hReadFlac
+      !oldflac <- withBinaryFile oldpath ReadMode hReadFlac
       !audioData <- withBinaryFile oldpath ReadMode $ \h -> do
         hSeek h SeekFromEnd 0
         end <- hTell h
-        hSeek h AbsoluteSeek (flacSize flac')
-        BS.hGet h $ fromInteger (end - flacSize flac')
+        hSeek h AbsoluteSeek (flacSize oldflac)
+        BS.hGet h $ fromInteger (end - flacSize oldflac)
       withBinaryFile newpath WriteMode $ \h -> do
-        hWriteFlac h flac'
+        let !newflac = updateFlacWith (H.elems $ f ^. #metadata) oldflac
+        hWriteFlac h newflac
         BS.hPut h audioData
 
 updateFlacWith :: [Metadata] -> Flac -> Flac
