@@ -65,7 +65,7 @@ instance
               fork $
                 liftIO $
                   FS.withManagerConf (FS.defaultConfig {FS.confThreadingMode = ThreadPerEvent}) $ \watchManager -> do
-                    stop <- FS.watchTree watchManager p (\e -> takeExtension (FS.eventPath e) /= ".tmp") (void . runInBase . handleEvent pool ref)
+                    stop <- FS.watchTree watchManager p (\e -> takeExtension (FS.eventPath e) `notElem` [".tmp", ".part"]) (void . runInBase . handleEvent pool ref)
                     C.atomically $ C.modifyTVar' watchState (H.insert ref stop)
                     forever $ threadDelay 1000000
         )
