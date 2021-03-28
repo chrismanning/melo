@@ -18,6 +18,7 @@ import Melo.Library.Collection.Types
 import Melo.Library.Source.Repo
 import System.FSNotify (ThreadingMode (..))
 import qualified System.FSNotify as FS
+import System.FilePath
 
 class Monad m => FileSystemWatchService m where
   startWatching :: CollectionRef -> FilePath -> m ()
@@ -64,7 +65,7 @@ instance
               fork $
                 liftIO $
                   FS.withManagerConf (FS.defaultConfig {FS.confThreadingMode = ThreadPerEvent}) $ \watchManager -> do
-                    stop <- FS.watchTree watchManager p (const True) (void . runInBase . handleEvent pool ref)
+                    stop <- FS.watchTree watchManager p (\e -> takeExtension (FS.eventPath e) /= ".tmp") (void . runInBase . handleEvent pool ref)
                     C.atomically $ C.modifyTVar' watchState (H.insert ref stop)
                     forever $ threadDelay 1000000
         )
@@ -95,6 +96,15 @@ handleEvent pool ref event = runFileSystemServiceIO' pool $
       $(logInfo) $ "file/directory modified; scanning " <> p
       scanPath ref p
       pure ()
+    FS.ModifiedAttributes p _ _ -> do
+      $(logInfo) $ "file/directory attributes modified; scanning " <> p
+      scanPath ref p
+      pure ()
+    FS.WatchedDirectoryRemoved p _ _ -> do
+      $(logInfo) $ "watched directory removed " <> p
+      let uri = fileUri p
+      refs <- getSourceKeysByUriPrefix uri
+      deleteSources refs
     FS.Removed p _ isDir -> do
       let uri = fileUri p
       if isDir == FS.IsDirectory

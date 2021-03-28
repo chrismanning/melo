@@ -71,7 +71,7 @@ instance
     ReaderT $ \sess -> do
       $(logDebugShowIO) url
       $(logDebugShowIO) opts
-      r <- liftIO $ catchAny (Right <$> WrS.getWith opts sess (T.unpack url)) (pure . Left)
+      r <- liftIO $ tryAny (WrS.getWith opts sess (T.unpack url))
       $(logDebugShowIO) r
       pure $ mapLeft (into @HttpClientException) r
   getWithJson opts url = do

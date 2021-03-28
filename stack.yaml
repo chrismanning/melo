@@ -15,7 +15,7 @@
 # resolver:
 #  name: custom-snapshot
 #  location: "./custom-snapshot.yaml"
-resolver: lts-17.2
+resolver: lts-17.8
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -53,6 +53,12 @@ extra-deps:
     commit: fc1feb938670d805e10cdf9fc226e9726da7a96e
   - conduit-audio-0.2.0.3
   - conduit-audio-lame-0.1.2.1
+  - github: mtolly/conduit-audio
+    commit: 0a90a9541b261583a09e5d5f9f416bc7ae59d07d
+    subdirs:
+      - conduit-audio-mpg123
+  - github: factisresearch/text-icu
+    commit: d8c8bbd7754c38ff99f548a53d0881120b284972
   - conduit-audio-samplerate-0.1.0.3
   - conduit-audio-sndfile-0.1.2.2
 #  - conduit-vfs-0.1.0.3
@@ -69,6 +75,7 @@ extra-deps:
   - linkedhashmap-0.4.0.0
   - log-warper-1.9.0
   - mime-0.4.0.2
+  - mpg123-bindings-0.1.0.0
   - named-0.3.0.1
   - network-multicast-0.3.2
   - network-uri-json-0.3.1.1

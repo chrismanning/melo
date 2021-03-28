@@ -68,7 +68,7 @@ writeOggVorbisFile f newpath = do
   newpath <- canonicalizePath newpath
   if oldpath == newpath
     then do
-      (tmpfile, h) <- openBinaryTempFile (takeDirectory newpath) (takeFileName newpath)
+      (tmpfile, h) <- openBinaryTempFile (takeDirectory newpath) (takeBaseName newpath <> ".tmp")
       hClose h
       writeOggVorbisFile' oldpath tmpfile
       renameFile tmpfile newpath

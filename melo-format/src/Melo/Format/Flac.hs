@@ -110,7 +110,7 @@ writeFlacFile f newpath = do
   if oldpath == newpath
     then do
       -- TODO utilise padding when updating existing flac files
-      (tmpfile, h) <- openBinaryTempFile (takeDirectory newpath) (takeFileName newpath)
+      (tmpfile, h) <- openBinaryTempFile (takeDirectory newpath) (takeBaseName newpath <> ".tmp")
       hClose h
       writeFlacFile' oldpath tmpfile
       renameFile tmpfile newpath
