@@ -113,6 +113,7 @@ writeFlacFile f newpath = do
       (tmpfile, h) <- openBinaryTempFile (takeDirectory newpath) (takeBaseName newpath <> ".tmp")
       hClose h
       writeFlacFile' oldpath tmpfile
+      copyPermissions oldpath tmpfile
       renameFile tmpfile newpath
     else writeFlacFile' oldpath newpath
   where

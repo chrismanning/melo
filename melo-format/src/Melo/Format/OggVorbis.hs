@@ -71,6 +71,7 @@ writeOggVorbisFile f newpath = do
       (tmpfile, h) <- openBinaryTempFile (takeDirectory newpath) (takeBaseName newpath <> ".tmp")
       hClose h
       writeOggVorbisFile' oldpath tmpfile
+      copyPermissions oldpath tmpfile
       renameFile tmpfile newpath
     else writeOggVorbisFile' oldpath newpath
   where
