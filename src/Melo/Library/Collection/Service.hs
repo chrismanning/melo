@@ -8,6 +8,7 @@ import Control.Exception.Safe
 import Control.Lens
 import Control.Monad
 import Control.Monad.Base
+import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
 import Data.Either.Combinators
@@ -64,6 +65,7 @@ newtype CollectionServiceIOT m a = CollectionServiceIOT
       MonadCatch,
       MonadConc,
       MonadMask,
+      MonadParallel,
       MonadThrow,
       MonadReader (Pool Connection),
       MonadTrans,
@@ -78,6 +80,7 @@ instance
     FileSystemService m,
     FileSystemWatchService m,
     MonadConc m,
+    MonadParallel m,
     MonadIO m,
     Logging m
   ) =>

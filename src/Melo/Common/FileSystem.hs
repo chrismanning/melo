@@ -6,6 +6,7 @@ import Control.Concurrent.Classy
 import Control.Exception.Safe
 import Control.Monad.Base
 import Control.Monad.Identity
+import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Trans
 import Control.Monad.Trans.Control
 import Data.ByteString (ByteString)
@@ -51,7 +52,7 @@ instance Exception MoveError
 newtype FileSystemIOT m a = FileSystemIOT
   { runFileSystemIOT :: m a
   }
-  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadThrow, MonadMask)
+  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadThrow, MonadMask, MonadParallel)
   deriving (MonadTrans, MonadTransControl) via IdentityT
 
 runFileSystemIO :: FileSystemIOT m a -> m a

@@ -32,6 +32,7 @@ import Control.Exception.Safe
 import Control.Monad.Base
 import Control.Monad.IO.Class
 import Control.Monad.Identity
+import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Trans
 import Control.Monad.Trans.Control
 import Data.ByteString (ByteString)
@@ -82,7 +83,7 @@ instance From L.ByteString LogMessage where
 newtype LoggingIOT m a = LoggingIOT
   { runLoggingIOT :: m a
   }
-  deriving newtype (Applicative, Functor, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadMask, MonadThrow)
+  deriving newtype (Applicative, Functor, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadMask, MonadThrow, MonadParallel)
   deriving (MonadTrans, MonadTransControl) via IdentityT
 
 instance Logging IO where

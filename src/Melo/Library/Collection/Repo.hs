@@ -7,6 +7,7 @@ import Control.Exception.Safe
 import Control.Lens hiding (from)
 import Control.Monad
 import Control.Monad.Base
+import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
 import Data.Pool
@@ -54,6 +55,7 @@ newtype CollectionRepositoryIOT m a = CollectionRepositoryIOT
       MonadConc,
       MonadCatch,
       MonadMask,
+      MonadParallel,
       MonadReader (RepositoryHandle CollectionTable),
       MonadThrow,
       MonadTrans,

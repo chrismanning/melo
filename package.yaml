@@ -70,6 +70,7 @@ library:
   - memory
   - monad-control
   - monad-logger
+  - monad-parallel
   - morpheus-graphql
   - mtl
   - multistate

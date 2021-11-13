@@ -6,6 +6,8 @@ import Control.Concurrent.Classy
 import Control.Exception.Safe
 import Control.Monad
 import Control.Monad.Base
+import Control.Monad.Parallel (MonadParallel)
+import qualified Control.Monad.Parallel as Par
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
 import Data.Maybe
@@ -21,9 +23,9 @@ import qualified Melo.Format.Error as F
 import Melo.Library.Collection.Types
 import Melo.Library.Source.Repo
 import Melo.Library.Source.Service
-import Melo.Library.Source.Types (
-  Source (..),
-  NewImportSource (..),
+import Melo.Library.Source.Types
+  ( NewImportSource (..),
+    Source (..),
   )
 import System.FilePath
 
@@ -43,13 +45,22 @@ instance
 newtype FileSystemServiceIOT m a = FileSystemServiceIOT
   { runFileSystemServiceIOT :: ReaderT (Pool Connection) m a
   }
-  deriving (
-    Functor,
-    Applicative, Monad, MonadBase b, MonadBaseControl b,
-    MonadIO, MonadConc, MonadCatch, MonadMask, MonadThrow,
-    MonadTrans, MonadTransControl,
-    MonadReader (Pool Connection)
-  )
+  deriving
+    ( Functor,
+      Applicative,
+      Monad,
+      MonadBase b,
+      MonadBaseControl b,
+      MonadIO,
+      MonadConc,
+      MonadCatch,
+      MonadMask,
+      MonadParallel,
+      MonadThrow,
+      MonadTrans,
+      MonadTransControl,
+      MonadReader (Pool Connection)
+    )
 
 runFileSystemServiceIO :: (MonadIO m) => Pool Connection -> FileSystemServiceIOT (FileSystemIOT m) a -> m a
 runFileSystemServiceIO pool = runFileSystemIO . flip runReaderT pool . runFileSystemServiceIOT
@@ -57,7 +68,7 @@ runFileSystemServiceIO pool = runFileSystemIO . flip runReaderT pool . runFileSy
 type ImportT m = FileSystemServiceIOT (FileSystemIOT m)
 
 runFileSystemServiceIO' ::
-  (MonadIO m, MonadCatch m) =>
+  (MonadIO m, MonadCatch m, MonadParallel m) =>
   Pool Connection ->
   ImportT m a ->
   m ()
@@ -66,7 +77,8 @@ runFileSystemServiceIO' pool m =
 
 forkFileSystemServiceIO ::
   ( MonadIO m,
-    MonadConc m
+    MonadConc m,
+    MonadParallel m
   ) =>
   Pool Connection ->
   ImportT m a ->
@@ -77,6 +89,7 @@ instance
   ( MonadIO m,
     MonadCatch m,
     MonadMask m,
+    MonadParallel m,
     FileSystem m,
     Logging m
   ) =>
@@ -94,7 +107,7 @@ instance
           then do
             $(logDebug) $ p <> " is directory; recursing..."
             dirs <- filterM doesDirectoryExist =<< listDirectoryAbs p
-            mapM_ (scanPath ref) dirs
+            Par.mapM_ (scanPath ref) dirs
             files <- filterM doesFileExist =<< listDirectoryAbs p
             if any ((== ".cue") . takeExtension) files
               then do
@@ -115,19 +128,20 @@ instance
         mfs <- catMaybes <$> mapM openMetadataFile'' files
         $(logDebug) $ "Opened " <> show mfs
         importSources (FileSource ref <$> mfs)
-      openMetadataFile'' p = runMetadataServiceIO $
-        openMetadataFileByExt p >>= \case
-          Right mf -> pure $ Just mf
-          Left e@F.UnknownFormat -> do
-            $(logWarn) $ "Could not open by extension " <> p <> ": " <> show e
-            openMetadataFile p >>= \case
-              Left e -> do
-                $(logError) $ "Could not open " <> p <> ": " <> show e
-                pure Nothing
-              Right mf -> pure $ Just mf
-          Left e -> do
-            $(logError) $ "Could not open by extension " <> p <> ": " <> show e
-            pure Nothing
+      openMetadataFile'' p =
+        runMetadataServiceIO $
+          openMetadataFileByExt p >>= \case
+            Right mf -> pure $ Just mf
+            Left e@F.UnknownFormat -> do
+              $(logWarn) $ "Could not open by extension " <> p <> ": " <> show e
+              openMetadataFile p >>= \case
+                Left e -> do
+                  $(logError) $ "Could not open " <> p <> ": " <> show e
+                  pure Nothing
+                Right mf -> pure $ Just mf
+            Left e -> do
+              $(logError) $ "Could not open by extension " <> p <> ": " <> show e
+              pure Nothing
       handleScanException :: SomeException -> FileSystemServiceIOT m [Source]
       handleScanException e = do
         $(logError) $ "error during scan: " <> show e

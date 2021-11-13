@@ -7,6 +7,7 @@ import Control.Exception.Safe
 import Control.Lens hiding (from)
 import Control.Monad.Base
 import Control.Monad.Conc.Class
+import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
 import Data.Kind
@@ -43,6 +44,7 @@ newtype RepositoryIOT (t :: (Type -> Type) -> Type) m a = RepositoryIOT
       MonadConc,
       MonadCatch,
       MonadMask,
+      MonadParallel,
       MonadThrow,
       MonadTransControl
     )

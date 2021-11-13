@@ -6,6 +6,7 @@ import Control.Concurrent.Classy
 import qualified Control.Concurrent.STM as C
 import Control.Exception.Safe
 import Control.Monad
+import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
 import Data.HashMap.Strict as H
@@ -13,11 +14,11 @@ import Data.Pool
 import Hasql.Connection
 import Melo.Common.Logging
 import Melo.Common.Uri
+import Melo.Database.Repo as Repo
 import Melo.Database.Transaction
 import Melo.Library.Collection.FileSystem.Service
 import Melo.Library.Collection.Types
 import Melo.Library.Source.Repo
-import Melo.Database.Repo as Repo
 import System.FSNotify (ThreadingMode (..))
 import qualified System.FSNotify as FS
 import System.FilePath
@@ -42,7 +43,19 @@ type CollectionWatchState = C.TVar (H.HashMap CollectionRef FS.StopListening)
 newtype FileSystemWatchServiceIOT m a = FileSystemWatchServiceIOT
   { runFileSystemWatchServiceIOT :: ReaderT (Pool Connection, CollectionWatchState) m a
   }
-  deriving (Functor, Applicative, Monad, MonadIO, MonadConc, MonadCatch, MonadMask, MonadThrow, MonadTrans, MonadTransControl)
+  deriving
+    ( Functor,
+      Applicative,
+      Monad,
+      MonadIO,
+      MonadConc,
+      MonadCatch,
+      MonadMask,
+      MonadThrow,
+      MonadTrans,
+      MonadTransControl,
+      MonadParallel
+    )
 
 runFileSystemWatchServiceIO ::
   Pool Connection -> CollectionWatchState -> FileSystemWatchServiceIOT m a -> m a

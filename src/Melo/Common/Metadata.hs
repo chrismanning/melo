@@ -8,6 +8,7 @@ import Control.Exception.Safe
 import Control.Lens ((^.))
 import Control.Monad.Base
 import Control.Monad.Identity
+import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Trans
 import Control.Monad.Trans.Control
 import Data.Coerce
@@ -49,7 +50,7 @@ instance
 newtype MetadataServiceIOT m a = MetadataServiceIOT
   { runMetadataServiceIOT :: m a
   }
-  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadMask, MonadThrow)
+  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadMask, MonadThrow, MonadParallel)
   deriving (MonadTrans, MonadTransControl) via IdentityT
 
 runMetadataServiceIO :: MetadataServiceIOT m a -> m a

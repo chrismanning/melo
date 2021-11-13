@@ -6,6 +6,7 @@ import Control.Concurrent.Classy
 import Control.Exception.Safe
 import Control.Lens hiding (from)
 import Control.Monad.Base
+import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
 import Data.Pool
@@ -58,6 +59,7 @@ newtype SourceRepositoryIOT m a = SourceRepositoryIOT
       MonadConc,
       MonadCatch,
       MonadMask,
+      MonadParallel,
       MonadReader (RepositoryHandle SourceTable),
       MonadThrow,
       MonadTrans,
