@@ -3,9 +3,10 @@
 module Melo.Library.Collection.FileSystem.WatchService where
 
 import Control.Concurrent.Classy
-import qualified Control.Concurrent.STM as C
+import qualified Control.Concurrent.STM as STM
 import Control.Exception.Safe
 import Control.Monad
+import Control.Monad.Base
 import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
@@ -38,12 +39,12 @@ instance
   startWatching ref p = lift (startWatching ref p)
   stopWatching = lift . stopWatching
 
-type CollectionWatchState = C.TVar (H.HashMap CollectionRef FS.StopListening)
+type CollectionWatchState = STM.TVar (H.HashMap CollectionRef FS.StopListening)
 
 newtype FileSystemWatchServiceIOT m a = FileSystemWatchServiceIOT
   { runFileSystemWatchServiceIOT :: ReaderT (Pool Connection, CollectionWatchState) m a
   }
-  deriving
+  deriving newtype
     ( Functor,
       Applicative,
       Monad,
@@ -51,10 +52,13 @@ newtype FileSystemWatchServiceIOT m a = FileSystemWatchServiceIOT
       MonadConc,
       MonadCatch,
       MonadMask,
+      MonadReader (Pool Connection, CollectionWatchState),
       MonadThrow,
       MonadTrans,
       MonadTransControl,
-      MonadParallel
+      MonadParallel,
+      MonadBase b,
+      MonadBaseControl b
     )
 
 runFileSystemWatchServiceIO ::
@@ -71,25 +75,25 @@ instance
   ) =>
   FileSystemWatchService (FileSystemWatchServiceIOT m)
   where
-  startWatching ref p = FileSystemWatchServiceIOT $
-    ReaderT $ \(pool, watchState) -> do
-      $(logInfo) $ "starting to watch path " <> p
-      liftBaseWith
-        ( \runInBase ->
-            void $
-              fork $
-                liftIO $
-                  FS.withManagerConf (FS.defaultConfig {FS.confThreadingMode = ThreadPerEvent}) $ \watchManager -> do
-                    stop <- FS.watchTree watchManager p (\e -> takeExtension (FS.eventPath e) `notElem` [".tmp", ".part"]) (void . runInBase . handleEvent pool ref)
-                    C.atomically $ C.modifyTVar' watchState (H.insert ref stop)
-                    forever $ threadDelay 1000000
-        )
-  stopWatching ref = FileSystemWatchServiceIOT $
-    ReaderT $ \(_pool, watchState) -> do
-      stoppers' <- liftIO $ C.atomically $ C.readTVar watchState
-      case H.lookup ref stoppers' of
-        Just stop -> liftIO stop
-        Nothing -> pure ()
+  startWatching ref p = do
+    (pool, watchState) <- ask
+    $(logInfo) $ "starting to watch path " <> p
+    liftBaseWith
+      ( \runInBase ->
+          void $
+            fork $
+              liftIO $
+                FS.withManagerConf (FS.defaultConfig {FS.confThreadingMode = ThreadPerWatch}) $ \watchManager -> do
+                  stop <- FS.watchTree watchManager p (\e -> takeExtension (FS.eventPath e) `notElem` [".tmp", ".part"]) (void . runInBase . handleEvent pool ref)
+                  STM.atomically $ STM.modifyTVar' watchState (H.insert ref stop)
+                  forever $ threadDelay 1000000
+      )
+  stopWatching ref = do
+    (_pool, watchState) <- ask
+    stoppers' <- liftIO $ STM.atomically $ STM.readTVar watchState
+    case H.lookup ref stoppers' of
+      Just stop -> liftIO stop
+      Nothing -> pure ()
 
 handleEvent ::
   ( Logging m,
