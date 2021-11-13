@@ -2,36 +2,34 @@
 
 module Melo.Library.Collection.Repo where
 
-import Basement.From
 import Control.Concurrent.Classy
-import qualified Control.Exception as E
 import Control.Exception.Safe
 import Control.Lens hiding (from)
 import Control.Monad
 import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
+import Data.Pool
 import qualified Data.Text as T
-import Database.Beam as B hiding (char, insert)
-import Database.Beam.Postgres as Pg
-import Database.Beam.Postgres.Full as Pg
+import Hasql.Connection
 import Melo.Common.NaturalSort
-import qualified Melo.Database.Model as DB
-import Melo.Database.Query
+import Melo.Database.Repo
+import Melo.Database.Repo.IO
 import Melo.Library.Collection.Types
 import Network.URI
+import Rel8
+  ( Name,
+    Result,
+    TableSchema (..),
+    Upsert (..),
+    in_,
+    lit,
+    (==.),
+  )
+import qualified Rel8
 
-tbl :: DatabaseEntity Postgres DB.MeloDb (TableEntity DB.CollectionT)
-tbl = DB.meloDb ^. #collection
-
-class Monad m => CollectionRepository m where
-  getAllCollections :: m [DB.Collection]
-  getCollections :: [DB.CollectionKey] -> m [DB.Collection]
-  getCollectionsByUri :: [URI] -> m [DB.Collection]
-  insertCollections :: [NewCollection] -> m [DB.Collection]
-  deleteCollections :: [DB.CollectionKey] -> m ()
-  deleteAllCollections :: m ()
-  updateCollections :: [UpdateCollection] -> m ()
+class Repository (CollectionTable Result) m => CollectionRepository m where
+  getByUri :: [URI] -> m [CollectionTable Result]
 
 instance
   {-# OVERLAPPABLE #-}
@@ -41,53 +39,95 @@ instance
   ) =>
   CollectionRepository (t m)
   where
-  getAllCollections = lift getAllCollections
-  getCollections = lift . getCollections
-  getCollectionsByUri = lift . getCollectionsByUri
-  insertCollections = lift . insertCollections
-  deleteCollections = lift . deleteCollections
-  deleteAllCollections = lift deleteAllCollections
-  updateCollections = lift . updateCollections
+  getByUri = lift . getByUri
 
 newtype CollectionRepositoryIOT m a = CollectionRepositoryIOT
-  { runCollectionRepositoryIOT :: ReaderT Connection m a
+  { runCollectionRepositoryIOT :: RepositoryIOT CollectionTable m a
   }
-  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadMask, MonadThrow, MonadTrans, MonadTransControl)
+  deriving newtype
+    ( Functor,
+      Applicative,
+      Monad,
+      MonadIO,
+      MonadBase b,
+      MonadBaseControl b,
+      MonadConc,
+      MonadCatch,
+      MonadMask,
+      MonadReader (RepositoryHandle CollectionTable),
+      MonadThrow,
+      MonadTrans,
+      MonadTransControl
+    )
+
+instance MonadIO m => Repository (CollectionTable Result) (CollectionRepositoryIOT m) where
+  getAll = sortByUri <$> CollectionRepositoryIOT getAll
+  getByKey = pure . sortByUri <=< CollectionRepositoryIOT . getByKey
+  insert = pure . sortByUri <=< CollectionRepositoryIOT . insert
+  insert' = CollectionRepositoryIOT . insert'
+  delete = CollectionRepositoryIOT . delete
+  update = pure . sortByUri <=< CollectionRepositoryIOT . update
+  update' = CollectionRepositoryIOT . update'
+
+sortByUri :: [CollectionTable Result] -> [CollectionTable Result]
+sortByUri = sortNaturalBy (^. #root_uri)
 
 instance MonadIO m => CollectionRepository (CollectionRepositoryIOT m) where
-  getAllCollections = CollectionRepositoryIOT $
-    ReaderT $ \conn ->
-      sortNaturalBy (^. #root_uri) <$> getAllIO conn tbl
-  getCollections ks = CollectionRepositoryIOT $
-    ReaderT $ \conn ->
-      getByKeysIO conn tbl ks
-  getCollectionsByUri [] = pure []
-  getCollectionsByUri fs = CollectionRepositoryIOT $
-    ReaderT $ \conn -> do
-      let q = filter_ (\t -> t ^. #root_uri `in_` fmap (val_ . T.pack . show) fs) (all_ tbl)
-      $(runPgDebugIO') conn (runSelectReturningList (select q)) <&> sortNaturalBy (^. #root_uri)
-  insertCollections [] = pure []
-  insertCollections ss = CollectionRepositoryIOT $
-    ReaderT $ \conn -> do
-      expr <- liftIO $ E.evaluate (insertExpressions $ fmap from ss)
-      let q =
-            Pg.insertReturning
-              tbl
-              expr
-              Pg.onConflictDefault
-              (Just id)
-      $(runPgDebugIO') conn (Pg.runPgInsertReturningList q) <&> sortNaturalBy (^. #root_uri)
-  deleteCollections ks = CollectionRepositoryIOT $
-    ReaderT $ \conn ->
-      deleteByKeysIO conn tbl ks
-  deleteAllCollections = CollectionRepositoryIOT $
-    ReaderT $ \conn ->
-      deleteAllIO conn tbl
-  updateCollections us = CollectionRepositoryIOT $
-    ReaderT $ \conn ->
-      forM_ us $ \u -> do
-        let q = save tbl u
-        $(runPgDebugIO') conn (runUpdate q)
+  getByUri [] = pure []
+  getByUri fs = do
+    RepositoryHandle {connSrc, tbl} <- ask
+    let q = Rel8.filter (\c -> (c ^. #root_uri) `in_` fmap (lit . T.pack . show) fs) =<< Rel8.each tbl
+    sortNaturalBy (^. #root_uri) <$> runSelect connSrc q
+
+collectionSchema :: TableSchema (CollectionTable Name)
+collectionSchema =
+  TableSchema
+    { name = "collection",
+      schema = Nothing,
+      columns =
+        CollectionTable
+          { id = "id",
+            root_uri = "root_uri",
+            name = "name",
+            watch = "watch",
+            kind = "kind"
+          }
+    }
+
+runCollectionRepositoryPooledIO :: Pool Connection -> CollectionRepositoryIOT m a -> m a
+runCollectionRepositoryPooledIO pool =
+  flip
+    runReaderT
+    RepositoryHandle
+      { connSrc = Pooled pool,
+        tbl = collectionSchema,
+        pk = (^. #id),
+        upsert =
+          Just
+            Upsert
+              { index = \c -> (c ^. #root_uri, c ^. #name),
+                set = const,
+                updateWhere = \new old -> new ^. #id ==. old ^. #id
+              }
+      }
+    . runRepositoryIOT
+    . runCollectionRepositoryIOT
 
 runCollectionRepositoryIO :: Connection -> CollectionRepositoryIOT m a -> m a
-runCollectionRepositoryIO conn = flip runReaderT conn . runCollectionRepositoryIOT
+runCollectionRepositoryIO conn =
+  flip
+    runReaderT
+    RepositoryHandle
+      { connSrc = Single conn,
+        tbl = collectionSchema,
+        pk = (^. #id),
+        upsert =
+          Just
+            Upsert
+              { index = \c -> (c ^. #root_uri, c ^. #name),
+                set = const,
+                updateWhere = \new old -> new ^. #id ==. old ^. #id
+              }
+      }
+    . runRepositoryIOT
+    . runCollectionRepositoryIOT

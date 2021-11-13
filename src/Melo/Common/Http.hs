@@ -10,7 +10,6 @@ module Melo.Common.Http
   )
 where
 
-import Basement.From
 import Control.Applicative
 import Control.Exception.Safe
 import Control.Monad.Except
@@ -26,6 +25,7 @@ import Melo.Common.Logging
 import Network.HTTP.Client
 import qualified Network.Wreq as Wr
 import qualified Network.Wreq.Session as WrS
+import Witch
 
 class Monad m => Http m where
   getWith :: Wr.Options -> Text -> m (Either HttpClientException (Response L.ByteString))

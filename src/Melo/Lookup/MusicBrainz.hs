@@ -190,6 +190,25 @@ class Monad m => MusicBrainzService m where
   getRelease :: MusicBrainzId -> m (Maybe Release)
   getReleaseGroup :: MusicBrainzId -> m (Maybe ReleaseGroup)
 
+instance
+  {-# OVERLAPPABLE #-}
+  ( Monad (t m),
+    MonadTrans t,
+    MusicBrainzService m
+  ) =>
+  MusicBrainzService (t m)
+  where
+  searchReleases = lift . searchReleases
+  searchReleaseGroups = lift . searchReleaseGroups
+  searchArtists = lift . searchArtists
+  searchRecordings = lift . searchRecordings
+  getArtist = lift . getArtist
+  getArtistReleaseGroups = lift . getArtistReleaseGroups
+  getArtistReleases = lift . getArtistReleases
+  getArtistRecordings = lift . getArtistRecordings
+  getRelease = lift . getRelease
+  getReleaseGroup = lift . getReleaseGroup
+
 getArtistFromMetadata ::
   ( MusicBrainzService m,
     Logging m

@@ -2,7 +2,6 @@
 
 module Melo.Library.Album.Service where
 
-import Basement.From
 import Control.Lens hiding (from, lens)
 import Control.Monad
 import Control.Monad.Identity
@@ -22,7 +21,7 @@ import Data.Traversable
 import GHC.Generics (Generic, Generic1)
 import Melo.Common.Effect
 import Melo.Common.Logging
-import qualified Melo.Database.Model as DB
+import Melo.Database.Repo
 import Melo.Format.Internal.Metadata
 import qualified Melo.Format.Mapping as M
 import Melo.Format.Metadata
@@ -30,6 +29,7 @@ import Melo.Library.Album.Repo
 import Melo.Library.Album.Types
 import Melo.Library.Source.Types
 import qualified Melo.Lookup.MusicBrainz as MB
+import Witch
 
 class Monad m => AlbumService m where
   importAlbums :: [Source] -> m [Album]
@@ -50,7 +50,7 @@ instance
   importAlbums ms = AlbumServiceIOT $ do
     mbReleases <- catMaybes <$> mapM (MB.getReleaseFromMetadata . (^. #metadata)) ms
     $(logDebugShow) mbReleases
-    albums <- insertAlbums (fmap from mbReleases) >>= getAlbums
+    albums <- insert (fmap from mbReleases) <&> fmap (^. #id) >>= getByKey
     pure $ fmap from albums
 
 runAlbumServiceIO :: AlbumServiceIOT m a -> m a

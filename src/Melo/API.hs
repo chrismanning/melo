@@ -13,13 +13,11 @@ import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
 import Data.Typeable
 import Data.UUID
-import Database.Beam.Postgres (Connection)
-import GHC.Generics
+import GHC.Generics hiding (from)
+import Hasql.Connection
 import Melo.Common.FileSystem
 import Melo.Common.Logging
 import Melo.Common.Metadata
-import qualified Melo.Database.Model as DB
-import Melo.Database.Transaction
 import Melo.Library.API
 import Melo.Library.Collection.FileSystem.Service
 import Melo.Library.Collection.FileSystem.WatchService
@@ -28,6 +26,7 @@ import Melo.Library.Collection.Service
 import qualified Melo.Library.Source.API as API
 import Melo.Library.Source.Repo
 import Melo.Library.Source.Service
+import Melo.Library.Source.Types (SourceRef (..))
 import Network.HTTP.Types.Status
 import Network.Wai.Middleware.Cors
 import System.FilePath (pathSeparator, takeDirectory, takeFileName)
@@ -63,24 +62,18 @@ gqlApiIO collectionWatchState pool rq = runStdoutLogging do
   $(logInfo) ("handling graphql request" :: T.Text)
   $(logDebug) $ "graphql request: " <> rq
   !rs <- runFileSystemIO $
-    runTransaction pool $
-      withTransaction $ \conn ->
-        runStdoutLogging $
-          runSavepoint conn $
-            runMetadataServiceIO $
-              runSourceRepositoryIO conn $
-                runFileSystemServiceIO $
-                  runFileSystemWatchServiceIO pool collectionWatchState $
-                    runCollectionRepositoryIO conn $
-                      runCollectionServiceIO pool $
-                        gqlApi rq
+    runMetadataServiceIO $
+      runSourceRepositoryPooledIO pool $
+        runFileSystemServiceIO pool $
+          runFileSystemWatchServiceIO pool collectionWatchState $
+            runCollectionRepositoryPooledIO pool $
+              runCollectionServiceIO pool $
+                gqlApi rq
   $(logInfo) ("finished handling graphql request" :: T.Text)
   pure rs
 
 type ResolverE m =
   ( MonadIO m,
-    Transaction m,
-    Savepoint m,
     Logging m,
     FileSystem m,
     SourceRepository m,
@@ -131,7 +124,7 @@ api collectionWatchState pool = do
     case fromASCIIBytes srcId of
       Nothing -> status badRequest400
       Just uuid -> do
-        getSourceFilePathIO pool (DB.SourceKey uuid) >>= \case
+        getSourceFilePathIO pool (SourceRef uuid) >>= \case
           Nothing -> do
             $(logWarnIO) $ "No local file found for source " <> show uuid
             status notFound404
@@ -145,7 +138,7 @@ api collectionWatchState pool = do
     case fromASCIIBytes srcId of
       Nothing -> status badRequest400
       Just uuid -> do
-        findCoverImageIO pool (DB.SourceKey uuid) >>= \case
+        findCoverImageIO pool (SourceRef uuid) >>= \case
           Nothing -> do
             $(logWarnIO) $ "No cover image found for source " <> srcId
             status notFound404
@@ -155,7 +148,7 @@ api collectionWatchState pool = do
             let fileName' = LT.pack $ takeFileName path
             setHeader "Content-Disposition" ("attachment; filename=\"" <> fileName' <> "\"")
 
-getSourceFilePathIO :: (MonadIO m, MonadBaseControl IO m) => Pool Connection -> DB.SourceKey -> m (Maybe FilePath)
+getSourceFilePathIO :: (MonadIO m, MonadBaseControl IO m) => Pool Connection -> SourceRef -> m (Maybe FilePath)
 getSourceFilePathIO pool k = withResource pool $ \conn ->
   liftIO $
     runStdoutLogging $
@@ -163,7 +156,7 @@ getSourceFilePathIO pool k = withResource pool $ \conn ->
         runSourceRepositoryIO conn $
           getSourceFilePath k
 
-findCoverImageIO :: (MonadIO m, MonadBaseControl IO m) => Pool Connection -> DB.SourceKey -> m (Maybe FilePath)
+findCoverImageIO :: (MonadIO m, MonadBaseControl IO m) => Pool Connection -> SourceRef -> m (Maybe FilePath)
 findCoverImageIO pool k = withResource pool $ \conn ->
   liftIO $
     runStdoutLogging $

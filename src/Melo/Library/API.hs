@@ -10,7 +10,8 @@ import Data.Kind
 import Data.Morpheus.Kind
 import Data.Morpheus.Types
 import Data.Text as T hiding (null)
-import Database.Beam hiding (C)
+import Data.Typeable
+import GHC.Generics hiding (from)
 import GHC.OverloadedLabels ()
 import Melo.Common.FileSystem
 import Melo.Common.Logging

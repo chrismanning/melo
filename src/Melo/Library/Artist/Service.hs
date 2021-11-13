@@ -2,17 +2,19 @@
 
 module Melo.Library.Artist.Service where
 
-import Basement.From
 import Control.Lens hiding (from, lens)
 import Data.Foldable
 import Data.Vector (fromList)
 import Melo.Common.Logging
+import Melo.Database.Repo
 import qualified Melo.Format.Mapping as M
 import Melo.Format.Metadata
 import Melo.Library.Artist.Staging.Repo
+import Melo.Library.Artist.Staging.Types
 import Melo.Library.Artist.Types
 import Melo.Library.Source.Types
 import qualified Melo.Lookup.MusicBrainz as MB
+import Witch
 
 importArtists ::
   ( MB.MusicBrainzService m,
@@ -24,7 +26,7 @@ importArtists ::
 importArtists ss = do
   mbArtists <- fold <$> mapM (MB.getArtistFromMetadata . (^. #metadata)) ss
   $(logDebugShow) mbArtists
-  artists <- insertStagedArtists (fmap from mbArtists) >>= getStagedArtists
+  artists <- insert (fmap from mbArtists) <&> fmap (^. #id) >>= getByKey
   pure $ fmap from artists
 
 -- TODO search Discogs (https://www.discogs.com/developers/#page:database)
@@ -35,7 +37,7 @@ importArtists ss = do
 --  ( Has ArtistStagingRepository sig m,
 --    Has ArtistRepository sig m,
 --    Has Logging sig m
---  ) => [DB.ArtistStageKey] -> m [DB.ArtistKey]
+--  ) => [StagedArtistRef] -> m [DB.ArtistKey]
 --
 --mergeArtists ::
 --  ( Has ArtistRepository sig m,

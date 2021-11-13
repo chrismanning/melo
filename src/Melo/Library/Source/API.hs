@@ -4,13 +4,13 @@
 
 module Melo.Library.Source.API where
 
-import Basement.From
 import Control.Applicative
 import Control.Lens hiding (from, lens, (|>))
 import Control.Monad
-import Data.Aeson as A
+import Data.Aeson as A hiding (Result)
 import Data.Coerce
 import Data.Default
+import Data.Either.Combinators (rightToMaybe)
 import Data.Foldable
 import Data.Generics.Labels ()
 import qualified Data.HashMap.Strict as H
@@ -21,15 +21,15 @@ import Data.Sequence ((|>))
 import qualified Data.Sequence as S
 import Data.Text (Text)
 import qualified Data.Text as T
+import Data.Typeable
 import Data.UUID (fromText, toText)
 import qualified Data.Vector as V
-import Database.Beam as B hiding (char, insert)
-import Database.Beam.Postgres (PgJSONB (..))
+import GHC.Generics hiding (from)
 import Melo.Common.FileSystem
 import Melo.Common.Logging
 import Melo.Common.Metadata
 import Melo.Common.Uri
-import qualified Melo.Database.Model as DB
+import Melo.Database.Repo
 import Melo.Format ()
 import qualified Melo.Format as F
 import qualified Melo.Format.Mapping as M
@@ -38,8 +38,9 @@ import Melo.GraphQL.Where
 import Melo.Library.Source.Repo
 import qualified Melo.Library.Source.Types as Ty
 import qualified Melo.Lookup.MusicBrainz as MB
-import Network.URI
+import Rel8 (JSONBEncoded(..), Result)
 import System.FilePath as P
+import Witch
 
 resolveSources ::
   (SourceRepository m, FileSystem m, WithOperation o) =>
@@ -49,22 +50,22 @@ resolveSources (SourceArgs (Just SourceWhere {..})) =
   case id of
     Just idExpr -> case idExpr of
       WhereEqExpr (EqExpr x) -> case fromText x of
-        Just uuid -> lift $ fmap from <$> getSources [DB.SourceKey uuid]
+        Just uuid -> lift $ fmap from <$> getByKey [Ty.SourceRef uuid]
         Nothing -> fail $ "invalid source id " <> show x
       WhereInExpr (InExpr x) -> case allJust (fmap fromText x) of
-        Just uuids -> lift $ fmap from <$> getSources (DB.SourceKey <$> uuids)
+        Just uuids -> lift $ fmap from <$> getByKey (Ty.SourceRef <$> uuids)
         Nothing -> fail $ "invalid source id in " <> show x
       _unknownWhere -> fail "invalid where clause for Source.id"
     Nothing -> case sourceUri of
       Just sourceUriExpr -> case sourceUriExpr of
         WhereEqExpr (EqExpr x) -> case parseURI (T.unpack x) of
-          Just uri -> lift $ fmap from <$> getSourcesByUri [uri]
+          Just uri -> lift $ fmap from <$> getByUri [uri]
           Nothing -> fail $ "invalid source uri " <> show x
         WhereInExpr (InExpr x) -> case allJust (fmap (parseURI . T.unpack) x) of
-          Just uris -> lift $ fmap from <$> getSourcesByUri uris
+          Just uris -> lift $ fmap from <$> getByUri uris
           Nothing -> fail $ "invalid source id in " <> show x
         _unknownWhere -> fail "invalid where clause for Source.sourceUri"
-      Nothing -> lift $ fmap (fmap from) getAllSources
+      Nothing -> lift $ fmap (fmap from) getAll
   where
     allJust :: [Maybe a] -> Maybe [a]
     allJust [] = Just []
@@ -72,16 +73,16 @@ resolveSources (SourceArgs (Just SourceWhere {..})) =
     allJust (Nothing : _) = Nothing
 resolveSources _ =
   lift $
-    fmap (fmap from) getAllSources
+    fmap (fmap from) getAll
 
 data Source m = Source
-  { id :: Text,
+  { id :: Ty.SourceRef,
     format :: Text,
     metadata :: Metadata,
     sourceName :: Text,
     sourceUri :: Text,
     downloadUri :: Text,
-    length :: m Float,
+    length :: m Double,
     coverImage :: m (Maybe Image)
   }
   deriving (Generic)
@@ -91,7 +92,7 @@ instance Typeable m => GQLType (Source m)
 instance (Applicative m, FileSystem m, WithOperation o) => From Ty.Source (Source (Resolver o e m)) where
   from s =
     Source
-      { id = toText $ s ^. #ref . coerced,
+      { id = s ^. #ref,
         format = "",
         metadata = from $ s ^. #metadata,
         sourceName = getSourceName (T.pack $ show $ s ^. #source),
@@ -116,20 +117,21 @@ instance (Applicative m, FileSystem m, WithOperation o) => From Ty.Source (Sourc
                       }
           Nothing -> error "unimplemented"
 
-instance (Applicative m, FileSystem m, WithOperation o) => From DB.Source (Source (Resolver o e m)) where
+instance (Applicative m, FileSystem m, WithOperation o) =>
+  From (Ty.SourceTable Result) (Source (Resolver o e m)) where
   from s =
     Source
-      { id = toText (s ^. #id),
+      { id = s ^. #id,
         format = s ^. #kind,
         metadata = from s,
         sourceName = getSourceName (s ^. #source_uri),
         sourceUri = s ^. #source_uri,
-        downloadUri = "/source/" <> toText (s ^. #id),
+        downloadUri = "/source/" <> toText (Ty.unSourceRef (s ^. #id)),
         length = pure 100,
         coverImage = lift $ coverImageImpl s
       }
     where
-      coverImageImpl :: DB.Source -> m (Maybe Image)
+      coverImageImpl :: Ty.SourceTable Result -> m (Maybe Image)
       coverImageImpl src = case parseURI $ T.unpack $ src ^. #source_uri of
         Just uri ->
           case uriToFilePath uri of
@@ -141,7 +143,7 @@ instance (Applicative m, FileSystem m, WithOperation o) => From DB.Source (Sourc
                     Just
                       Image
                         { fileName = T.pack $ takeFileName imgPath,
-                          downloadUri = "/source/" <> toText (src ^. #id) <> "/image"
+                          downloadUri = "/source/" <> toText (Ty.unSourceRef (src ^. #id)) <> "/image"
                         }
             Nothing -> error "unimplemented"
         Nothing -> pure Nothing
@@ -190,15 +192,15 @@ instance From F.Metadata Metadata where
         mappedTags = mapTags m
       }
 
-instance From DB.Source Metadata where
+instance From (Ty.SourceTable Result) Metadata where
   from s =
-    let s' :: Maybe Ty.Source = tryFrom s
-        m :: Maybe F.Metadata = fmap (^. #metadata) s'
-        PgJSONB (DB.SourceMetadata tags) = s ^. #metadata
-        format = maybe "" (^. #formatDesc) m
+    let s' = tryFrom @_ @Ty.Source s
+        m = fmap (^. #metadata) s'
+        JSONBEncoded (Ty.SourceMetadata tags) = s ^. #metadata
+        format = either (const "") (^. #formatDesc) m
      in Metadata
           { tags = V.toList tags,
-            mappedTags = maybe def mapTags m,
+            mappedTags = either (const def) mapTags m,
             formatId = s ^. #metadata_format,
             format = format
           }
@@ -299,7 +301,7 @@ resolveSourceGroups ::
     WithOperation o
   ) =>
   Resolver o e m [SourceGroup (Resolver o e m)]
-resolveSourceGroups = lift $ groupSources <$!> fmap (fmap from) getAllSources
+resolveSourceGroups = lift $ groupSources <$!> fmap (fmap from) getAll
 
 data SourceGroup m = SourceGroup
   { groupTags :: GroupTags,
@@ -369,7 +371,7 @@ groupSources = fmap trSrcGrp . toList . foldl' acc S.empty
                       Just
                         Image
                           { fileName = T.pack $ takeFileName imgPath,
-                            downloadUri = "/source/" <> (src ^. #id) <> "/image"
+                            downloadUri = "/source/" <> toText (Ty.unSourceRef (src ^. #id)) <> "/image"
                           }
           Nothing -> error "unimplemented"
       Nothing -> pure Nothing
@@ -439,7 +441,7 @@ groupMappedTags m =
     }
 
 data SourceUpdate = SourceUpdate
-  { id :: Text,
+  { id :: Ty.SourceRef,
     updateTags :: TagUpdate
   }
   deriving (Generic)
@@ -493,8 +495,8 @@ instance Monoid UpdatedSources where
       }
 
 data UpdateSourceResult
-  = UpdatedSource {id :: Text}
-  | FailedSourceUpdate {id :: Text, msg :: Text}
+  = UpdatedSource {id :: Ty.SourceRef}
+  | FailedSourceUpdate {id :: Ty.SourceRef, msg :: Text}
   deriving (Generic)
 
 instance GQLType UpdateSourceResult
@@ -514,12 +516,6 @@ updateSourcesImpl (UpdateSourcesArgs updates) = do
   where
     updateSource :: SourceUpdate' -> m UpdateSourceResult
     updateSource SourceUpdate' {..} =
-      case fromText id of
-        Nothing -> do
-          let msg = "invalid source id '" <> id <> "'; expected UUID"
-          $(logError) msg
-          pure $ FailedSourceUpdate {id, msg}
-        Just key ->
           case parseURI (T.unpack $ originalSource ^. #source_uri) >>= uriToFilePath of
             Just path -> do
               let metadataFileId = F.MetadataFileId $ originalSource ^. #kind
@@ -546,27 +542,26 @@ updateSourcesImpl (UpdateSourcesArgs updates) = do
                           let F.Tags tags = F.tags metadata
                           let updatedSource =
                                 originalSource
-                                  { DB.metadata = PgJSONB $ DB.SourceMetadata tags,
-                                    DB.metadata_format = coerce $ F.formatId metadata
+                                  { Ty.metadata = JSONBEncoded $ Ty.SourceMetadata tags,
+                                    Ty.metadata_format = coerce $ F.formatId metadata
                                   }
-                          updateSources [updatedSource]
+                          update [updatedSource]
                           pure
                             UpdatedSource
-                              { id = toText key
-                              }
+                              { id }
             Nothing -> do
               let msg = T.pack $ "invalid source id '" <> show id <> "'"
               $(logError) msg
               pure $ FailedSourceUpdate {id, msg}
     enrich :: [SourceUpdate] -> m [SourceUpdate']
     enrich us = do
-      let srcIds :: [DB.SourceKey] = DB.SourceKey <$> catMaybes (fromText <$> fmap (^. #id) us)
-      srcs <- getSources srcIds
-      let srcs' = H.fromList $ fmap (\src -> (toText $ src ^. #id, src)) srcs
+      let srcIds :: [Ty.SourceRef] = fmap (^. #id) us
+      srcs <- getByKey srcIds
+      let srcs' = H.fromList $ fmap (\src -> (src ^. #id, src)) srcs
       pure $
         mapMaybe
           ( \SourceUpdate {..} ->
-              SourceUpdate' id <$> tryFrom updateTags <*> H.lookup id srcs'
+              SourceUpdate' id <$> rightToMaybe (tryFrom updateTags) <*> H.lookup id srcs'
           )
           us
     resolveMetadata :: TagUpdateOp -> F.Metadata -> F.Metadata
@@ -595,9 +590,9 @@ updateSourcesImpl (UpdateSourcesArgs updates) = do
     resolveMetadata (SetTags ps) metadata = metadata {F.tags = F.Tags $ V.fromList $ ps <&> \(UpdatePair k v) -> (k, v)}
 
 data SourceUpdate' = SourceUpdate'
-  { id :: Text,
+  { id :: Ty.SourceRef,
     updateTags :: TagUpdateOp,
-    originalSource :: DB.Source
+    originalSource :: Ty.SourceTable Result
   }
   deriving (Generic)
 
@@ -606,6 +601,8 @@ data TagUpdateOp
   | SetTags [UpdatePair]
 
 instance TryFrom TagUpdate TagUpdateOp where
-  tryFrom TagUpdate {..} =
-    SetMappedTags <$> setMappedTags
-      <|> SetTags <$> setTags
+  tryFrom = maybeTryFrom impl
+    where
+      impl TagUpdate {..} =
+        SetMappedTags <$> setMappedTags
+          <|> SetTags <$> setTags

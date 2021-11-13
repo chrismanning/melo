@@ -1,8 +1,7 @@
 module Melo.Common.Uri
   ( fileUri,
     uriToFilePath,
-    parseURI,
-    URI,
+    module Network.URI,
   )
 where
 

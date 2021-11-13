@@ -1,19 +1,57 @@
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE StrictData #-}
 
 module Melo.Library.Artist.Types where
 
-import Basement.From
 import Control.Lens hiding (from, lens)
 import Country
+import Data.Hashable
+import Data.Morpheus.Types as M
+import Data.Morpheus.Kind
 import Data.Text (Text)
-import Database.Beam.Postgres (Postgres)
-import Database.Beam.Query
+import Data.UUID
 import GHC.Generics
-import qualified Melo.Database.Model as DB
+import Melo.Database.Repo
 import qualified Melo.Lookup.MusicBrainz as MB
+import Rel8
+import Witch
+
+data ArtistTable f = ArtistTable
+  { id :: Column f ArtistRef,
+    name :: Column f Text,
+    disambiguation :: Column f (Maybe Text),
+    short_bio :: Column f (Maybe Text),
+    bio :: Column f (Maybe Text),
+    country :: Column f (Maybe Text),
+    musicbrainz_id :: Column f (Maybe Text)
+  }
+  deriving (Generic, Rel8able)
+
+instance Entity (ArtistTable Result) where
+  type NewEntity (ArtistTable Result) = NewArtist
+  type PrimaryKey (ArtistTable Result) = ArtistRef
+
+newtype ArtistRef = ArtistRef UUID
+  deriving (Show, Eq, Ord, Generic)
+  deriving newtype (DBType, DBEq, Hashable)
+
+instance GQLType ArtistRef where
+  type KIND ArtistRef = SCALAR
+
+instance EncodeScalar ArtistRef where
+  encodeScalar (ArtistRef uuid) = M.String $ toText uuid
+
+instance DecodeScalar ArtistRef where
+  decodeScalar (M.String s) = case fromText s of
+    Nothing -> Left "ArtistRef must be UUID"
+    Just uuid -> Right $ ArtistRef uuid
+  decodeScalar _ = Left "ArtistRef must be a String"
+
+instance From ArtistRef UUID where
+  from (ArtistRef uuid) = uuid
 
 data Artist = Artist
-  { key :: DB.ArtistKey,
+  { key :: ArtistRef,
     artistIds :: [ArtistId],
     name :: Text,
     disambiguation :: Maybe Text,
@@ -35,28 +73,16 @@ data ArtistId
       }
   deriving (Show, Eq)
 
-instance From DB.Artist Artist where
+instance From (ArtistTable Result) Artist where
   from dbArtist =
     Artist
-      { key = DB.ArtistKey (dbArtist ^. #id),
+      { key = dbArtist ^. #id,
         artistIds = [],
         name = dbArtist ^. #name,
         disambiguation = dbArtist ^. #disambiguation,
         biography = dbArtist ^. #bio,
         shortBiography = dbArtist ^. #short_bio,
         country = dbArtist ^. #country >>= decodeAlphaTwo
-      }
-
-instance From NewArtist (DB.ArtistT (QExpr Postgres s)) where
-  from a =
-    DB.Artist
-      { id = default_,
-        name = val_ (a ^. #name),
-        disambiguation = val_ (a ^. #disambiguation),
-        country = val_ (alphaThreeLower <$> a ^. #country),
-        bio = val_ (a ^. #bio),
-        short_bio = val_ (a ^. #shortBio),
-        musicbrainz_id = nothing_
       }
 
 data NewArtist = NewArtist
@@ -68,6 +94,18 @@ data NewArtist = NewArtist
   }
   deriving (Generic, Eq, Ord, Show)
 
+instance From NewArtist (ArtistTable Expr) where
+  from a =
+    ArtistTable
+      { id = nullaryFunction "uuid_generate_v4",
+        name = lit (a ^. #name),
+        disambiguation = lit (a ^. #disambiguation),
+        country = lit (alphaThreeLower <$> a ^. #country),
+        bio = lit (a ^. #bio),
+        short_bio = lit (a ^. #shortBio),
+        musicbrainz_id = lit Nothing
+      }
+
 instance From MB.Artist NewArtist where
   from a =
     NewArtist
@@ -76,63 +114,6 @@ instance From MB.Artist NewArtist where
         country = a ^. #country >>= decodeAlphaTwo,
         bio = Nothing,
         shortBio = Nothing
-      }
-
-data StagedArtist = StagedArtist
-  { key :: DB.ArtistStageKey,
-    artistIds :: Maybe [ArtistId],
-    name :: Maybe Text,
-    disambiguation :: Maybe Text,
-    country :: Maybe Country,
-    biography :: Maybe Text,
-    shortBiography :: Maybe Text
-  }
-  deriving (Generic, Show)
-
-instance From DB.ArtistStage StagedArtist where
-  from dbArtist =
-    StagedArtist
-      { key = DB.ArtistStageKey (dbArtist ^. #id),
-        artistIds = Nothing,
-        name = Just (dbArtist ^. #name),
-        disambiguation = dbArtist ^. #disambiguation,
-        biography = dbArtist ^. #bio,
-        shortBiography = dbArtist ^. #short_bio,
-        country = dbArtist ^. #country >>= decodeAlphaTwo
-      }
-
-data NewStagedArtist = NewStagedArtist
-  { name :: Text,
-    country :: Maybe Country,
-    disambiguation :: Maybe Text,
-    bio :: Maybe Text,
-    shortBio :: Maybe Text
-  }
-  deriving (Generic, Eq, Ord, Show)
-
-instance From MB.Artist NewStagedArtist where
-  from a =
-    NewStagedArtist
-      { name = a ^. #name,
-        disambiguation = a ^. #disambiguation,
-        country = a ^. #country >>= decodeAlphaTwo,
-        bio = Nothing,
-        shortBio = Nothing
-      }
-
-instance From NewStagedArtist (DB.ArtistStageT (QExpr Postgres s)) where
-  from a =
-    DB.ArtistStage
-      { id = default_,
-        name = val_ (a ^. #name),
-        disambiguation = val_ (a ^. #disambiguation),
-        country = val_ (alphaThreeLower <$> a ^. #country),
-        bio = val_ (a ^. #bio),
-        short_bio = val_ (a ^. #shortBio),
-        ref_artist_id = nothing_,
-        ref_album_id = nothing_,
-        ref_track_id = nothing_,
-        musicbrainz_id = nothing_
       }
 
 data Reviewed a

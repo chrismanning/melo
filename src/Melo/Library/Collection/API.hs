@@ -4,7 +4,6 @@
 
 module Melo.Library.Collection.API where
 
-import Basement.From
 import Control.Lens hiding (from, lens, (|>))
 import Data.Generics.Labels ()
 import Data.Kind
@@ -12,20 +11,23 @@ import Data.Morpheus.Kind
 import Data.Morpheus.Types
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.UUID (fromText, toText)
-import Database.Beam as B hiding (char, insert)
+import Data.Typeable
+import Data.UUID (fromText)
+import GHC.Generics hiding (from)
 import Melo.Common.FileSystem
 import Melo.Common.Logging
-import qualified Melo.Database.Model as DB
+import Melo.Database.Repo as Repo
 import Melo.Format ()
 import Melo.Format.Metadata ()
 import Melo.GraphQL.Where
 import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Service
-import Melo.Library.Collection.Types
+import qualified Melo.Library.Collection.Types as Ty
 import Melo.Library.Source.API as SrcApi
 import qualified Melo.Library.Source.Repo as SrcRepo
 import Network.URI
+import Rel8 (Result)
+import Witch
 
 resolveCollections ::
   ( CollectionRepository m,
@@ -38,22 +40,22 @@ resolveCollections (CollectionsArgs (Just CollectionWhere {..})) =
   case id of
     Just idExpr -> case idExpr of
       WhereEqExpr (EqExpr x) -> case fromText x of
-        Just uuid -> lift $ fmap from <$> getCollections [DB.CollectionKey uuid]
+        Just uuid -> lift $ fmap from <$> getByKey @Ty.Collection [Ty.CollectionRef uuid]
         Nothing -> fail $ "invalid collection id " <> show x
       WhereInExpr (InExpr x) -> case allJust (fmap fromText x) of
-        Just uuids -> lift $ fmap from <$> getCollections (DB.CollectionKey <$> uuids)
+        Just uuids -> lift $ fmap from <$> getByKey @Ty.Collection (Ty.CollectionRef <$> uuids)
         Nothing -> fail $ "invalid collection id in " <> show x
       _unknownWhere -> fail "invalid where clause for Collection.id"
     Nothing -> case rootUri of
       Just rootUriExpr -> case rootUriExpr of
         WhereEqExpr (EqExpr x) -> case parseURI (T.unpack x) of
-          Just uri -> lift $ fmap from <$> getCollectionsByUri [uri]
+          Just uri -> lift $ fmap from <$> getByUri [uri]
           Nothing -> fail $ "invalid collection uri " <> show x
         WhereInExpr (InExpr x) -> case allJust (fmap (parseURI . T.unpack) x) of
-          Just uris -> lift $ fmap from <$> getCollectionsByUri uris
+          Just uris -> lift $ fmap from <$> getByUri uris
           Nothing -> fail $ "invalid collection id in " <> show x
         _unknownWhere -> fail "invalid where clause for Collection.rootUri"
-      Nothing -> lift $ fmap (fmap from) getAllCollections
+      Nothing -> lift $ fmap (fmap from) $ getAll @Ty.Collection
   where
     allJust :: [Maybe a] -> Maybe [a]
     allJust [] = Just []
@@ -61,10 +63,10 @@ resolveCollections (CollectionsArgs (Just CollectionWhere {..})) =
     allJust (Nothing : _) = Nothing
 resolveCollections _ =
   lift $
-    fmap (fmap from) getAllCollections
+    fmap (fmap from) $ getAll @Ty.Collection
 
 data Collection m = Collection
-  { id :: Text,
+  { id :: Ty.CollectionRef,
     rootUri :: Text,
     name :: Text,
     watch :: Bool,
@@ -95,11 +97,11 @@ instance
     FileSystem m,
     WithOperation o
   ) =>
-  From DB.Collection (Collection (Resolver o e m))
+  From Ty.Collection (Collection (Resolver o e m))
   where
   from s =
     Collection
-      { id = toText (s ^. #id),
+      { id = s ^. #id,
         name = s ^. #name,
         rootUri = s ^. #root_uri,
         watch = s ^. #watch,
@@ -109,7 +111,7 @@ instance
       }
 
 data LocalFileCollection m = LocalFileCollection
-  { id :: Text,
+  { id :: Ty.CollectionRef,
     rootUri :: Text,
     name :: Text,
     watch :: Bool,
@@ -164,7 +166,7 @@ collectionMutation =
         }
 
 data AddCollectionArgs = AddCollectionArgs
-  { newCollection :: NewCollection
+  { newCollection :: Ty.NewCollection
   }
   deriving (Generic)
 
@@ -181,8 +183,8 @@ addCollectionImpl ::
   AddCollectionArgs ->
   ResolverM e m (Collection (Resolver MUTATION e m))
 addCollectionImpl AddCollectionArgs {..} = do
-  CollectionRef ref <- lift $ addCollection newCollection
-  cs <- lift $ getCollections [DB.CollectionKey ref]
+  ref <- lift $ addCollection newCollection
+  cs <- lift $ getByKey @Ty.Collection [ref]
   let cs' = from <$> cs
   case cs' of
     (c : _) -> pure c
@@ -202,10 +204,12 @@ deleteCollectionImpl ::
   ResolverM e m ()
 deleteCollectionImpl DeleteCollectionArgs {..} =
   case fromText id of
-    Just uuid -> lift $ deleteCollections [DB.CollectionKey uuid]
+    Just uuid -> lift $ Repo.delete [Ty.CollectionRef uuid]
     Nothing -> lift $ $(logWarn) $ "invalid UUID " <> id
 
 deleteAllCollectionsImpl ::
   (CollectionRepository m) =>
   ResolverM e m ()
-deleteAllCollectionsImpl = lift deleteAllCollections
+deleteAllCollectionsImpl = lift do
+  collections <- getAll
+  Repo.delete (fmap (^. #id) collections)

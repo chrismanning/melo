@@ -31,9 +31,6 @@ library:
   - attoparsec
   - authenticate-oauth
   - barbies
-  - basement
-  - beam-core
-  - beam-postgres
   - binary
   - binary-bits
   - bytestring
@@ -41,10 +38,6 @@ library:
   - clock
   - concurrency
   - conduit
-  - conduit-audio
-  - conduit-audio-lame
-  - conduit-audio-samplerate
-  - conduit-audio-sndfile
   - containers
   - control-bool
   - country
@@ -65,6 +58,8 @@ library:
   - generic-lens
   - hashable
   - hashtables
+  - hasql
+  - hasql-transaction
   - http-client
   - http-client-tls
   - http-types
@@ -72,6 +67,7 @@ library:
   - lens
   - lifted-base
   - log-warper
+  - memory
   - monad-control
   - monad-logger
   - morpheus-graphql
@@ -84,11 +80,15 @@ library:
   - network-uri
   - network-uri-json
   - newtype-generics
+  - opaleye
   - path
   - path-io
-  - postgresql-simple
+  - postgresql-binary
+  - product-profunctors
+  - profunctors
   - random
   - range
+  - rel8
   - resource-pool
   - safe-exceptions
   - scotty
@@ -100,18 +100,20 @@ library:
   - tagged
   - template-haskell
   - text
-  - text-icu
+#  - text-icu
   - time
   - token-limiter
   - transformers
   - transformers-base
   - unordered-containers
+  - utf8-string
   - uuid
   - vector
   - wai
   - wai-cors
   - wai-extra
   - warp
+  - witch
   - wreq
 
 executables:
@@ -139,29 +141,36 @@ tests:
     - aeson
     - attoparsec
     - base16-bytestring
-    - beam-core
-    - beam-postgres
     - binary
     - bytestring
+    - concurrency
     - conduit
     - containers
     - generic-lens
+    - hashable
     - hspec
     - hspec-expectations-lifted
     - lens
+    - monad-control
+    - monad-mock
     - mtl
-    - postgresql-simple
     - raw-strings-qq
+    - rel8
     - resource-pool
+    - safe-exceptions
     - template-haskell
     - temporary
     - text
+    - transformers
+    - transformers-base
     - unordered-containers
+    - uuid
     - vector
+    - witch
     - wreq
 
 ghc-options:
-- -O2
+- -O0
 - -Wall
 - -Wcompat
 - -fno-warn-name-shadowing

@@ -47,19 +47,19 @@ library:
     - unordered-containers
     - vector
 
-executables:
-  melo-detect:
-    source-dirs: app/detect
-    main: Main.hs
-    dependencies:
-      - melo-format
-      - extra
-      - generic-lens
-      - microlens
-      - optparse-applicative
-      - text
-      - time
-      - unordered-containers
+#executables:
+#  melo-detect:
+#    source-dirs: app/detect
+#    main: Main.hs
+#    dependencies:
+#      - melo-format
+#      - extra
+#      - generic-lens
+#      - microlens
+#      - optparse-applicative
+#      - text
+#      - time
+#      - unordered-containers
 
 tests:
   melo-format-test:

@@ -2,68 +2,59 @@
 
 module Melo.Library.Album.Repo where
 
-import Basement.From
-import Control.Lens ((^.))
+import Control.Concurrent.Classy
+import Control.Exception.Safe
+import Control.Lens hiding (from)
+import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
 import Data.Containers.ListUtils (nubOrd)
 import Data.Text (Text)
-import Database.Beam
-import Database.Beam.Postgres as Pg
-import Database.Beam.Postgres.Full as Pg
-import qualified Melo.Database.Model as DB
-import Melo.Database.Query
+import Hasql.Connection
+import Melo.Database.Repo
+import Melo.Database.Repo.IO
 import Melo.Library.Album.Types
+import Melo.Library.Artist.Types
+import Melo.Library.Genre.Types
+import Melo.Library.Track.Types
+import Rel8
+import Witch
 
-class Monad m => AlbumRepository m where
-  getAllAlbums :: m [DB.Album]
-  getAlbums :: [DB.AlbumKey] -> m [DB.Album]
-  getAlbumGenres :: DB.AlbumKey -> m [DB.Genre]
-  getAlbumArtists :: DB.AlbumKey -> m [DB.Artist]
-  getAlbumTracks :: DB.AlbumKey -> m [DB.Track]
-  searchAlbums :: Text -> m [DB.Album]
-  insertAlbums :: [NewAlbum] -> m [DB.AlbumKey]
-  deleteAlbums :: [DB.AlbumKey] -> m ()
+class Repository (AlbumTable Result) m => AlbumRepository m where
+  getAlbumGenres :: AlbumRef -> m [Genre]
+  getAlbumArtists :: AlbumRef -> m [Artist]
+  getAlbumTracks :: AlbumRef -> m [Track]
+  searchAlbums :: Text -> m [Album]
 
 newtype AlbumRepositoryIOT m a = AlbumRepositoryIOT
-  { runAlbumRepositoryIOT :: ReaderT Connection m a
+  { runAlbumRepositoryIOT :: RepositoryIOT AlbumTable m a
   }
-  deriving newtype (Applicative, Functor, Monad, MonadIO, MonadTrans, MonadTransControl)
-
-tbl :: DatabaseEntity Postgres DB.MeloDb (TableEntity DB.AlbumT)
-tbl = DB.meloDb ^. #album
+  deriving newtype
+    ( Functor,
+      Applicative,
+      Monad,
+      MonadIO,
+      MonadBase b,
+      MonadBaseControl b,
+      MonadConc,
+      MonadCatch,
+      MonadMask,
+      MonadReader (RepositoryHandle AlbumTable),
+      MonadThrow,
+      MonadTrans,
+      MonadTransControl,
+      Repository (AlbumTable Result)
+    )
 
 instance
   ( MonadIO m
   ) =>
   AlbumRepository (AlbumRepositoryIOT m)
   where
-  getAllAlbums = AlbumRepositoryIOT $
-    ReaderT $ \conn ->
-      getAllIO conn tbl
-  getAlbums ks = AlbumRepositoryIOT $
-    ReaderT $ \conn ->
-      getByKeysIO conn tbl ks
   getAlbumGenres k = error "unimplemented"
   getAlbumArtists k = error "unimplemented"
   getAlbumTracks k = error "unimplemented"
-  deleteAlbums ks = AlbumRepositoryIOT $
-    ReaderT $ \conn ->
-      deleteByKeysIO conn tbl ks
   searchAlbums k = error "unimplemented"
-  insertAlbums as' = AlbumRepositoryIOT $
-    ReaderT $ \conn -> do
-      let !as = nubOrd as'
-      let q =
-            runPgInsertReturningList $
-              insertReturning
-                (DB.meloDb ^. #album)
-                ( insertExpressions
-                    (fmap from as)
-                )
-                Pg.onConflictDefault
-                (Just primaryKey)
-      $(runPgDebugIO') conn q
 
-runAlbumRepositoryIO :: Connection -> AlbumRepositoryIOT m a -> m a
-runAlbumRepositoryIO conn = flip runReaderT conn . runAlbumRepositoryIOT
+--runAlbumRepositoryIO :: Connection -> AlbumRepositoryIOT m a -> m a
+--runAlbumRepositoryIO conn = flip runReaderT conn . runAlbumRepositoryIOT

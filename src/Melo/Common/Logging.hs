@@ -27,7 +27,6 @@ module Melo.Common.Logging
   )
 where
 
-import Basement.From
 import Control.Concurrent.Classy
 import Control.Exception.Safe
 import Control.Monad.Base
@@ -43,8 +42,9 @@ import qualified Data.Text.Lazy as LT
 import Data.Time.Format
 import Language.Haskell.TH.Syntax (Exp, Loc (..), Q, liftString, qLocation)
 import qualified Language.Haskell.TH.Syntax as TH (Lift (lift))
-import qualified System.Wlog as Wlog
 import Prelude hiding (log)
+import qualified System.Wlog as Wlog
+import Witch
 
 class Monad m => Logging m where
   log :: From s LogMessage => Wlog.LoggerName -> Wlog.Severity -> s -> m ()
@@ -84,6 +84,11 @@ newtype LoggingIOT m a = LoggingIOT
   }
   deriving newtype (Applicative, Functor, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadMask, MonadThrow)
   deriving (MonadTrans, MonadTransControl) via IdentityT
+
+instance Logging IO where
+  log ln severity msg = do
+    let LogMessage msg' = from msg
+    Wlog.logM ln severity msg'
 
 instance
   (MonadIO m) =>

@@ -3,93 +3,119 @@
 
 module Melo.Library.Track.Repo where
 
+import Control.Concurrent.Classy
+import Control.Exception.Safe
 import Control.Lens ((^.))
+import Control.Monad.Base
 import Control.Monad.Reader
+import Control.Monad.Trans.Control
 import Data.Containers.ListUtils (nubOrd)
+import Data.Hashable
 import Data.Int (Int16)
+import Data.Pool
 import Data.Text (Text)
 import Data.Time (NominalDiffTime)
-import Database.Beam
-import Database.Beam.Postgres
-import Database.Beam.Postgres.Full
-import qualified Melo.Database.Model as DB
-import Melo.Database.Query
+import Data.UUID
+import Hasql.Connection
+import Melo.Database.Repo
+import Melo.Database.Repo.IO
+import Melo.Library.Album.Types
+import Melo.Library.Artist.Types
+import Melo.Library.Genre.Types
+import Melo.Library.Source.Types
+import Melo.Library.Track.Types
+import Rel8
+import Witch
 
-data NewTrack = NewTrack
-  { title :: Text,
-    trackNumber :: Maybe Int16,
-    discNumber :: Maybe Int16,
-    comment :: Maybe Text,
-    sourceId :: DB.SourceKey,
-    albumId :: DB.AlbumKey,
-    length :: Maybe NominalDiffTime
-  }
-  deriving (Generic, Eq, Ord, Show)
-
-class Monad m => TrackRepository m where
-  getAllTracks :: m [DB.Track]
-  getTracks :: [DB.TrackKey] -> m [DB.Track]
-  getTrackSource :: DB.TrackKey -> m DB.Source
-  getTrackArtists :: DB.TrackKey -> m [DB.Artist]
-  getTrackAlbum :: DB.TrackKey -> m DB.Album
-  getTrackGenres :: DB.TrackKey -> m [DB.Genre]
-  searchTracks :: Text -> m [DB.Track]
-  insertTracks :: [NewTrack] -> m [DB.TrackKey]
-  deleteTracks :: [DB.TrackKey] -> m ()
+class Repository (TrackTable Result) m => TrackRepository m where
+  getTrackSource :: UUID -> m Source
+  getTrackArtists :: UUID -> m [Artist]
+  getTrackAlbum :: UUID -> m Album
+  getTrackGenres :: UUID -> m [Genre]
+  searchTracks :: Text -> m [Track]
 
 newtype TrackRepositoryIOT m a = TrackRepositoryIOT
-  { runTrackRepositoryIOT :: ReaderT Connection m a
+  { runTrackRepositoryIOT :: RepositoryIOT TrackTable m a
   }
-  deriving newtype (Applicative, Functor, Monad)
-
-tbl :: DatabaseEntity Postgres DB.MeloDb (TableEntity DB.TrackT)
-tbl = DB.meloDb ^. #track
+  deriving newtype
+    ( Functor,
+      Applicative,
+      Monad,
+      MonadIO,
+      MonadBase b,
+      MonadBaseControl b,
+      MonadConc,
+      MonadCatch,
+      MonadMask,
+      MonadReader (RepositoryHandle TrackTable),
+      MonadThrow,
+      MonadTrans,
+      MonadTransControl,
+      Repository (TrackTable Result)
+    )
 
 instance
   ( MonadIO m
   ) =>
   TrackRepository (TrackRepositoryIOT m)
   where
-  getAllTracks = TrackRepositoryIOT $
-    ReaderT $ \conn ->
-      getAllIO conn tbl
-  getTracks ks = TrackRepositoryIOT $
-    ReaderT $ \conn ->
-      getByKeysIO conn tbl ks
   getTrackSource k = error "unimplemented"
   getTrackArtists k = error "unimplemented"
   getTrackAlbum k = error "unimplemented"
   getTrackGenres k = error "unimplemented"
-  deleteTracks ks = TrackRepositoryIOT $
-    ReaderT $ \conn ->
-      deleteByKeysIO conn tbl ks
   searchTracks t = error "unimplemented"
-  insertTracks ts' = TrackRepositoryIOT $
-    ReaderT $ \conn -> do
-      let !ts = nubOrd ts'
-      let q =
-            runPgInsertReturningList $
-              insertReturning
-                tbl
-                ( insertExpressions
-                    (fmap newTrack ts)
-                )
-                onConflictDefault
-                (Just primaryKey)
-      $(runPgDebugIO') conn q
 
-newTrack :: NewTrack -> DB.TrackT (QExpr Postgres s)
-newTrack t =
-  DB.Track
-    { id = default_,
-      title = val_ $ t ^. #title,
-      track_number = val_ $ t ^. #trackNumber,
-      comment = val_ $ t ^. #comment,
-      album_id = val_ $ t ^. #albumId,
-      disc_number = val_ $ t ^. #discNumber,
-      source_id = val_ $ t ^. #sourceId,
-      length = fromMaybe_ (val_ (DB.Interval 0)) (val_ (DB.Interval <$> t ^. #length))
+trackSchema :: TableSchema (TrackTable Name)
+trackSchema =
+  TableSchema
+    { name = "track",
+      schema = Nothing,
+      columns =
+        TrackTable
+          { id = "id",
+            title = "title",
+            album_id = "album_id",
+            track_number = "track_number",
+            disc_number = "disc_number",
+            comment = "comment",
+            source_id = "source_id"
+          }
     }
 
+runTrackRepositoryPooledIO :: Pool Connection -> TrackRepositoryIOT m a -> m a
+runTrackRepositoryPooledIO pool =
+  flip
+    runReaderT
+    RepositoryHandle
+      { connSrc = Pooled pool,
+        tbl = trackSchema,
+        pk = (^. #id),
+        upsert =
+          Just
+            Upsert
+              { index = (^. #id),
+                set = const,
+                updateWhere = \new old -> new ^. #id ==. old ^. #id
+              }
+      }
+    . runRepositoryIOT
+    . runTrackRepositoryIOT
+
 runTrackRepositoryIO :: Connection -> TrackRepositoryIOT m a -> m a
-runTrackRepositoryIO conn = flip runReaderT conn . runTrackRepositoryIOT
+runTrackRepositoryIO conn =
+  flip
+    runReaderT
+    RepositoryHandle
+      { connSrc = Single conn,
+        tbl = trackSchema,
+        pk = (^. #id),
+        upsert =
+          Just
+            Upsert
+              { index = (^. #id),
+                set = const,
+                updateWhere = \new old -> new ^. #id ==. old ^. #id
+              }
+      }
+    . runRepositoryIOT
+    . runTrackRepositoryIOT

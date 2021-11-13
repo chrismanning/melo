@@ -1,27 +1,64 @@
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE StrictData #-}
 
 module Melo.Library.Album.Types where
 
-import Basement.From
 import Control.Lens hiding (from, lens)
+import Data.Morpheus.Kind
+import Data.Morpheus.Types as M
+import Data.Hashable
 import Data.Text (Text)
-import Data.Time (NominalDiffTime)
-import Database.Beam.Postgres (Postgres)
-import Database.Beam.Query
+import Data.Time
+import Data.UUID
 import GHC.Generics
-import qualified Melo.Database.Model as DB
+import Melo.Database.Repo
 import qualified Melo.Lookup.MusicBrainz as MB
+import Rel8
+import Witch
+
+data AlbumTable f = AlbumTable
+  { id :: Column f AlbumRef,
+    title :: Column f Text,
+    comment :: Column f (Maybe Text),
+    year_released :: Column f (Maybe Text),
+    length :: Column f CalendarDiffTime,
+    musicbrainz_id :: Column f (Maybe Text)
+  }
+  deriving (Generic, Rel8able)
+
+instance Entity (AlbumTable Result) where
+  type NewEntity (AlbumTable Result) = NewAlbum
+  type PrimaryKey (AlbumTable Result) = AlbumRef
+
+newtype AlbumRef = AlbumRef UUID
+  deriving (Show, Eq, Ord, Generic)
+  deriving newtype (DBType, DBEq, Hashable)
+
+instance GQLType AlbumRef where
+  type KIND AlbumRef = SCALAR
+
+instance EncodeScalar AlbumRef where
+  encodeScalar (AlbumRef uuid) = M.String $ toText uuid
+
+instance DecodeScalar AlbumRef where
+  decodeScalar (M.String s) = case fromText s of
+    Nothing -> Left "AlbumRef must be UUID"
+    Just uuid -> Right $ AlbumRef uuid
+  decodeScalar _ = Left "AlbumRef must be a String"
+
+instance From AlbumRef UUID where
+  from (AlbumRef uuid) = uuid
 
 data Album = Album
-  { dbId :: DB.AlbumKey,
+  { dbId :: AlbumRef,
     title :: Text
   }
   deriving (Generic)
 
-instance From DB.Album Album where
+instance From (AlbumTable Result) Album where
   from dbAlbum =
     Album
-      { dbId = DB.AlbumKey (dbAlbum ^. #id),
+      { dbId = dbAlbum ^. #id,
         title = dbAlbum ^. #title
       }
 
@@ -42,13 +79,13 @@ instance From MB.Release NewAlbum where
         length = 0
       }
 
-instance From NewAlbum (DB.AlbumT (QExpr Postgres s)) where
+instance From NewAlbum (AlbumTable Expr) where
   from a =
-    DB.Album
-      { id = default_,
-        title = val_ (a ^. #title),
-        comment = nothing_,
-        year_released = val_ (a ^. #yearReleased),
-        length = val_ (DB.Interval $ a ^. #length),
-        musicbrainz_id = nothing_
+    AlbumTable
+      { id = nullaryFunction "uuid_generate_v4",
+        title = lit (a ^. #title),
+        comment = lit Nothing,
+        year_released = lit (a ^. #yearReleased),
+        length = lit (calendarTimeTime $ a ^. #length),
+        musicbrainz_id = lit Nothing
       }

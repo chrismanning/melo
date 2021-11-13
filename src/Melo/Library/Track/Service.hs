@@ -3,7 +3,6 @@
 
 module Melo.Library.Track.Service where
 
-import Basement.From
 import Control.Lens hiding (from, lens)
 import Control.Monad
 import Control.Monad.Identity
@@ -21,34 +20,27 @@ import Data.Time
 import Data.Traversable
 import Data.Vector ((!?))
 import qualified Data.Vector as V
-import Database.Beam as B hiding (char, insert)
-import Database.Beam.Backend.SQL.BeamExtensions as B
-import Database.Beam.Postgres as Pg
-import Database.Beam.Postgres.Full as Pg
+import GHC.Generics hiding (from)
 import Melo.Common.Effect
 import Melo.Common.Logging
 import Melo.Common.Metadata
-import qualified Melo.Database.Model as DB
-import Melo.Database.Query
+import Melo.Database.Repo
 import Melo.Format.Info
 import Melo.Format.Internal.Metadata
 import qualified Melo.Format.Mapping as M
 import Melo.Format.Metadata (TagLens)
 import Melo.Library.Album.Repo
 import Melo.Library.Album.Service
+import Melo.Library.Album.Types
 import Melo.Library.Artist.Repo
 import Melo.Library.Artist.Service
+import Melo.Library.Artist.Types
 import Melo.Library.Source.Types
 import Melo.Library.Track.Repo
+import Melo.Library.Track.Types
 import Network.URI
 import System.Directory
-
-data Track = Track
-  {
-  }
-
-instance From DB.Track Track where
-  from = error "unimplemented"
+import Witch
 
 class Monad m => TrackService m where
   importTracks :: [Source] -> m [Track]
@@ -70,29 +62,29 @@ instance
   where
   importTracks mss = TrackServiceIOT $ do
     let ts = fmap newTracks mss
-    tracks <- insertTracks ts >>= getTracks
+    tracks <- insert ts <&> fmap (^. #id) >>= getByKey
     pure (fmap from tracks)
 
 newTracks :: Source -> NewTrack
 newTracks ms = error "unimplemented"
 
---newTracks :: [(DB.TrackSourceKey, MetadataId, Text)] -> [NewTrackSource] -> [NewTrack]
+--newTracks :: [(TrackSourceRef, MetadataId, Text)] -> [NewTrackSource] -> [NewTrack]
 --newTracks ks tss = let srcMetadata = H.fromList $ fmap (\(k, mid, s) -> (s, (mid, k))) ks in
 --  mapMaybe (metadataTracks srcMetadata) tss
 --
---metadataTracks :: H.HashMap Text (MetadataId, DB.TrackSourceKey) -> NewTrackSource -> Maybe NewTrack
+--metadataTracks :: H.HashMap Text (MetadataId, TrackSourceRef) -> NewTrackSource -> Maybe NewTrack
 --metadataTracks srcMetadata ts = do
 --  let src = getSource ts
 --  (metadataId, tsk) <- H.lookup src srcMetadata
 --  m <- getMetadata metadataId ts
 --  metadataTrack m tsk _ak (getInfo ts) (T.unpack src)
 --
---fileTracks :: (Monad m) => MetadataFile -> DB.TrackSourceKey -> m [NewTrack]
+--fileTracks :: (Monad m) => MetadataFile -> TrackSourceRef -> m [NewTrack]
 --fileTracks f k = case chooseMetadata (H.elems $ f ^. #metadata) of
 --  Nothing -> pure []
 --  Just metadata -> pure $ catMaybes [metadataTrack metadata k (f ^. #audioInfo) (f ^. #filePath)]
 
-metadataTrack :: Metadata -> DB.SourceKey -> DB.AlbumKey -> Info -> FilePath -> NewTrack
+metadataTrack :: Metadata -> SourceRef -> AlbumRef -> Info -> FilePath -> NewTrack
 metadataTrack Metadata {tags, lens} sk ak i p = do
   let trackTitle = fromMaybe "" (tags ^? lens M.trackTitle . _head)
   let trackNumber = case tags ^? lens M.trackNumber . _head of

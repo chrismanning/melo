@@ -1,6 +1,5 @@
-{-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE StrictData #-}
-{-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Library.Source.Types
   ( NewImportSource (..),
@@ -8,30 +7,151 @@ module Melo.Library.Source.Types
     NewSource (..),
     UpdateSource,
     AudioRange (..),
-    SourceRef,
+    SourceRef (..),
     Source (..),
     ImportStats (..),
+    SourceTable (..),
+    SourceMetadata (..),
   )
 where
 
-import Basement.From
-import Control.Lens hiding ((.=))
+import Control.Lens hiding ((.=), from)
+import Data.Aeson hiding (Result)
 import Data.Coerce
+import Data.Either.Combinators
+import Data.Generics.Labels
+import Data.Hashable
 import qualified Data.HashMap.Strict as H
 import Data.Int
 import Data.Maybe
+import Data.Morpheus.Kind
+import Data.Morpheus.Types as M
 import Data.Range as R
 import Data.Text (Text)
 import qualified Data.Text as T
-import Database.Beam
-import Database.Beam.Postgres as PgB
+import Data.Time.LocalTime
+import Data.UUID
+import Data.UUID.V4
+import qualified Data.Vector as V
+import Data.Vector (Vector (..))
+import GHC.Generics hiding (from)
+import GHC.OverloadedLabels
 import Melo.Common.Metadata
+import Melo.Format.Internal.Metadata
 import Melo.Common.Uri
-import qualified Melo.Database.Model as DB
+import Melo.Database.Repo (Entity (..))
 import Melo.Format.Info
 import Melo.Format.Metadata
 import Melo.Library.Collection.Types
 import Numeric.Natural
+import Rel8
+  ( Column,
+    DBEq,
+    DBType (..),
+    Expr,
+    JSONBEncoded (..),
+    Name,
+    Rel8able,
+    Result,
+    TableSchema(..),
+    lit,
+    nullaryFunction,
+  )
+import System.IO.Unsafe
+import Witch
+
+data SourceTable f = SourceTable
+  { id :: Column f SourceRef,
+    kind :: Column f Text,
+    metadata_format :: Column f Text,
+    metadata :: Column f (JSONBEncoded SourceMetadata),
+    source_uri :: Column f Text,
+    idx :: Column f Int16,
+    --  time_range :: Column f (Maybe (PgRange IntervalRange Interval)),
+    --  sample_range :: Column f (Maybe (PgRange PgInt8Range Int64)),
+    scanned :: Column f LocalTime,
+    collection_id :: Column f UUID
+  }
+  deriving (Generic, Rel8able)
+
+instance Entity (SourceTable Result) where
+  type NewEntity (SourceTable Result) = NewSource
+  type PrimaryKey (SourceTable Result) = SourceRef
+
+instance From NewSource (SourceTable Expr) where
+  from s =
+    SourceTable
+      { id = nullaryFunction "uuid_generate_v4",
+        kind = lit $ s ^. #kind,
+        metadata_format = lit $ s ^. #metadataFormat,
+        metadata = lit $ s ^. #tags . coerced,
+        source_uri = lit $ s ^. #source,
+        idx = lit $ fromMaybe (-1 :: Int16) (s ^. #idx),
+        --        sample_range = val_ $ sampleRange =<< (s ^. #range),
+        --        time_range = val_ $ timeRange =<< (s ^. #range),
+        scanned = lit $ unsafeDupablePerformIO getCurrentLocalTime,
+        collection_id = lit $ s ^. #collection . coerced
+      }
+
+instance From NewSource (SourceTable Result) where
+  from s =
+    SourceTable
+      { id = SourceRef $ unsafeDupablePerformIO nextRandom,
+        kind = s ^. #kind,
+        metadata_format = s ^. #metadataFormat,
+        metadata = s ^. #tags . coerced,
+        source_uri = s ^. #source,
+        idx = fromMaybe (-1 :: Int16) (s ^. #idx),
+        --        sample_range = val_ $ sampleRange =<< (s ^. #range),
+        --        time_range = val_ $ timeRange =<< (s ^. #range),
+        scanned = unsafeDupablePerformIO getCurrentLocalTime,
+        collection_id = s ^. #collection . coerced
+      }
+
+getCurrentLocalTime :: IO LocalTime
+getCurrentLocalTime = zonedTimeToLocalTime <$> getZonedTime
+
+newtype SourceMetadata = SourceMetadata (Vector (Text, Text))
+  deriving (Show, Eq, Generic)
+  deriving (DBType) via JSONBEncoded SourceMetadata
+
+instance From Tags SourceMetadata where
+  from (Tags tags) = SourceMetadata tags
+
+instance From SourceMetadata Tags where
+  from (SourceMetadata tags) = Tags tags
+
+instance ToJSON SourceMetadata where
+  toJSON (SourceMetadata tags) =
+    object
+      [ "tags"
+          .= toJSON
+            ( tags <&> \(k, v) ->
+                object
+                  [ "key" .= k,
+                    "value" .= v
+                  ]
+            )
+      ]
+
+instance FromJSON SourceMetadata where
+  parseJSON = withObject "SourceMetadata" $
+    \sm -> do
+      tagPairs <- sm .: "tags"
+      withArray
+        "Tags"
+        ( \arr ->
+            do
+              tags <- V.forM arr $
+                withObject "Tag" $
+                  \obj ->
+                    do
+                      k <- obj .: "key"
+                      v <- obj .: "value"
+                      pure (k, v)
+              pure (SourceMetadata tags)
+        )
+        tagPairs
 
 data NewImportSource = FileSource CollectionRef MetadataFile | CueFileSource
   deriving (Eq, Show)
@@ -46,7 +166,7 @@ data MetadataImportSource = MetadataImportSource
   deriving (Show, Generic)
 
 instance TryFrom NewImportSource MetadataImportSource where
-  tryFrom s = do
+  tryFrom s = maybeToRight (TryFromException s Nothing) $ do
     metadata <- chooseMetadata (getAllMetadata s)
     src <- parseURI (show $ getSourceUri s)
     pure
@@ -96,7 +216,7 @@ data NewSource = NewSource
   }
   deriving (Show, Eq, Generic)
 
-data AudioRange = SampleRange (Range Int64) | TimeRange (Range DB.Interval)
+data AudioRange = SampleRange (Range Int64) | TimeRange (Range CalendarDiffTime)
   deriving (Eq, Show)
 
 instance From MetadataImportSource NewSource where
@@ -112,67 +232,87 @@ instance From MetadataImportSource NewSource where
         collection = ms ^. #collection
       }
 
-instance From NewSource (DB.SourceT (QExpr Postgres s)) where
-  from s =
-    DB.Source
-      { id = default_,
-        kind = val_ $ s ^. #kind,
-        metadata_format = val_ $ s ^. #metadataFormat,
-        metadata = val_ $ s ^. #tags . coerced,
-        source_uri = val_ $ s ^. #source,
-        idx = val_ $ fromMaybe (-1 :: Int16) (s ^. #idx),
-        sample_range = val_ $ sampleRange =<< (s ^. #range),
-        time_range = val_ $ timeRange =<< (s ^. #range),
-        scanned = currentTimestamp_,
-        collection_id = val_ $ DB.CollectionKey (s ^. #collection . coerced)
-      }
+--sampleRange :: AudioRange -> Maybe (PgRange PgInt8Range Int64)
+--sampleRange (SampleRange range) = Just (toPgRange range)
+--sampleRange (TimeRange _) = Nothing
+--
+--timeRange :: AudioRange -> Maybe (PgRange DB.IntervalRange DB.Interval)
+--timeRange (TimeRange range) = Just (toPgRange range)
+--timeRange (SampleRange _) = Nothing
+--
+--toPgRange :: Range a -> PgRange b a
+--toPgRange (SingletonRange a) = PgRange (PgB.inclusive a) (PgB.inclusive a)
+--toPgRange (SpanRange a b) = PgRange (toPgRangeBound a) (toPgRangeBound b)
+--toPgRange (LowerBoundRange a) = PgRange (toPgRangeBound a) PgB.unbounded
+--toPgRange (UpperBoundRange a) = PgRange PgB.unbounded (toPgRangeBound a)
+--toPgRange InfiniteRange = PgRange PgB.unbounded PgB.unbounded
+--
+--toPgRangeBound :: Bound a -> PgRangeBound a
+--toPgRangeBound (Bound a R.Inclusive) = PgB.inclusive a
+--toPgRangeBound (Bound a R.Exclusive) = PgB.exclusive a
 
-sampleRange :: AudioRange -> Maybe (PgRange PgInt8Range Int64)
-sampleRange (SampleRange range) = Just (toPgRange range)
-sampleRange (TimeRange _) = Nothing
+newtype SourceRef = SourceRef { unSourceRef :: UUID }
+  deriving (Show, Eq, Ord, Generic)
+  deriving newtype (DBType, DBEq, Hashable)
 
-timeRange :: AudioRange -> Maybe (PgRange DB.IntervalRange DB.Interval)
-timeRange (TimeRange range) = Just (toPgRange range)
-timeRange (SampleRange _) = Nothing
+instance GQLType SourceRef where
+  type KIND SourceRef = SCALAR
 
-toPgRange :: Range a -> PgRange b a
-toPgRange (SingletonRange a) = PgRange (PgB.inclusive a) (PgB.inclusive a)
-toPgRange (SpanRange a b) = PgRange (toPgRangeBound a) (toPgRangeBound b)
-toPgRange (LowerBoundRange a) = PgRange (toPgRangeBound a) PgB.unbounded
-toPgRange (UpperBoundRange a) = PgRange PgB.unbounded (toPgRangeBound a)
-toPgRange InfiniteRange = PgRange PgB.unbounded PgB.unbounded
+instance EncodeScalar SourceRef where
+  encodeScalar (SourceRef uuid) = M.String $ toText uuid
 
-toPgRangeBound :: Bound a -> PgRangeBound a
-toPgRangeBound (Bound a R.Inclusive) = PgB.inclusive a
-toPgRangeBound (Bound a R.Exclusive) = PgB.exclusive a
+instance DecodeScalar SourceRef where
+  decodeScalar (M.String s) = case fromText s of
+    Nothing -> Left "SourceRef must be UUID"
+    Just uuid -> Right $ SourceRef uuid
+  decodeScalar _ = Left "SourceRef must be a String"
 
-type SourceRef = DB.SourceKey
+instance From SourceRef UUID where
+  from (SourceRef uuid) = uuid
 
 data Source = Source
   { ref :: SourceRef,
     metadata :: Metadata,
     source :: URI,
+    kind :: MetadataFileId,
     range :: Maybe AudioRange,
-    collectionRef :: DB.CollectionKey
+    collectionRef :: CollectionRef
   }
-  deriving (Generic, Show)
+  deriving (Generic, Show, Eq)
 
-instance TryFrom DB.Source Source where
-  tryFrom s = do
+instance TryFrom (SourceTable Result) Source where
+  tryFrom s = maybeToRight (TryFromException s Nothing) $ do
     uri <- parseURI $ T.unpack (s ^. #source_uri)
     let mid = MetadataId $ s ^. #metadata_format
-    let PgJSONB (DB.SourceMetadata tags) = s ^. #metadata
+    let JSONBEncoded (SourceMetadata tags) = s ^. #metadata
     metadata <- mkMetadata mid (Tags tags)
     pure
       Source
-        { ref = primaryKey s,
+        { ref = s ^. #id,
           range = Nothing,
           source = uri,
-          collectionRef = s ^. #collection_id,
+          kind = MetadataFileId (s ^. #kind),
+          collectionRef = CollectionRef $ s ^. #collection_id,
           metadata
         }
 
-type UpdateSource = DB.Source
+instance From Source (SourceTable Result) where
+  -- TODO
+  from Source{metadata=Metadata{..},..} = SourceTable {
+      id = ref,
+      kind = coerce kind,
+      metadata_format = coerce formatId,
+      metadata = JSONBEncoded (from tags),
+      source_uri = T.pack $ show source,
+      -- TODO multi-track source
+      idx = 0,
+      --  time_range :: Column f (Maybe (PgRange IntervalRange Interval)),
+      --  sample_range :: Column f (Maybe (PgRange PgInt8Range Int64)),
+      scanned = unsafeDupablePerformIO getCurrentLocalTime,
+      collection_id = coerce collectionRef
+    }
+
+type UpdateSource = SourceTable Result
 
 data ImportStats = ImportStats
   { sourcesImported :: Natural,

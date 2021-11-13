@@ -10,12 +10,14 @@ import Control.Monad.Reader
 import Control.Monad.Trans.Control
 import Data.HashMap.Strict as H
 import Data.Pool
-import Database.PostgreSQL.Simple (Connection)
+import Hasql.Connection
 import Melo.Common.Logging
 import Melo.Common.Uri
+import Melo.Database.Transaction
 import Melo.Library.Collection.FileSystem.Service
 import Melo.Library.Collection.Types
 import Melo.Library.Source.Repo
+import Melo.Database.Repo as Repo
 import System.FSNotify (ThreadingMode (..))
 import qualified System.FSNotify as FS
 import System.FilePath
@@ -79,42 +81,44 @@ instance
 handleEvent ::
   ( Logging m,
     MonadIO m,
-    MonadMask m,
     MonadConc m
   ) =>
   Pool Connection ->
   CollectionRef ->
   FS.Event ->
   m ()
-handleEvent pool ref event = runFileSystemServiceIO' pool $
+handleEvent pool ref event =
   case event of
     FS.Added p _ _ -> do
       $(logInfo) $ "file/directory added; scanning " <> p
-      scanPath ref p
+      liftIO $ runFileSystemServiceIO' pool (scanPath ref p)
       pure ()
     FS.Modified p _ _ -> do
       $(logInfo) $ "file/directory modified; scanning " <> p
-      scanPath ref p
+      liftIO $ runFileSystemServiceIO' pool (scanPath ref p)
       pure ()
     FS.ModifiedAttributes p _ _ -> do
       $(logInfo) $ "file/directory attributes modified; scanning " <> p
-      scanPath ref p
+      liftIO $ runFileSystemServiceIO' pool (scanPath ref p)
       pure ()
     FS.WatchedDirectoryRemoved p _ _ -> do
       $(logInfo) $ "watched directory removed " <> p
       let uri = fileUri p
-      refs <- getSourceKeysByUriPrefix uri
-      deleteSources refs
+      withTransaction pool runSourceRepositoryIO do
+        refs <- getKeysByUriPrefix uri
+        Repo.delete refs
     FS.Removed p _ isDir -> do
       let uri = fileUri p
       if isDir == FS.IsDirectory
         then do
           $(logInfo) $ "directory removed " <> p
-          refs <- getSourceKeysByUriPrefix uri
-          deleteSources refs
+          withTransaction pool runSourceRepositoryIO do
+            refs <- getKeysByUriPrefix uri
+            Repo.delete refs
         else do
           $(logInfo) $ "file removed " <> p
-          refs <- getSourceKeysByUri [uri]
-          deleteSources refs
+          withTransaction pool runSourceRepositoryIO do
+            refs <- getKeysByUri [uri]
+            Repo.delete refs
     FS.Unknown p _ _ s ->
       $(logWarn) $ "unknown file system event on path " <> p <> ": " <> s

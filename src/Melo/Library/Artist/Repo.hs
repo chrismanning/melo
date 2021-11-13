@@ -2,71 +2,107 @@
 
 module Melo.Library.Artist.Repo where
 
-import Basement.From
+import Control.Exception.Safe
 import Control.Lens ((^.))
+import Control.Concurrent.Classy
+import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
 import Data.Containers.ListUtils (nubOrd)
+import Data.Pool
 import Data.Text (Text)
-import Database.Beam
-import Database.Beam.Postgres as Pg
-import Database.Beam.Postgres.Full as Pg
-import qualified Melo.Database.Model as DB
-import Melo.Database.Query
+import Hasql.Connection
+import Melo.Database.Repo
+import Melo.Database.Repo.IO
 import Melo.Library.Artist.Types
+import Rel8
+import Witch
 
-class Monad m => ArtistRepository m where
-  getAllArtists :: m [DB.Artist]
-  getArtists :: [DB.ArtistKey] -> m [DB.Artist]
-  getArtistAlbums :: DB.ArtistKey -> m [DB.Album]
-  getArtistTracks :: DB.ArtistKey -> m [DB.Track]
-  searchArtists :: Text -> m [DB.Artist]
-  insertArtists :: [NewArtist] -> m [DB.ArtistKey]
-  deleteArtists :: [DB.ArtistKey] -> m ()
+class Repository (ArtistTable Result) m => ArtistRepository m where
+  getArtistAlbums :: ArtistRef -> m [ArtistTable Result]
+  getArtistTracks :: ArtistRef -> m [ArtistTable Result]
+  searchArtists :: Text -> m [ArtistTable Result]
 
 newtype ArtistRepositoryIOT m a = ArtistRepositoryIOT
-  { runArtistRepositoryIOT :: ReaderT Connection m a
+  { runArtistRepositoryIOT :: RepositoryIOT ArtistTable m a
   }
-  deriving newtype (Applicative, Functor, Monad, MonadIO, MonadTrans, MonadTransControl)
-
-tbl :: DatabaseEntity Postgres DB.MeloDb (TableEntity DB.ArtistT)
-tbl = DB.meloDb ^. #artist
+  deriving newtype
+    ( Applicative,
+      Functor,
+      Monad,
+      MonadIO,
+      MonadBase b,
+      MonadBaseControl b,
+      MonadConc,
+      MonadCatch,
+      MonadMask,
+      MonadReader (RepositoryHandle ArtistTable),
+      MonadThrow,
+      MonadTrans,
+      MonadTransControl,
+      Repository (ArtistTable Result)
+    )
 
 instance
   ( MonadIO m
   ) =>
   ArtistRepository (ArtistRepositoryIOT m)
   where
-  getAllArtists = ArtistRepositoryIOT $
-    ReaderT $ \conn ->
-      getAllIO conn tbl
-  getArtists ks = ArtistRepositoryIOT $
-    ReaderT $ \conn ->
-      getByKeysIO conn tbl ks
-  deleteArtists ks = ArtistRepositoryIOT $
-    ReaderT $ \conn ->
-      deleteByKeysIO conn tbl ks
   getArtistAlbums k = error "unimplemented"
   getArtistTracks k = error "unimplemented"
   searchArtists t = error "unimplemented"
-  insertArtists as' = ArtistRepositoryIOT $
-    ReaderT $ \conn -> do
-      let !as = nubOrd as'
-      let q =
-            runPgInsertReturningList $
-              insertReturning
-                (DB.meloDb ^. #artist)
-                ( insertExpressions
-                    (fmap from as)
-                )
-                ( Pg.onConflict
-                    (Pg.conflictingFields (\a -> (a ^. #name, a ^. #country, a ^. #disambiguation)))
-                    ( Pg.onConflictUpdateInstead
-                        (\a -> (a ^. #bio, a ^. #short_bio))
-                    )
-                )
-                (Just primaryKey)
-      $(runPgDebugIO') conn q
+
+artistSchema :: TableSchema (ArtistTable Name)
+artistSchema =
+  TableSchema
+    { name = "artist",
+      schema = Nothing,
+      columns =
+        ArtistTable
+          { id = "id",
+            name = "name",
+            disambiguation = "disambiguation",
+            short_bio = "short_bio",
+            bio = "bio",
+            country = "country",
+            musicbrainz_id = "musicbrainz_id"
+          }
+    }
+
+runArtistRepositoryPooledIO :: Pool Connection -> ArtistRepositoryIOT m a -> m a
+runArtistRepositoryPooledIO pool =
+  flip
+    runReaderT
+    RepositoryHandle
+      { connSrc = Pooled pool,
+        tbl = artistSchema,
+        pk = (^. #id),
+        upsert =
+          Just
+            Upsert
+              { index = \c -> (c ^. #name, c ^. #disambiguation),
+                set = const,
+                updateWhere = \new old -> new ^. #id ==. old ^. #id
+              }
+      }
+    . runRepositoryIOT
+    . runArtistRepositoryIOT
 
 runArtistRepositoryIO :: Connection -> ArtistRepositoryIOT m a -> m a
-runArtistRepositoryIO conn = flip runReaderT conn . runArtistRepositoryIOT
+runArtistRepositoryIO conn =
+  flip
+    runReaderT
+    RepositoryHandle
+      { connSrc = Single conn,
+        tbl = artistSchema,
+        pk = (^. #id),
+        upsert =
+          Just
+            Upsert
+              { index = \c -> (c ^. #name, c ^. #disambiguation),
+                set = const,
+                updateWhere = \new old -> new ^. #id ==. old ^. #id
+              }
+      }
+    . runRepositoryIOT
+    . runArtistRepositoryIOT
