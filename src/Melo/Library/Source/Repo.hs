@@ -27,11 +27,11 @@ import Rel8
   )
 import qualified Rel8
 
-class Repository (SourceTable Result) m => SourceRepository m where
-  getByUri :: [URI] -> m [SourceTable Result]
-  getKeysByUri :: [URI] -> m [PrimaryKey (SourceTable Result)]
-  getByUriPrefix :: URI -> m [SourceTable Result]
-  getKeysByUriPrefix :: URI -> m [PrimaryKey (SourceTable Result)]
+class Repository SourceEntity m => SourceRepository m where
+  getByUri :: [URI] -> m [SourceEntity]
+  getKeysByUri :: [URI] -> m [PrimaryKey SourceEntity]
+  getByUriPrefix :: URI -> m [SourceEntity]
+  getKeysByUriPrefix :: URI -> m [PrimaryKey SourceEntity]
 
 instance
   {-# OVERLAPPABLE #-}
@@ -66,7 +66,7 @@ newtype SourceRepositoryIOT m a = SourceRepositoryIOT
       MonadTransControl
     )
 
-instance MonadIO m => Repository (SourceTable Result) (SourceRepositoryIOT m) where
+instance MonadIO m => Repository SourceEntity (SourceRepositoryIOT m) where
   getAll = sortByUri <$> SourceRepositoryIOT getAll
   getByKey = pure . sortByUri <=< SourceRepositoryIOT . getByKey
   insert = pure . sortByUri <=< SourceRepositoryIOT . insert
@@ -75,7 +75,7 @@ instance MonadIO m => Repository (SourceTable Result) (SourceRepositoryIOT m) wh
   update = pure . sortByUri <=< SourceRepositoryIOT . update
   update' = SourceRepositoryIOT . update'
 
-sortByUri :: [SourceTable Result] -> [SourceTable Result]
+sortByUri :: [SourceEntity] -> [SourceEntity]
 sortByUri = sortNaturalBy (^. #source_uri)
 
 instance

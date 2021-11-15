@@ -118,7 +118,7 @@ instance (Applicative m, FileSystem m, WithOperation o) => From Ty.Source (Sourc
           Nothing -> error "unimplemented"
 
 instance (Applicative m, FileSystem m, WithOperation o) =>
-  From (Ty.SourceTable Result) (Source (Resolver o e m)) where
+  From Ty.SourceEntity (Source (Resolver o e m)) where
   from s =
     Source
       { id = s ^. #id,
@@ -131,7 +131,7 @@ instance (Applicative m, FileSystem m, WithOperation o) =>
         coverImage = lift $ coverImageImpl s
       }
     where
-      coverImageImpl :: Ty.SourceTable Result -> m (Maybe Image)
+      coverImageImpl :: Ty.SourceEntity -> m (Maybe Image)
       coverImageImpl src = case parseURI $ T.unpack $ src ^. #source_uri of
         Just uri ->
           case uriToFilePath uri of
@@ -192,7 +192,7 @@ instance From F.Metadata Metadata where
         mappedTags = mapTags m
       }
 
-instance From (Ty.SourceTable Result) Metadata where
+instance From Ty.SourceEntity Metadata where
   from s =
     let s' = tryFrom @_ @Ty.Source s
         m = fmap (^. #metadata) s'
@@ -592,7 +592,7 @@ updateSourcesImpl (UpdateSourcesArgs updates) = do
 data SourceUpdate' = SourceUpdate'
   { id :: Ty.SourceRef,
     updateTags :: TagUpdateOp,
-    originalSource :: Ty.SourceTable Result
+    originalSource :: Ty.SourceEntity
   }
   deriving (Generic)
 

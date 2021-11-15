@@ -12,7 +12,6 @@ import qualified Data.Text as T
 import Data.UUID
 import Data.UUID.V4
 import GHC.Generics
-import Melo.Common.FileSystem
 import Melo.Common.Uri
 import Melo.Database.Repo
 import qualified Melo.Format as F
@@ -92,13 +91,6 @@ instance From NewCollection (CollectionTable Result) where
       kind NewFilesystemCollection {} = "filesystem"
 
 type UpdateCollection = CollectionTable Result
-
-data SourceMoveError
-  = FileSystemMoveError MoveError
-  | PatternError
-  | NoSuchSource
-  | SourcePathError
-  deriving (Show)
 
 data SourcePathPattern
   = LiteralPattern FilePath

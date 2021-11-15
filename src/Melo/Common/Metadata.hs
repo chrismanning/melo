@@ -71,15 +71,15 @@ instance
       F.openMetadataFileByExt path
   readMetadataFile mfid@(F.MetadataFileId fid) path = liftIO $ try do
     $(logDebugIO) $ "reading file " <> T.pack path <> " as " <> fid
-    F.MetadataFileFactory {readMetadataFile} <- getFactory mfid
+    F.MetadataFileFactory {readMetadataFile} <- getFactoryIO mfid
     readMetadataFile path
   writeMetadataFile mf path = liftIO $ try do
-    F.MetadataFileFactory {writeMetadataFile, readMetadataFile} <- getFactory (mf ^. #fileId)
+    F.MetadataFileFactory {writeMetadataFile, readMetadataFile} <- getFactoryIO (mf ^. #fileId)
     writeMetadataFile mf path
     readMetadataFile path
 
-getFactory :: F.MetadataFileId -> IO (F.MetadataFileFactory IO)
-getFactory mfid = case F.metadataFileFactoryIO mfid of
+getFactoryIO :: F.MetadataFileId -> IO (F.MetadataFileFactory IO)
+getFactoryIO mfid = case F.metadataFileFactoryIO mfid of
   Just fact -> pure fact
   Nothing -> do
     $(logErrorIO) $ T.pack "unknown metadata file id '" <> coerce mfid <> "'"

@@ -76,9 +76,7 @@ spec =
           sourceRepo = mkSourceRepo [orig],
           collectionRepo
         }
-        let expected = orig {
-            source = parseUriUnsafe "file:/music/Artist/1999%20-%20Album%20Title/01%20-%20Track%20Title.flac"
-          }
+        let expected = orig & #source .~ parseUriUnsafe "file:/music/Artist/1999%20-%20Album%20Title/01%20-%20Track%20Title.flac"
         previewTransformationsFixture fixture [orig] `shouldReturn` [expected]
       it "transforms with grouped pattern when tags missing date" $ do
         let tags = [
@@ -93,9 +91,7 @@ spec =
           sourceRepo = mkSourceRepo [orig],
           collectionRepo
         }
-        let expected = orig {
-            source = parseUriUnsafe "file:/music/Artist/Album%20Title/01%20-%20Track%20Title.flac"
-          }
+        let expected = orig & #source .~ parseUriUnsafe "file:/music/Artist/Album%20Title/01%20-%20Track%20Title.flac"
         previewTransformationsFixture fixture [orig] `shouldReturn` [expected]
 
 type TestTransformer = [Ty.Source] -> TestTransformT [Ty.Source]
@@ -130,13 +126,7 @@ previewTransformationsFixture TransformFixture{..} ss = runSourceTransform $ SUT
       runFakeSourceRepository sourceRepo
 
 moveByPatterns :: NonEmpty Ty.SourcePathPattern -> TestTransformer
-moveByPatterns patterns ss = forM ss $ \src ->
-  moveSourceWithPattern patterns src >>= \case
-    Left e -> do
-      liftIO $ putStrLn (show e)
-      $(logInfoIO) $ show e
-      pure src
-    Right uri -> pure $ src & #source .~ uri
+moveByPatterns patterns = SUT.evalTransformAction (SUT.Move patterns)
 
 parseUriUnsafe :: String -> URI
 parseUriUnsafe s = case parseURI s of

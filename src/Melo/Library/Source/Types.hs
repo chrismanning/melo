@@ -12,6 +12,8 @@ module Melo.Library.Source.Types
     ImportStats (..),
     SourceTable (..),
     SourceMetadata (..),
+    SourceEntity,
+    SourceMoveError(..),
   )
 where
 
@@ -19,7 +21,6 @@ import Control.Lens hiding ((.=), from)
 import Data.Aeson hiding (Result)
 import Data.Coerce
 import Data.Either.Combinators
-import Data.Generics.Labels
 import Data.Hashable
 import qualified Data.HashMap.Strict as H
 import Data.Int
@@ -33,14 +34,14 @@ import Data.Time.LocalTime
 import Data.UUID
 import Data.UUID.V4
 import qualified Data.Vector as V
-import Data.Vector (Vector (..))
+import Data.Vector (Vector)
 import GHC.Generics hiding (from)
-import GHC.OverloadedLabels
 import Melo.Common.Metadata
-import Melo.Format.Internal.Metadata
+import Melo.Common.FileSystem
 import Melo.Common.Uri
 import Melo.Database.Repo (Entity (..))
 import Melo.Format.Info
+import Melo.Format.Internal.Metadata
 import Melo.Format.Metadata
 import Melo.Library.Collection.Types
 import Numeric.Natural
@@ -50,10 +51,8 @@ import Rel8
     DBType (..),
     Expr,
     JSONBEncoded (..),
-    Name,
     Rel8able,
     Result,
-    TableSchema(..),
     lit,
     nullaryFunction,
   )
@@ -74,9 +73,15 @@ data SourceTable f = SourceTable
   }
   deriving (Generic, Rel8able)
 
-instance Entity (SourceTable Result) where
-  type NewEntity (SourceTable Result) = NewSource
-  type PrimaryKey (SourceTable Result) = SourceRef
+type SourceEntity = SourceTable Result
+
+deriving newtype instance Show (JSONBEncoded SourceMetadata)
+
+deriving instance Show SourceEntity
+
+instance Entity SourceEntity where
+  type NewEntity SourceEntity = NewSource
+  type PrimaryKey SourceEntity = SourceRef
 
 instance From NewSource (SourceTable Expr) where
   from s =
@@ -93,7 +98,7 @@ instance From NewSource (SourceTable Expr) where
         collection_id = lit $ s ^. #collection . coerced
       }
 
-instance From NewSource (SourceTable Result) where
+instance From NewSource SourceEntity where
   from s =
     SourceTable
       { id = SourceRef $ unsafeDupablePerformIO nextRandom,
@@ -280,7 +285,7 @@ data Source = Source
   }
   deriving (Generic, Show, Eq)
 
-instance TryFrom (SourceTable Result) Source where
+instance TryFrom SourceEntity Source where
   tryFrom s = maybeToRight (TryFromException s Nothing) $ do
     uri <- parseURI $ T.unpack (s ^. #source_uri)
     let mid = MetadataId $ s ^. #metadata_format
@@ -296,7 +301,7 @@ instance TryFrom (SourceTable Result) Source where
           metadata
         }
 
-instance From Source (SourceTable Result) where
+instance From Source SourceEntity where
   -- TODO
   from Source{metadata=Metadata{..},..} = SourceTable {
       id = ref,
@@ -312,7 +317,7 @@ instance From Source (SourceTable Result) where
       collection_id = coerce collectionRef
     }
 
-type UpdateSource = SourceTable Result
+type UpdateSource = SourceEntity
 
 data ImportStats = ImportStats
   { sourcesImported :: Natural,
@@ -342,3 +347,13 @@ instance Monoid ImportStats where
         artistsImported = 0,
         genresImported = 0
       }
+
+data SourceMoveError
+  = FileSystemMoveError MoveError
+  | PatternError
+  | NoSuchSource
+  | SourcePathError
+  | SourceUpdateError
+  | WrongCollection
+  | ConversionError (TryFromException SourceEntity Source)
+  deriving (Show)
