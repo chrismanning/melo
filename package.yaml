@@ -33,6 +33,7 @@ library:
   - barbies
   - binary
   - binary-bits
+  - binary-parser
   - bytestring
   - cache
   - clock

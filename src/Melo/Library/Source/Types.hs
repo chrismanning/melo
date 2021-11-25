@@ -14,11 +14,17 @@ module Melo.Library.Source.Types
     SourceMetadata (..),
     SourceEntity,
     SourceMoveError(..),
+    IntervalRange(..),
   )
 where
 
+import BinaryParser as BP
+import Control.Applicative
 import Control.Lens hiding ((.=), from)
+import Control.Monad
 import Data.Aeson hiding (Result)
+import Data.ByteString (ByteString)
+import Data.Char
 import Data.Coerce
 import Data.Either.Combinators
 import Data.Hashable
@@ -27,7 +33,8 @@ import Data.Int
 import Data.Maybe
 import Data.Morpheus.Kind
 import Data.Morpheus.Types as M
-import Data.Range as R
+import Data.Range (Range(..))
+import qualified Data.Range as R
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Time.LocalTime
@@ -35,7 +42,9 @@ import Data.UUID
 import Data.UUID.V4
 import qualified Data.Vector as V
 import Data.Vector (Vector)
+import Data.Word
 import GHC.Generics hiding (from)
+import qualified Hasql.Decoders as Hasql
 import Melo.Common.Metadata
 import Melo.Common.FileSystem
 import Melo.Common.Uri
@@ -45,6 +54,8 @@ import Melo.Format.Internal.Metadata
 import Melo.Format.Metadata
 import Melo.Library.Collection.Types
 import Numeric.Natural
+import Opaleye.Internal.HaskellDB.PrimQuery (PrimExpr(..), BoundExpr(..))
+import qualified PostgreSQL.Binary.Decoding as BD
 import Rel8
   ( Column,
     DBEq,
@@ -53,6 +64,7 @@ import Rel8
     JSONBEncoded (..),
     Rel8able,
     Result,
+    TypeInformation(..),
     lit,
     nullaryFunction,
   )
@@ -66,7 +78,7 @@ data SourceTable f = SourceTable
     metadata :: Column f (JSONBEncoded SourceMetadata),
     source_uri :: Column f Text,
     idx :: Column f Int16,
-    --  time_range :: Column f (Maybe (PgRange IntervalRange Interval)),
+    time_range :: Column f (Maybe IntervalRange),
     --  sample_range :: Column f (Maybe (PgRange PgInt8Range Int64)),
     scanned :: Column f LocalTime,
     collection_id :: Column f UUID
@@ -83,6 +95,84 @@ instance Entity SourceEntity where
   type NewEntity SourceEntity = NewSource
   type PrimaryKey SourceEntity = SourceRef
 
+newtype IntervalRange = IntervalRange (Range CalendarDiffTime)
+  deriving (Show, Eq)
+
+instance DBType IntervalRange where
+  typeInformation = TypeInformation {
+    encode = encode',
+    decode = decode',
+    typeName = "intervalrange"
+  }
+    where
+      encodeInterval :: CalendarDiffTime -> PrimExpr
+      encodeInterval a = Rel8.encode (typeInformation @CalendarDiffTime) $ a
+      encodeBound R.Bound{boundValue, boundType=R.Inclusive} = Inclusive (encodeInterval boundValue)
+      encodeBound R.Bound{boundValue, boundType=R.Exclusive} = Exclusive (encodeInterval boundValue)
+      encode' :: IntervalRange -> PrimExpr
+      encode' (IntervalRange (SingletonRange a)) = RangeExpr "interval" (Inclusive (encodeInterval a)) (Inclusive (encodeInterval a))
+      encode' (IntervalRange (SpanRange a b)) = RangeExpr "interval" (encodeBound a) (encodeBound b)
+      encode' (IntervalRange (LowerBoundRange a)) = RangeExpr "interval" (encodeBound a) PosInfinity
+      encode' (IntervalRange (UpperBoundRange a)) = RangeExpr "interval" NegInfinity (encodeBound a)
+      encode' (IntervalRange InfiniteRange) = RangeExpr "interval" NegInfinity PosInfinity
+      decode' :: Hasql.Value IntervalRange
+      decode' = Hasql.custom decodeRange
+      decodeRange :: Bool -> ByteString -> Either Text IntervalRange
+      decodeRange integerDatetimes = BP.run (rangeParser integerDatetimes)
+      rangeParser :: Bool -> BP.BinaryParser IntervalRange
+      rangeParser integerDatetimes = IntervalRange <$>
+            (spanRangeParser integerDatetimes
+        <|> lowerBoundRangeParser integerDatetimes
+        <|> upperBoundRangeParser integerDatetimes
+        <|> infiniteRangeParser)
+      lowerBoundRangeParser :: Bool -> BP.BinaryParser (Range CalendarDiffTime)
+      lowerBoundRangeParser integerDatetimes = do
+        lower <- lowerRangeBoundParser integerDatetimes
+        BP.matchingByte commaUnit
+        void upperRangeBoundTypeParser
+        pure $ LowerBoundRange lower
+      upperBoundRangeParser :: Bool -> BP.BinaryParser (Range CalendarDiffTime)
+      upperBoundRangeParser integerDatetimes = do
+        void lowerRangeBoundTypeParser
+        BP.matchingByte commaUnit
+        upper <- upperRangeBoundParser integerDatetimes
+        pure $ UpperBoundRange upper
+      infiniteRangeParser :: BP.BinaryParser (Range CalendarDiffTime)
+      infiniteRangeParser = do
+        void lowerRangeBoundTypeParser
+        BP.matchingByte commaUnit
+        void upperRangeBoundTypeParser
+        pure InfiniteRange
+      spanRangeParser :: Bool -> BP.BinaryParser (Range CalendarDiffTime)
+      spanRangeParser integerDatetimes = do
+        lower <- lowerRangeBoundParser integerDatetimes
+        BP.matchingByte commaUnit
+        upper <- upperRangeBoundParser integerDatetimes
+        pure $ SpanRange lower upper
+      commaUnit :: Word8 -> Either Text ()
+      commaUnit c | c == fromIntegral (ord ',') = Right ()
+      commaUnit _ = Left $ T.pack "Expected comma range separator"
+      lowerRangeBoundParser :: Bool -> BP.BinaryParser (R.Bound CalendarDiffTime)
+      lowerRangeBoundParser integerDatetimes = do
+        t <- lowerRangeBoundTypeParser
+        R.Bound <$> intervalParser integerDatetimes <*> pure t
+      upperRangeBoundParser :: Bool -> BP.BinaryParser (R.Bound CalendarDiffTime)
+      upperRangeBoundParser integerDatetimes =
+        R.Bound <$> intervalParser integerDatetimes <*> upperRangeBoundTypeParser
+      lowerRangeBoundTypeParser :: BP.BinaryParser R.BoundType
+      lowerRangeBoundTypeParser = BP.matchingByte $ \case
+        b | b == fromIntegral (ord '[') -> Right R.Inclusive
+        b | b == fromIntegral (ord '(') -> Right R.Exclusive
+        _ -> Left (T.pack "Expected lower range bound")
+      upperRangeBoundTypeParser :: BP.BinaryParser R.BoundType
+      upperRangeBoundTypeParser = BP.matchingByte $ \case
+        b | b == fromIntegral (ord ']') -> Right R.Inclusive
+        b | b == fromIntegral (ord ')') -> Right R.Exclusive
+        _ -> Left (T.pack "Expected upper range bound")
+      intervalParser :: Bool -> BP.BinaryParser CalendarDiffTime
+      intervalParser True = CalendarDiffTime 0 . realToFrac <$> BD.interval_int
+      intervalParser False = CalendarDiffTime 0 . realToFrac <$> BD.interval_float
+
 instance From NewSource (SourceTable Expr) where
   from s =
     SourceTable
@@ -93,6 +183,7 @@ instance From NewSource (SourceTable Expr) where
         source_uri = lit $ s ^. #source,
         idx = lit $ fromMaybe (-1 :: Int16) (s ^. #idx),
         --        sample_range = val_ $ sampleRange =<< (s ^. #range),
+        time_range = lit $ rightToMaybe =<< tryFrom <$> s ^. #range,
         --        time_range = val_ $ timeRange =<< (s ^. #range),
         scanned = lit $ unsafeDupablePerformIO getCurrentLocalTime,
         collection_id = lit $ s ^. #collection . coerced
@@ -107,8 +198,8 @@ instance From NewSource SourceEntity where
         metadata = s ^. #tags . coerced,
         source_uri = s ^. #source,
         idx = fromMaybe (-1 :: Int16) (s ^. #idx),
+        time_range = rightToMaybe =<< tryFrom <$> s ^. #range,
         --        sample_range = val_ $ sampleRange =<< (s ^. #range),
-        --        time_range = val_ $ timeRange =<< (s ^. #range),
         scanned = unsafeDupablePerformIO getCurrentLocalTime,
         collection_id = s ^. #collection . coerced
       }
@@ -224,6 +315,10 @@ data NewSource = NewSource
 data AudioRange = SampleRange (Range Int64) | TimeRange (Range CalendarDiffTime)
   deriving (Eq, Show)
 
+instance TryFrom AudioRange IntervalRange where
+  tryFrom sr@SampleRange{} = Left $ TryFromException sr Nothing 
+  tryFrom (TimeRange r) = Right $ IntervalRange r
+
 instance From MetadataImportSource NewSource where
   from ms =
     NewSource
@@ -311,7 +406,7 @@ instance From Source SourceEntity where
       source_uri = T.pack $ show source,
       -- TODO multi-track source
       idx = 0,
-      --  time_range :: Column f (Maybe (PgRange IntervalRange Interval)),
+      time_range = Nothing,
       --  sample_range :: Column f (Maybe (PgRange PgInt8Range Int64)),
       scanned = unsafeDupablePerformIO getCurrentLocalTime,
       collection_id = coerce collectionRef
