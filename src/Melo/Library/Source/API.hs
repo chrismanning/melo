@@ -22,7 +22,7 @@ import qualified Data.Sequence as S
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Typeable
-import Data.UUID (fromText, toText)
+import Data.UUID (UUID, fromText, toText)
 import qualified Data.Vector as V
 import GHC.Generics hiding (from)
 import Melo.Common.FileSystem
@@ -35,10 +35,11 @@ import qualified Melo.Format as F
 import qualified Melo.Format.Mapping as M
 import Melo.Format.Metadata ()
 import Melo.GraphQL.Where
+import qualified Melo.Library.Collection.Types as Ty
 import Melo.Library.Source.Repo
 import qualified Melo.Library.Source.Types as Ty
 import qualified Melo.Lookup.MusicBrainz as MB
-import Rel8 (JSONBEncoded(..), Result)
+import Rel8 (JSONBEncoded(..))
 import System.FilePath as P
 import Witch
 
@@ -63,7 +64,10 @@ resolveSources (SourceArgs (Just SourceWhere {..})) =
           Nothing -> fail $ "invalid source uri " <> show x
         WhereInExpr (InExpr x) -> case allJust (fmap (parseURI . T.unpack) x) of
           Just uris -> lift $ fmap from <$> getByUri uris
-          Nothing -> fail $ "invalid source id in " <> show x
+          Nothing -> fail $ "invalid source uri in " <> show x
+        WhereStartsWithExpr (StartsWithExpr x) -> case parseURI $ T.unpack x of
+          Just uri -> lift $ fmap from <$> getByUriPrefix uri
+          Nothing -> fail $ "invalid source uri in " <> show x
         _unknownWhere -> fail "invalid where clause for Source.sourceUri"
       Nothing -> lift $ fmap (fmap from) getAll
   where
@@ -74,6 +78,15 @@ resolveSources (SourceArgs (Just SourceWhere {..})) =
 resolveSources _ =
   lift $
     fmap (fmap from) getAll
+
+resolveCollectionSources ::
+  (SourceRepository m, FileSystem m, WithOperation o) =>
+  Ty.CollectionRef ->
+  CollectionSourcesArgs ->
+  Resolver o e m [Source (Resolver o e m)]
+resolveCollectionSources collectionRef _args =
+  -- TODO handle args
+  lift $ fmap (fmap from) $ getCollectionSources collectionRef
 
 data Source m = Source
   { id :: Ty.SourceRef,
@@ -115,7 +128,7 @@ instance (Applicative m, FileSystem m, WithOperation o) => From Ty.Source (Sourc
                       { fileName = T.pack $ takeFileName imgPath,
                         downloadUri = "/source/" <> toText (src ^. #ref . coerced) <> "/image"
                       }
-          Nothing -> error "unimplemented"
+          Nothing -> pure Nothing
 
 instance (Applicative m, FileSystem m, WithOperation o) =>
   From Ty.SourceEntity (Source (Resolver o e m)) where
@@ -145,7 +158,7 @@ instance (Applicative m, FileSystem m, WithOperation o) =>
                         { fileName = T.pack $ takeFileName imgPath,
                           downloadUri = "/source/" <> toText (Ty.unSourceRef (src ^. #id)) <> "/image"
                         }
-            Nothing -> error "unimplemented"
+            Nothing -> pure Nothing
         Nothing -> pure Nothing
 
 getSourceName :: Text -> Text
@@ -153,7 +166,15 @@ getSourceName srcUri = fromMaybe srcUri $ do
   uri <- parseURI (T.unpack srcUri)
   T.pack . takeFileName <$> uriToFilePath uri
 
-data SourcesArgs = SourceArgs
+newtype CollectionSourcesArgs = CollectionSourcesArgs
+  { where' :: Maybe SourceWhere
+  }
+  deriving (Generic)
+
+instance GQLType CollectionSourcesArgs where
+  type KIND CollectionSourcesArgs = INPUT
+
+newtype SourcesArgs = SourceArgs
   { where' :: Maybe SourceWhere
   }
   deriving (Generic)
@@ -303,6 +324,16 @@ resolveSourceGroups ::
   Resolver o e m [SourceGroup (Resolver o e m)]
 resolveSourceGroups = lift $ groupSources <$!> fmap (fmap from) getAll
 
+resolveCollectionSourceGroups ::
+  ( SourceRepository m,
+    FileSystem m,
+    WithOperation o
+  ) =>
+  Ty.CollectionRef ->
+  Resolver o e m [SourceGroup (Resolver o e m)]
+resolveCollectionSourceGroups collectionRef =
+  lift $ groupSources <$!> fmap (fmap from) (getCollectionSources collectionRef)
+
 data SourceGroup m = SourceGroup
   { groupTags :: GroupTags,
     groupParentUri :: Text,
@@ -373,7 +404,7 @@ groupSources = fmap trSrcGrp . toList . foldl' acc S.empty
                           { fileName = T.pack $ takeFileName imgPath,
                             downloadUri = "/source/" <> toText (Ty.unSourceRef (src ^. #id)) <> "/image"
                           }
-          Nothing -> error "unimplemented"
+          Nothing -> pure Nothing
       Nothing -> pure Nothing
 
 findCoverImage :: FileSystem m => FilePath -> m (Maybe FilePath)

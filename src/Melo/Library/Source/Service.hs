@@ -51,6 +51,7 @@ length' = foldl' (const . (+ 1)) 0
 
 modificationTime :: NewImportSource -> IO LocalTime
 modificationTime (FileSource _ f) = utcToLocalTime utc <$> getModificationTime (f ^. #filePath)
+modificationTime (CueFileImportSource _ f) = utcToLocalTime utc <$> getModificationTime (f ^. #cueFilePath)
 
 getSourceFilePath :: (Repo.SourceRepository m) => SourceRef -> m (Maybe FilePath)
 getSourceFilePath key = do

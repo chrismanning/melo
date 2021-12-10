@@ -10,6 +10,7 @@ data Where
   | WhereNotEqExpr NotEqExpr
   | WhereContainsExpr ContainsExpr
   | WhereInExpr InExpr
+  | WhereStartsWithExpr StartsWithExpr
   deriving (Generic)
 
 instance GQLType Where where
@@ -46,3 +47,11 @@ newtype InExpr = InExpr
 
 instance GQLType InExpr where
   type KIND InExpr = INPUT
+
+newtype StartsWithExpr = StartsWithExpr
+  { startsWith :: Text
+  }
+  deriving (Generic)
+
+instance GQLType StartsWithExpr where
+  type KIND StartsWithExpr = INPUT

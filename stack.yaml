@@ -70,6 +70,8 @@ extra-deps:
     commit: d8c8bbd7754c38ff99f548a53d0881120b284972
   - github: chrismanning/monad-mock
     commit: 96129e57cead06aa9a8888369f35056266eb3e44
+  - github: chrismanning/cue-sheet
+    commit: 01f2829b7a269c03dd62e39f332ee21899173c2f
   - conduit-audio-samplerate-0.1.0.3
   - conduit-audio-sndfile-0.1.2.2
 #  - conduit-vfs-0.1.0.3

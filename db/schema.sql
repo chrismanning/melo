@@ -133,6 +133,17 @@ CREATE TABLE melo.artist_stage (
 
 
 --
+-- Name: attachment; Type: TABLE; Schema: melo; Owner: -
+--
+
+CREATE TABLE melo.attachment (
+    id uuid DEFAULT melo.uuid_generate_v4() NOT NULL,
+    uri text NOT NULL,
+    kind text NOT NULL
+);
+
+
+--
 -- Name: collection; Type: TABLE; Schema: melo; Owner: -
 --
 
@@ -190,6 +201,16 @@ CREATE TABLE melo.source (
     sample_range int8range,
     scanned timestamp without time zone,
     collection_id uuid NOT NULL
+);
+
+
+--
+-- Name: source_attachment; Type: TABLE; Schema: melo; Owner: -
+--
+
+CREATE TABLE melo.source_attachment (
+    source_id uuid NOT NULL,
+    attachment_id uuid NOT NULL
 );
 
 
@@ -313,6 +334,14 @@ ALTER TABLE ONLY melo.artist_stage
 
 
 --
+-- Name: attachment attachment_pk; Type: CONSTRAINT; Schema: melo; Owner: -
+--
+
+ALTER TABLE ONLY melo.attachment
+    ADD CONSTRAINT attachment_pk PRIMARY KEY (id);
+
+
+--
 -- Name: collection collection_pk; Type: CONSTRAINT; Schema: melo; Owner: -
 --
 
@@ -350,6 +379,14 @@ ALTER TABLE ONLY melo.related_artist
 
 ALTER TABLE ONLY melo.schema_migrations
     ADD CONSTRAINT schema_migrations_pkey PRIMARY KEY (version);
+
+
+--
+-- Name: source_attachment source_attachment_pk; Type: CONSTRAINT; Schema: melo; Owner: -
+--
+
+ALTER TABLE ONLY melo.source_attachment
+    ADD CONSTRAINT source_attachment_pk PRIMARY KEY (source_id, attachment_id);
 
 
 --
@@ -422,6 +459,20 @@ CREATE UNIQUE INDEX artist_name_disambiguation_uindex ON melo.artist USING btree
 
 
 --
+-- Name: attachment_id_uindex; Type: INDEX; Schema: melo; Owner: -
+--
+
+CREATE UNIQUE INDEX attachment_id_uindex ON melo.attachment USING btree (id);
+
+
+--
+-- Name: attachment_uri_uindex; Type: INDEX; Schema: melo; Owner: -
+--
+
+CREATE UNIQUE INDEX attachment_uri_uindex ON melo.attachment USING btree (uri);
+
+
+--
 -- Name: collection_id_uindex; Type: INDEX; Schema: melo; Owner: -
 --
 
@@ -440,6 +491,27 @@ CREATE UNIQUE INDEX collection_name_uindex ON melo.collection USING btree (name)
 --
 
 CREATE UNIQUE INDEX collection_root_uri_uindex ON melo.collection USING btree (root_uri);
+
+
+--
+-- Name: source_attachment_attachment_id_index; Type: INDEX; Schema: melo; Owner: -
+--
+
+CREATE INDEX source_attachment_attachment_id_index ON melo.source_attachment USING btree (attachment_id);
+
+
+--
+-- Name: source_attachment_source_id_index; Type: INDEX; Schema: melo; Owner: -
+--
+
+CREATE INDEX source_attachment_source_id_index ON melo.source_attachment USING btree (source_id);
+
+
+--
+-- Name: source_collection_id_index; Type: INDEX; Schema: melo; Owner: -
+--
+
+CREATE INDEX source_collection_id_index ON melo.source USING btree (collection_id);
 
 
 --
@@ -563,6 +635,22 @@ ALTER TABLE ONLY melo.related_artist
 
 
 --
+-- Name: source_attachment source_attachment_attachment_id_fk; Type: FK CONSTRAINT; Schema: melo; Owner: -
+--
+
+ALTER TABLE ONLY melo.source_attachment
+    ADD CONSTRAINT source_attachment_attachment_id_fk FOREIGN KEY (attachment_id) REFERENCES melo.attachment(id) ON DELETE CASCADE;
+
+
+--
+-- Name: source_attachment source_attachment_source_id_fk; Type: FK CONSTRAINT; Schema: melo; Owner: -
+--
+
+ALTER TABLE ONLY melo.source_attachment
+    ADD CONSTRAINT source_attachment_source_id_fk FOREIGN KEY (source_id) REFERENCES melo.source(id) ON DELETE CASCADE;
+
+
+--
 -- Name: source source_collection_id_fk; Type: FK CONSTRAINT; Schema: melo; Owner: -
 --
 
@@ -671,4 +759,6 @@ INSERT INTO melo.schema_migrations (version) VALUES
     ('20200505222518'),
     ('20200626210715'),
     ('20201129174644'),
-    ('20201204000250');
+    ('20201204000250'),
+    ('20210620173517'),
+    ('20211209202153');

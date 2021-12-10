@@ -26,7 +26,6 @@ import qualified Melo.Library.Collection.Types as Ty
 import Melo.Library.Source.API as SrcApi
 import qualified Melo.Library.Source.Repo as SrcRepo
 import Network.URI
-import Rel8 (Result)
 import Witch
 
 resolveCollections ::
@@ -71,7 +70,7 @@ data Collection m = Collection
     name :: Text,
     watch :: Bool,
     kind :: Text,
-    sources :: SourcesArgs -> m [SrcApi.Source m],
+    sources :: CollectionSourcesArgs -> m [SrcApi.Source m],
     sourceGroups :: m [SrcApi.SourceGroup m]
   }
   deriving (Generic)
@@ -106,8 +105,8 @@ instance
         rootUri = s ^. #root_uri,
         watch = s ^. #watch,
         kind = s ^. #kind,
-        sources = SrcApi.resolveSources,
-        sourceGroups = SrcApi.resolveSourceGroups
+        sources = SrcApi.resolveCollectionSources (s ^. #id),
+        sourceGroups = SrcApi.resolveCollectionSourceGroups (s ^. #id)
       }
 
 data LocalFileCollection m = LocalFileCollection

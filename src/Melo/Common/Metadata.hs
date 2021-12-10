@@ -21,7 +21,8 @@ import qualified Melo.Format.Error as F
 
 chooseMetadata :: [Metadata] -> Maybe Metadata
 chooseMetadata ms =
-  find (\Metadata {..} -> formatId == F.vorbisCommentsId) ms
+        find (\Metadata {..} -> formatId == (F.MetadataId "CUE")) ms
+    <|> find (\Metadata {..} -> formatId == F.vorbisCommentsId) ms
     <|> find (\Metadata {..} -> formatId == F.apeV2Id) ms
     <|> find (\Metadata {..} -> formatId == F.apeV1Id) ms
     <|> find (\Metadata {..} -> formatId == F.id3v24Id) ms

@@ -12,15 +12,16 @@ import Control.Monad.Trans.Control
 import Data.Pool
 import qualified Data.Text as T
 import Hasql.Connection
+import Melo.Common.Logging
 import Melo.Common.NaturalSort
 import Melo.Common.Uri
 import Melo.Database.Repo
 import Melo.Database.Repo.IO
+import Melo.Library.Collection.Types
 import Melo.Library.Source.Types
 import Rel8
   ( (==.),
     Name,
-    Result,
     TableSchema(..),
     Upsert(..),
     lit,
@@ -32,6 +33,7 @@ class Repository SourceEntity m => SourceRepository m where
   getKeysByUri :: [URI] -> m [PrimaryKey SourceEntity]
   getByUriPrefix :: URI -> m [SourceEntity]
   getKeysByUriPrefix :: URI -> m [PrimaryKey SourceEntity]
+  getCollectionSources :: CollectionRef -> m [SourceEntity]
 
 instance
   {-# OVERLAPPABLE #-}
@@ -45,6 +47,7 @@ instance
   getKeysByUri = lift . getKeysByUri
   getByUriPrefix = lift . getByUriPrefix
   getKeysByUriPrefix = lift . getKeysByUriPrefix
+  getCollectionSources = lift . getCollectionSources
 
 newtype SourceRepositoryIOT m a = SourceRepositoryIOT
   { runSourceRepositoryIOT :: RepositoryIOT SourceTable m a
@@ -110,6 +113,12 @@ instance
       srcs <- Rel8.each tbl
       Rel8.where_ (srcs ^. #source_uri `startsWith` Rel8.lit (T.pack $ show prefix))
       pure (pk srcs)
+  getCollectionSources (CollectionRef collectionId) = do
+    RepositoryHandle {connSrc, tbl} <- ask
+    runSelect connSrc do
+      srcs <- Rel8.each tbl
+      Rel8.where_ (srcs ^. #collection_id ==. Rel8.lit collectionId)
+      pure srcs
 
 sourceSchema :: TableSchema (SourceTable Name)
 sourceSchema =

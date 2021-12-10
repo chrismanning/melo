@@ -27,7 +27,9 @@ import Melo.Library.Source.Types
   ( NewImportSource (..),
     Source (..),
   )
+import Melo.Library.Source.Cue
 import System.FilePath
+import Data.Functor ((<&>))
 
 class Monad m => FileSystemService m where
   scanPath :: CollectionRef -> FilePath -> m [Source]
@@ -109,12 +111,17 @@ instance
             dirs <- filterM doesDirectoryExist =<< listDirectoryAbs p
             Par.mapM_ (scanPath ref) dirs
             files <- filterM doesFileExist =<< listDirectoryAbs p
-            if any ((== ".cue") . takeExtension) files
-              then do
-                -- TODO load file(s) referenced in cuefile
-                $(logWarn) $ "Cue file found in " <> show p <> "; skipping..."
+            let cuefiles = filter ((== ".cue") . takeExtension) files
+            case cuefiles of
+              [] -> lift $ withTransaction pool runSourceRepositoryIO (importTransaction files)
+              [cuefile] -> do
+                $(logInfo) $ "Cue file found " <> show cuefile
+                srcs <- lift $ withTransaction pool runSourceRepositoryIO (openCueFile cuefile <&> (CueFileImportSource ref <$>) >>= importSources)
+                $(logDebug) $ "Imported sources from cue file: " <> show srcs
+                pure srcs
+              _ -> do
+                $(logWarn) $ "Multiple cue file found in " <> show p <> "; skipping..."
                 pure mempty
-              else lift $ withTransaction pool runSourceRepositoryIO (importTransaction files)
           else
             if isFile
               then lift $ withTransaction pool runSourceRepositoryIO (importTransaction [p])

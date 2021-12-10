@@ -75,7 +75,6 @@ type MonadSourceTransform m = (
 applyTransformations :: MonadSourceTransform m => [Transform m] -> [Source] -> m [Source]
 applyTransformations transformations srcs = foldM transform srcs transformations
   where
-    transform :: [Source] -> Transform m -> m [Source]
     transform srcs f = f srcs
 
 previewTransformations :: MonadSourceTransform m => [Transform (FileSystemPreviewT m)] -> [Source] -> m [Source]
