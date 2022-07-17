@@ -6,8 +6,10 @@ module Melo.Format
     module Melo.Format.Mapping,
     module Melo.Format.Metadata,
     module Melo.Format.OggVorbis,
+    module Melo.Format.RIFF,
     module Melo.Format.Vorbis,
     module Melo.Format.WavPack,
+    convert,
   )
 where
 
@@ -48,7 +50,40 @@ import Melo.Format.Vorbis
     vorbisCommentsId,
     vorbisTag,
   )
+import Melo.Format.RIFF
+  ( riffId,
+  )
 import Melo.Format.WavPack
   ( WavPack (..),
     wavPack,
   )
+import qualified Data.List.NonEmpty as NE
+import Data.Text (Text)
+import qualified Data.Vector as V
+import Data.Maybe (fromMaybe, listToMaybe)
+import Data.Vector ((!?))
+import Data.Functor ((<&>))
+
+convert :: MetadataId -> Metadata -> Maybe Metadata
+convert targetId Metadata{tags=(Tags tags), formatId} = mkMetadata targetId emptyTags <&> \new -> new { tags = Tags (V.mapMaybe remap tags) }
+  where
+    remap :: (Text, Text) -> Maybe (Text, Text)
+    remap (k, v) = do
+      srcSelector <- selectorFor formatId
+      targetSelector <- selectorFor targetId
+      let findFieldMapping (TagMapping tm) = listToMaybe $ NE.filter (\fm -> fromMaybe False (fieldMatches <$> (srcSelector fm) <*> Just k)) tm
+      mapping <- mappings !? 0
+      fm <- canonicalForm <$> (findFieldMapping mapping >>= targetSelector)
+      Just (fm, v)
+    mappings :: V.Vector TagMapping
+    mappings = V.fromList defaultMappings
+    selectorFor :: MetadataId -> Maybe FieldMappingSelector
+    selectorFor mid | mid == vorbisCommentsId = Just vorbis
+                    | mid == id3v24Id = Just id3v2_4
+                    | mid == id3v23Id = Just id3v2_3
+                    | mid == apeV2Id = Just ape
+                    | mid == apeV1Id = Just ape
+                    | mid == riffId = Just riff
+                    | mid == id3v1Id = Just id3v1
+                    | mid == MetadataId "CUE" = Just cue
+                    | otherwise = Nothing

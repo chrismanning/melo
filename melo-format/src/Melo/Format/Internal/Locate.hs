@@ -7,7 +7,7 @@ import Data.Binary.Get (runGetOrFail)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as L
 import Data.Either
-import Data.List as List
+import qualified Data.List as List
 import Melo.Format.Internal.Binary
 import Melo.Format.Internal.BinaryUtil
 import Numeric.Natural

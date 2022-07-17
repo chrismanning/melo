@@ -11,9 +11,13 @@ module Melo.Common.Http
 where
 
 import Control.Applicative
+import Control.Concurrent.Classy (MonadConc)
 import Control.Exception.Safe
+import Control.Monad.Base
 import Control.Monad.Except
+import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Reader
+import Control.Monad.Trans.Control
 import Data.Aeson as A
 import qualified Data.ByteString.Lazy as L
 import Data.Either.Combinators
@@ -59,7 +63,20 @@ instance From SomeException HttpClientException where
 newtype HttpSessionIOT m a = HttpSessionIOT
   { runHttpSessionIOT :: ReaderT WrS.Session m a
   }
-  deriving newtype (Applicative, Functor, Monad, MonadIO, MonadTrans)
+  deriving newtype (
+    Applicative,
+    Functor,
+    Monad,
+    MonadBase b,
+    MonadBaseControl b,
+    MonadCatch,
+    MonadConc,
+    MonadIO,
+    MonadMask,
+    MonadParallel,
+    MonadThrow,
+    MonadTrans
+  )
 
 instance
   ( MonadIO m,
@@ -69,14 +86,14 @@ instance
   where
   getWith opts url = HttpSessionIOT $
     ReaderT $ \sess -> do
-      $(logDebugShowIO) url
-      $(logDebugShowIO) opts
+      $(logDebugShow) url
+      $(logDebugShow) opts
       r <- liftIO $ tryAny (WrS.getWith opts sess (T.unpack url))
-      $(logDebugShowIO) r
+      $(logDebugShow) r
       pure $ mapLeft (into @HttpClientException) r
   getWithJson opts url = do
     r <- getWith opts url
-    $(logDebugShowIO) r
+    $(logDebugShow) r
     case r of
       Left e -> pure $ Left (into @HttpClientException e)
       Right r -> pure $ mapLeft (into @HttpClientException) (Wr.asJSON r)

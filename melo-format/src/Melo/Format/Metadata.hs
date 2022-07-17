@@ -11,6 +11,7 @@ module Melo.Format.Metadata
     openMetadataFile,
     openMetadataFileByExt,
     mkMetadata,
+    metadataFactory,
     module Melo.Format.Internal.Tag,
     metadataFileFactoryIO,
     metadataFileFactoriesIO,
@@ -21,7 +22,7 @@ import Control.Exception.Safe
 import Control.Monad
 import Data.Generics.Labels ()
 import Data.Kind (Type)
-import Data.List
+import Data.List (find, sortOn)
 import Data.Ord
 import Lens.Micro
 import Melo.Format.Ape

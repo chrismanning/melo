@@ -90,7 +90,7 @@ writeOggVorbisFile f newpath = do
 
 updateOggVorbisWith :: [Metadata] -> OggVorbis -> OggVorbis
 updateOggVorbisWith ms ogg@(OggVorbis identPage (OggPage header (FramedVorbisComments vcs) s)) =
-  case F.find (\m -> m ^. #formatId == vorbisCommentsId) ms of
+  case F.find (\m -> m.formatId == vorbisCommentsId) ms of
     Just Metadata {tags} ->
       OggVorbis identPage (OggPage header (FramedVorbisComments (replaceWithTags vcs tags)) s)
     Nothing -> ogg

@@ -14,7 +14,6 @@ import Data.UUID.V4
 import GHC.Generics
 import Melo.Common.Uri
 import Melo.Database.Repo
-import qualified Melo.Format as F
 import Rel8
 import System.IO.Unsafe
 import Witch
@@ -53,6 +52,7 @@ instance From CollectionRef UUID where
 instance Entity (CollectionTable Result) where
   type NewEntity (CollectionTable Result) = NewCollection
   type PrimaryKey (CollectionTable Result) = CollectionRef
+  primaryKey e = e.id
 
 data NewCollection = NewFilesystemCollection
   { rootPath :: Text,
@@ -95,6 +95,7 @@ type UpdateCollection = CollectionTable Result
 data SourcePathPattern
   = LiteralPattern FilePath
   | GroupPattern (NonEmpty SourcePathPattern)
-  | MappingPattern F.TagMapping
+  | MappingPattern Text
   | DefaultPattern SourcePathPattern SourcePathPattern
   | PrintfPattern String SourcePathPattern
+  deriving (Show, Eq)

@@ -29,6 +29,7 @@ where
 
 import Control.Concurrent.Classy
 import Control.Exception.Safe
+import Control.Lens hiding (from)
 import Control.Monad.Base
 import Control.Monad.IO.Class
 import Control.Monad.Identity
@@ -41,14 +42,16 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Lazy as LT
 import Data.Time.Format
+import Katip as K
 import Language.Haskell.TH.Syntax (Exp, Loc (..), Q, liftString, qLocation)
 import qualified Language.Haskell.TH.Syntax as TH (Lift (lift))
 import Prelude hiding (log)
-import qualified System.Wlog as Wlog
-import Witch
+import System.IO (stdout)
+import Witch hiding (over)
+import Control.Monad.Reader
 
 class Monad m => Logging m where
-  log :: From s LogMessage => Wlog.LoggerName -> Wlog.Severity -> s -> m ()
+  log :: From s LogMessage => Namespace -> Severity -> s -> m ()
 
 instance
   {-# OVERLAPPABLE #-}
@@ -77,104 +80,124 @@ instance From ByteString LogMessage where
 instance From L.ByteString LogMessage where
   from = from . TE.decodeUtf8 . L.toStrict
 
---instance From BB.Builder LogMessage where
---  from = from . BL.toStrict . BB.toLazyByteString
-
 newtype LoggingIOT m a = LoggingIOT
-  { runLoggingIOT :: m a
+  { runLoggingIOT :: ReaderT LogEnv m a
   }
   deriving newtype (Applicative, Functor, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadMask, MonadThrow, MonadParallel)
-  deriving (MonadTrans, MonadTransControl) via IdentityT
+  deriving (MonadTrans, MonadTransControl)
+--  deriving (MonadReader LogEnv)
 
 instance Logging IO where
-  log ln severity msg = do
+  log ns severity msg = do
+    handleScribe <- mkHandleScribe ColorIfTerminal stdout (permitItem DebugS) V2
+    logEnv <- registerScribe "stdout" handleScribe defaultScribeSettings =<< initLogEnv "melo" "local"
     let LogMessage msg' = from msg
-    Wlog.logM ln severity msg'
+    K.runKatipT logEnv $ K.logMsg ns severity (logStr msg')
+    handleScribe.scribeFinalizer
 
 instance
   (MonadIO m) =>
   Logging (LoggingIOT m)
   where
-  log ln severity msg = do
+  log ns severity msg = do
     let LogMessage msg' = from msg
-    Wlog.logM ln severity msg'
+    K.logMsg ns severity (logStr msg')
+
+instance MonadIO m => Katip (LoggingIOT m) where
+  getLogEnv = LoggingIOT ask
+  localLogEnv f (LoggingIOT m) = LoggingIOT (local f m)
+
+--instance MonadIO m => KatipContext (LoggingIOT m) where
+--  getKatipContext = view _2
+--  localKatipContext f = local (over _2 f)
+--  getKatipNamespace = view _3
+--  localKatipNamespace f = local (over _3 f)
 
 logImpl :: (From s LogMessage, Logging m) => String -> Int -> s -> m ()
-logImpl ln severity msg = log (Wlog.LoggerName $ T.pack ln) (toEnum severity) msg
+logImpl ns severity msg = log (Namespace [T.pack ns]) (toEnum severity) msg
 
-log_ :: Wlog.Severity -> Q Exp
+log_ :: Severity -> Q Exp
 log_ severity =
   [|logImpl $(qLocation >>= liftString . loc_module) $(TH.lift $ fromEnum severity)|]
 
-logShow :: Wlog.Severity -> Q Exp
+logShow :: Severity -> Q Exp
 logShow severity =
   [|logImpl $(qLocation >>= liftString . loc_module) $(TH.lift $ fromEnum severity) . ((LT.pack . show) :: Show a => a -> LT.Text)|]
 
 logDebug :: Q Exp
-logDebug = log_ Wlog.Debug
+logDebug = log_ K.DebugS
 
 logDebugShow :: Q Exp
-logDebugShow = logShow Wlog.Debug
+logDebugShow = logShow K.DebugS
 
 logInfo :: Q Exp
-logInfo = log_ Wlog.Info
+logInfo = log_ K.InfoS
 
 logInfoShow :: Q Exp
-logInfoShow = logShow Wlog.Info
+logInfoShow = logShow K.InfoS
 
 logWarn :: Q Exp
-logWarn = log_ Wlog.Warning
+logWarn = log_ K.WarningS
 
 logWarnShow :: Q Exp
-logWarnShow = logShow Wlog.Warning
+logWarnShow = logShow K.WarningS
 
 logError :: Q Exp
-logError = log_ Wlog.Error
+logError = log_ K.ErrorS
 
 logErrorShow :: Q Exp
-logErrorShow = logShow Wlog.Error
+logErrorShow = logShow K.ErrorS
 
-runStdoutLogging :: LoggingIOT m a -> m a
-runStdoutLogging = runLoggingIOT
+runStdoutLogging :: MonadIO m => LoggingIOT m a -> m a
+runStdoutLogging m = do
+  handleScribe <- liftIO $ mkHandleScribe ColorIfTerminal stdout (permitItem DebugS) V2
+  logEnv <- liftIO $ registerScribe "stdout" handleScribe defaultScribeSettings =<< initLogEnv "melo" "local"
+  runReaderT (runLoggingIOT m) logEnv
 
 logIOImpl :: (From s LogMessage, MonadIO m) => String -> Int -> s -> m ()
-logIOImpl ln severity msg =
-  let (LogMessage s) = from msg
-   in Wlog.logM (Wlog.LoggerName $ T.pack ln) (toEnum severity) s
+logIOImpl ns severity msg =
+  let (LogMessage s) = from msg in
+  do
+    handleScribe <- liftIO $ mkHandleScribe ColorIfTerminal stdout (permitItem InfoS) V2
+    logEnv <- liftIO $ registerScribe "stdout" handleScribe defaultScribeSettings =<< initLogEnv "melo" "local"
+    K.runKatipT logEnv $ K.logMsg (Namespace [T.pack ns]) (toEnum severity) (logStr s)
 
-logIO :: Wlog.Severity -> Q Exp
+logIO :: Severity -> Q Exp
 logIO severity =
   [|logIOImpl $(qLocation >>= liftString . loc_module) $(TH.lift $ fromEnum severity)|]
 
-logShowIO :: Wlog.Severity -> Q Exp
+logShowIO :: Severity -> Q Exp
 logShowIO severity =
   [|logIOImpl $(qLocation >>= liftString . loc_module) $(TH.lift $ fromEnum severity) . ((LT.pack . show) :: Show a => a -> LT.Text)|]
 
 logDebugIO :: Q Exp
-logDebugIO = logIO Wlog.Debug
+logDebugIO = logIO K.DebugS
 
 logDebugShowIO :: Q Exp
-logDebugShowIO = logShowIO Wlog.Debug
+logDebugShowIO = logShowIO K.DebugS
 
 logInfoIO :: Q Exp
-logInfoIO = logIO Wlog.Info
+logInfoIO = logIO K.InfoS
 
 logInfoShowIO :: Q Exp
-logInfoShowIO = logShowIO Wlog.Info
+logInfoShowIO = logShowIO K.InfoS
 
 logWarnIO :: Q Exp
-logWarnIO = logIO Wlog.Warning
+logWarnIO = logIO K.WarningS
 
 logWarnShowIO :: Q Exp
-logWarnShowIO = logShowIO Wlog.Warning
+logWarnShowIO = logShowIO K.WarningS
 
 logErrorIO :: Q Exp
-logErrorIO = logIO Wlog.Error
+logErrorIO = logIO K.ErrorS
 
 logErrorShowIO :: Q Exp
-logErrorShowIO = logShowIO Wlog.Error
+logErrorShowIO = logShowIO K.ErrorS
 
 initLogging :: MonadIO m => m ()
 initLogging = do
-  config <- Wlog.parseLoggerConfig "logging.yaml"
-  Wlog.setupLogging (Just (T.pack . formatTime defaultTimeLocale "%F %T%3Q")) config
+--  handleScribe <- K.mkHandleScribe K.ColorIfTerminal stdout (K.permitItem K.InfoS) K.V2
+--  let mkLogEnv = K.registerScribe "stdout" handleScribe K.defaultScribeSettings =<< K.initLogEnv "Melo" "local"
+--  config <- Wlog.parseLoggerConfig "logging.yaml"
+--  Wlog.setupLogging (Just (T.pack . formatTime defaultTimeLocale "%F %T%3Q")) config
+  pure ()

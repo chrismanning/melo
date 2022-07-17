@@ -37,6 +37,7 @@ instance From GenreRef UUID where
 instance Entity (GenreTable Result) where
   type NewEntity (GenreTable Result) = NewGenre
   type PrimaryKey (GenreTable Result) = GenreRef
+  primaryKey e = e.id
 
 data NewGenre = NewGenre
   { name :: Text,

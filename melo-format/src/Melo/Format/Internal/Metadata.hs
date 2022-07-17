@@ -8,8 +8,6 @@ import Data.HashMap.Strict
 import Data.Hashable
 import Data.Text
 import GHC.Generics hiding (to)
-import GHC.OverloadedLabels
-import Lens.Micro hiding (lens)
 import Melo.Format.Internal.Info
 import Melo.Format.Internal.Tag
 import Melo.Format.Mapping
@@ -57,20 +55,11 @@ instance Show Metadata where
       . showsPrec d tags
       . showString "}"
 
-instance IsLabel "formatId" (Getting MetadataId Metadata MetadataId) where
-  fromLabel = to (formatId :: Metadata -> MetadataId)
-
-instance IsLabel "formatDesc" (Getting Text Metadata Text) where
-  fromLabel = to (formatDesc :: Metadata -> Text)
-
-instance IsLabel "tags" (Getting Tags Metadata Tags) where
-  fromLabel = to (tags :: Metadata -> Tags)
-
 instance Eq Metadata where
   a == b =
-    (a ^. #formatId :: MetadataId) == b ^. #formatId
-      && (a ^. #formatDesc :: Text) == b ^. #formatDesc
-      && (a ^. #tags :: Tags) == b ^. #tags
+    a.formatId == b.formatId
+      && a.formatDesc == b.formatDesc
+      && a.tags == b.tags
 
 class MetadataFormat a where
   metadataFormat :: MetadataFormatDesc
@@ -93,15 +82,15 @@ data MetadataFormatDesc = MetadataFormat
   { formatId :: !MetadataId,
     formatDesc :: !Text
   }
-  deriving (Generic)
+  deriving (Generic, Eq)
 
 instance Hashable MetadataFormatDesc
 
 extractMetadata :: forall a. MetadataFormat a => a -> Metadata
-extractMetadata a =
+extractMetadata a = let fmt = metadataFormat @a in
   Metadata
-    { formatId = metadataFormat @a ^. #formatId,
-      formatDesc = metadataFormat @a ^. #formatDesc,
+    { formatId = fmt.formatId,
+      formatDesc = fmt.formatDesc,
       tags = readTags a,
       lens = metadataLens @a
     }

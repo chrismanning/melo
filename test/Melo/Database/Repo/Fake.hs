@@ -13,7 +13,6 @@ import Data.Foldable
 import Data.Hashable
 import qualified Data.HashMap.Strict as H
 import Data.Maybe
-import GHC.Records
 import Melo.Database.Repo
 import Witch
 
@@ -40,7 +39,6 @@ newtype FakeRepositoryT e m a = FakeRepositoryT {
 instance (
   Monad m,
   Entity e,
-  HasField "id" e (PrimaryKey e),
   Eq (PrimaryKey e),
   Hashable (PrimaryKey e),
   From (NewEntity e) e
@@ -50,11 +48,11 @@ instance (
     sources <- coerce <$> get
     pure $ catMaybes $ fmap (`H.lookup` sources) ks
   insert es = let vs = fmap from es in state $ \(FakeRepository repo) ->
-    (vs, FakeRepository $ foldl' (\r v -> H.insert (getField @"id" v) v r) repo vs)
+    (vs, FakeRepository $ foldl' (\r v -> H.insert (primaryKey v) v r) repo vs)
   insert' = void . insert
   delete ks = modify $ \(FakeRepository repo) -> FakeRepository $ foldl' (flip H.delete) repo ks
   update vs = state $ \(FakeRepository repo) ->
-               (vs, FakeRepository $ foldl' (\r v -> H.insert (getField @"id" v) v r) repo vs)
+               (vs, FakeRepository $ foldl' (\r v -> H.insert (primaryKey v) v r) repo vs)
   update' = void . update
 
 runFakeRepository :: Monad m => FakeRepository t -> FakeRepositoryT t m a -> m a

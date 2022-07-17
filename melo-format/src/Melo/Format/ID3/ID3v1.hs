@@ -31,7 +31,7 @@ import Melo.Format.Internal.Metadata
 import Melo.Format.Internal.Tag
 import Melo.Format.Mapping
   ( FieldMapping
-      ( toCanonicalForm
+      ( canonicalForm
       ),
     FieldMappings (id3v1),
     TagMapping (..),
@@ -77,15 +77,15 @@ instance MetadataFormat ID3v1 where
             do
               let fm = headTagMapping trackNumberTag
               track' <- track id3
-              pure (toCanonicalForm $ id3v1 fm, T.pack $ show track'),
+              (, T.pack $ show track') <$> canonicalForm <$> id3v1 fm,
             do
               g <- genre id3
               tag genreTag (const g)
           ]
     where
       tag tm sel =
-        let fm = headTagMapping tm
-         in Just (toCanonicalForm $ id3v1 fm, sel id3)
+        let fm = headTagMapping tm in
+          (, sel id3) <$> canonicalForm <$> id3v1 fm
   replaceWithTags id3 newTags =
     id3
       { title = saveTag trackTitleTag,
@@ -101,7 +101,7 @@ instance MetadataFormat ID3v1 where
         let fm = headTagMapping tm
          in fromMaybe
               ""
-              (listToMaybe $ lookupTag (toCanonicalForm $ id3v1 fm) newTags)
+              (lookupTag <$> (canonicalForm <$> id3v1 fm) <*> Just newTags >>= listToMaybe)
   metadataSize = const id3v1Size
 
 id3v1Id :: MetadataId

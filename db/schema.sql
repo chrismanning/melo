@@ -21,7 +21,8 @@ CREATE SCHEMA melo;
 --
 
 CREATE TYPE melo.intervalrange AS RANGE (
-    subtype = interval
+    subtype = interval,
+    multirange_type_name = melo.intervalmultirange
 );
 
 
@@ -211,6 +212,16 @@ CREATE TABLE melo.source (
 CREATE TABLE melo.source_attachment (
     source_id uuid NOT NULL,
     attachment_id uuid NOT NULL
+);
+
+
+--
+-- Name: tag_mapping; Type: TABLE; Schema: melo; Owner: -
+--
+
+CREATE TABLE melo.tag_mapping (
+    name text NOT NULL,
+    field_mappings jsonb NOT NULL
 );
 
 
@@ -406,6 +417,14 @@ ALTER TABLE ONLY melo.source
 
 
 --
+-- Name: tag_mapping tag_mapping_pk; Type: CONSTRAINT; Schema: melo; Owner: -
+--
+
+ALTER TABLE ONLY melo.tag_mapping
+    ADD CONSTRAINT tag_mapping_pk PRIMARY KEY (name);
+
+
+--
 -- Name: track_artist_name track_artist_name_pkey; Type: CONSTRAINT; Schema: melo; Owner: -
 --
 
@@ -512,6 +531,13 @@ CREATE INDEX source_attachment_source_id_index ON melo.source_attachment USING b
 --
 
 CREATE INDEX source_collection_id_index ON melo.source USING btree (collection_id);
+
+
+--
+-- Name: tag_mapping_name_uindex; Type: INDEX; Schema: melo; Owner: -
+--
+
+CREATE UNIQUE INDEX tag_mapping_name_uindex ON melo.tag_mapping USING btree (name);
 
 
 --
@@ -761,4 +787,5 @@ INSERT INTO melo.schema_migrations (version) VALUES
     ('20201129174644'),
     ('20201204000250'),
     ('20210620173517'),
-    ('20211209202153');
+    ('20211209202153'),
+    ('20220712201124');

@@ -27,8 +27,9 @@ library:
   dependencies:
     - array
     - binary
-    - binary-bits
     - bytestring
+    # binary-bits fork
+    - caerbannog
     - containers
     - data-default
     - directory
@@ -99,44 +100,23 @@ ghc-options:
   - -hiedir=../.hie
 
 default-extensions:
+  - GHC2021
   - ApplicativeDo
-  - BangPatterns
-  - BinaryLiterals
-  - ConstraintKinds
   - DataKinds
   - DefaultSignatures
-  - DeriveFoldable
-  - DeriveFunctor
-  - DeriveGeneric
-  - DeriveLift
-  - DeriveTraversable
   - DerivingStrategies
   - DerivingVia
   - DuplicateRecordFields
-  - EmptyCase
-  - ExistentialQuantification
-  - FlexibleContexts
-  - FlexibleInstances
   - FunctionalDependencies
   - GADTs
-  - GeneralizedNewtypeDeriving
-  - InstanceSigs
-  - KindSignatures
   - LambdaCase
-  - MultiParamTypeClasses
   - MultiWayIf
-  - NamedFieldPuns
   - OverloadedLabels
+  - OverloadedRecordDot
   - OverloadedStrings
   - PatternSynonyms
-  - RankNTypes
   - RecordWildCards
-  - ScopedTypeVariables
-  - StandaloneDeriving
   - TemplateHaskell
-  - TupleSections
-  - TypeApplications
   - TypeFamilies
   - TypeFamilyDependencies
-  - TypeOperators
   - ViewPatterns

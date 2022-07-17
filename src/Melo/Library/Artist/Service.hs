@@ -48,5 +48,5 @@ importArtists ss = do
 setArtists :: Metadata -> [Artist] -> Metadata
 setArtists m a =
   let tag = lens m
-      ts = m ^. #tags
+      ts = m.tags
    in m {tags = ts & tag M.trackArtistTag .~ (fromList a <&> (^. #name))}

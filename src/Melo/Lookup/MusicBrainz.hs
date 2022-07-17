@@ -29,10 +29,15 @@ module Melo.Lookup.MusicBrainz
 where
 
 import Control.Applicative as A
+import Control.Concurrent.Classy
 import Control.Concurrent.TokenLimiter
+import Control.Exception.Safe
 import Control.Lens hiding (from, lens)
 import Control.Monad
+import Control.Monad.Base
+import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Reader
+import Control.Monad.Trans.Control
 import Data.Aeson as A
 import Data.Aeson.Casing (trainCase)
 import Data.Default
@@ -312,7 +317,19 @@ getReleaseByAlbum albumTitle albumArtist = do
 newtype MusicBrainzServiceIOT m a = MusicBrainzServiceIOT
   { runMusicBrainzServiceIOT :: HttpSessionIOT (RateLimitIOT m) a
   }
-  deriving newtype (Applicative, Functor, Monad, MonadIO)
+  deriving newtype (
+    Applicative,
+    Functor,
+    Monad,
+    MonadBase b,
+    MonadBaseControl b,
+    MonadCatch,
+    MonadConc,
+    MonadIO,
+    MonadMask,
+    MonadParallel,
+    MonadThrow
+  )
 
 instance MonadTrans MusicBrainzServiceIOT where
   lift m = MusicBrainzServiceIOT $ HttpSessionIOT $ ReaderT $ const $ RateLimitIOT $ ReaderT $ const m

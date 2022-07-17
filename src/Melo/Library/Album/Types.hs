@@ -29,6 +29,7 @@ data AlbumTable f = AlbumTable
 instance Entity (AlbumTable Result) where
   type NewEntity (AlbumTable Result) = NewAlbum
   type PrimaryKey (AlbumTable Result) = AlbumRef
+  primaryKey e = e.id
 
 newtype AlbumRef = AlbumRef UUID
   deriving (Show, Eq, Ord, Generic)

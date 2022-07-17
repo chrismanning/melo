@@ -30,6 +30,7 @@ data ArtistTable f = ArtistTable
 instance Entity (ArtistTable Result) where
   type NewEntity (ArtistTable Result) = NewArtist
   type PrimaryKey (ArtistTable Result) = ArtistRef
+  primaryKey e = e.id
 
 newtype ArtistRef = ArtistRef UUID
   deriving (Show, Eq, Ord, Generic)

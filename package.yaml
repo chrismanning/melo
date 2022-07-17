@@ -10,13 +10,6 @@ extra-source-files:
 - README.md
 - ChangeLog.md
 
-# Metadata used when publishing your package
-# synopsis:            Short description of your package
-# category:            Web
-
-# To avoid duplicated efforts in documentation and dealing with the
-# complications of embedding Haddock markup inside cabal files, it is
-# common to point users to the README.md file.
 description:         Please see the README on Github at <https://github.com/chrismanning/melo#readme>
 
 dependencies:
@@ -32,13 +25,16 @@ library:
   - authenticate-oauth
   - barbies
   - binary
-  - binary-bits
   - binary-parser
   - bytestring
   - cache
+  - caerbannog
   - clock
   - concurrency
   - conduit
+  - conduit-audio
+  - conduit-audio-mpg123
+  - conduit-audio-sndfile
   - containers
   - control-bool
   - country
@@ -46,6 +42,7 @@ library:
   - data-default
   - dependent-map
   - dependent-sum
+  - deriving-trans
   - directory
   - directory-tree
   - dns
@@ -61,13 +58,15 @@ library:
   - hashtables
   - hasql
   - hasql-transaction
+  - hsndfile
   - http-client
   - http-client-tls
   - http-types
   - iproute
+  - katip
   - lens
   - lifted-base
-  - log-warper
+  - megaparsec
   - memory
   - monad-control
   - monad-logger
@@ -92,6 +91,7 @@ library:
   - range
   - rel8
   - resource-pool
+  - resourcet
   - safe-exceptions
   - scotty
   - servant
@@ -115,6 +115,7 @@ library:
   - wai-cors
   - wai-extra
   - warp
+  - wave
   - witch
   - wreq
 
@@ -128,6 +129,18 @@ executables:
     - -with-rtsopts=-N
     dependencies:
       - melo
+  melo-player:
+    source-dirs: app/player
+    main: Main.hs
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+    dependencies:
+      - melo
+      - conduit-audio
+      - conduit-audio-sndfile
+      - conduit-audio-mpg123
 
 tests:
   melo-test:
@@ -141,6 +154,7 @@ tests:
     - melo
     - melo-format
     - aeson
+    - aeson-casing
     - attoparsec
     - base16-bytestring
     - binary
@@ -184,45 +198,28 @@ ghc-options:
 - -hiedir=.hie
 
 default-extensions:
+- GHC2021
 - ApplicativeDo
-- BangPatterns
-- BinaryLiterals
 - BlockArguments
-- ConstraintKinds
 - DataKinds
 - DefaultSignatures
-- DeriveFoldable
-- DeriveFunctor
-- DeriveGeneric
-- DeriveLift
-- DeriveTraversable
 - DerivingStrategies
 - DerivingVia
+- DisambiguateRecordFields
 - DuplicateRecordFields
-- EmptyCase
-- ExistentialQuantification
-- FlexibleContexts
-- FlexibleInstances
 - FunctionalDependencies
 - GADTs
-- GeneralizedNewtypeDeriving
-- InstanceSigs
-- KindSignatures
+- ImpredicativeTypes
 - LambdaCase
-- MultiParamTypeClasses
 - MultiWayIf
-- NamedFieldPuns
 - OverloadedLabels
+- OverloadedRecordDot
+#- OverloadedRecordUpdate
 - OverloadedStrings
 - PatternSynonyms
-- RankNTypes
+#- RebindableSyntax
 - RecordWildCards
-- ScopedTypeVariables
-- StandaloneDeriving
 - TemplateHaskell
-- TupleSections
-- TypeApplications
 - TypeFamilies
 - TypeFamilyDependencies
-- TypeOperators
 - ViewPatterns

@@ -9,8 +9,8 @@ import Data.ByteString.Lazy.Char8
 import Data.Morpheus
 import Data.Morpheus.Types
 import Data.Pool
-import qualified Data.Text as T
-import qualified Data.Text.Lazy as LT
+import Data.Text qualified as T
+import Data.Text.Lazy qualified as LT
 import Data.Typeable
 import Data.UUID
 import GHC.Generics hiding (from)
@@ -23,12 +23,15 @@ import Melo.Library.Collection.FileSystem.Service
 import Melo.Library.Collection.FileSystem.WatchService
 import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Service
-import qualified Melo.Library.Source.API as API
+import Melo.Library.Source.API qualified as API
 import Melo.Library.Source.Repo
 import Melo.Library.Source.Service
 import Melo.Library.Source.Types (SourceRef (..))
+import Melo.Lookup.MusicBrainz
+import Melo.Metadata.Mapping.Repo
 import Network.HTTP.Types.Status
 import Network.Wai.Middleware.Cors
+import Network.Wreq.Session (newAPISession)
 import System.FilePath (pathSeparator, takeDirectory, takeFileName)
 import Web.Scotty.Trans
 
@@ -48,10 +51,9 @@ instance Typeable m => GQLType (Mutation m)
 
 rootResolver :: ResolverE m => RootResolver m () Query Mutation Undefined
 rootResolver =
-  RootResolver
+  defaultRootResolver
     { queryResolver = Query {library = resolveLibrary},
-      mutationResolver = Mutation {library = libraryMutation},
-      subscriptionResolver = Undefined
+      mutationResolver = Mutation {library = libraryMutation}
     }
 
 gqlApi :: forall m. (ResolverE m, Typeable m) => ByteString -> m ByteString
@@ -61,14 +63,18 @@ gqlApiIO :: CollectionWatchState -> Pool Connection -> ByteString -> IO ByteStri
 gqlApiIO collectionWatchState pool rq = runStdoutLogging do
   $(logInfo) ("handling graphql request" :: T.Text)
   $(logDebug) $ "graphql request: " <> rq
-  !rs <- runFileSystemIO $
-    runMetadataServiceIO $
-      runSourceRepositoryPooledIO pool $
-        runFileSystemServiceIO pool $
-          runFileSystemWatchServiceIO pool collectionWatchState $
-            runCollectionRepositoryPooledIO pool $
-              runCollectionServiceIO pool $
-                gqlApi rq
+  sess <- liftIO newAPISession
+  !rs <-
+    runFileSystemIO $
+      runMetadataServiceIO $
+        runSourceRepositoryPooledIO pool $
+          runTagMappingRepositoryPooledIO pool $
+            runFileSystemServiceIO pool $
+              runMusicBrainzServiceIO sess $
+                runFileSystemWatchServiceIO pool collectionWatchState $
+                  runCollectionRepositoryPooledIO pool $
+                    runCollectionServiceIO pool $
+                      gqlApi rq
   $(logInfo) ("finished handling graphql request" :: T.Text)
   pure rs
 
@@ -76,39 +82,14 @@ type ResolverE m =
   ( MonadIO m,
     Logging m,
     FileSystem m,
+    TagMappingRepository m,
     SourceRepository m,
     MetadataService m,
+    MusicBrainzService m,
     CollectionRepository m,
     CollectionService m,
     FileSystemService m
   )
-
---runResolverE ::
---  Pool Connection ->
---  Connection ->
---  CollectionServiceIOT
---    ( CollectionRepositoryIOT
---        ( FileSystemServiceIOT
---            ( SourceRepositoryIOT
---                ( MetadataServiceIOT
---                    ( SavepointIOT
---                        ( LoggingIOT m
---                        )
---                    )
---                )
---            )
---        )
---    )
---    a ->
---  m a
---runResolverE pool conn =
---  runStdoutLogging
---    . runSavepoint conn
---    . runMetadataServiceIO
---    . runSourceRepositoryIO conn
---    . runFileSystemServiceIO
---    . runCollectionRepositoryIO conn
---    . runCollectionServiceIO pool
 
 api :: (MonadIO m, MonadBaseControl IO m) => CollectionWatchState -> Pool Connection -> ScottyT LT.Text m ()
 api collectionWatchState pool = do

@@ -21,6 +21,8 @@ import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Service
 import Melo.Library.Source.API
 import Melo.Library.Source.Repo
+import Melo.Lookup.MusicBrainz
+import Melo.Metadata.Mapping.Repo
 import Network.URI
 
 data LibraryQuery m = LibraryQuery
@@ -49,7 +51,9 @@ resolveLibrary =
 
 data LibraryMutation (m :: Type -> Type) = LibraryMutation
   { stageSources :: StageSourcesArgs -> m (StagedSources m),
-    updateSources :: UpdateSourcesArgs -> m UpdatedSources,
+    transformSources :: TransformSources m,
+    previewTransformSources :: TransformSources m,
+    updateSources :: UpdateSourcesArgs -> m (UpdatedSources m),
     collection :: m (CollectionMutation m)
   }
   deriving (Generic)
@@ -59,11 +63,12 @@ instance Typeable m => GQLType (LibraryMutation m)
 libraryMutation ::
   ( MonadIO m,
     SourceRepository m,
-    --    MonadReader Connection m,
+    TagMappingRepository m,
     Logging m,
     MetadataService m,
     CollectionService m,
     CollectionRepository m,
+    MusicBrainzService m,
     FileSystem m
   ) =>
   ResolverM e (m :: Type -> Type) LibraryMutation
@@ -72,6 +77,8 @@ libraryMutation =
     pure
       LibraryMutation
         { stageSources = stageSourcesImpl,
+          transformSources = transformSourcesImpl,
+          previewTransformSources = previewTransformSourcesImpl,
           updateSources = updateSourcesImpl,
           collection = collectionMutation
         }

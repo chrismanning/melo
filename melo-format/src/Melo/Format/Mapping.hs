@@ -1,47 +1,59 @@
+{-# LANGUAGE StrictData #-}
+
 module Melo.Format.Mapping where
 
 import Data.Default
 import Data.List.NonEmpty
 import Data.Text
+import GHC.Generics
 
 data FieldMappings = FieldMappings
-  { ape :: !FieldMapping,
-    id3v1 :: !FieldMapping,
-    id3v2_3 :: !FieldMapping,
-    id3v2_4 :: !FieldMapping,
-    riff :: !FieldMapping,
-    vorbis :: !FieldMapping,
-    cue :: !FieldMapping
+  { ape :: Maybe FieldMapping,
+    id3v1 :: Maybe FieldMapping,
+    id3v2_3 :: Maybe FieldMapping,
+    id3v2_4 :: Maybe FieldMapping,
+    riff :: Maybe FieldMapping,
+    vorbis :: Maybe FieldMapping,
+    cue :: Maybe FieldMapping
   }
+  deriving (Show, Eq, Generic)
 
 instance Default FieldMappings where
   def =
     FieldMappings
-      { ape = NoFieldMapping,
-        id3v1 = NoFieldMapping,
-        id3v2_3 = NoFieldMapping,
-        id3v2_4 = NoFieldMapping,
-        riff = NoFieldMapping,
-        vorbis = NoFieldMapping,
-        cue = NoFieldMapping
+      { ape = Nothing,
+        id3v1 = Nothing,
+        id3v2_3 = Nothing,
+        id3v2_4 = Nothing,
+        riff = Nothing,
+        vorbis = Nothing,
+        cue = Nothing
       }
 
 data FieldMapping
   = FieldMapping
-      { toCanonicalForm :: !Text,
-        fieldMatcher :: !(Text -> Bool)
+      { canonicalForm :: Text,
+        fieldMatcher :: FieldMatchMode
       }
-  | NoFieldMapping
+    deriving (Show, Eq, Generic)
 
-type FieldMappingSelector = (FieldMappings -> FieldMapping)
+type FieldMappingSelector = (FieldMappings -> Maybe FieldMapping)
 
-caseSensitiveMapping :: Text -> FieldMapping
-caseSensitiveMapping m = FieldMapping m (== m)
+data FieldMatchMode = CaseSensitiveMapping | CaseInsensitiveMapping
+  deriving (Show, Eq, Generic)
 
-caseInsensitiveMapping :: Text -> FieldMapping
-caseInsensitiveMapping m = FieldMapping m (\x -> toLower x == toLower m)
+fieldMatches :: FieldMapping -> Text -> Bool
+fieldMatches FieldMapping{canonicalForm=k, fieldMatcher=CaseSensitiveMapping} k' = k == k'
+fieldMatches FieldMapping{canonicalForm=k, fieldMatcher=CaseInsensitiveMapping} k' = toLower k == toLower k'
+
+caseSensitiveMapping :: Text -> Maybe FieldMapping
+caseSensitiveMapping m = Just $ FieldMapping m CaseSensitiveMapping
+
+caseInsensitiveMapping :: Text -> Maybe FieldMapping
+caseInsensitiveMapping m = Just $ FieldMapping m CaseInsensitiveMapping
 
 newtype TagMapping = TagMapping (NonEmpty FieldMappings)
+  deriving (Show, Eq, Generic)
 
 singletonTagMapping :: FieldMappings -> TagMapping
 singletonTagMapping m = TagMapping (m :| [])
@@ -68,10 +80,19 @@ trackNumber :: TagMapping
 trackNumber = trackNumberTag
 
 year :: TagMapping
-year = yearTag
+year = yearTag <> originalReleaseYearTag
+
+originalReleaseYear :: TagMapping
+originalReleaseYear = originalReleaseYearTag <> yearTag
 
 genre :: TagMapping
 genre = genreTag
+
+totalTracks :: TagMapping
+totalTracks = totalTracksTag <> trackTotalTag
+
+totalDiscs :: TagMapping
+totalDiscs = totalDiscsTag <> discTotalTag
 
 albumTitleTag :: TagMapping
 albumTitleTag =
@@ -180,7 +201,8 @@ performerTag =
       { ape = caseInsensitiveMapping "Performer",
         id3v2_3 = caseSensitiveMapping "IPLS",
         id3v2_4 = caseSensitiveMapping "TMCL",
-        vorbis = caseInsensitiveMapping "PERFORMER"
+        vorbis = caseInsensitiveMapping "PERFORMER",
+        cue = caseSensitiveMapping "PERFORMER"
       }
 
 yearTag :: TagMapping
@@ -193,6 +215,15 @@ yearTag =
         id3v2_4 = caseSensitiveMapping "TDRC",
         vorbis = caseInsensitiveMapping "DATE",
         cue = caseSensitiveMapping "DATE"
+      }
+
+originalReleaseYearTag :: TagMapping
+originalReleaseYearTag =
+  singletonTagMapping
+    def
+      { id3v2_3 = caseSensitiveMapping "TORY",
+        id3v2_4 = caseSensitiveMapping "TDOR",
+        vorbis = caseInsensitiveMapping "ORIGINALDATE"
       }
 
 trackNumberTag :: TagMapping

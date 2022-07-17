@@ -21,17 +21,27 @@ import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Service
 import Melo.Library.Collection.Types
 import Melo.Library.Source.Repo
+import Melo.Metadata.Mapping.Repo
+import Melo.Metadata.Mapping.Service
 import System.Exit
+import System.IO
 import Web.Scotty.Trans
 
 app :: IO ()
 app = do
   initLogging
+  $(logInfoIO) ("Starting melo..." :: String)
   let connInfo = Hasql.settings "localhost" 5432 "melo" "melo" "melo"
   let newConnection = Hasql.acquire connInfo >>= \case
                       Left e -> throwIO (ConnectionError e)
                       Right conn -> pure conn
   pool <- createPool newConnection Hasql.release 10 20 10
+
+  catchAny (withResource pool (const $ pure ())) (\e -> do
+      $(logErrorIO) $ "error acquiring database connection: " <> show e
+      hPutStrLn stderr $ "error acquiring database connection: " <> show e
+      exitFailure
+    )
 
   collectionWatchState :: CollectionWatchState <- atomically $ newTVar H.empty
   fork $
@@ -48,10 +58,13 @@ initApp collectionWatchState pool =
     runFileSystemIO $
       runMetadataServiceIO $
         runSourceRepositoryPooledIO pool $
-          runFileSystemServiceIO pool $
-            runCollectionRepositoryPooledIO pool $
-              runFileSystemWatchServiceIO pool collectionWatchState $
-                runCollectionServiceIO pool initCollections
+          runTagMappingRepositoryPooledIO pool $
+            runFileSystemServiceIO pool $
+              runCollectionRepositoryPooledIO pool $
+                runFileSystemWatchServiceIO pool collectionWatchState $
+                  runCollectionServiceIO pool $ do
+                    initCollections
+                    insertDefaultMappings
 
 initCollections ::
   ( FileSystemWatchService m,

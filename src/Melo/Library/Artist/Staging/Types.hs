@@ -34,6 +34,7 @@ data ArtistStageTable f = ArtistStageTable
 instance Entity (ArtistStageTable Result) where
   type NewEntity (ArtistStageTable Result) = NewStagedArtist
   type PrimaryKey (ArtistStageTable Result) = StagedArtistRef
+  primaryKey e = e.id
 
 newtype StagedArtistRef = StagedArtistRef UUID
   deriving (Show, Eq, Ord, Generic)

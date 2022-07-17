@@ -32,6 +32,7 @@ type Track = TrackTable Result
 instance Entity (TrackTable Result) where
   type NewEntity (TrackTable Result) = NewTrack
   type PrimaryKey (TrackTable Result) = UUID
+  primaryKey e = e.id
 
 data NewTrack = NewTrack
   { title :: Text,

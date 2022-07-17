@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: f446426bed6fa023f47e59fccd627f93c14d017ae797cd57de3a54d99293b0c6
+-- hash: 1232db175d7b77ef07a02f36936126e418004836f8afb22cecc211f1c8e6acd6
 
 name:           melo-format
 version:        0.1.0.0
@@ -57,54 +57,33 @@ library
   hs-source-dirs:
       src
   default-extensions:
+      GHC2021
       ApplicativeDo
-      BangPatterns
-      BinaryLiterals
-      ConstraintKinds
       DataKinds
       DefaultSignatures
-      DeriveFoldable
-      DeriveFunctor
-      DeriveGeneric
-      DeriveLift
-      DeriveTraversable
       DerivingStrategies
       DerivingVia
       DuplicateRecordFields
-      EmptyCase
-      ExistentialQuantification
-      FlexibleContexts
-      FlexibleInstances
       FunctionalDependencies
       GADTs
-      GeneralizedNewtypeDeriving
-      InstanceSigs
-      KindSignatures
       LambdaCase
-      MultiParamTypeClasses
       MultiWayIf
-      NamedFieldPuns
       OverloadedLabels
+      OverloadedRecordDot
       OverloadedStrings
       PatternSynonyms
-      RankNTypes
       RecordWildCards
-      ScopedTypeVariables
-      StandaloneDeriving
       TemplateHaskell
-      TupleSections
-      TypeApplications
       TypeFamilies
       TypeFamilyDependencies
-      TypeOperators
       ViewPatterns
   ghc-options: -O2 -Wall -Wcompat -fno-warn-name-shadowing -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wnoncanonical-monad-instances -fwrite-ide-info -hiedir=../.hie
   build-depends:
       array
     , base >=4.7 && <5
     , binary
-    , binary-bits
     , bytestring
+    , caerbannog
     , containers
     , data-default
     , directory
@@ -141,46 +120,25 @@ test-suite melo-format-test
   hs-source-dirs:
       test
   default-extensions:
+      GHC2021
       ApplicativeDo
-      BangPatterns
-      BinaryLiterals
-      ConstraintKinds
       DataKinds
       DefaultSignatures
-      DeriveFoldable
-      DeriveFunctor
-      DeriveGeneric
-      DeriveLift
-      DeriveTraversable
       DerivingStrategies
       DerivingVia
       DuplicateRecordFields
-      EmptyCase
-      ExistentialQuantification
-      FlexibleContexts
-      FlexibleInstances
       FunctionalDependencies
       GADTs
-      GeneralizedNewtypeDeriving
-      InstanceSigs
-      KindSignatures
       LambdaCase
-      MultiParamTypeClasses
       MultiWayIf
-      NamedFieldPuns
       OverloadedLabels
+      OverloadedRecordDot
       OverloadedStrings
       PatternSynonyms
-      RankNTypes
       RecordWildCards
-      ScopedTypeVariables
-      StandaloneDeriving
       TemplateHaskell
-      TupleSections
-      TypeApplications
       TypeFamilies
       TypeFamilyDependencies
-      TypeOperators
       ViewPatterns
   ghc-options: -O2 -Wall -Wcompat -fno-warn-name-shadowing -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wnoncanonical-monad-instances -fwrite-ide-info -hiedir=../.hie -threaded -rtsopts -with-rtsopts=-N
   build-depends:

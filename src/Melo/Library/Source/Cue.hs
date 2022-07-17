@@ -26,6 +26,9 @@ import Melo.Library.Source.Types
 import System.FilePath
 import Text.CueSheet
 
+cueId :: MetadataId
+cueId = MetadataId "CUE"
+
 openCueFile :: (MonadThrow m, MonadIO m) => FilePath -> m [CueFileSource]
 openCueFile cueFilePath = do
   fileContents <- liftIO $ B.readFile cueFilePath
@@ -84,6 +87,3 @@ openCueFile cueFilePath = do
           bp (TimeRange (LowerBoundRange a)) (TimeRange (LowerBoundRange Bound {..})) =
             TimeRange $ SpanRange a (Bound boundValue Exclusive)
           bp a _ = a
-
-cueId :: MetadataId
-cueId = MetadataId "CUE"

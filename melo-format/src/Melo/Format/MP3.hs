@@ -9,7 +9,7 @@ import Data.Binary.Bits
 import qualified Data.Binary.Bits.Get as BG
 import qualified Data.Binary.Bits.Put as BP
 import Data.Binary.Put
-import Data.ByteString
+import Data.ByteString hiding ((!?))
 import qualified Data.ByteString.Lazy as L
 import Data.HashMap.Strict ((!))
 import qualified Data.HashMap.Strict as H
@@ -57,11 +57,11 @@ mp3Metadata :: MP3 -> H.HashMap MetadataId Metadata
 mp3Metadata MP3 {..} =
   H.fromList $
     catMaybes
-      [ (\m -> (m ^. #formatId, m)) . extractMetadata <$> apev2,
-        (\m -> (m ^. #formatId, m)) . extractMetadata <$> apev1,
-        (\m -> (m ^. #formatId, m)) . extractMetadata <$> id3v2_4,
-        (\m -> (m ^. #formatId, m)) . extractMetadata <$> id3v2_3,
-        (\m -> (m ^. #formatId, m)) . extractMetadata <$> id3v1
+      [ (\m -> (m.formatId, m)) . extractMetadata <$> apev2,
+        (\m -> (m.formatId, m)) . extractMetadata <$> apev1,
+        (\m -> (m.formatId, m)) . extractMetadata <$> id3v2_4,
+        (\m -> (m.formatId, m)) . extractMetadata <$> id3v2_3,
+        (\m -> (m.formatId, m)) . extractMetadata <$> id3v1
       ]
 
 readMp3File :: FilePath -> IO MetadataFile

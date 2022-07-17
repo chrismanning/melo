@@ -72,14 +72,14 @@ instance MonadIO m => Repository (CollectionTable Result) (CollectionRepositoryI
   update' = CollectionRepositoryIOT . update'
 
 sortByUri :: [CollectionTable Result] -> [CollectionTable Result]
-sortByUri = sortNaturalBy (^. #root_uri)
+sortByUri = sortNaturalBy (\e -> e.root_uri)
 
 instance MonadIO m => CollectionRepository (CollectionRepositoryIOT m) where
   getByUri [] = pure []
   getByUri fs = do
     RepositoryHandle {connSrc, tbl} <- ask
-    let q = Rel8.filter (\c -> (c ^. #root_uri) `in_` fmap (lit . T.pack . show) fs) =<< Rel8.each tbl
-    sortNaturalBy (^. #root_uri) <$> runSelect connSrc q
+    let q = Rel8.filter (\c -> c.root_uri `in_` fmap (lit . T.pack . show) fs) =<< Rel8.each tbl
+    sortByUri <$> runSelect connSrc q
 
 collectionSchema :: TableSchema (CollectionTable Name)
 collectionSchema =
@@ -103,13 +103,13 @@ runCollectionRepositoryPooledIO pool =
     RepositoryHandle
       { connSrc = Pooled pool,
         tbl = collectionSchema,
-        pk = (^. #id),
+        pk = \e -> e.id,
         upsert =
           Just
             Upsert
-              { index = \c -> (c ^. #root_uri, c ^. #name),
+              { index = \c -> c.root_uri,
                 set = const,
-                updateWhere = \new old -> new ^. #id ==. old ^. #id
+                updateWhere = \new old -> new.id ==. old.id
               }
       }
     . runRepositoryIOT
@@ -122,13 +122,13 @@ runCollectionRepositoryIO conn =
     RepositoryHandle
       { connSrc = Single conn,
         tbl = collectionSchema,
-        pk = (^. #id),
+        pk = \e -> e.id,
         upsert =
           Just
             Upsert
-              { index = \c -> (c ^. #root_uri, c ^. #name),
+              { index = \c -> c.root_uri,
                 set = const,
-                updateWhere = \new old -> new ^. #id ==. old ^. #id
+                updateWhere = \new old -> new.id ==. old.id
               }
       }
     . runRepositoryIOT

@@ -80,6 +80,7 @@ deriving instance Show SourceEntity
 instance Entity SourceEntity where
   type NewEntity SourceEntity = NewSource
   type PrimaryKey SourceEntity = SourceRef
+  primaryKey e = e.id
 
 newtype IntervalRange = IntervalRange (Range CalendarDiffTime)
   deriving (Show, Eq)
@@ -322,13 +323,13 @@ instance From IntervalRange AudioRange where
 instance From MetadataImportSource NewSource where
   from ms =
     NewSource
-      { kind = ms ^. #metadataFileId . coerced,
-        metadataFormat = coerce (ms ^. #metadata . #formatId :: MetadataId),
-        tags = ms ^. #metadata . #tags,
-        source = T.pack $ show $ ms ^. #src,
-        idx = ms ^. #idx,
-        range = ms ^. #range,
-        collection = ms ^. #collection
+      { kind = coerce ms.metadataFileId,
+        metadataFormat = coerce ms.metadata.formatId,
+        tags = ms.metadata.tags,
+        source = T.pack $ show $ ms.src,
+        idx = ms.idx,
+        range = ms.range,
+        collection = ms.collection
       }
 
 --sampleRange :: AudioRange -> Maybe (PgRange PgInt8Range Int64)
@@ -466,3 +467,6 @@ data SourceMoveError
   | WrongCollection
   | ConversionError (TryFromException SourceEntity Source)
   deriving (Show)
+
+instance From MoveError SourceMoveError where
+  from = FileSystemMoveError
