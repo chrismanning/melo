@@ -4,7 +4,6 @@ module Melo.Library.Source.Repo where
 
 import Control.Concurrent.Classy
 import Control.Exception.Safe
-import Control.Lens hiding (from)
 import Control.Monad.Base
 import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Reader
@@ -91,7 +90,7 @@ orderByUri :: Rel8.Query (SourceTable Rel8.Expr) -> Rel8.Query (SourceTable Rel8
 orderByUri = Rel8.orderBy (source_uri >$< Rel8.asc)
 
 sortByUri :: Vector SourceEntity -> Vector SourceEntity
-sortByUri = sortVectorNaturalBy (^. #source_uri)
+sortByUri = sortVectorNaturalBy source_uri
 
 instance
   (MonadIO m) =>
@@ -103,13 +102,13 @@ instance
     runSelect connSrc do
       let us' = Rel8.lit . T.pack . show <$> us
       srcs <- orderByUri $ Rel8.each tbl
-      Rel8.where_ $ (srcs ^. #source_uri) `Rel8.in_` us'
+      Rel8.where_ $ srcs.source_uri `Rel8.in_` us'
       pure srcs
   getByUriPrefix prefix = do
     RepositoryHandle {connSrc, tbl} <- ask
     runSelect connSrc do
       srcs <- orderByUri $ Rel8.each tbl
-      Rel8.where_ (srcs ^. #source_uri `startsWith` Rel8.lit (T.pack $ show prefix))
+      Rel8.where_ (srcs.source_uri `startsWith` Rel8.lit (T.pack $ show prefix))
       pure srcs
   getKeysByUri us | null us = pure empty
   getKeysByUri us = do
@@ -117,19 +116,19 @@ instance
     runSelect connSrc do
       let us' = Rel8.lit . T.pack . show <$> us
       srcs <- Rel8.each tbl
-      Rel8.where_ $ (srcs ^. #source_uri) `Rel8.in_` us'
+      Rel8.where_ $ srcs.source_uri `Rel8.in_` us'
       pure (pk srcs)
   getKeysByUriPrefix prefix = do
     RepositoryHandle {connSrc, tbl, pk} <- ask
     runSelect connSrc do
       srcs <- Rel8.each tbl
-      Rel8.where_ (srcs ^. #source_uri `startsWith` Rel8.lit (T.pack $ show prefix))
+      Rel8.where_ (srcs.source_uri `startsWith` Rel8.lit (T.pack $ show prefix))
       pure (pk srcs)
   getCollectionSources (CollectionRef collectionId) = do
     RepositoryHandle {connSrc, tbl} <- ask
     runSelect connSrc do
-      srcs <- Rel8.each tbl
-      Rel8.where_ (srcs ^. #collection_id ==. Rel8.lit collectionId)
+      srcs <- orderByUri $ Rel8.each tbl
+      Rel8.where_ (srcs.collection_id ==. Rel8.lit collectionId)
       pure srcs
 
 sourceSchema :: TableSchema (SourceTable Name)
@@ -158,13 +157,13 @@ runSourceRepositoryPooledIO pool =
     RepositoryHandle
       { connSrc = Pooled pool,
         tbl = sourceSchema,
-        pk = (^. #id),
+        pk = (\e -> e.id),
         upsert =
           Just
             Upsert
-              { index = \e -> (e ^. #source_uri, e ^. #idx),
+              { index = \e -> (e.source_uri, e.idx),
                 set = const,
-                updateWhere = \new old -> new ^. #id ==. old ^. #id
+                updateWhere = \new old -> new.id ==. old.id
               }
       }
     . runRepositoryIOT
@@ -177,13 +176,13 @@ runSourceRepositoryIO conn =
     RepositoryHandle
       { connSrc = Single conn,
         tbl = sourceSchema,
-        pk = (^. #id),
+        pk = (\e -> e.id),
         upsert =
           Just
             Upsert
-              { index = \e -> (e ^. #source_uri, e ^. #idx),
+              { index = \e -> (e.source_uri, e.idx),
                 set = const,
-                updateWhere = \new old -> new ^. #id ==. old ^. #id
+                updateWhere = \new old -> new.id ==. old.id
               }
       }
     . runRepositoryIOT

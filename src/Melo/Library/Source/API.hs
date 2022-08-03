@@ -18,8 +18,6 @@ import qualified Data.HashMap.Strict as H
 import Data.Maybe
 import Data.Morpheus.Kind
 import Data.Morpheus.Types
-import Data.List.NonEmpty (NonEmpty(..))
-import qualified Data.List.NonEmpty as NE
 import Data.Sequence ((|>))
 import qualified Data.Sequence as S
 import Data.Text (Text)
@@ -363,7 +361,7 @@ groupSources :: forall m e o. (FileSystem m, WithOperation o) => V.Vector (Sourc
 groupSources = V.fromList . toList . fmap trSrcGrp . foldl' acc S.empty
   where
     acc gs' src =
-      let groupedTags = groupMappedTags $ src ^. #metadata . #mappedTags
+      let groupedTags = groupMappedTags $ src.metadata.mappedTags
           newGroup =
             SourceGroup'
               { groupTags = groupedTags,
@@ -372,34 +370,34 @@ groupSources = V.fromList . toList . fmap trSrcGrp . foldl' acc S.empty
               }
        in case gs' of
             (gs :> g) ->
-              if getParentUri (src ^. #sourceUri) == g ^. #groupParentUri && g ^. #groupTags == groupedTags
+              if getParentUri src.sourceUri == g.groupParentUri && g.groupTags == groupedTags
                 then gs |> (g & #sources <>~ S.singleton src)
                 else gs |> g |> newGroup
             _empty -> S.singleton newGroup
     trSrcGrp :: SourceGroup' (Resolver o e m) -> SourceGroup (Resolver o e m)
     trSrcGrp g =
       SourceGroup
-        { groupTags = g ^. #groupTags,
-          groupParentUri = g ^. #groupParentUri,
-          sources = toList $ g ^. #sources,
+        { groupTags = g.groupTags,
+          groupParentUri = g.groupParentUri,
+          sources = toList $ g.sources,
           coverImage = lift $ coverImageImpl g
         }
     coverImageImpl :: SourceGroup' (Resolver o e m) -> m (Maybe Image)
-    coverImageImpl g = case parseURI $ T.unpack $ g ^. #groupParentUri of
+    coverImageImpl g = case parseURI $ T.unpack $ g.groupParentUri of
       Just uri ->
         case uriToFilePath uri of
           Just dir ->
             findCoverImage dir >>= \case
               Nothing -> pure Nothing
               Just imgPath ->
-                case S.lookup 0 $ g ^. #sources of
+                case S.lookup 0 $ g.sources of
                   Nothing -> pure Nothing
                   Just src ->
                     pure $
                       Just
                         Image
                           { fileName = T.pack $ takeFileName imgPath,
-                            downloadUri = "/source/" <> toText (Ty.unSourceRef (src ^. #id)) <> "/image"
+                            downloadUri = "/source/" <> toText (Ty.unSourceRef (src.id)) <> "/image"
                           }
           Nothing -> pure Nothing
       Nothing -> pure Nothing
