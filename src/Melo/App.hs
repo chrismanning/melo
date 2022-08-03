@@ -3,9 +3,8 @@ module Melo.App where
 import Control.Concurrent.Classy
 import Control.Exception.Safe
 import Control.Monad
-import Control.Monad.Except
+import Data.Default
 import qualified Data.HashMap.Strict as H
-import Data.Either
 import Data.Pool
 import qualified Data.Text as T
 import qualified Hasql.Connection as Hasql
@@ -23,6 +22,7 @@ import Melo.Library.Collection.Types
 import Melo.Library.Source.Repo
 import Melo.Metadata.Mapping.Repo
 import Melo.Metadata.Mapping.Service
+import Network.Socket
 import System.Exit
 import System.IO
 import Web.Scotty.Trans
@@ -50,7 +50,16 @@ app = do
         exitFailure
       )
   $(logInfoIO) ("starting web server" :: String)
-  scottyT 5000 Prelude.id (api collectionWatchState pool)
+
+  let runScottyAt addr = do
+        sock <- openSocket addr
+        bind sock addr.addrAddress
+        listen sock 2
+        scottySocketT def sock Prelude.id (api collectionWatchState pool)
+  addr6:_ <- getAddrInfo (Just defaultHints) (Just "::1") (Just "5001")
+  fork $ runScottyAt addr6
+  addr4:_ <- getAddrInfo (Just defaultHints) (Just "127.0.0.1") (Just "5000")
+  runScottyAt addr4
 
 initApp :: CollectionWatchState -> Pool Hasql.Connection -> IO ()
 initApp collectionWatchState pool =
