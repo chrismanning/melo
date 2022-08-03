@@ -18,6 +18,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding
 import Data.Traversable
+import Data.Vector (Vector, fromList)
 import GHC.Generics (Generic, Generic1)
 import Melo.Common.Effect
 import Melo.Common.Logging
@@ -32,7 +33,7 @@ import qualified Melo.Lookup.MusicBrainz as MB
 import Witch
 
 class Monad m => AlbumService m where
-  importAlbums :: [Source] -> m [Album]
+  importAlbums :: [Source] -> m (Vector Album)
 
 newtype AlbumServiceIOT m a = AlbumServiceIOT
   { runAlbumServiceIOT :: m a
@@ -50,7 +51,7 @@ instance
   importAlbums ms = AlbumServiceIOT $ do
     mbReleases <- catMaybes <$> mapM (MB.getReleaseFromMetadata . (^. #metadata)) ms
     $(logDebugShow) mbReleases
-    albums <- insert (fmap from mbReleases) <&> fmap (^. #id) >>= getByKey
+    albums <- insert (fromList $ fmap from mbReleases) <&> fmap (^. #id) >>= getByKey
     pure $ fmap from albums
 
 runAlbumServiceIO :: AlbumServiceIOT m a -> m a

@@ -17,6 +17,13 @@ CREATE SCHEMA melo;
 
 
 --
+-- Name: numeric; Type: COLLATION; Schema: melo; Owner: -
+--
+
+CREATE COLLATION melo."numeric" (provider = icu, locale = 'en@colNumeric=yes');
+
+
+--
 -- Name: intervalrange; Type: TYPE; Schema: melo; Owner: -
 --
 
@@ -196,7 +203,7 @@ CREATE TABLE melo.source (
     kind text NOT NULL,
     metadata_format text NOT NULL,
     metadata jsonb NOT NULL,
-    source_uri text NOT NULL,
+    source_uri text NOT NULL COLLATE melo."numeric",
     idx bigint NOT NULL,
     time_range melo.intervalrange,
     sample_range int8range,
@@ -788,4 +795,5 @@ INSERT INTO melo.schema_migrations (version) VALUES
     ('20201204000250'),
     ('20210620173517'),
     ('20211209202153'),
-    ('20220712201124');
+    ('20220712201124'),
+    ('20220802210615');

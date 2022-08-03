@@ -33,8 +33,6 @@ data TagMappingTable f = TagMappingTable
 
 type TagMappingEntity = TagMappingTable Result
 
-type TagMappingEntities = [TagMappingEntity]
-
 deriving instance Show TagMappingEntity
 
 deriving newtype instance Show (JSONBEncoded FM.TagMapping)

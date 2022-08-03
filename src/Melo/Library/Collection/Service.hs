@@ -4,14 +4,15 @@ module Melo.Library.Collection.Service where
 
 import Control.Concurrent.Classy
 import Control.Exception.Safe
+import Control.Lens hiding (from)
 import Control.Monad
 import Control.Monad.Base
 import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
-import Data.Maybe
 import Data.Pool
 import qualified Data.Text as T
+import Data.Vector (Vector, singleton)
 import Hasql.Connection
 import Melo.Common.Logging
 import Melo.Common.Uri
@@ -76,15 +77,15 @@ instance
     pool <- ask
     $(logInfo) $ "Adding collection " <> name
     $(logDebug) $ "Adding collection " <> show c
-    cs <- Repo.insert [c]
-    case cs of
-      [CollectionTable {..}] -> do
+    cs <- Repo.insert (singleton c)
+    case firstOf traverse cs of
+      Just CollectionTable {..} -> do
         forkFileSystemServiceIO pool $ scanPath id (T.unpack rootPath)
         when watch $ startWatching id (T.unpack rootPath)
         pure id
-      _otherwise -> error "unexpected insertCollections result"
+      Nothing -> error "unexpected insertCollections result"
   rescanCollection ref@(CollectionRef id) = do
-    listToMaybe <$> getCollectionsByKey [ref] >>= \case
+    firstOf traverse <$> getCollectionsByKey (singleton ref) >>= \case
       Just CollectionTable {id, root_uri} ->
         case parseURI (T.unpack root_uri) >>= uriToFilePath of
           Just rootPath -> do
@@ -95,8 +96,8 @@ instance
     pure ()
   deleteCollection ref = do
     stopWatching ref
-    delete [ref]
+    delete (singleton ref)
     pure ()
 
-getCollectionsByKey :: (CollectionRepository m) => [CollectionRef] -> m [Collection]
+getCollectionsByKey :: (CollectionRepository m) => Vector CollectionRef -> m (Vector Collection)
 getCollectionsByKey = getByKey

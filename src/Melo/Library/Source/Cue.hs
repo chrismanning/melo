@@ -13,6 +13,7 @@ import Data.Range
 import qualified Data.Text as T
 import Data.Time.LocalTime
 import qualified Data.Vector as V
+import Data.Vector (Vector, fromList)
 import GHC.Natural (naturalToInteger)
 import Melo.Common.Metadata
 import qualified Melo.Format.Mapping as Mapping
@@ -29,7 +30,7 @@ import Text.CueSheet
 cueId :: MetadataId
 cueId = MetadataId "CUE"
 
-openCueFile :: (MonadThrow m, MonadIO m) => FilePath -> m [CueFileSource]
+openCueFile :: (MonadThrow m, MonadIO m) => FilePath -> m (Vector CueFileSource)
 openCueFile cueFilePath = do
   fileContents <- liftIO $ B.readFile cueFilePath
   case parseCueSheet (takeBaseName cueFilePath) fileContents of
@@ -73,7 +74,7 @@ openCueFile cueFilePath = do
               filePath = mf ^. #filePath,
               cueFilePath
             }
-      pure $ squashTimeRanges processedTracks
+      pure $ fromList $ squashTimeRanges processedTracks
         where
           cueTimeRange (CueTime frames) = TimeRange (LowerBoundRange (Bound (framesToTime frames) Inclusive))
           framesToTime frames = CalendarDiffTime 0 (fromInteger (naturalToInteger frames) / 75.0)

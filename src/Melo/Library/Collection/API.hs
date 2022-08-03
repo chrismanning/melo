@@ -13,6 +13,8 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Typeable
 import Data.UUID (fromText)
+import qualified Data.Vector as V
+import Data.Vector (Vector)
 import GHC.Generics hiding (from)
 import Melo.Common.FileSystem
 import Melo.Common.Logging
@@ -34,24 +36,24 @@ resolveCollections ::
     FileSystem m
   ) =>
   CollectionsArgs ->
-  ResolverQ e m [Collection (Resolver QUERY e m)]
+  ResolverQ e m (Vector (Collection (Resolver QUERY e m)))
 resolveCollections (CollectionsArgs (Just CollectionWhere {..})) =
   case id of
     Just idExpr -> case idExpr of
       WhereEqExpr (EqExpr x) -> case fromText x of
-        Just uuid -> lift $ fmap from <$> getByKey @Ty.Collection [Ty.CollectionRef uuid]
+        Just uuid -> lift $ fmap from <$> getByKey @Ty.Collection (V.singleton (Ty.CollectionRef uuid))
         Nothing -> fail $ "invalid collection id " <> show x
       WhereInExpr (InExpr x) -> case allJust (fmap fromText x) of
-        Just uuids -> lift $ fmap from <$> getByKey @Ty.Collection (Ty.CollectionRef <$> uuids)
+        Just uuids -> lift $ fmap from <$> getByKey @Ty.Collection (V.fromList $ Ty.CollectionRef <$> uuids)
         Nothing -> fail $ "invalid collection id in " <> show x
       _unknownWhere -> fail "invalid where clause for Collection.id"
     Nothing -> case rootUri of
       Just rootUriExpr -> case rootUriExpr of
         WhereEqExpr (EqExpr x) -> case parseURI (T.unpack x) of
-          Just uri -> lift $ fmap from <$> getByUri [uri]
+          Just uri -> lift $ fmap from <$> getByUri (V.singleton uri)
           Nothing -> fail $ "invalid collection uri " <> show x
         WhereInExpr (InExpr x) -> case allJust (fmap (parseURI . T.unpack) x) of
-          Just uris -> lift $ fmap from <$> getByUri uris
+          Just uris -> lift $ fmap from <$> getByUri (V.fromList uris)
           Nothing -> fail $ "invalid collection id in " <> show x
         _unknownWhere -> fail "invalid where clause for Collection.rootUri"
       Nothing -> lift $ fmap (fmap from) $ getAll @Ty.Collection
@@ -70,8 +72,8 @@ data Collection m = Collection
     name :: Text,
     watch :: Bool,
     kind :: Text,
-    sources :: CollectionSourcesArgs -> m [SrcApi.Source m],
-    sourceGroups :: m [SrcApi.SourceGroup m]
+    sources :: CollectionSourcesArgs -> m (Vector (SrcApi.Source m)),
+    sourceGroups :: m (Vector (SrcApi.SourceGroup m))
   }
   deriving (Generic)
 
@@ -183,14 +185,14 @@ addCollectionImpl ::
   ResolverM e m (Collection (Resolver MUTATION e m))
 addCollectionImpl AddCollectionArgs {..} = do
   ref <- lift $ addCollection newCollection
-  cs <- lift $ getByKey @Ty.Collection [ref]
+  cs <- lift $ getByKey @Ty.Collection (V.singleton ref)
   let cs' = from <$> cs
-  case cs' of
-    (c : _) -> pure c
-    [] -> fail "failed to add collection"
+  case firstOf traverse cs' of
+    Just c -> pure c
+    Nothing -> fail "failed to add collection"
 
 data DeleteCollectionArgs = DeleteCollectionArgs
-  { id :: Text
+  { id :: Ty.CollectionRef
   }
   deriving (Generic)
 
@@ -201,10 +203,7 @@ deleteCollectionImpl ::
   (CollectionRepository m, Logging m) =>
   DeleteCollectionArgs ->
   ResolverM e m ()
-deleteCollectionImpl DeleteCollectionArgs {..} =
-  case fromText id of
-    Just uuid -> lift $ Repo.delete [Ty.CollectionRef uuid]
-    Nothing -> lift $ $(logWarn) $ "invalid UUID " <> id
+deleteCollectionImpl args = lift $ Repo.delete (V.singleton args.id)
 
 deleteAllCollectionsImpl ::
   (CollectionRepository m) =>

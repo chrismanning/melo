@@ -4,14 +4,15 @@ module Melo.Library.Collection.Repo where
 
 import Control.Concurrent.Classy
 import Control.Exception.Safe
-import Control.Lens hiding (from)
 import Control.Monad
 import Control.Monad.Base
 import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
+import Data.Functor.Contravariant
 import Data.Pool
-import qualified Data.Text as T
+import Data.Text qualified as T
+import Data.Vector (Vector, empty)
 import Hasql.Connection
 import Melo.Common.NaturalSort
 import Melo.Database.Repo
@@ -27,10 +28,10 @@ import Rel8
     lit,
     (==.),
   )
-import qualified Rel8
+import Rel8 qualified
 
 class Repository (CollectionTable Result) m => CollectionRepository m where
-  getByUri :: [URI] -> m [CollectionTable Result]
+  getByUri :: Vector URI -> m (Vector (CollectionTable Result))
 
 instance
   {-# OVERLAPPABLE #-}
@@ -63,23 +64,34 @@ newtype CollectionRepositoryIOT m a = CollectionRepositoryIOT
     )
 
 instance MonadIO m => Repository (CollectionTable Result) (CollectionRepositoryIOT m) where
-  getAll = sortByUri <$> CollectionRepositoryIOT getAll
-  getByKey = pure . sortByUri <=< CollectionRepositoryIOT . getByKey
+  getAll = CollectionRepositoryIOT $ do
+    RepositoryHandle {connSrc, tbl} <- ask
+    runSelect connSrc $ orderByUri $ Rel8.each tbl
+  getByKey ks = CollectionRepositoryIOT $ do
+    RepositoryHandle {connSrc, tbl, pk} <- ask
+    runSelect connSrc do
+      let keys = Rel8.lit <$> ks
+      all <- orderByUri $ Rel8.each tbl
+      Rel8.where_ $ pk all `Rel8.in_` keys
+      pure all
   insert = pure . sortByUri <=< CollectionRepositoryIOT . insert
   insert' = CollectionRepositoryIOT . insert'
   delete = CollectionRepositoryIOT . delete
   update = pure . sortByUri <=< CollectionRepositoryIOT . update
   update' = CollectionRepositoryIOT . update'
 
-sortByUri :: [CollectionTable Result] -> [CollectionTable Result]
-sortByUri = sortNaturalBy (\e -> e.root_uri)
+orderByUri :: Rel8.Query (CollectionTable Rel8.Expr) -> Rel8.Query (CollectionTable Rel8.Expr)
+orderByUri = Rel8.orderBy (root_uri >$< Rel8.asc)
+
+sortByUri :: Vector Collection -> Vector Collection
+sortByUri = sortVectorNaturalBy (\e -> e.root_uri)
 
 instance MonadIO m => CollectionRepository (CollectionRepositoryIOT m) where
-  getByUri [] = pure []
+  getByUri us | null us = pure empty
   getByUri fs = do
     RepositoryHandle {connSrc, tbl} <- ask
     let q = Rel8.filter (\c -> c.root_uri `in_` fmap (lit . T.pack . show) fs) =<< Rel8.each tbl
-    sortByUri <$> runSelect connSrc q
+    runSelect connSrc $ orderByUri q
 
 collectionSchema :: TableSchema (CollectionTable Name)
 collectionSchema =

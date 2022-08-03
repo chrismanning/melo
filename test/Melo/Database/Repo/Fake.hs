@@ -3,6 +3,7 @@
 module Melo.Database.Repo.Fake where
 
 import Control.Exception.Safe
+import Control.Lens (iso, mapping)
 import Control.Monad.Base
 import Control.Monad.Conc.Class
 import Control.Monad.Reader
@@ -13,6 +14,8 @@ import Data.Foldable
 import Data.Hashable
 import qualified Data.HashMap.Strict as H
 import Data.Maybe
+import qualified Data.Vector as V
+import Data.Vector.Lens
 import Melo.Database.Repo
 import Witch
 
@@ -43,10 +46,10 @@ instance (
   Hashable (PrimaryKey e),
   From (NewEntity e) e
   ) => Repository e (FakeRepositoryT e m) where
-  getAll = H.elems . coerce <$> get
+  getAll = V.fromList . H.elems . coerce <$> get
   getByKey ks = do
     sources <- coerce <$> get
-    pure $ catMaybes $ fmap (`H.lookup` sources) ks
+    pure $ V.mapMaybe id $ fmap (`H.lookup` sources) ks
   insert es = let vs = fmap from es in state $ \(FakeRepository repo) ->
     (vs, FakeRepository $ foldl' (\r v -> H.insert (primaryKey v) v r) repo vs)
   insert' = void . insert

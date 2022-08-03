@@ -4,42 +4,44 @@ module Melo.Library.Artist.Service where
 
 import Control.Lens hiding (from, lens)
 import Data.Foldable
-import Data.Vector (fromList)
+import Data.Vector (Vector, fromList)
 import Melo.Common.Logging
 import Melo.Database.Repo
-import qualified Melo.Format.Mapping as M
+import Melo.Format.Mapping qualified as M
 import Melo.Format.Metadata
 import Melo.Library.Artist.Staging.Repo
 import Melo.Library.Artist.Staging.Types
 import Melo.Library.Artist.Types
 import Melo.Library.Source.Types
-import qualified Melo.Lookup.MusicBrainz as MB
+import Melo.Lookup.MusicBrainz qualified as MB
 import Witch
 
 importArtists ::
-  ( MB.MusicBrainzService m,
+  ( Foldable f,
+    Traversable f,
+    MB.MusicBrainzService m,
     ArtistStagingRepository m,
     Logging m
   ) =>
-  [Source] ->
-  m [StagedArtist]
+  f Source ->
+  m (Vector StagedArtist)
 importArtists ss = do
   mbArtists <- fold <$> mapM (MB.getArtistFromMetadata . (^. #metadata)) ss
   $(logDebugShow) mbArtists
-  artists <- insert (fmap from mbArtists) <&> fmap (^. #id) >>= getByKey
+  artists <- insert (fromList $ toList $ fmap from mbArtists) <&> fmap (^. #id) >>= getByKey
   pure $ fmap from artists
 
 -- TODO search Discogs (https://www.discogs.com/developers/#page:database)
 -- TODO search Spotify (https://developer.spotify.com/documentation/web-api/reference/search/search/)
 -- TODO search Rovi (http://developer.rovicorp.com/docs)
 
---commitArtists ::
+-- commitArtists ::
 --  ( Has ArtistStagingRepository sig m,
 --    Has ArtistRepository sig m,
 --    Has Logging sig m
 --  ) => [StagedArtistRef] -> m [DB.ArtistKey]
 --
---mergeArtists ::
+-- mergeArtists ::
 --  ( Has ArtistRepository sig m,
 --    Has Logging sig m
 --  ) =>

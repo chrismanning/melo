@@ -68,6 +68,8 @@ extra-deps:
     commit: b85d79677065f31c9c448814cccd282d5ecfbe53
   - github: chrismanning/cue-sheet
     commit: 01f2829b7a269c03dd62e39f332ee21899173c2f
+  - github: chrismanning/rel8
+    commit: cd884fc5e8f80367ec287c75a515b87bf871869b
 #  - github: serokoell/universum
 #    commit: 86b30df995c245a5778c2cff5c9bd4bd94485116
 #  - conduit-vfs-0.1.0.3

@@ -23,16 +23,16 @@ import Data.Foldable
 import Data.HashMap.Strict qualified as H
 import Data.Int
 import Data.List.NonEmpty
-import qualified Data.Map.Strict as Map
+import Data.Map.Strict qualified as Map
 import Data.Maybe
 import Data.Range
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Lens
 import Data.Time
+import Data.Vector (Vector)
 import Data.Vector qualified as V
 import Data.Void (Void)
-import GHC.OverloadedLabels
 import Melo.Common.FileSystem as FS
 import Melo.Common.Logging
 import Melo.Common.Metadata
@@ -62,7 +62,7 @@ import Text.Megaparsec.Char
 import Text.Printf
 import Witch
 
-type Transform m = [Source] -> m [Source]
+type Transform m = Vector Source -> m (Vector Source)
 
 data TransformAction where
   Move :: NonEmpty SourcePathPattern -> TransformAction
@@ -74,10 +74,10 @@ data TransformAction where
   ConvertEncoding :: TextEncoding -> TransformAction
   EditMetadata :: MetadataTransformation -> TransformAction
 
-previewTransformActions :: MonadSourceTransform m => [TransformAction] -> Transform m
+previewTransformActions :: MonadSourceTransform m => Vector TransformAction -> Transform m
 previewTransformActions ts = runFileSystemPreviewT . runSourceRepositoryPreviewT . runMetadataServicePreviewT . evalTransformActions ts
 
-evalTransformActions :: MonadSourceTransform m => [TransformAction] -> Transform m
+evalTransformActions :: MonadSourceTransform m => Vector TransformAction -> Transform m
 evalTransformActions = foldl' (\b a -> b >=> evalTransformAction a) pure
 
 evalTransformAction :: MonadSourceTransform m => TransformAction -> Transform m
@@ -86,7 +86,7 @@ evalTransformAction (SplitMultiTrackFile patterns) srcs = transformSources (extr
 evalTransformAction (EditMetadata metadataTransformation) srcs = transformSources (editMetadata metadataTransformation) srcs
 evalTransformAction _ _ = error "unimplemented transformation"
 
-transformSources :: (Logging m, Show e) => (a -> m (Either e a)) -> [a] -> m [a]
+transformSources :: (Logging m, Show e) => (a -> m (Either e a)) -> Vector a -> m (Vector a)
 transformSources t srcs = forM srcs $ \src ->
   t src >>= \case
     Right transformedSrc -> pure transformedSrc
@@ -106,12 +106,12 @@ type MonadSourceTransform m =
     Logging m
   )
 
-applyTransformations :: MonadSourceTransform m => [Transform m] -> [Source] -> m [Source]
+applyTransformations :: MonadSourceTransform m => [Transform m] -> Vector Source -> m (Vector Source)
 applyTransformations transformations srcs = foldM transform srcs transformations
   where
     transform srcs f = f srcs
 
-previewTransformations :: MonadSourceTransform m => [Transform (MetadataServicePreviewT (SourceRepositoryPreviewT (FileSystemPreviewT m)))] -> [Source] -> m [Source]
+previewTransformations :: MonadSourceTransform m => [Transform (MetadataServicePreviewT (SourceRepositoryPreviewT (FileSystemPreviewT m)))] -> Vector Source -> m (Vector Source)
 previewTransformations transformations srcs =
   runFileSystemPreviewT $
     runSourceRepositoryPreviewT $
@@ -205,9 +205,9 @@ moveSourceWithPattern pats src@Source {ref, source} =
             Right _ -> do
               $(logInfo) $ "successfully moved source " <> show id <> " from " <> srcPath <> " to " <> destPath
               let movedSrc = src & #source .~ newUri
-              Repo.update @SourceEntity [from movedSrc] >>= \case
-                [updatedSrc] -> pure $ mapLeft ConversionError $ tryFrom updatedSrc
-                _ -> pure $ Left SourceUpdateError
+              Repo.update @SourceEntity (V.singleton (from movedSrc)) <&> firstOf traverse >>= \case
+                Just updatedSrc -> pure $ mapLeft ConversionError $ tryFrom updatedSrc
+                Nothing -> pure $ Left SourceUpdateError
             Left e -> pure $ Left e
         Nothing -> pure $ Left PatternError
     Nothing -> pure $ Left SourcePathError
@@ -238,13 +238,13 @@ previewSourceKeyMoveWithPattern ::
 previewSourceKeyMoveWithPattern pats ref =
   getSource ref >>= \case
     Just Source {metadata, collectionRef, source} ->
-      getCollectionsByKey [collectionRef] >>= \case
-        [CollectionTable {root_uri}] -> case parseURI (T.unpack root_uri) >>= uriToFilePath of
+      getCollectionsByKey (V.singleton collectionRef) <&> firstOf traverse >>= \case
+        Just CollectionTable {root_uri} -> case parseURI (T.unpack root_uri) >>= uriToFilePath of
           Just rootPath -> do
             mappings <- Repo.getAll
             pure $ Just $ renderSourcePatterns mappings rootPath metadata pats <> takeExtension (show source)
           Nothing -> pure Nothing
-        _ -> pure Nothing
+        Nothing -> pure Nothing
     Nothing -> pure Nothing
 
 previewSourceMoveWithPattern ::
@@ -255,20 +255,20 @@ previewSourceMoveWithPattern ::
   Source ->
   m (Maybe FilePath)
 previewSourceMoveWithPattern pats Source {metadata, collectionRef, source} =
-  Repo.getByKey @Collection [collectionRef] >>= \case
-    [CollectionTable {root_uri}] -> case parseURI (T.unpack root_uri) >>= uriToFilePath of
+  Repo.getByKey @Collection (V.singleton collectionRef) <&> firstOf traverse >>= \case
+    Just CollectionTable {root_uri} -> case parseURI (T.unpack root_uri) >>= uriToFilePath of
       Just rootPath -> do
         mappings <- Repo.getAll
         pure $ Just $ renderSourcePatterns mappings rootPath metadata pats <> takeExtension (show source)
       Nothing -> pure Nothing
-    _ -> pure Nothing
+    Nothing -> pure Nothing
 
-renderSourcePatterns :: TagMappingEntities -> FilePath -> F.Metadata -> NonEmpty SourcePathPattern -> FilePath
+renderSourcePatterns :: Vector TagMappingEntity -> FilePath -> F.Metadata -> NonEmpty SourcePathPattern -> FilePath
 renderSourcePatterns mappings basepath metadata pats =
   basepath
     </> fromMaybe "" (foldMap (renderSourcePattern mappings metadata) pats)
 
-renderSourcePattern :: TagMappingEntities -> F.Metadata -> SourcePathPattern -> Maybe FilePath
+renderSourcePattern :: Vector TagMappingEntity -> F.Metadata -> SourcePathPattern -> Maybe FilePath
 renderSourcePattern mappings metadata@F.Metadata {..} = \case
   LiteralPattern p -> Just p
   GroupPattern pats -> Just $ fromMaybe "" (foldl' (\s pat -> liftA2 mappend s $ renderSourcePattern mappings metadata pat) (Just "") pats)
@@ -346,7 +346,7 @@ extractTrack patterns s@Source {multiTrack = Just MultiTrackDesc {..}, ..} =
                 let m = H.fromList [(F.vorbisCommentsId, vc)]
                 let metadataFile = raw & #metadata .~ m
                 mf <- writeMetadataFile metadataFile dest >>= eitherToError
-                importSources [FileSource collectionRef mf] >>= headOrException F.UnsupportedFormat
+                importSources (V.singleton (FileSource collectionRef mf)) >>= headOrException F.UnsupportedFormat
               Left e -> pure $ Left e
     Nothing -> pure $ Right s
   where
@@ -379,7 +379,7 @@ editMetadata (SetMapping mappingName vs) Source {metadata = m@Metadata {tags, le
       raw <- eitherToError . mapLeft from =<< readMetadataFile kind path
       let metadataFile = raw & #metadata . at formatId .~ Just newMetadata
       metadataFile' <- eitherToError . mapLeft from =<< writeMetadataFile metadataFile path
-      importSources [FileSource collectionRef metadataFile'] >>= headOrException ImportFailed
+      importSources (V.singleton (FileSource collectionRef metadataFile')) >>= headOrException ImportFailed
 editMetadata (RemoveMappings mappings) src = flatten <$> (forM mappings $ \mapping -> editMetadata (SetMapping mapping []) src)
   where
     flatten :: [Either TransformationError Source] -> Either TransformationError Source
@@ -390,15 +390,17 @@ editMetadata (Retain retained) Source {metadata = m@Metadata {tags, lens = tag},
     Just path -> runExceptT @TransformationError do
       mappings <- Repo.getAll
       retainedMappings <- forM retained $ \mappingName ->
-        eitherToError $ maybeToRight (UnknownTagMapping mappingName) $
-          findMappingNamed mappings mappingName
+        eitherToError $
+          maybeToRight (UnknownTagMapping mappingName) $
+            findMappingNamed mappings mappingName
       let newTags = foldl' (\ts mapping -> ts & tag mapping .~ (tags ^. tag mapping)) F.emptyTags retainedMappings
       let newMetadata@Metadata {formatId} :: Metadata = m {F.tags = newTags}
       raw <- eitherToError . mapLeft from =<< readMetadataFile kind path
       let metadataFile = raw & #metadata . at formatId .~ Just newMetadata
       metadataFile' <- eitherToError . mapLeft from =<< writeMetadataFile metadataFile path
-      importSources [FileSource collectionRef metadataFile'] >>= headOrException ImportFailed
+      importSources (V.singleton (FileSource collectionRef metadataFile')) >>= headOrException ImportFailed
 
-headOrException :: MonadError e m => e -> [a] -> m a
-headOrException _e (x : _) = pure x
-headOrException e [] = throwError e
+headOrException :: (Traversable f, MonadError e m) => e -> f a -> m a
+headOrException e xs = case firstOf traverse xs of
+  Just x -> pure x
+  Nothing -> throwError e

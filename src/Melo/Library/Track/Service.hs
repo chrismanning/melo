@@ -18,7 +18,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Time
 import Data.Traversable
-import Data.Vector ((!?))
+import Data.Vector (Vector, (!?))
 import qualified Data.Vector as V
 import GHC.Generics hiding (from)
 import Melo.Common.Effect
@@ -43,7 +43,7 @@ import System.Directory
 import Witch
 
 class Monad m => TrackService m where
-  importTracks :: [Source] -> m [Track]
+  importTracks :: Vector Source -> m (Vector Track)
 
 newtype TrackServiceIOT m a = TrackServiceIOT
   { runTrackServiceIOT :: m a

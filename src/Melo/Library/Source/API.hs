@@ -25,8 +25,9 @@ import qualified Data.Sequence as S
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Typeable
-import Data.UUID (UUID, fromText, toText)
+import Data.UUID (fromText, toText)
 import qualified Data.Vector as V
+import Data.Vector (Vector)
 import GHC.Generics hiding (from)
 import Melo.Common.FileSystem
 import Melo.Common.Logging
@@ -50,30 +51,30 @@ import Witch
 resolveSources ::
   (SourceRepository m, FileSystem m, WithOperation o) =>
   SourcesArgs ->
-  Resolver o e m [Source (Resolver o e m)]
+  Resolver o e m (Vector (Source (Resolver o e m)))
 resolveSources args = fmap (fmap from) (resolveSourcesImpl args)
 
 resolveSourcesImpl ::
   (SourceRepository m, FileSystem m, WithOperation o) =>
   SourcesArgs ->
-  Resolver o e m [Ty.Source]
+  Resolver o e m (Vector Ty.Source)
 resolveSourcesImpl (SourceArgs (Just SourceWhere {..})) =
   case id of
     Just idExpr -> case idExpr of
       WhereEqExpr (EqExpr x) -> case fromText x of
-        Just uuid -> lift $ convertSources <$> getByKey [Ty.SourceRef uuid]
+        Just uuid -> lift $ convertSources <$> getByKey (V.singleton (Ty.SourceRef uuid))
         Nothing -> fail $ "invalid source id " <> show x
       WhereInExpr (InExpr x) -> case allJust (fmap fromText x) of
-        Just uuids -> lift $ convertSources <$> getByKey (Ty.SourceRef <$> uuids)
+        Just uuids -> lift $ convertSources <$> getByKey (V.fromList $ Ty.SourceRef <$> uuids)
         Nothing -> fail $ "invalid source id in " <> show x
       _unknownWhere -> fail "invalid where clause for Source.id"
     Nothing -> case sourceUri of
       Just sourceUriExpr -> case sourceUriExpr of
         WhereEqExpr (EqExpr x) -> case parseURI (T.unpack x) of
-          Just uri -> lift $ convertSources <$> getByUri [uri]
+          Just uri -> lift $ convertSources <$> getByUri (V.singleton uri)
           Nothing -> fail $ "invalid source uri " <> show x
         WhereInExpr (InExpr x) -> case allJust (fmap (parseURI . T.unpack) x) of
-          Just uris -> lift $ convertSources <$> getByUri uris
+          Just uris -> lift $ convertSources <$> getByUri (V.fromList uris)
           Nothing -> fail $ "invalid source uri in " <> show x
         WhereStartsWithExpr (StartsWithExpr x) -> case parseURI $ T.unpack x of
           Just uri -> lift $ convertSources <$> getByUriPrefix uri
@@ -87,14 +88,14 @@ resolveSourcesImpl (SourceArgs (Just SourceWhere {..})) =
     allJust (Nothing : _) = Nothing
 resolveSourcesImpl _ = lift $ fmap convertSources getAll
 
-convertSources :: [Ty.SourceEntity] -> [Ty.Source]
-convertSources = catMaybes . fmap (rightToMaybe . tryFrom)
+convertSources :: Vector Ty.SourceEntity -> Vector Ty.Source
+convertSources = V.mapMaybe (rightToMaybe . tryFrom)
 
 resolveCollectionSources ::
   (SourceRepository m, FileSystem m, WithOperation o) =>
   Ty.CollectionRef ->
   CollectionSourcesArgs ->
-  Resolver o e m [Source (Resolver o e m)]
+  Resolver o e m (Vector (Source (Resolver o e m)))
 resolveCollectionSources collectionRef _args =
   -- TODO handle args
   lift $ fmap (fmap from) $ getCollectionSources collectionRef
@@ -181,7 +182,7 @@ data TimeUnit = Seconds | Milliseconds | Nanoseconds
   deriving (Generic)
 
 data Metadata = Metadata
-  { tags :: [(Text, Text)],
+  { tags :: V.Vector Tag,
     mappedTags :: MappedTags,
     formatId :: Text,
     format :: Text
@@ -195,7 +196,7 @@ instance From F.Metadata Metadata where
     Metadata
       { formatId = coerce m.formatId,
         format = m.formatDesc,
-        tags = V.toList $ coerce m.tags,
+        tags = from @(Text, Text) <$> coerce m.tags,
         mappedTags = mapTags m
       }
 
@@ -206,11 +207,21 @@ instance From Ty.SourceEntity Metadata where
         JSONBEncoded (Ty.SourceMetadata tags) = s.metadata
         format = either (const "") (\m' -> m'.formatDesc) m
      in Metadata
-          { tags = V.toList tags,
+          { tags = from <$> tags,
             mappedTags = either (const def) mapTags m,
             formatId = s.metadata_format,
             format = format
           }
+
+data Tag = Tag {
+  key :: Text,
+  value :: Text
+} deriving (Generic)
+
+instance GQLType Tag
+
+instance From (Text, Text) Tag where
+  from (k, v) = Tag k v
 
 mapTags :: F.Metadata -> MappedTags
 mapTags F.Metadata {tags, lens} =
@@ -307,7 +318,7 @@ resolveSourceGroups ::
     FileSystem m,
     WithOperation o
   ) =>
-  Resolver o e m [SourceGroup (Resolver o e m)]
+  Resolver o e m (V.Vector (SourceGroup (Resolver o e m)))
 resolveSourceGroups = lift $ groupSources <$!> fmap (fmap from) getAll
 
 resolveCollectionSourceGroups ::
@@ -316,7 +327,7 @@ resolveCollectionSourceGroups ::
     WithOperation o
   ) =>
   Ty.CollectionRef ->
-  Resolver o e m [SourceGroup (Resolver o e m)]
+  Resolver o e m (Vector (SourceGroup (Resolver o e m)))
 resolveCollectionSourceGroups collectionRef =
   lift $ groupSources <$!> fmap (fmap from) (getCollectionSources collectionRef)
 
@@ -348,8 +359,8 @@ data SourceContent
 
 instance GQLType SourceContent
 
-groupSources :: forall m e o. (FileSystem m, WithOperation o) => [Source (Resolver o e m)] -> [SourceGroup (Resolver o e m)]
-groupSources = fmap trSrcGrp . toList . foldl' acc S.empty
+groupSources :: forall m e o. (FileSystem m, WithOperation o) => V.Vector (Source (Resolver o e m)) -> V.Vector (SourceGroup (Resolver o e m))
+groupSources = V.fromList . toList . fmap trSrcGrp . foldl' acc S.empty
   where
     acc gs' src =
       let groupedTags = groupMappedTags $ src ^. #metadata . #mappedTags
@@ -485,7 +496,7 @@ instance GQLType UpdatePair where
   type KIND UpdatePair = INPUT
 
 newtype UpdateSourcesArgs = UpdateSourcesArgs
-  { updates :: [SourceUpdate]
+  { updates :: Vector SourceUpdate
   }
   deriving (Generic)
 
@@ -493,7 +504,7 @@ instance GQLType UpdateSourcesArgs where
   type KIND UpdateSourcesArgs = INPUT
 
 newtype UpdatedSources m = UpdatedSources
-  { results :: [UpdateSourceResult m]
+  { results :: Vector (UpdateSourceResult m)
   }
   deriving (Generic)
 
@@ -508,7 +519,7 @@ instance Semigroup (UpdatedSources m) where
 instance Monoid (UpdatedSources m) where
   mempty =
     UpdatedSources
-      { results = []
+      { results = V.empty
       }
 
 data UpdateSourceResult m
@@ -563,19 +574,19 @@ updateSourcesImpl (UpdateSourcesArgs updates) = lift do
                                   { Ty.metadata = JSONBEncoded $ Ty.SourceMetadata tags,
                                     Ty.metadata_format = coerce $ F.formatId metadata
                                   }
-                          update [updatedSource]
+                          update (V.singleton updatedSource)
                           pure $ UpdatedSource (from updatedSource)
             Nothing -> do
               let msg = T.pack $ "invalid source id '" <> show id <> "'"
               $(logError) msg
               pure $ FailedSourceUpdate {id, msg}
-    enrich :: [SourceUpdate] -> m [SourceUpdate']
+    enrich :: Vector SourceUpdate -> m (Vector SourceUpdate')
     enrich us = do
-      let srcIds :: [Ty.SourceRef] = fmap (^. #id) us
-      srcs <- getByKey srcIds
-      let srcs' = H.fromList $ fmap (\src -> (src ^. #id, src)) srcs
+      let srcIds = fmap (^. #id) us
+      srcs <- getByKey @Ty.SourceEntity srcIds
+      let srcs' = H.fromList $ fmap (\src -> (src ^. #id, src)) $ V.toList srcs
       pure $
-        mapMaybe
+        V.mapMaybe
           ( \SourceUpdate {..} ->
               SourceUpdate' id <$> rightToMaybe (tryFrom updateTags) <*> H.lookup id srcs'
           )
@@ -626,7 +637,7 @@ instance TryFrom TagUpdate TagUpdateOp where
 type TransformSources m = TransformSourcesArgs -> m (UpdatedSources m)
 
 data TransformSourcesArgs = TransformSourcesArgs
-  { transformations :: [Transform],
+  { transformations :: Vector Transform,
     where' :: Maybe SourceWhere
   }
   deriving (Generic)
@@ -668,8 +679,8 @@ previewTransformSourcesImpl (TransformSourcesArgs ts where') = do
   ss' <- Tr.previewTransformActions (interpretTransforms ts) (from <$> ss)
   pure $ UpdatedSources (UpdatedSource . from <$> ss')
   where
-    interpretTransforms :: [Transform] -> [Tr.TransformAction]
-    interpretTransforms ts = catMaybes $ rightToMaybe . tryFrom <$> ts
+    interpretTransforms :: Vector Transform -> Vector Tr.TransformAction
+    interpretTransforms ts = V.mapMaybe (rightToMaybe . tryFrom) ts
 
 transformSourcesImpl ::
   forall m e.
@@ -686,8 +697,8 @@ transformSourcesImpl (TransformSourcesArgs ts where') = do
   ss' <- Tr.evalTransformActions (interpretTransforms ts) (from <$> ss)
   pure $ UpdatedSources (UpdatedSource . from <$> ss')
   where
-    interpretTransforms :: [Transform] -> [Tr.TransformAction]
-    interpretTransforms ts = catMaybes $ rightToMaybe . tryFrom <$> ts
+    interpretTransforms :: Vector Transform -> Vector Tr.TransformAction
+    interpretTransforms ts = V.mapMaybe (rightToMaybe . tryFrom) ts
 
 instance TryFrom Transform Tr.TransformAction where
   tryFrom t = case t of

@@ -21,6 +21,8 @@ import Data.Text (Text)
 import Data.UUID
 import Data.UUID.V4
 import qualified Data.Vector as V
+import Data.Vector (Vector)
+import Data.Vector.Lens
 import Melo.Common.FileSystem
 import Melo.Common.Logging
 import Melo.Common.Metadata
@@ -95,7 +97,7 @@ spec = do
           musicBrainzServiceActions = []
         }
         let expected = orig & #source .~ parseUriUnsafe "file:/music/Artist/1999%20-%20Album%20Title/01%20-%20Track%20Title.flac"
-        previewTransformationsFixture fixture [orig] `shouldReturn` [expected]
+        previewTransformationsFixture fixture (V.singleton orig) `shouldReturn` V.singleton expected
       it "transforms with grouped pattern when tags missing date" $ do
         let tags = [
               ("ARTIST", "Artist"),
@@ -113,7 +115,7 @@ spec = do
           musicBrainzServiceActions = []
         }
         let expected = orig & #source .~ parseUriUnsafe "file:/music/Artist/Album%20Title/01%20-%20Track%20Title.flac"
-        previewTransformationsFixture fixture [orig] `shouldReturn` [expected]
+        previewTransformationsFixture fixture (V.singleton orig) `shouldReturn` V.singleton expected
     context "editing metadata" $ do
       let metadataFile = F.MetadataFile {
                 metadata = H.empty,
@@ -154,7 +156,7 @@ spec = do
           ],
           musicBrainzServiceActions = []
         }
-        previewTransformationsFixture fixture [orig] >>= (`shouldSatisfy` \[actual] -> (actual & #ref .~ (orig ^. #ref)) == expected)
+        previewTransformationsFixture fixture (V.singleton orig) >>= (`shouldSatisfy` \actual -> (actual V.! 0 & #ref .~ (orig ^. #ref)) == expected)
       it "retains mappings" $ do
         let origTags = [
               ("ARTIST", "Artist"),
@@ -180,7 +182,7 @@ spec = do
               ("ALBUM", "Album Title")
               ]
         let expected = mkSource collectionRef tags
-        previewTransformationsFixture fixture [orig] >>= (`shouldSatisfy` \[actual] -> (actual & #ref .~ (orig ^. #ref)) == expected)
+        previewTransformationsFixture fixture (V.singleton orig) >>= (`shouldSatisfy` \actual -> (actual V.! 0 & #ref .~ orig.ref) == expected)
   describe "Pattern Parsing" $ do
     it "parses literal patterns from text" $ do
       SUT.parseMovePattern " " `shouldBe` Right (NE.singleton (Ty.LiteralPattern " "))
@@ -220,7 +222,7 @@ spec = do
           ]
         )
 
-type TestTransformer = [Ty.Source] -> TestTransformT [Ty.Source]
+type TestTransformer = V.Vector Ty.Source -> TestTransformT (V.Vector Ty.Source)
 
 type TestTransformT =
   SUT.MetadataServicePreviewT (
@@ -250,7 +252,7 @@ data TransformFixture = TransformFixture {
   transforms :: [TestTransformer]
 }
 
-previewTransformationsFixture :: TransformFixture -> [Ty.Source] -> IO [Ty.Source]
+previewTransformationsFixture :: TransformFixture -> V.Vector Ty.Source -> IO (V.Vector Ty.Source)
 previewTransformationsFixture TransformFixture{..} ss = runSourceTransform $ SUT.previewTransformations transforms ss
   where
     runSourceTransform =

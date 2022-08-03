@@ -4,10 +4,12 @@
 module Melo.Database.Repo where
 
 import Control.Exception.Safe (Exception)
+import Control.Lens
 import Control.Monad.Trans
 import Data.ByteString (ByteString)
 import Data.Kind
-import Data.Maybe (listToMaybe)
+import Data.Vector (Vector, singleton)
+import Data.Vector.Lens ()
 
 class Entity e where
   type NewEntity e :: Type
@@ -15,16 +17,16 @@ class Entity e where
   primaryKey :: e -> PrimaryKey e
 
 class (Monad m, Entity e) => Repository e m | m -> e where
-  getAll :: m [e]
-  getByKey :: [PrimaryKey e] -> m [e]
-  insert :: [NewEntity e] -> m [e]
-  insert' :: [NewEntity e] -> m ()
-  delete :: [PrimaryKey e] -> m ()
-  update :: [e] -> m [e]
-  update' :: [e] -> m ()
+  getAll :: m (Vector e)
+  getByKey :: Vector (PrimaryKey e) -> m (Vector e)
+  insert :: Vector (NewEntity e) -> m (Vector e)
+  insert' :: Vector (NewEntity e) -> m ()
+  delete :: Vector (PrimaryKey e) -> m ()
+  update :: Vector e -> m (Vector e)
+  update' :: Vector e -> m ()
 
-getSingle :: Repository e m => PrimaryKey e -> m (Maybe e)
-getSingle k = listToMaybe <$> getByKey [k]
+getSingle :: forall e m. Repository e m => PrimaryKey e -> m (Maybe e)
+getSingle k = firstOf traverse <$> getByKey (singleton k)
 
 instance
   {-# OVERLAPPABLE #-}

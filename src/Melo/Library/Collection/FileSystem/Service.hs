@@ -12,13 +12,13 @@ import Control.Monad.Reader
 import Control.Monad.Trans.Control
 import Data.Maybe
 import Data.Pool
+import Data.Vector (Vector, empty, fromList)
 import Hasql.Connection
 import Melo.Common.FileSystem
 import Melo.Common.Logging
 import Melo.Common.Metadata
 import Melo.Common.NaturalSort
 import Melo.Database.Transaction
-import qualified Melo.Format as F
 import qualified Melo.Format.Error as F
 import Melo.Library.Collection.Types
 import Melo.Library.Source.Repo
@@ -32,7 +32,7 @@ import System.FilePath
 import Data.Functor ((<&>))
 
 class Monad m => FileSystemService m where
-  scanPath :: CollectionRef -> FilePath -> m [Source]
+  scanPath :: CollectionRef -> FilePath -> m (Vector Source)
 
 instance
   {-# OVERLAPPABLE #-}
@@ -121,20 +121,20 @@ instance
                 pure srcs
               _ -> do
                 $(logWarn) $ "Multiple cue file found in " <> show p <> "; skipping..."
-                pure mempty
+                pure empty
           else
             if isFile
               then lift $ withTransaction pool runSourceRepositoryIO (importTransaction [p])
-              else pure mempty
+              else pure empty
       $(logInfo) $ "Import finished: " <> show srcs
       pure srcs
     where
-      importTransaction :: [FilePath] -> SourceRepositoryIOT m [Source]
+      importTransaction :: [FilePath] -> SourceRepositoryIOT m (Vector Source)
       importTransaction files = do
         $(logDebug) $ "Importing " <> show files
         mfs <- catMaybes <$> mapM openMetadataFile'' files
         $(logDebug) $ "Opened " <> show mfs
-        importSources (FileSource ref <$> mfs)
+        importSources $ fromList (FileSource ref <$> mfs)
       openMetadataFile'' p =
         runMetadataServiceIO $
           openMetadataFileByExt p >>= \case
@@ -149,10 +149,10 @@ instance
             Left e -> do
               $(logError) $ "Could not open by extension " <> p <> ": " <> show e
               pure Nothing
-      handleScanException :: SomeException -> FileSystemServiceIOT m [Source]
+      handleScanException :: SomeException -> FileSystemServiceIOT m (Vector Source)
       handleScanException e = do
         $(logError) $ "error during scan: " <> show e
-        pure []
+        pure empty
 
 listDirectoryAbs :: FileSystem m => FilePath -> m [FilePath]
 listDirectoryAbs p = do

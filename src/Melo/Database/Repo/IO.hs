@@ -13,6 +13,7 @@ import Control.Monad.Trans.Control
 import Data.Kind
 import Data.Maybe
 import Data.Pool
+import Data.Vector (Vector, empty, fromList)
 import Hasql.Connection
 import Hasql.Session
 import Melo.Common.Logging
@@ -74,10 +75,10 @@ instance
       all <- Rel8.each tbl
       Rel8.where_ $ pk all `Rel8.in_` keys
       pure all
-  insert [] = pure []
+  insert es | null es = pure empty
   insert es = do
     RepositoryHandle {connSrc, tbl, upsert} <- ask
-    runInsert
+    fromList <$> runInsert
       connSrc
       Rel8.Insert
         { into = tbl,
@@ -85,7 +86,7 @@ instance
           onConflict = fromMaybe Rel8.Abort (Rel8.DoUpdate <$> upsert),
           returning = Rel8.Projection (\x -> x)
         }
-  insert' [] = pure ()
+  insert' es | null es = pure ()
   insert' es = do
     RepositoryHandle {connSrc, tbl, upsert} <- ask
     runInsert
@@ -96,7 +97,7 @@ instance
           onConflict = fromMaybe Rel8.Abort (Rel8.DoUpdate <$> upsert),
           returning = pure ()
         }
-  delete [] = pure ()
+  delete ks | null ks = pure ()
   delete ks = do
     RepositoryHandle {connSrc, tbl, pk} <- ask
     let keys = Rel8.lit <$> ks
@@ -111,9 +112,12 @@ instance
     case connSrc of
       Single conn' -> liftIO $ run session conn' >>= either throwIO pure
       Pooled pool -> liftIO $ withResource pool $ \conn -> run session conn >>= either throwIO pure
-  update [] = pure []
-  update es = fmap concat $ forM es $ \e -> doUpdate (from e) (Rel8.Projection (\x -> x))
-  update' [] = pure ()
+  update es | null es = pure empty
+  update es = do
+    us <- forM es $ \e ->
+      doUpdate (from e) (Rel8.Projection (\x -> x))
+    pure $ fromList (concat us)
+  update' es | null es = pure ()
   update' es = forM_ es $ \e -> doUpdate (from e) (pure ())
 
 doUpdate :: (
@@ -143,10 +147,10 @@ runSelect ::
   (MonadIO m, Rel8.Serializable exprs (Rel8.FromExprs exprs)) =>
   DbConnection ->
   Rel8.Query exprs ->
-  m [Rel8.FromExprs exprs]
+  m (Vector (Rel8.FromExprs exprs))
 runSelect connSrc q = do
   $(logDebugIO) $ Rel8.showQuery q
-  let session = statement () $ Rel8.select q
+  let session = statement () $ Rel8.selectVector q
   case connSrc of
     Single conn' -> liftIO $ run session conn' >>= either throwIO pure
     Pooled pool -> liftIO $ withResource pool $ \conn -> run session conn >>= either throwIO pure

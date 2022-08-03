@@ -12,6 +12,7 @@ import Control.Monad.Reader
 import Control.Monad.Trans.Control
 import Data.HashMap.Strict as H
 import Data.Pool
+import Data.Vector as V (singleton)
 import Hasql.Connection
 import Melo.Common.Logging
 import Melo.Common.Uri
@@ -135,7 +136,7 @@ handleEvent pool ref event =
         else do
           $(logInfo) $ "file removed " <> p
           withTransaction pool runSourceRepositoryIO do
-            refs <- getKeysByUri [uri]
+            refs <- getKeysByUri (V.singleton uri)
             Repo.delete refs
     FS.Unknown p _ _ s ->
       $(logWarn) $ "unknown file system event on path " <> p <> ": " <> s

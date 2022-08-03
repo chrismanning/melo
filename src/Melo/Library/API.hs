@@ -11,6 +11,7 @@ import Data.Morpheus.Kind
 import Data.Morpheus.Types
 import Data.Text as T hiding (null)
 import Data.Typeable
+import Data.Vector (Vector)
 import GHC.Generics hiding (from)
 import GHC.OverloadedLabels ()
 import Melo.Common.FileSystem
@@ -26,9 +27,9 @@ import Melo.Metadata.Mapping.Repo
 import Network.URI
 
 data LibraryQuery m = LibraryQuery
-  { sources :: SourcesArgs -> m [Source m],
-    sourceGroups :: m [SourceGroup m],
-    collections :: CollectionsArgs -> m [Collection m]
+  { sources :: SourcesArgs -> m (Vector (Source m)),
+    sourceGroups :: m (Vector (SourceGroup m)),
+    collections :: CollectionsArgs -> m (Vector (Collection m))
   }
   deriving (Generic)
 
