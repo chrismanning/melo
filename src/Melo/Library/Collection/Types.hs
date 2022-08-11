@@ -1,5 +1,4 @@
 {-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE StrictData #-}
 
 module Melo.Library.Collection.Types where
 

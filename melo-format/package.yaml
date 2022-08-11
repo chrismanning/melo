@@ -116,6 +116,7 @@ default-extensions:
   - OverloadedStrings
   - PatternSynonyms
   - RecordWildCards
+  - StrictData
   - TemplateHaskell
   - TypeFamilies
   - TypeFamilyDependencies

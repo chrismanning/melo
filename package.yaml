@@ -219,6 +219,7 @@ default-extensions:
 - PatternSynonyms
 #- RebindableSyntax
 - RecordWildCards
+- StrictData
 - TemplateHaskell
 - TypeFamilies
 - TypeFamilyDependencies

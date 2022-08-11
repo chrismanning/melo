@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 1232db175d7b77ef07a02f36936126e418004836f8afb22cecc211f1c8e6acd6
+-- hash: 4af61b776cfe61c18d83fc0a957603d84d6105215799506a0e1f09a2cbf85fd3
 
 name:           melo-format
 version:        0.1.0.0
@@ -73,6 +73,7 @@ library
       OverloadedStrings
       PatternSynonyms
       RecordWildCards
+      StrictData
       TemplateHaskell
       TypeFamilies
       TypeFamilyDependencies
@@ -136,6 +137,7 @@ test-suite melo-format-test
       OverloadedStrings
       PatternSynonyms
       RecordWildCards
+      StrictData
       TemplateHaskell
       TypeFamilies
       TypeFamilyDependencies

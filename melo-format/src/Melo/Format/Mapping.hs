@@ -1,5 +1,3 @@
-{-# LANGUAGE StrictData #-}
-
 module Melo.Format.Mapping where
 
 import Data.Default
