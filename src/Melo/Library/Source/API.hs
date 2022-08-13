@@ -29,6 +29,7 @@ import GHC.Generics hiding (from)
 import Melo.Common.FileSystem
 import Melo.Common.Logging
 import Melo.Common.Metadata
+import Melo.Common.NaturalSort
 import Melo.Common.Uri
 import Melo.Database.Repo
 import Melo.Format ()
@@ -378,9 +379,11 @@ groupSources = V.fromList . toList . fmap trSrcGrp . foldl' acc S.empty
       SourceGroup
         { groupTags = g.groupTags,
           groupParentUri = g.groupParentUri,
-          sources = toList $ g.sources,
+          sources = toList $ S.unstableSortBy (compareNaturalBy srcTrackNum) g.sources,
           coverImage = lift $ coverImageImpl g
         }
+    srcTrackNum :: Source n -> Text
+    srcTrackNum src = fromMaybe "00" src.metadata.mappedTags.trackNumber
     coverImageImpl :: SourceGroup' (Resolver o e m) -> m (Maybe Image)
     coverImageImpl g = case parseURI $ T.unpack $ g.groupParentUri of
       Just uri ->
