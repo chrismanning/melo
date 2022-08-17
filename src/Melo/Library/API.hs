@@ -21,6 +21,7 @@ import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Service
 import Melo.Library.Source.API
 import Melo.Library.Source.Repo
+import qualified Melo.Library.Source.Transform as Tr
 import Melo.Lookup.MusicBrainz
 import Melo.Metadata.Mapping.Repo
 import Network.URI
@@ -35,10 +36,7 @@ data LibraryQuery m = LibraryQuery
 instance Typeable m => GQLType (LibraryQuery m)
 
 resolveLibrary ::
-  ( SourceRepository m,
-    CollectionRepository m,
-    FileSystem m
-  ) =>
+  Tr.MonadSourceTransform m =>
   ResolverQ e m LibraryQuery
 resolveLibrary =
   lift $
@@ -52,7 +50,6 @@ resolveLibrary =
 data LibraryMutation (m :: Type -> Type) = LibraryMutation
   { stageSources :: StageSourcesArgs -> m (StagedSources m),
     transformSources :: TransformSources m,
-    previewTransformSources :: TransformSources m,
     updateSources :: UpdateSourcesArgs -> m (UpdatedSources m),
     collection :: m (CollectionMutation m)
   }
@@ -78,7 +75,6 @@ libraryMutation =
       LibraryMutation
         { stageSources = stageSourcesImpl,
           transformSources = transformSourcesImpl,
-          previewTransformSources = previewTransformSourcesImpl,
           updateSources = updateSourcesImpl,
           collection = collectionMutation
         }

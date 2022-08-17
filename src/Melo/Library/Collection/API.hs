@@ -25,15 +25,12 @@ import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Service
 import qualified Melo.Library.Collection.Types as Ty
 import Melo.Library.Source.API as SrcApi
-import qualified Melo.Library.Source.Repo as SrcRepo
+import qualified Melo.Library.Source.Transform as Tr
 import Network.URI
 import Witch
 
 resolveCollections ::
-  ( CollectionRepository m,
-    SrcRepo.SourceRepository m,
-    FileSystem m
-  ) =>
+  Tr.MonadSourceTransform m =>
   CollectionsArgs ->
   ResolverQ e m (Vector (Collection (Resolver QUERY e m)))
 resolveCollections (CollectionsArgs (Just CollectionWhere {..})) =
@@ -93,8 +90,7 @@ instance Typeable m => GQLType (Collection m)
 --      }
 
 instance
-  ( SrcRepo.SourceRepository m,
-    FileSystem m,
+  ( Tr.MonadSourceTransform m,
     WithOperation o
   ) =>
   From Ty.Collection (Collection (Resolver o e m))
@@ -149,11 +145,8 @@ instance Typeable m => GQLType (CollectionMutation m)
 
 collectionMutation ::
   forall m e.
-  ( CollectionRepository m,
-    CollectionService m,
-    SrcRepo.SourceRepository m,
-    FileSystem m,
-    Logging m
+  ( Tr.MonadSourceTransform m,
+    CollectionService m
   ) =>
   ResolverM e (m :: Type -> Type) CollectionMutation
 collectionMutation =
@@ -175,9 +168,8 @@ instance GQLType AddCollectionArgs where
 
 addCollectionImpl ::
   forall m e.
-  ( CollectionService m,
-    CollectionRepository m,
-    SrcRepo.SourceRepository m,
+  ( Tr.MonadSourceTransform m,
+    CollectionService m,
     FileSystem m
   ) =>
   AddCollectionArgs ->

@@ -10,21 +10,21 @@ import Control.Monad
 import Data.Aeson as A hiding (Result, (<?>))
 import Data.Coerce
 import Data.Default
-import Data.Either.Combinators (mapLeft, mapRight, rightToMaybe)
+import Data.Either.Combinators
 import Data.Foldable
 import Data.Generics.Labels ()
-import qualified Data.HashMap.Strict as H
+import Data.HashMap.Strict qualified as H
 import Data.Maybe
 import Data.Morpheus.Kind
 import Data.Morpheus.Types
 import Data.Sequence ((|>))
-import qualified Data.Sequence as S
+import Data.Sequence qualified as S
 import Data.Text (Text)
-import qualified Data.Text as T
+import Data.Text qualified as T
 import Data.Typeable
 import Data.UUID (fromText, toText)
-import qualified Data.Vector as V
 import Data.Vector (Vector)
+import Data.Vector qualified as V
 import GHC.Generics hiding (from)
 import Melo.Common.FileSystem
 import Melo.Common.Logging
@@ -33,27 +33,27 @@ import Melo.Common.NaturalSort
 import Melo.Common.Uri
 import Melo.Database.Repo
 import Melo.Format ()
-import qualified Melo.Format as F
-import qualified Melo.Format.Mapping as M
+import Melo.Format qualified as F
+import Melo.Format.Mapping qualified as M
 import Melo.Format.Metadata ()
 import Melo.GraphQL.Where
-import qualified Melo.Library.Collection.Types as Ty
+import Melo.Library.Collection.Types qualified as Ty
 import Melo.Library.Source.Repo
-import qualified Melo.Library.Source.Transform as Tr
-import qualified Melo.Library.Source.Types as Ty
-import qualified Melo.Lookup.MusicBrainz as MB
-import Rel8 (JSONBEncoded(..))
+import Melo.Library.Source.Transform qualified as Tr
+import Melo.Library.Source.Types qualified as Ty
+import Melo.Lookup.MusicBrainz qualified as MB
+import Rel8 (JSONBEncoded (..))
 import System.FilePath as P
 import Witch
 
 resolveSources ::
-  (SourceRepository m, FileSystem m, WithOperation o) =>
+  (Tr.MonadSourceTransform m, WithOperation o) =>
   SourcesArgs ->
   Resolver o e m (Vector (Source (Resolver o e m)))
 resolveSources args = fmap (fmap from) (resolveSourcesImpl args)
 
 resolveSourcesImpl ::
-  (SourceRepository m, FileSystem m, WithOperation o) =>
+  (Tr.MonadSourceTransform m, WithOperation o) =>
   SourcesArgs ->
   Resolver o e m (Vector Ty.Source)
 resolveSourcesImpl (SourceArgs (Just SourceWhere {..})) =
@@ -90,7 +90,7 @@ convertSources :: Vector Ty.SourceEntity -> Vector Ty.Source
 convertSources = V.mapMaybe (rightToMaybe . tryFrom)
 
 resolveCollectionSources ::
-  (SourceRepository m, FileSystem m, WithOperation o) =>
+  (Tr.MonadSourceTransform m, WithOperation o) =>
   Ty.CollectionRef ->
   CollectionSourcesArgs ->
   Resolver o e m (Vector (Source (Resolver o e m)))
@@ -106,17 +106,22 @@ data Source m = Source
     sourceUri :: Text,
     downloadUri :: Text,
     length :: m Double,
-    coverImage :: m (Maybe Image)
+    coverImage :: m (Maybe Image),
+    previewTransform :: TransformSource m
   }
   deriving (Generic)
 
 instance Typeable m => GQLType (Source m)
 
-instance (Applicative m, FileSystem m, WithOperation o) => From Ty.Source (Source (Resolver o e m)) where
+instance (Tr.MonadSourceTransform m, WithOperation o) => From Ty.Source (Source (Resolver o e m)) where
   from = via @Ty.SourceEntity
 
-instance (Applicative m, FileSystem m, WithOperation o) =>
-  From Ty.SourceEntity (Source (Resolver o e m)) where
+instance
+  ( Tr.MonadSourceTransform m,
+    WithOperation o
+  ) =>
+  From Ty.SourceEntity (Source (Resolver o e m))
+  where
   from s =
     Source
       { id = s ^. #id,
@@ -126,7 +131,8 @@ instance (Applicative m, FileSystem m, WithOperation o) =>
         sourceUri = s ^. #source_uri,
         downloadUri = "/source/" <> toText (Ty.unSourceRef (s ^. #id)),
         length = pure 100,
-        coverImage = lift $ coverImageImpl s
+        coverImage = lift $ coverImageImpl s,
+        previewTransform = previewTransformSourceImpl s.id
       }
     where
       coverImageImpl :: Ty.SourceEntity -> m (Maybe Image)
@@ -211,10 +217,11 @@ instance From Ty.SourceEntity Metadata where
             format = format
           }
 
-data Tag = Tag {
-  key :: Text,
-  value :: Text
-} deriving (Generic)
+data Tag = Tag
+  { key :: Text,
+    value :: Text
+  }
+  deriving (Generic)
 
 instance GQLType Tag
 
@@ -312,16 +319,15 @@ instance GQLType MappedTagsInput where
 --unmapTags :: MappedTags INPUT -> F.Tags
 
 resolveSourceGroups ::
-  ( SourceRepository m,
-    FileSystem m,
+  forall m o e.
+  ( Tr.MonadSourceTransform m,
     WithOperation o
   ) =>
   Resolver o e m (V.Vector (SourceGroup (Resolver o e m)))
-resolveSourceGroups = lift $ groupSources <$!> fmap (fmap from) getAll
+resolveSourceGroups = lift $ groupSources <$!> fmap (fmap from) (getAll :: m (V.Vector Ty.SourceEntity))
 
 resolveCollectionSourceGroups ::
-  ( SourceRepository m,
-    FileSystem m,
+  ( Tr.MonadSourceTransform m,
     WithOperation o
   ) =>
   Ty.CollectionRef ->
@@ -531,11 +537,7 @@ instance Typeable m => GQLType (UpdateSourceResult m)
 
 updateSourcesImpl ::
   forall m e.
-  ( SourceRepository m,
-    FileSystem m,
-    Logging m,
-    MetadataService m
-  ) =>
+  Tr.MonadSourceTransform m =>
   UpdateSourcesArgs ->
   ResolverM e m (UpdatedSources (Resolver MUTATION e m))
 updateSourcesImpl (UpdateSourcesArgs updates) = lift do
@@ -545,46 +547,46 @@ updateSourcesImpl (UpdateSourcesArgs updates) = lift do
   where
     updateSource :: SourceUpdate' -> m (UpdateSourceResult (Resolver MUTATION e m))
     updateSource SourceUpdate' {..} =
-          case parseURI (T.unpack $ originalSource ^. #source_uri) >>= uriToFilePath of
-            Just path -> do
-              let metadataFileId = F.MetadataFileId $ originalSource ^. #kind
-              readMetadataFile metadataFileId path >>= \case
-                Left e -> do
-                  let msg = "error reading metadata file: " <> T.pack (show e)
-                  $(logError) msg
-                  pure $ FailedSourceUpdate {id, msg}
-                Right f -> do
-                  let !f' = f & #metadata . each %~ resolveMetadata updateTags
-                  $(logDebug) $ "saving metadata: " <> show (f' ^. #metadata)
-                  writeMetadataFile f' path >>= \case
-                    Left e -> do
-                      let msg = "error writing metadata file: " <> T.pack (show e)
-                      $(logError) msg
-                      pure $ FailedSourceUpdate {id, msg}
-                    Right f'' ->
-                      case chooseMetadata (H.elems (f'' ^. #metadata)) of
-                        Nothing -> do
-                          let msg = T.pack $ "unable to choose metadata format for source '" <> show id <> "'"
-                          $(logError) msg
-                          pure $ FailedSourceUpdate {id, msg}
-                        Just metadata -> do
-                          let F.Tags tags = F.tags metadata
-                          let updatedSource =
-                                originalSource
-                                  { Ty.metadata = JSONBEncoded $ Ty.SourceMetadata tags,
-                                    Ty.metadata_format = coerce $ F.formatId metadata
-                                  }
-                          update (V.singleton updatedSource)
-                          pure $ UpdatedSource (from updatedSource)
-            Nothing -> do
-              let msg = T.pack $ "invalid source id '" <> show id <> "'"
+      case parseURI (T.unpack originalSource.source_uri) >>= uriToFilePath of
+        Just path -> do
+          let metadataFileId = F.MetadataFileId originalSource.kind
+          readMetadataFile metadataFileId path >>= \case
+            Left e -> do
+              let msg = "error reading metadata file: " <> T.pack (show e)
               $(logError) msg
               pure $ FailedSourceUpdate {id, msg}
+            Right f -> do
+              let !f' = f & #metadata . each %~ resolveMetadata updateTags
+              $(logDebug) $ "saving metadata: " <> show (f'.metadata)
+              writeMetadataFile f' path >>= \case
+                Left e -> do
+                  let msg = "error writing metadata file: " <> T.pack (show e)
+                  $(logError) msg
+                  pure $ FailedSourceUpdate {id, msg}
+                Right f'' ->
+                  case chooseMetadata (H.elems (f''.metadata)) of
+                    Nothing -> do
+                      let msg = T.pack $ "unable to choose metadata format for source '" <> show id <> "'"
+                      $(logError) msg
+                      pure $ FailedSourceUpdate {id, msg}
+                    Just metadata -> do
+                      let F.Tags tags = F.tags metadata
+                      let updatedSource =
+                            originalSource
+                              { Ty.metadata = JSONBEncoded $ Ty.SourceMetadata tags,
+                                Ty.metadata_format = coerce $ F.formatId metadata
+                              }
+                      update @Ty.SourceEntity (V.singleton updatedSource)
+                      pure $ UpdatedSource (from updatedSource)
+        Nothing -> do
+          let msg = T.pack $ "invalid source id '" <> show id <> "'"
+          $(logError) msg
+          pure $ FailedSourceUpdate {id, msg}
     enrich :: Vector SourceUpdate -> m (Vector SourceUpdate')
     enrich us = do
       let srcIds = fmap (^. #id) us
       srcs <- getByKey @Ty.SourceEntity srcIds
-      let srcs' = H.fromList $ fmap (\src -> (src ^. #id, src)) $ V.toList srcs
+      let srcs' = H.fromList $ fmap (\src -> (src.id, src)) $ V.toList srcs
       pure $
         V.mapMaybe
           ( \SourceUpdate {..} ->
@@ -634,6 +636,16 @@ instance TryFrom TagUpdate TagUpdateOp where
         SetMappedTags <$> setMappedTags
           <|> SetTags <$> setTags
 
+type TransformSource m = TransformSourceArgs -> m (UpdateSourceResult m)
+
+data TransformSourceArgs = TransformSourceArgs
+  { transformations :: Vector Transform
+  }
+  deriving (Generic)
+
+instance GQLType TransformSourceArgs where
+  type KIND TransformSourceArgs = INPUT
+
 type TransformSources m = TransformSourcesArgs -> m (UpdatedSources m)
 
 data TransformSourcesArgs = TransformSourcesArgs
@@ -645,38 +657,55 @@ data TransformSourcesArgs = TransformSourcesArgs
 instance GQLType TransformSourcesArgs where
   type KIND TransformSourcesArgs = INPUT
 
-data Transform =
-    Move { movePattern :: Text }
-  | SplitMultiTrackFile { movePattern :: Text}
-  | EditMetadata { metadataTransform :: MetadataTransformation }
+data Transform
+  = Move {movePattern :: Text}
+  | SplitMultiTrackFile {movePattern :: Text}
+  | EditMetadata {metadataTransform :: MetadataTransformation}
   deriving (Show, Generic)
 
 instance GQLType Transform where
   type KIND Transform = INPUT
 
-data MetadataTransformation =
-    SetMapping { mapping :: Text, values :: [Text] }
-  | RemoveMappings { mappings :: [Text] }
-  | Retain { mappings :: [Text] }
---  | TitleCase { mappings :: [Text] }
+data MetadataTransformation
+  = SetMapping {mapping :: Text, values :: [Text]}
+  | RemoveMappings {mappings :: [Text]}
+  | Retain {mappings :: [Text]}
   deriving (Show, Generic)
 
 instance GQLType MetadataTransformation where
   type KIND MetadataTransformation = INPUT
 
+previewTransformSourceImpl ::
+  forall m o e.
+  ( Tr.MonadSourceTransform m,
+    WithOperation o
+  ) =>
+  Ty.SourceRef ->
+  TransformSourceArgs ->
+  Resolver o e m (UpdateSourceResult (Resolver o e m))
+previewTransformSourceImpl ref (TransformSourceArgs ts) = do
+  s <- convertSources <$> getByKey (V.singleton ref)
+  $(logDebug) $ "Preview; Transforming source with " <> show ts
+  case V.singleton . from <$> firstOf traverse s of
+    Just s' -> do
+      p <- Tr.previewTransformations [Tr.evalTransformActions (interpretTransforms ts)] s'
+      case firstOf traverse p of
+        Just s'' -> pure $ UpdatedSource (from s'')
+        Nothing -> pure $ FailedSourceUpdate ref "source transformation failed"
+    Nothing -> pure $ FailedSourceUpdate ref "source transformation failed"
+  where
+    interpretTransforms :: Vector Transform -> Vector Tr.TransformAction
+    interpretTransforms ts = V.mapMaybe (rightToMaybe . tryFrom) ts
+
 previewTransformSourcesImpl ::
   forall m e.
-    ( SourceRepository m,
-      Logging m,
-      MetadataService m,
-      Tr.MonadSourceTransform m
-    ) =>
-    TransformSourcesArgs ->
-    ResolverM e m (UpdatedSources (Resolver MUTATION e m))
+  Tr.MonadSourceTransform m =>
+  TransformSourcesArgs ->
+  ResolverM e m (UpdatedSources (Resolver QUERY e m))
 previewTransformSourcesImpl (TransformSourcesArgs ts where') = do
   ss <- resolveSourcesImpl (SourceArgs where')
   $(logDebug) $ "Preview; Transforming sources with " <> show ts
-  ss' <- Tr.previewTransformActions (interpretTransforms ts) (from <$> ss)
+  ss' <- Tr.previewTransformations [Tr.evalTransformActions (interpretTransforms ts)] ss
   pure $ UpdatedSources (UpdatedSource . from <$> ss')
   where
     interpretTransforms :: Vector Transform -> Vector Tr.TransformAction
@@ -684,13 +713,9 @@ previewTransformSourcesImpl (TransformSourcesArgs ts where') = do
 
 transformSourcesImpl ::
   forall m e.
-    ( SourceRepository m,
-      Logging m,
-      MetadataService m,
-      Tr.MonadSourceTransform m
-    ) =>
-    TransformSourcesArgs ->
-    ResolverM e m (UpdatedSources (Resolver MUTATION e m))
+  Tr.MonadSourceTransform m =>
+  TransformSourcesArgs ->
+  ResolverM e m (UpdatedSources (Resolver MUTATION e m))
 transformSourcesImpl (TransformSourcesArgs ts where') = do
   $(logDebug) $ "Transforming sources with " <> show ts
   ss <- resolveSourcesImpl (SourceArgs where')
@@ -709,6 +734,6 @@ instance TryFrom Transform Tr.TransformAction where
       parseMovePattern' pat = mapLeft (TryFromException t <$> fmap toException) $ Tr.parseMovePattern pat
 
 instance From MetadataTransformation Tr.MetadataTransformation where
-  from t@(SetMapping m vs) = Tr.SetMapping m vs
+  from (SetMapping m vs) = Tr.SetMapping m vs
   from (RemoveMappings ms) = Tr.RemoveMappings ms
   from (Retain ms) = Tr.Retain ms

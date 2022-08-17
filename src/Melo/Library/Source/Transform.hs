@@ -46,7 +46,7 @@ import Melo.Format.Metadata qualified as F
 import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Service
 import Melo.Library.Collection.Types
-import Melo.Library.Source.Repo
+import Melo.Library.Source.Repo as Src
 import Melo.Library.Source.Service
 import Melo.Library.Source.Types
 import Melo.Lookup.MusicBrainz
@@ -73,9 +73,6 @@ data TransformAction where
   MusicBrainzLookup :: TransformAction
   ConvertEncoding :: TextEncoding -> TransformAction
   EditMetadata :: MetadataTransformation -> TransformAction
-
-previewTransformActions :: MonadSourceTransform m => Vector TransformAction -> Transform m
-previewTransformActions ts = runFileSystemPreviewT . runSourceRepositoryPreviewT . runMetadataServicePreviewT . evalTransformActions ts
 
 evalTransformActions :: MonadSourceTransform m => Vector TransformAction -> Transform m
 evalTransformActions = foldl' (\b a -> b >=> evalTransformAction a) pure
@@ -111,59 +108,54 @@ applyTransformations transformations srcs = foldM transform srcs transformations
   where
     transform srcs f = f srcs
 
-previewTransformations :: MonadSourceTransform m => [Transform (MetadataServicePreviewT (SourceRepositoryPreviewT (FileSystemPreviewT m)))] -> Vector Source -> m (Vector Source)
+previewTransformations ::
+  MonadSourceTransform m =>
+  [Transform (TransformPreviewT m)] ->
+  Vector Source ->
+  m (Vector Source)
 previewTransformations transformations srcs =
-  runFileSystemPreviewT $
-    runSourceRepositoryPreviewT $
-      runMetadataServicePreviewT $
-        foldM previewTransform srcs transformations
+  runTransformPreviewT $
+    foldM previewTransform srcs transformations
   where
     previewTransform srcs f = f srcs
 
-newtype FileSystemPreviewT m a = FileSystemPreviewT
-  { runFileSystemPreviewT :: m a
+newtype TransformPreviewT m a = TransformPreviewT
+  { runTransformPreviewT :: m a
   }
   deriving newtype (Functor, Applicative, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadThrow, MonadMask)
   deriving (MonadTrans) via IdentityT
+  deriving (SourceRepository)
 
-instance MonadSourceTransform m => FileSystem (FileSystemPreviewT m) where
+instance MonadSourceTransform m => FileSystem (TransformPreviewT m) where
   doesFileExist = lift . doesFileExist
   doesDirectoryExist = lift . doesDirectoryExist
   listDirectory = lift . listDirectory
   canonicalizePath = lift . canonicalizePath
   readFile = lift . FS.readFile
   movePath _ _ = lift $ do
-    $(logDebug) ("Mocked movePath called" :: String)
+    $(logDebug) ("Preview movePath called" :: String)
     pure $ Right ()
 
-newtype MetadataServicePreviewT m a = MetadataServicePreviewT
-  { runMetadataServicePreviewT :: m a
-  }
-  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadThrow, MonadMask)
-  deriving (MonadTrans) via IdentityT
-
-instance MonadSourceTransform m => MetadataService (MetadataServicePreviewT m) where
+instance MonadSourceTransform m => MetadataService (TransformPreviewT m) where
   openMetadataFile = lift . openMetadataFile
   openMetadataFileByExt = lift . openMetadataFileByExt
   readMetadataFile mid p = lift $ readMetadataFile mid p
   writeMetadataFile mf _p = lift $ do
-    $(logDebug) ("Mocked writeMetadataFile called" :: String)
+    $(logDebug) ("Preview writeMetadataFile called" :: String)
     pure $ Right mf
 
-newtype SourceRepositoryPreviewT m a = SourceRepositoryPreviewT
-  { runSourceRepositoryPreviewT :: m a
-  }
-  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadThrow, MonadMask)
-  deriving (MonadTrans) via IdentityT
-
-instance MonadSourceTransform m => Repo.Repository SourceEntity (SourceRepositoryPreviewT m) where
-  getAll = lift Repo.getAll
-  getByKey = lift . Repo.getByKey
+instance MonadSourceTransform m => Repo.Repository SourceEntity (TransformPreviewT m) where
+  getAll = lift $ Repo.getAll @SourceEntity
+  getByKey = lift . Repo.getByKey @SourceEntity
   insert = pure . fmap from
   insert' _ = pure ()
   delete _ = pure ()
-  update = pure
-  update' _ = pure ()
+  update e = lift $ do
+    $(logDebug) ("Preview update @SourceEntity called" :: String)
+    pure e
+  update' _ = lift $ do
+    $(logDebug) ("Preview update' @SourceEntity called" :: String)
+    pure ()
 
 data TransformationError
   = MoveTransformError SourceMoveError
@@ -295,7 +287,7 @@ parseMovePattern s = nonEmptyRight =<< mapLeft Just (parse terms "" s)
       case width of
         Just width' ->
           pure $
-            PrintfPattern ("%" <> (if padZero then "0" else "") <> width' <> "s") $
+            PrintfPattern ("%" <> (if padZero then "0" else ".") <> width' <> "s") $
               MappingPattern mapping'
         Nothing -> pure $ MappingPattern mapping'
     mapping = T.pack <$> some (letterChar <|> char '_') <?> "mapping"

@@ -9,7 +9,7 @@ import Data.Aeson as A
     ToJSON (..),
     defaultOptions,
     genericParseJSON,
-    genericToEncoding,
+    genericToJSON,
   )
 import Data.Aeson.Casing (snakeCase)
 import Data.List.NonEmpty
@@ -37,28 +37,28 @@ deriving instance Show TagMappingEntity
 deriving newtype instance Show (JSONBEncoded FM.TagMapping)
 
 instance FromJSON FM.TagMapping where
-  parseJSON = genericParseJSON jsonOptions
+  parseJSON tm = FM.TagMapping <$> genericParseJSON jsonOptions tm
 
 instance ToJSON FM.TagMapping where
-  toEncoding (FM.TagMapping fms) = genericToEncoding jsonOptions fms
+  toJSON (FM.TagMapping fms) = genericToJSON jsonOptions fms
 
 instance FromJSON FM.FieldMappings where
   parseJSON = genericParseJSON jsonOptions
 
 instance ToJSON FM.FieldMappings where
-  toEncoding = genericToEncoding jsonOptions
+  toJSON = genericToJSON jsonOptions
 
 instance FromJSON FM.FieldMapping where
   parseJSON = genericParseJSON jsonOptions
 
 instance ToJSON FM.FieldMapping where
-  toEncoding = genericToEncoding jsonOptions
+  toJSON = genericToJSON jsonOptions
 
 instance FromJSON FM.FieldMatchMode where
   parseJSON = genericParseJSON jsonOptions
 
 instance ToJSON FM.FieldMatchMode where
-  toEncoding = genericToEncoding jsonOptions
+  toJSON = genericToJSON jsonOptions
 
 instance HasField "tagMapping" TagMappingEntity FM.TagMapping where
   getField e = fromJSONBEncoded e.field_mappings
