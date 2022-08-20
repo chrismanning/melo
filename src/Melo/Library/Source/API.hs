@@ -4,6 +4,7 @@
 module Melo.Library.Source.API where
 
 import Control.Applicative hiding (many)
+import Control.Concurrent.Classy
 import Control.Exception.Safe (toException)
 import Control.Lens hiding (from, lens, (|>))
 import Control.Monad
@@ -50,41 +51,41 @@ resolveSources ::
   (Tr.MonadSourceTransform m, WithOperation o) =>
   SourcesArgs ->
   Resolver o e m (Vector (Source (Resolver o e m)))
-resolveSources args = fmap (fmap from) (resolveSourcesImpl args)
+resolveSources = resolveSourceEntities >=> lift . enrichSourceEntities
 
-resolveSourcesImpl ::
+resolveSourceEntities ::
   (Tr.MonadSourceTransform m, WithOperation o) =>
   SourcesArgs ->
-  Resolver o e m (Vector Ty.Source)
-resolveSourcesImpl (SourceArgs (Just SourceWhere {..})) =
+  Resolver o e m (Vector Ty.SourceEntity)
+resolveSourceEntities (SourceArgs (Just SourceWhere {..})) =
   case id of
     Just idExpr -> case idExpr of
       WhereEqExpr (EqExpr x) -> case fromText x of
-        Just uuid -> lift $ convertSources <$> getByKey (V.singleton (Ty.SourceRef uuid))
+        Just uuid -> lift $ getByKey (V.singleton (Ty.SourceRef uuid))
         Nothing -> fail $ "invalid source id " <> show x
       WhereInExpr (InExpr x) -> case allJust (fmap fromText x) of
-        Just uuids -> lift $ convertSources <$> getByKey (V.fromList $ Ty.SourceRef <$> uuids)
+        Just uuids -> lift $ getByKey (V.fromList $ Ty.SourceRef <$> uuids)
         Nothing -> fail $ "invalid source id in " <> show x
       _unknownWhere -> fail "invalid where clause for Source.id"
     Nothing -> case sourceUri of
       Just sourceUriExpr -> case sourceUriExpr of
         WhereEqExpr (EqExpr x) -> case parseURI (T.unpack x) of
-          Just uri -> lift $ convertSources <$> getByUri (V.singleton uri)
+          Just uri -> lift $ getByUri (V.singleton uri)
           Nothing -> fail $ "invalid source uri " <> show x
         WhereInExpr (InExpr x) -> case allJust (fmap (parseURI . T.unpack) x) of
-          Just uris -> lift $ convertSources <$> getByUri (V.fromList uris)
+          Just uris -> lift $ getByUri (V.fromList uris)
           Nothing -> fail $ "invalid source uri in " <> show x
         WhereStartsWithExpr (StartsWithExpr x) -> case parseURI $ T.unpack x of
-          Just uri -> lift $ convertSources <$> getByUriPrefix uri
+          Just uri -> lift $ getByUriPrefix uri
           Nothing -> fail $ "invalid source uri in " <> show x
         _unknownWhere -> fail "invalid where clause for Source.sourceUri"
-      Nothing -> lift $ fmap convertSources getAll
+      Nothing -> lift getAll
   where
     allJust :: [Maybe a] -> Maybe [a]
     allJust [] = Just []
     allJust (Just a : as) = fmap (a :) (allJust as)
     allJust (Nothing : _) = Nothing
-resolveSourcesImpl _ = lift $ fmap convertSources getAll
+resolveSourceEntities _ = lift getAll
 
 convertSources :: Vector Ty.SourceEntity -> Vector Ty.Source
 convertSources = V.mapMaybe (rightToMaybe . tryFrom)
@@ -96,7 +97,7 @@ resolveCollectionSources ::
   Resolver o e m (Vector (Source (Resolver o e m)))
 resolveCollectionSources collectionRef _args =
   -- TODO handle args
-  lift $ fmap (fmap from) $ getCollectionSources collectionRef
+  lift $ getCollectionSources collectionRef >>= enrichSourceEntities
 
 data Source m = Source
   { id :: Ty.SourceRef,
@@ -113,44 +114,56 @@ data Source m = Source
 
 instance Typeable m => GQLType (Source m)
 
-instance (Tr.MonadSourceTransform m, WithOperation o) => From Ty.Source (Source (Resolver o e m)) where
-  from = via @Ty.SourceEntity
-
-instance
+enrichSourceEntities ::
+  forall m o e.
   ( Tr.MonadSourceTransform m,
+    MonadConc m,
     WithOperation o
   ) =>
-  From Ty.SourceEntity (Source (Resolver o e m))
+  Vector Ty.SourceEntity ->
+  m (Vector (Source (Resolver o e m)))
+enrichSourceEntities ss = do
+  cache <- newEmptyMVar
+  forM ss $ \s -> do
+    pure
+      Source
+        { id = s.id,
+          format = s.kind,
+          metadata = from s,
+          sourceName = getSourceName s.source_uri,
+          sourceUri = s.source_uri,
+          downloadUri = "/source/" <> toText (Ty.unSourceRef s.id),
+          length = pure 100,
+          coverImage = lift $ coverImageImpl s,
+          previewTransform = \args -> lift $ previewTransformImpl cache args.transformations
+        }
   where
-  from s =
-    Source
-      { id = s ^. #id,
-        format = s ^. #kind,
-        metadata = from s,
-        sourceName = getSourceName (s ^. #source_uri),
-        sourceUri = s ^. #source_uri,
-        downloadUri = "/source/" <> toText (Ty.unSourceRef (s ^. #id)),
-        length = pure 100,
-        coverImage = lift $ coverImageImpl s,
-        previewTransform = previewTransformSourceImpl s.id
-      }
-    where
-      coverImageImpl :: Ty.SourceEntity -> m (Maybe Image)
-      coverImageImpl src = case parseURI $ T.unpack $ src ^. #source_uri of
-        Just uri ->
-          case uriToFilePath uri of
-            Just path ->
-              findCoverImage (takeDirectory path) >>= \case
-                Nothing -> pure Nothing
-                Just imgPath ->
-                  pure $
-                    Just
-                      Image
-                        { fileName = T.pack $ takeFileName imgPath,
-                          downloadUri = "/source/" <> toText (Ty.unSourceRef (src ^. #id)) <> "/image"
-                        }
-            Nothing -> pure Nothing
-        Nothing -> pure Nothing
+    previewTransformImpl :: MVar m (MVar m (Vector (UpdateSourceResult (Resolver o e m)))) -> Vector Transform -> m (Vector (UpdateSourceResult (Resolver o e m)))
+    previewTransformImpl cache ts =
+      tryReadMVar cache >>= \case
+        Just res -> readMVar res
+        Nothing -> do
+          res <- newEmptyMVar
+          putMVar cache res
+          ss' <- previewTransformSourcesImpl ss ts
+          putMVar res ss'
+          pure ss'
+    coverImageImpl :: Ty.SourceEntity -> m (Maybe Image)
+    coverImageImpl src = case parseURI $ T.unpack $ src ^. #source_uri of
+      Just uri ->
+        case uriToFilePath uri of
+          Just path ->
+            findCoverImage (takeDirectory path) >>= \case
+              Nothing -> pure Nothing
+              Just imgPath ->
+                pure $
+                  Just
+                    Image
+                      { fileName = T.pack $ takeFileName imgPath,
+                        downloadUri = "/source/" <> toText (Ty.unSourceRef src.id) <> "/image"
+                      }
+          Nothing -> pure Nothing
+      Nothing -> pure Nothing
 
 getSourceName :: Text -> Text
 getSourceName srcUri = fromMaybe srcUri $ do
@@ -316,7 +329,7 @@ instance ToJSON MappedTagsInput
 instance GQLType MappedTagsInput where
   type KIND MappedTagsInput = INPUT
 
---unmapTags :: MappedTags INPUT -> F.Tags
+-- unmapTags :: MappedTags INPUT -> F.Tags
 
 resolveSourceGroups ::
   forall m o e.
@@ -324,7 +337,7 @@ resolveSourceGroups ::
     WithOperation o
   ) =>
   Resolver o e m (V.Vector (SourceGroup (Resolver o e m)))
-resolveSourceGroups = lift $ groupSources <$!> fmap (fmap from) (getAll :: m (V.Vector Ty.SourceEntity))
+resolveSourceGroups = lift (getAll >>= enrichSourceEntities @m @o @e <&> groupSources)
 
 resolveCollectionSourceGroups ::
   ( Tr.MonadSourceTransform m,
@@ -333,7 +346,7 @@ resolveCollectionSourceGroups ::
   Ty.CollectionRef ->
   Resolver o e m (Vector (SourceGroup (Resolver o e m)))
 resolveCollectionSourceGroups collectionRef =
-  lift $ groupSources <$!> fmap (fmap from) (getCollectionSources collectionRef)
+  lift (getCollectionSources collectionRef >>= enrichSourceEntities <&> groupSources)
 
 data SourceGroup m = SourceGroup
   { groupTags :: GroupTags,
@@ -363,7 +376,7 @@ data SourceContent
 
 instance GQLType SourceContent
 
-groupSources :: forall m e o. (FileSystem m, WithOperation o) => V.Vector (Source (Resolver o e m)) -> V.Vector (SourceGroup (Resolver o e m))
+groupSources :: forall m o e. (FileSystem m, WithOperation o) => V.Vector (Source (Resolver o e m)) -> V.Vector (SourceGroup (Resolver o e m))
 groupSources = V.fromList . toList . fmap trSrcGrp . foldl' acc S.empty
   where
     acc gs' src =
@@ -576,8 +589,9 @@ updateSourcesImpl (UpdateSourcesArgs updates) = lift do
                               { Ty.metadata = JSONBEncoded $ Ty.SourceMetadata tags,
                                 Ty.metadata_format = coerce $ F.formatId metadata
                               }
-                      update @Ty.SourceEntity (V.singleton updatedSource)
-                      pure $ UpdatedSource (from updatedSource)
+                      us <- update @Ty.SourceEntity (V.singleton updatedSource)
+                      ss <- enrichSourceEntities us
+                      pure $ UpdatedSource (ss V.! 0)
         Nothing -> do
           let msg = T.pack $ "invalid source id '" <> show id <> "'"
           $(logError) msg
@@ -636,7 +650,7 @@ instance TryFrom TagUpdate TagUpdateOp where
         SetMappedTags <$> setMappedTags
           <|> SetTags <$> setTags
 
-type TransformSource m = TransformSourceArgs -> m (UpdateSourceResult m)
+type TransformSource m = TransformSourceArgs -> m (Vector (UpdateSourceResult m))
 
 data TransformSourceArgs = TransformSourceArgs
   { transformations :: Vector Transform
@@ -675,38 +689,19 @@ data MetadataTransformation
 instance GQLType MetadataTransformation where
   type KIND MetadataTransformation = INPUT
 
-previewTransformSourceImpl ::
-  forall m o e.
+previewTransformSourcesImpl ::
+  forall m e o.
   ( Tr.MonadSourceTransform m,
     WithOperation o
   ) =>
-  Ty.SourceRef ->
-  TransformSourceArgs ->
-  Resolver o e m (UpdateSourceResult (Resolver o e m))
-previewTransformSourceImpl ref (TransformSourceArgs ts) = do
-  s <- convertSources <$> getByKey (V.singleton ref)
-  $(logDebug) $ "Preview; Transforming source with " <> show ts
-  case V.singleton . from <$> firstOf traverse s of
-    Just s' -> do
-      p <- Tr.previewTransformations [Tr.evalTransformActions (interpretTransforms ts)] s'
-      case firstOf traverse p of
-        Just s'' -> pure $ UpdatedSource (from s'')
-        Nothing -> pure $ FailedSourceUpdate ref "source transformation failed"
-    Nothing -> pure $ FailedSourceUpdate ref "source transformation failed"
-  where
-    interpretTransforms :: Vector Transform -> Vector Tr.TransformAction
-    interpretTransforms ts = V.mapMaybe (rightToMaybe . tryFrom) ts
-
-previewTransformSourcesImpl ::
-  forall m e.
-  Tr.MonadSourceTransform m =>
-  TransformSourcesArgs ->
-  ResolverM e m (UpdatedSources (Resolver QUERY e m))
-previewTransformSourcesImpl (TransformSourcesArgs ts where') = do
-  ss <- resolveSourcesImpl (SourceArgs where')
+  Vector Ty.SourceEntity ->
+  Vector Transform ->
+  m (Vector (UpdateSourceResult (Resolver o e m)))
+previewTransformSourcesImpl es ts = do
+  let ss = convertSources es
   $(logDebug) $ "Preview; Transforming sources with " <> show ts
   ss' <- Tr.previewTransformations [Tr.evalTransformActions (interpretTransforms ts)] ss
-  pure $ UpdatedSources (UpdatedSource . from <$> ss')
+  fmap UpdatedSource <$!> enrichSourceEntities (from <$> ss')
   where
     interpretTransforms :: Vector Transform -> Vector Tr.TransformAction
     interpretTransforms ts = V.mapMaybe (rightToMaybe . tryFrom) ts
@@ -718,9 +713,10 @@ transformSourcesImpl ::
   ResolverM e m (UpdatedSources (Resolver MUTATION e m))
 transformSourcesImpl (TransformSourcesArgs ts where') = do
   $(logDebug) $ "Transforming sources with " <> show ts
-  ss <- resolveSourcesImpl (SourceArgs where')
-  ss' <- Tr.evalTransformActions (interpretTransforms ts) (from <$> ss)
-  pure $ UpdatedSources (UpdatedSource . from <$> ss')
+  es <- resolveSourceEntities (SourceArgs where')
+  ss <- lift $ Tr.evalTransformActions (interpretTransforms ts) (convertSources es)
+  ss' <- lift $ enrichSourceEntities @m @MUTATION (from <$> ss)
+  pure $ UpdatedSources (UpdatedSource <$> ss')
   where
     interpretTransforms :: Vector Transform -> Vector Tr.TransformAction
     interpretTransforms ts = V.mapMaybe (rightToMaybe . tryFrom) ts

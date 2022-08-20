@@ -2,6 +2,7 @@
 
 module Melo.Library.API where
 
+import Control.Concurrent.Classy
 import Control.Lens hiding (from, (.=))
 import Control.Monad
 import Control.Monad.Reader
@@ -59,6 +60,7 @@ instance Typeable m => GQLType (LibraryMutation m)
 
 libraryMutation ::
   ( MonadIO m,
+    MonadConc m,
     SourceRepository m,
     TagMappingRepository m,
     Logging m,

@@ -2,6 +2,7 @@
 
 module Melo.API where
 
+import Control.Concurrent.Classy
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Control (MonadBaseControl)
 import Data.ByteString.Lazy.Char8
@@ -79,6 +80,7 @@ gqlApiIO collectionWatchState pool rq = runStdoutLogging do
 
 type ResolverE m =
   ( MonadIO m,
+    MonadConc m,
     Logging m,
     FileSystem m,
     TagMappingRepository m,

@@ -93,6 +93,7 @@ transformSources t srcs = forM srcs $ \src ->
 
 type MonadSourceTransform m =
   ( Monad m,
+    MonadConc m,
     FileSystem m,
     SourceRepository m,
     CollectionRepository m,
