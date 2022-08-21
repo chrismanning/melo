@@ -3,33 +3,25 @@
 module Melo.Library.Source.Transform where
 
 import Control.Applicative hiding (many, some)
-import Control.Exception.Safe hiding (try)
+import Control.Exception.Safe as E hiding (try)
+import Control.Exception.Safe qualified as E
 import Control.Lens hiding (from)
 import Control.Monad
 import Control.Monad.Base
-import Control.Monad.Catch hiding (try)
 import Control.Monad.Conc.Class
 import Control.Monad.Except
 import Control.Monad.Identity
-import Control.Monad.Trans
 import Control.Monad.Trans.Control
-import Control.Monad.Trans.Resource
+import Control.Monad.Trans.Except
 import Data.Char
-import Data.Coerce
-import Data.Conduit.Audio
-import Data.Conduit.Audio.Sndfile
 import Data.Either.Combinators
 import Data.Foldable
 import Data.HashMap.Strict qualified as H
-import Data.Int
 import Data.List.NonEmpty
-import Data.Map.Strict qualified as Map
 import Data.Maybe
-import Data.Range
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Lens
-import Data.Time
 import Data.Vector (Vector)
 import Data.Vector qualified as V
 import Data.Void (Void)
@@ -41,11 +33,10 @@ import Melo.Database.Repo qualified as Repo
 import Melo.Format qualified as F
 import Melo.Format.Error qualified as F
 import Melo.Format.Internal.Metadata (Metadata (..))
-import Melo.Format.Mapping qualified as M
-import Melo.Format.Metadata qualified as F
 import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Service
 import Melo.Library.Collection.Types
+import Melo.Library.Source.MultiTrack
 import Melo.Library.Source.Repo as Src
 import Melo.Library.Source.Service
 import Melo.Library.Source.Types
@@ -53,8 +44,6 @@ import Melo.Lookup.MusicBrainz
 import Melo.Metadata.Mapping.Repo
 import Melo.Metadata.Mapping.Service
 import Melo.Metadata.Mapping.Types
-import Sound.File.Sndfile qualified as Sndfile
-import System.Directory qualified as Dir
 import System.FilePath
 import System.IO (TextEncoding)
 import Text.Megaparsec
@@ -100,7 +89,7 @@ type MonadSourceTransform m =
     MusicBrainzService m,
     MetadataService m,
     TagMappingRepository m,
-    MonadIO m,
+    MultiTrack m,
     Logging m
   )
 
@@ -158,6 +147,9 @@ instance MonadSourceTransform m => Repo.Repository SourceEntity (TransformPrevie
     $(logDebug) ("Preview update' @SourceEntity called" :: String)
     pure ()
 
+instance MonadSourceTransform m => MultiTrack (TransformPreviewT m) where
+  extractTrackTo _ _ _ = pure ()
+
 data TransformationError
   = MoveTransformError SourceMoveError
   | MetadataTransformError F.MetadataException
@@ -166,6 +158,7 @@ data TransformationError
   | CollectionNotFound CollectionRef
   | SourceNotFound SourceRef
   | ImportFailed
+  | MultiTrackError MultiTrackError
   deriving (Show)
 
 instance From SourceMoveError TransformationError where
@@ -313,47 +306,32 @@ extractTrack ::
   MonadSourceTransform m =>
   NonEmpty SourcePathPattern ->
   Source ->
-  m (Either F.MetadataException Source)
+  m (Either TransformationError Source)
 extractTrack patterns s@Source {multiTrack = Just MultiTrackDesc {..}, ..} =
   uriToFilePath source & \case
     Just filePath ->
       Repo.getSingle @Collection collectionRef >>= \case
-        Nothing -> pure $ Left F.UnsupportedFormat
+        Nothing -> pure $ Left (CollectionNotFound collectionRef)
         Just CollectionTable {root_uri} -> case uriToFilePath =<< parseURI (T.unpack root_uri) of
-          Nothing -> pure $ Left F.UnsupportedFormat
+          Nothing -> pure $ Left UnsupportedSourceKind
           Just basePath -> do
             mappings <- Repo.getAll
             let dest = addExtension (renderSourcePatterns mappings basePath metadata patterns) (takeExtension filePath)
-            liftIO $ do
-              Dir.createDirectoryIfMissing True (takeDirectory dest)
-              let start = getStartTime range
-              src <- sourceSndFrom @_ @Int16 start filePath
-              info <- Sndfile.getFileInfo filePath
-              let src' = case getEndTime range of
-                    Just end -> takeStart end src
-                    Nothing -> src
-              runResourceT $ sinkSnd dest (Sndfile.format info) src'
-            openMetadataFile dest >>= \case
-              Right raw -> runExceptT do
-                let vc = fromMaybe (F.metadataFactory @F.VorbisComments F.emptyTags) $ F.convert F.vorbisCommentsId metadata
-                let m = H.fromList [(F.vorbisCommentsId, vc)]
-                let metadataFile = raw & #metadata .~ m
-                mf <- writeMetadataFile metadataFile dest >>= eitherToError
-                importSources (V.singleton (FileSource collectionRef mf)) >>= headOrException F.UnsupportedFormat
-              Left e -> pure $ Left e
+            runExceptT $ do
+              _ <- E.try (extractTrackTo filePath range dest) >>= mapE MultiTrackError
+              raw <- openMetadataFile dest >>= mapE MetadataTransformError
+              let vc = fromMaybe (F.metadataFactory @F.VorbisComments F.emptyTags) $ F.convert F.vorbisCommentsId metadata
+              let m = H.fromList [(F.vorbisCommentsId, vc)]
+              let metadataFile = raw & #metadata .~ m
+              mf <- writeMetadataFile metadataFile dest >>= mapE MetadataTransformError
+              srcs <- importSources (V.singleton (FileSource collectionRef mf))
+              if V.null srcs then
+                throwE ImportFailed
+              else
+                pure $ srcs V.! 0
     Nothing -> pure $ Right s
   where
-    getStartTime :: AudioRange -> Duration
-    getStartTime (TimeRange (SpanRange lower _upper)) = Seconds $ toSeconds $ boundValue lower
-    getStartTime (TimeRange (LowerBoundRange lower)) = Seconds $ toSeconds $ boundValue lower
-    getStartTime (TimeRange _) = Seconds 0
-    getStartTime (SampleRange _range) = Frames 0
-    getEndTime :: AudioRange -> Maybe Duration
-    getEndTime (TimeRange (SpanRange lower upper)) = Just $ Seconds $ toSeconds (boundValue upper) - toSeconds (boundValue lower)
-    getEndTime (TimeRange (LowerBoundRange _)) = Nothing
-    getEndTime (TimeRange _) = Nothing
-    getEndTime (SampleRange _) = Nothing
-    toSeconds = realToFrac . nominalDiffTimeToSeconds . ctTime
+    mapE e = except . mapLeft e
 extractTrack _ src = pure $ Right src
 
 data MetadataTransformation

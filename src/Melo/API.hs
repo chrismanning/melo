@@ -24,6 +24,7 @@ import Melo.Library.Collection.FileSystem.WatchService
 import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Service
 import Melo.Library.Source.API qualified as API
+import Melo.Library.Source.MultiTrack
 import Melo.Library.Source.Repo
 import Melo.Library.Source.Service
 import Melo.Library.Source.Types (SourceRef (..))
@@ -66,15 +67,16 @@ gqlApiIO collectionWatchState pool rq = runStdoutLogging do
   sess <- liftIO newAPISession
   !rs <-
     runFileSystemIO $
-      runMetadataServiceIO $
-        runSourceRepositoryPooledIO pool $
-          runTagMappingRepositoryPooledIO pool $
-            runFileSystemServiceIO pool $
-              runMusicBrainzServiceIO sess $
-                runFileSystemWatchServiceIO pool collectionWatchState $
-                  runCollectionRepositoryPooledIO pool $
-                    runCollectionServiceIO pool $
-                      gqlApi rq
+      runMultiTrackIO $
+        runMetadataServiceIO $
+          runSourceRepositoryPooledIO pool $
+            runTagMappingRepositoryPooledIO pool $
+              runFileSystemServiceIO pool $
+                runMusicBrainzServiceIO sess $
+                  runFileSystemWatchServiceIO pool collectionWatchState $
+                    runCollectionRepositoryPooledIO pool $
+                      runCollectionServiceIO pool $
+                        gqlApi rq
   $(logInfo) ("finished handling graphql request" :: T.Text)
   pure rs
 
@@ -86,6 +88,7 @@ type ResolverE m =
     TagMappingRepository m,
     SourceRepository m,
     MetadataService m,
+    MultiTrack m,
     MusicBrainzService m,
     CollectionRepository m,
     CollectionService m,

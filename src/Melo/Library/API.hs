@@ -60,14 +60,8 @@ instance Typeable m => GQLType (LibraryMutation m)
 
 libraryMutation ::
   ( MonadIO m,
-    MonadConc m,
-    SourceRepository m,
-    TagMappingRepository m,
-    Logging m,
-    MetadataService m,
     CollectionService m,
-    CollectionRepository m,
-    MusicBrainzService m,
+    Tr.MonadSourceTransform m,
     FileSystem m
   ) =>
   ResolverM e (m :: Type -> Type) LibraryMutation
