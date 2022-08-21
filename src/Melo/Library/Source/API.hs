@@ -9,6 +9,7 @@ import Control.Exception.Safe (toException)
 import Control.Lens hiding (from, lens, (|>))
 import Control.Monad
 import Data.Aeson as A hiding (Result, (<?>))
+import Data.Char (toLower)
 import Data.Coerce
 import Data.Default
 import Data.Either.Combinators
@@ -430,11 +431,12 @@ findCoverImage p = do
     then do
       entries <- listDirectory p
       pure $
-        find (\e -> P.takeBaseName e == "cover" && isImage e) entries
-          <|> find (\e -> P.takeBaseName e == "front" && isImage e) entries
-          <|> find (\e -> P.takeBaseName e == "folder" && isImage e) entries
+        find (\e -> P.takeBaseName e =~= "cover" && isImage e) entries
+          <|> find (\e -> P.takeBaseName e =~= "front" && isImage e) entries
+          <|> find (\e -> P.takeBaseName e =~= "folder" && isImage e) entries
     else pure Nothing
   where
+    a =~= b = fmap toLower a == fmap toLower b
     isImage :: FilePath -> Bool
     isImage p =
       let ext = takeExtension p
