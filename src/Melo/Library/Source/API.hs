@@ -402,7 +402,7 @@ groupSources = V.fromList . toList . fmap trSrcGrp . foldl' acc S.empty
           coverImage = lift $ coverImageImpl g
         }
     srcTrackNum :: Source n -> Text
-    srcTrackNum src = fromMaybe "00" src.metadata.mappedTags.trackNumber
+    srcTrackNum src = fromMaybe src.sourceUri src.metadata.mappedTags.trackNumber
     coverImageImpl :: SourceGroup' (Resolver o e m) -> m (Maybe Image)
     coverImageImpl g = case parseURI $ T.unpack $ g.groupParentUri of
       Just uri ->
