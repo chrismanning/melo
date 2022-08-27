@@ -674,8 +674,14 @@ instance GQLType TransformSourcesArgs where
   type KIND TransformSourcesArgs = INPUT
 
 data Transform
-  = Move {movePattern :: Text}
-  | SplitMultiTrackFile {movePattern :: Text}
+  = Move
+      { destPattern :: Text,
+        collectionRef :: Maybe Text
+      }
+  | SplitMultiTrackFile
+      { destPattern :: Text,
+        collectionRef :: Maybe Text
+      }
   | EditMetadata {metadataTransform :: MetadataTransformation}
   deriving (Show, Generic)
 
@@ -725,11 +731,13 @@ transformSourcesImpl (TransformSourcesArgs ts where') = do
 
 instance TryFrom Transform Tr.TransformAction where
   tryFrom t = case t of
-    Move pat -> Tr.Move <$> parseMovePattern' pat
-    SplitMultiTrackFile pat -> Tr.SplitMultiTrackFile <$> parseMovePattern' pat
+    Move {} -> Tr.Move <$> parseRef t.collectionRef <*> parseMovePattern' t.destPattern
+    SplitMultiTrackFile {} -> Tr.SplitMultiTrackFile <$> parseRef t.collectionRef <*> parseMovePattern' t.destPattern
     EditMetadata mt -> Right $ Tr.EditMetadata (from mt)
     where
       parseMovePattern' pat = mapLeft (TryFromException t <$> fmap toException) $ Tr.parseMovePattern pat
+      parseRef Nothing = Right Nothing
+      parseRef (Just ref) = mapRight Just $ maybeToRight (TryFromException t Nothing) $ Ty.CollectionRef <$> fromText ref
 
 instance From MetadataTransformation Tr.MetadataTransformation where
   from (SetMapping m vs) = Tr.SetMapping m vs

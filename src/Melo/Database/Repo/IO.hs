@@ -9,6 +9,7 @@ import Control.Monad.Conc.Class
 import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
+import Control.Monad.Trans.Resource
 import Data.Kind
 import Data.Maybe
 import Data.Pool
@@ -46,7 +47,8 @@ newtype RepositoryIOT (t :: (Type -> Type) -> Type) m a = RepositoryIOT
       MonadMask,
       MonadParallel,
       MonadThrow,
-      MonadTransControl
+      MonadTransControl,
+      MonadUnliftIO
     )
 
 instance MonadTrans (RepositoryIOT a) where

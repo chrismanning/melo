@@ -8,6 +8,7 @@ import Control.Monad.Base
 import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
+import Control.Monad.Trans.Resource
 import Data.Pool
 import Hasql.Connection
 import Melo.Database.Repo
@@ -47,7 +48,8 @@ newtype TagMappingRepositoryIOT m a = TagMappingRepositoryIOT
       MonadReader (RepositoryHandle TagMappingTable),
       MonadThrow,
       MonadTrans,
-      MonadTransControl
+      MonadTransControl,
+      MonadUnliftIO
     )
 
 instance MonadIO m => Repository TagMappingEntity (TagMappingRepositoryIOT m) where

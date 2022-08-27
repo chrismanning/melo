@@ -8,6 +8,7 @@ import Control.Monad.Base
 import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
+import Control.Monad.Trans.Resource
 import Data.Functor.Contravariant
 import Data.Pool
 import Data.Text qualified as T
@@ -66,7 +67,8 @@ newtype SourceRepositoryIOT m a = SourceRepositoryIOT
       MonadReader (RepositoryHandle SourceTable),
       MonadThrow,
       MonadTrans,
-      MonadTransControl
+      MonadTransControl,
+      MonadUnliftIO
     )
 
 instance MonadIO m => Repository SourceEntity (SourceRepositoryIOT m) where

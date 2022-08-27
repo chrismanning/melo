@@ -43,7 +43,7 @@ app = do
       exitFailure
     )
 
-  collectionWatchState :: CollectionWatchState <- atomically $ newTVar H.empty
+  collectionWatchState <- emptyWatchState
   fork $
     catchAny (initApp collectionWatchState pool) (\e -> do
         $(logErrorIO) $ "error initialising app: " <> show e

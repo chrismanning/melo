@@ -37,6 +37,7 @@ import Control.Monad.Base
 import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
+import Control.Monad.Trans.Resource
 import Data.Aeson as A
 import Data.Aeson.Casing (trainCase)
 import Data.Default
@@ -327,7 +328,8 @@ newtype MusicBrainzServiceIOT m a = MusicBrainzServiceIOT
     MonadIO,
     MonadMask,
     MonadParallel,
-    MonadThrow
+    MonadThrow,
+    MonadUnliftIO
   )
 
 instance MonadTrans MusicBrainzServiceIOT where

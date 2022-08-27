@@ -10,6 +10,7 @@ import Control.Monad.Base
 import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
+import Control.Monad.Trans.Resource
 import Data.Pool
 import qualified Data.Text as T
 import Data.Vector (Vector, singleton)
@@ -56,7 +57,8 @@ newtype CollectionServiceIOT m a = CollectionServiceIOT
       MonadThrow,
       MonadReader (Pool Connection),
       MonadTrans,
-      MonadTransControl
+      MonadTransControl,
+      MonadUnliftIO
     )
 
 runCollectionServiceIO :: Pool Connection -> CollectionServiceIOT m a -> m a

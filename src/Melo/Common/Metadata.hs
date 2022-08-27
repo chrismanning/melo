@@ -11,17 +11,18 @@ import Control.Monad.Identity
 import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Trans
 import Control.Monad.Trans.Control
+import Control.Monad.Trans.Resource
 import Data.Coerce
 import Data.Foldable
-import qualified Data.Text as T
+import Data.Text qualified as T
 import Melo.Common.Logging
 import Melo.Format (Metadata (..))
-import qualified Melo.Format as F
-import qualified Melo.Format.Error as F
+import Melo.Format qualified as F
+import Melo.Format.Error qualified as F
 
 chooseMetadata :: [Metadata] -> Maybe Metadata
 chooseMetadata ms =
-        find (\Metadata {..} -> formatId == (F.MetadataId "CUE")) ms
+  find (\Metadata {..} -> formatId == (F.MetadataId "CUE")) ms
     <|> find (\Metadata {..} -> formatId == F.vorbisCommentsId) ms
     <|> find (\Metadata {..} -> formatId == F.apeV2Id) ms
     <|> find (\Metadata {..} -> formatId == F.apeV1Id) ms
@@ -51,7 +52,20 @@ instance
 newtype MetadataServiceIOT m a = MetadataServiceIOT
   { runMetadataServiceIOT :: m a
   }
-  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadMask, MonadThrow, MonadParallel)
+  deriving newtype
+    ( Functor,
+      Applicative,
+      Monad,
+      MonadIO,
+      MonadBase b,
+      MonadBaseControl b,
+      MonadConc,
+      MonadCatch,
+      MonadMask,
+      MonadThrow,
+      MonadParallel,
+      MonadUnliftIO
+    )
   deriving (MonadTrans, MonadTransControl) via IdentityT
 
 runMetadataServiceIO :: MetadataServiceIOT m a -> m a

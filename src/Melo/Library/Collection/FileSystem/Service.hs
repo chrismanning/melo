@@ -10,6 +10,7 @@ import Control.Monad.Parallel (MonadParallel)
 import qualified Control.Monad.Parallel as Par
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
+import Control.Monad.Trans.Resource
 import Data.Maybe
 import Data.Pool
 import Data.Vector (Vector, empty, fromList)
@@ -61,6 +62,7 @@ newtype FileSystemServiceIOT m a = FileSystemServiceIOT
       MonadThrow,
       MonadTrans,
       MonadTransControl,
+      MonadUnliftIO,
       MonadReader (Pool Connection)
     )
 

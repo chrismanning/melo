@@ -34,21 +34,22 @@ import Control.Monad.Base
 import Control.Monad.IO.Class
 import Control.Monad.Identity
 import Control.Monad.Parallel (MonadParallel)
+import Control.Monad.Reader
 import Control.Monad.Trans
 import Control.Monad.Trans.Control
+import Control.Monad.Trans.Resource
 import Data.ByteString (ByteString)
-import qualified Data.ByteString.Lazy as L
-import qualified Data.Text as T
-import qualified Data.Text.Encoding as TE
-import qualified Data.Text.Lazy as LT
+import Data.ByteString.Lazy qualified as L
+import Data.Text qualified as T
+import Data.Text.Encoding qualified as TE
+import Data.Text.Lazy qualified as LT
 import Data.Time.Format
 import Katip as K
 import Language.Haskell.TH.Syntax (Exp, Loc (..), Q, liftString, qLocation)
-import qualified Language.Haskell.TH.Syntax as TH (Lift (lift))
-import Prelude hiding (log)
+import Language.Haskell.TH.Syntax qualified as TH (Lift (lift))
 import System.IO (stdout)
 import Witch hiding (over)
-import Control.Monad.Reader
+import Prelude hiding (log)
 
 class Monad m => Logging m where
   log :: From s LogMessage => Namespace -> Severity -> s -> m ()
@@ -83,8 +84,22 @@ instance From L.ByteString LogMessage where
 newtype LoggingIOT m a = LoggingIOT
   { runLoggingIOT :: ReaderT LogEnv m a
   }
-  deriving newtype (Applicative, Functor, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadMask, MonadThrow, MonadParallel)
+  deriving newtype
+    ( Applicative,
+      Functor,
+      Monad,
+      MonadIO,
+      MonadBase b,
+      MonadBaseControl b,
+      MonadConc,
+      MonadCatch,
+      MonadMask,
+      MonadThrow,
+      MonadParallel,
+      MonadUnliftIO
+    )
   deriving (MonadTrans, MonadTransControl)
+
 --  deriving (MonadReader LogEnv)
 
 instance Logging IO where
@@ -107,7 +122,7 @@ instance MonadIO m => Katip (LoggingIOT m) where
   getLogEnv = LoggingIOT ask
   localLogEnv f (LoggingIOT m) = LoggingIOT (local f m)
 
---instance MonadIO m => KatipContext (LoggingIOT m) where
+-- instance MonadIO m => KatipContext (LoggingIOT m) where
 --  getKatipContext = view _2
 --  localKatipContext f = local (over _2 f)
 --  getKatipNamespace = view _3
@@ -156,11 +171,11 @@ runStdoutLogging m = do
 
 logIOImpl :: (From s LogMessage, MonadIO m) => String -> Int -> s -> m ()
 logIOImpl ns severity msg =
-  let (LogMessage s) = from msg in
-  do
-    handleScribe <- liftIO $ mkHandleScribe ColorIfTerminal stdout (permitItem InfoS) V2
-    logEnv <- liftIO $ registerScribe "stdout" handleScribe defaultScribeSettings =<< initLogEnv "melo" "local"
-    K.runKatipT logEnv $ K.logMsg (Namespace [T.pack ns]) (toEnum severity) (logStr s)
+  let (LogMessage s) = from msg
+   in do
+        handleScribe <- liftIO $ mkHandleScribe ColorIfTerminal stdout (permitItem InfoS) V2
+        logEnv <- liftIO $ registerScribe "stdout" handleScribe defaultScribeSettings =<< initLogEnv "melo" "local"
+        K.runKatipT logEnv $ K.logMsg (Namespace [T.pack ns]) (toEnum severity) (logStr s)
 
 logIO :: Severity -> Q Exp
 logIO severity =
@@ -196,8 +211,8 @@ logErrorShowIO = logShowIO K.ErrorS
 
 initLogging :: MonadIO m => m ()
 initLogging = do
---  handleScribe <- K.mkHandleScribe K.ColorIfTerminal stdout (K.permitItem K.InfoS) K.V2
---  let mkLogEnv = K.registerScribe "stdout" handleScribe K.defaultScribeSettings =<< K.initLogEnv "Melo" "local"
---  config <- Wlog.parseLoggerConfig "logging.yaml"
---  Wlog.setupLogging (Just (T.pack . formatTime defaultTimeLocale "%F %T%3Q")) config
+  --  handleScribe <- K.mkHandleScribe K.ColorIfTerminal stdout (K.permitItem K.InfoS) K.V2
+  --  let mkLogEnv = K.registerScribe "stdout" handleScribe K.defaultScribeSettings =<< K.initLogEnv "Melo" "local"
+  --  config <- Wlog.parseLoggerConfig "logging.yaml"
+  --  Wlog.setupLogging (Just (T.pack . formatTime defaultTimeLocale "%F %T%3Q")) config
   pure ()

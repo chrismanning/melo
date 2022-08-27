@@ -8,6 +8,7 @@ import Control.Lens ((^.))
 import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
+import Control.Monad.Trans.Resource
 import Data.Containers.ListUtils (nubOrd)
 import Data.Hashable
 import Data.Int (Int16)
@@ -50,6 +51,7 @@ newtype TrackRepositoryIOT m a = TrackRepositoryIOT
       MonadThrow,
       MonadTrans,
       MonadTransControl,
+      MonadUnliftIO,
       Repository (TrackTable Result)
     )
 

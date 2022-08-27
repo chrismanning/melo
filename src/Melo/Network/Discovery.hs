@@ -129,7 +129,7 @@ repeatFor n f
     readMVar results
 
 seconds :: Int -> Int
-seconds = (* (10 ^ 6))
+seconds = (* (10 ^ (6 :: Int)))
 
 mdnsMulticastHost :: HostName
 mdnsMulticastHost = "224.0.0.251"

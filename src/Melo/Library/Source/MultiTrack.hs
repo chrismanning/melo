@@ -54,7 +54,8 @@ newtype MultiTrackIOT m a = MultiTrackIOT
       MonadCatch,
       MonadMask,
       MonadParallel,
-      MonadThrow
+      MonadThrow,
+      MonadUnliftIO
     )
   deriving (MonadTrans, MonadTransControl) via IdentityT
 

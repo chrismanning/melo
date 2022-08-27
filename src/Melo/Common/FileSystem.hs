@@ -9,11 +9,12 @@ import Control.Monad.Identity
 import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Trans
 import Control.Monad.Trans.Control
+import Control.Monad.Trans.Resource
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
+import Data.ByteString qualified as BS
 import GHC.IO.Exception
-import qualified System.Directory as Dir
-import qualified System.FilePath as P
+import System.Directory qualified as Dir
+import System.FilePath qualified as P
 import System.IO hiding (readFile)
 import System.IO.Error hiding (catchIOError)
 import Prelude hiding (readFile)
@@ -52,7 +53,20 @@ instance Exception MoveError
 newtype FileSystemIOT m a = FileSystemIOT
   { runFileSystemIOT :: m a
   }
-  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadThrow, MonadMask, MonadParallel)
+  deriving newtype
+    ( Functor,
+      Applicative,
+      Monad,
+      MonadIO,
+      MonadBase b,
+      MonadBaseControl b,
+      MonadConc,
+      MonadCatch,
+      MonadThrow,
+      MonadMask,
+      MonadParallel,
+      MonadUnliftIO
+    )
   deriving (MonadTrans, MonadTransControl) via IdentityT
 
 runFileSystemIO :: FileSystemIOT m a -> m a

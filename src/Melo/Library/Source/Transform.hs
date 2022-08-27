@@ -13,6 +13,7 @@ import Control.Monad.Except
 import Control.Monad.Identity
 import Control.Monad.Trans.Control
 import Control.Monad.Trans.Except
+import Control.Monad.Trans.Resource
 import Data.Char
 import Data.Either.Combinators
 import Data.Foldable
@@ -33,6 +34,7 @@ import Melo.Database.Repo qualified as Repo
 import Melo.Format qualified as F
 import Melo.Format.Error qualified as F
 import Melo.Format.Internal.Metadata (Metadata (..))
+import Melo.Library.Collection.FileSystem.WatchService
 import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Service
 import Melo.Library.Collection.Types
@@ -54,10 +56,11 @@ import Witch
 type Transform m = Vector Source -> m (Vector Source)
 
 data TransformAction where
-  Move :: NonEmpty SourcePathPattern -> TransformAction
+  Move :: Maybe CollectionRef -> NonEmpty SourcePathPattern -> TransformAction
+  Copy :: Maybe CollectionRef -> NonEmpty SourcePathPattern -> TransformAction
   ExtractEmbeddedImage :: URI -> TransformAction
   MoveCoverImage :: URI -> URI -> TransformAction
-  SplitMultiTrackFile :: NonEmpty SourcePathPattern -> TransformAction
+  SplitMultiTrackFile :: Maybe CollectionRef -> NonEmpty SourcePathPattern -> TransformAction
   RemoveOtherFiles :: TransformAction
   MusicBrainzLookup :: TransformAction
   ConvertEncoding :: TextEncoding -> TransformAction
@@ -67,8 +70,8 @@ evalTransformActions :: MonadSourceTransform m => Vector TransformAction -> Tran
 evalTransformActions = foldl' (\b a -> b >=> evalTransformAction a) pure
 
 evalTransformAction :: MonadSourceTransform m => TransformAction -> Transform m
-evalTransformAction (Move patterns) srcs = transformSources (moveSourceWithPattern patterns) srcs
-evalTransformAction (SplitMultiTrackFile patterns) srcs = transformSources (extractTrack patterns) srcs
+evalTransformAction (Move ref patterns) srcs = transformSources (moveSourceWithPattern ref patterns) srcs
+evalTransformAction (SplitMultiTrackFile ref patterns) srcs = transformSources (extractTrack ref patterns) srcs
 evalTransformAction (EditMetadata metadataTransformation) srcs = transformSources (editMetadata metadataTransformation) srcs
 evalTransformAction _ _ = error "unimplemented transformation"
 
@@ -90,6 +93,8 @@ type MonadSourceTransform m =
     MetadataService m,
     TagMappingRepository m,
     MultiTrack m,
+    FileSystemWatchService m,
+    MonadUnliftIO m,
     Logging m
   )
 
@@ -112,7 +117,7 @@ previewTransformations transformations srcs =
 newtype TransformPreviewT m a = TransformPreviewT
   { runTransformPreviewT :: m a
   }
-  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadThrow, MonadMask)
+  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadThrow, MonadMask, MonadUnliftIO)
   deriving (MonadTrans) via IdentityT
   deriving (SourceRepository)
 
@@ -172,19 +177,22 @@ moveSourceWithPattern ::
     CollectionRepository m,
     SourceRepository m,
     TagMappingRepository m,
+    FileSystemWatchService m,
+    MonadUnliftIO m,
     Logging m
   ) =>
+  Maybe CollectionRef ->
   NonEmpty SourcePathPattern ->
   Source ->
   m (Either SourceMoveError Source)
-moveSourceWithPattern pats src@Source {ref, source} =
+moveSourceWithPattern collectionRef pats src@Source {ref, source} =
   case uriToFilePath source of
     Just srcPath ->
-      previewSourceMoveWithPattern pats src >>= \case
-        Just destPath -> do
+      previewSourceMoveWithPattern (fromMaybe src.collectionRef collectionRef) pats src >>= \case
+        Just destPath -> runResourceT $ do
+          lockPath destPath
           let SourceRef id = ref
           $(logInfo) $ "moving source " <> show id <> " from " <> srcPath <> " to " <> destPath
-          -- TODO ignore filesystem events involved - remove, import explicitly
           r <- mapLeft from <$> movePath srcPath destPath
           let newUri = fileUri destPath
           case r of
@@ -203,14 +211,17 @@ moveSourceAtRefWithPattern ::
     SourceRepository m,
     CollectionRepository m,
     TagMappingRepository m,
+    FileSystemWatchService m,
+    MonadUnliftIO m,
     Logging m
   ) =>
+  Maybe CollectionRef ->
   NonEmpty SourcePathPattern ->
   SourceRef ->
   m (Either SourceMoveError Source)
-moveSourceAtRefWithPattern pats ref =
+moveSourceAtRefWithPattern collectionRef pats ref =
   getSource ref >>= \case
-    Just src -> moveSourceWithPattern pats src
+    Just src -> moveSourceWithPattern collectionRef pats src
     Nothing -> pure $ Left NoSuchSource
 
 previewSourceKeyMoveWithPattern ::
@@ -218,13 +229,14 @@ previewSourceKeyMoveWithPattern ::
     CollectionRepository m,
     TagMappingRepository m
   ) =>
+  Maybe CollectionRef ->
   NonEmpty SourcePathPattern ->
   SourceRef ->
   m (Maybe FilePath)
-previewSourceKeyMoveWithPattern pats ref =
+previewSourceKeyMoveWithPattern collectionRef pats ref =
   getSource ref >>= \case
-    Just Source {metadata, collectionRef, source} ->
-      getCollectionsByKey (V.singleton collectionRef) <&> firstOf traverse >>= \case
+    Just src@Source {metadata, source} ->
+      getCollectionsByKey (V.singleton (fromMaybe src.collectionRef collectionRef)) <&> firstOf traverse >>= \case
         Just CollectionTable {root_uri} -> case parseURI (T.unpack root_uri) >>= uriToFilePath of
           Just rootPath -> do
             mappings <- Repo.getAll
@@ -237,10 +249,11 @@ previewSourceMoveWithPattern ::
   ( CollectionRepository m,
     TagMappingRepository m
   ) =>
+  CollectionRef ->
   NonEmpty SourcePathPattern ->
   Source ->
   m (Maybe FilePath)
-previewSourceMoveWithPattern pats Source {metadata, collectionRef, source} =
+previewSourceMoveWithPattern collectionRef pats Source {metadata, source} =
   Repo.getByKey @Collection (V.singleton collectionRef) <&> firstOf traverse >>= \case
     Just CollectionTable {root_uri} -> case parseURI (T.unpack root_uri) >>= uriToFilePath of
       Just rootPath -> do
@@ -304,11 +317,13 @@ parseMovePattern s = nonEmptyRight =<< mapLeft Just (parse terms "" s)
 
 extractTrack ::
   MonadSourceTransform m =>
+  Maybe CollectionRef ->
   NonEmpty SourcePathPattern ->
   Source ->
   m (Either TransformationError Source)
-extractTrack patterns s@Source {multiTrack = Just MultiTrackDesc {..}, ..} =
-  uriToFilePath source & \case
+extractTrack collectionRef' patterns s@Source {multiTrack = Just MultiTrackDesc {..}} =
+  let collectionRef = fromMaybe s.collectionRef collectionRef' in
+  uriToFilePath s.source & \case
     Just filePath ->
       Repo.getSingle @Collection collectionRef >>= \case
         Nothing -> pure $ Left (CollectionNotFound collectionRef)
@@ -316,11 +331,11 @@ extractTrack patterns s@Source {multiTrack = Just MultiTrackDesc {..}, ..} =
           Nothing -> pure $ Left UnsupportedSourceKind
           Just basePath -> do
             mappings <- Repo.getAll
-            let dest = addExtension (renderSourcePatterns mappings basePath metadata patterns) (takeExtension filePath)
+            let dest = addExtension (renderSourcePatterns mappings basePath s.metadata patterns) (takeExtension filePath)
             runExceptT $ do
               _ <- E.try (extractTrackTo filePath range dest) >>= mapE MultiTrackError
               raw <- openMetadataFile dest >>= mapE MetadataTransformError
-              let vc = fromMaybe (F.metadataFactory @F.VorbisComments F.emptyTags) $ F.convert F.vorbisCommentsId metadata
+              let vc = fromMaybe (F.metadataFactory @F.VorbisComments F.emptyTags) $ F.convert F.vorbisCommentsId s.metadata
               let m = H.fromList [(F.vorbisCommentsId, vc)]
               let metadataFile = raw & #metadata .~ m
               mf <- writeMetadataFile metadataFile dest >>= mapE MetadataTransformError
@@ -332,7 +347,7 @@ extractTrack patterns s@Source {multiTrack = Just MultiTrackDesc {..}, ..} =
     Nothing -> pure $ Right s
   where
     mapE e = except . mapLeft e
-extractTrack _ src = pure $ Right src
+extractTrack _ _ src = pure $ Right src
 
 data MetadataTransformation
   = SetMapping Text [Text]

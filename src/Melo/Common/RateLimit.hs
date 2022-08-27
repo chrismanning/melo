@@ -10,6 +10,7 @@ import Control.Monad.IO.Class
 import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
+import Control.Monad.Trans.Resource
 
 class Monad m => RateLimit m where
   waitReady :: m ()
@@ -29,7 +30,8 @@ newtype RateLimitIOT m a = RateLimitIOT
     MonadMask,
     MonadParallel,
     MonadThrow,
-    MonadTrans
+    MonadTrans,
+    MonadUnliftIO
   )
 
 instance
