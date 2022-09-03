@@ -4,7 +4,6 @@ import Control.Concurrent.Classy
 import Control.Exception.Safe
 import Control.Monad
 import Data.Default
-import qualified Data.HashMap.Strict as H
 import Data.Pool
 import qualified Data.Text as T
 import qualified Hasql.Connection as Hasql

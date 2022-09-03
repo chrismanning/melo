@@ -22,7 +22,7 @@ import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Service
 import Melo.Library.Source.API
 import Melo.Library.Source.Repo
-import qualified Melo.Library.Source.Transform as Tr
+import Melo.Library.Source.Transform qualified as Tr
 import Melo.Lookup.MusicBrainz
 import Melo.Metadata.Mapping.Repo
 import Network.URI
@@ -37,7 +37,9 @@ data LibraryQuery m = LibraryQuery
 instance Typeable m => GQLType (LibraryQuery m)
 
 resolveLibrary ::
-  Tr.MonadSourceTransform m =>
+  ( Tr.MonadSourceTransform m,
+    MonadConc m
+  ) =>
   ResolverQ e m LibraryQuery
 resolveLibrary =
   lift $
@@ -62,6 +64,7 @@ libraryMutation ::
   ( MonadIO m,
     CollectionService m,
     Tr.MonadSourceTransform m,
+    MonadConc m,
     FileSystem m
   ) =>
   ResolverM e (m :: Type -> Type) LibraryMutation

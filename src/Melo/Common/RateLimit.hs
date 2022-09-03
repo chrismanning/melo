@@ -7,10 +7,8 @@ import Control.Concurrent.TokenLimiter
 import Control.Exception.Safe
 import Control.Monad.Base
 import Control.Monad.IO.Class
-import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
-import Control.Monad.Trans.Resource
 
 class Monad m => RateLimit m where
   waitReady :: m ()
@@ -28,10 +26,9 @@ newtype RateLimitIOT m a = RateLimitIOT
     MonadConc,
     MonadIO,
     MonadMask,
-    MonadParallel,
     MonadThrow,
     MonadTrans,
-    MonadUnliftIO
+    MonadTransControl
   )
 
 instance

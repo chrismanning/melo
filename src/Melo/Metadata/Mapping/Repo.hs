@@ -5,10 +5,8 @@ module Melo.Metadata.Mapping.Repo where
 import Control.Concurrent.Classy
 import Control.Exception.Safe
 import Control.Monad.Base
-import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
-import Control.Monad.Trans.Resource
 import Data.Pool
 import Hasql.Connection
 import Melo.Database.Repo
@@ -44,12 +42,10 @@ newtype TagMappingRepositoryIOT m a = TagMappingRepositoryIOT
       MonadConc,
       MonadCatch,
       MonadMask,
-      MonadParallel,
       MonadReader (RepositoryHandle TagMappingTable),
       MonadThrow,
       MonadTrans,
-      MonadTransControl,
-      MonadUnliftIO
+      MonadTransControl
     )
 
 instance MonadIO m => Repository TagMappingEntity (TagMappingRepositoryIOT m) where

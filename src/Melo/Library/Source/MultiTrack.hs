@@ -4,7 +4,6 @@ module Melo.Library.Source.MultiTrack where
 
 import Control.Concurrent.Classy
 import Control.Exception.Safe
-import Control.Monad.Parallel
 import Control.Monad.Base
 import Control.Monad.Trans.Identity
 import Control.Monad.Trans
@@ -53,9 +52,7 @@ newtype MultiTrackIOT m a = MultiTrackIOT
       MonadConc,
       MonadCatch,
       MonadMask,
-      MonadParallel,
-      MonadThrow,
-      MonadUnliftIO
+      MonadThrow
     )
   deriving (MonadTrans, MonadTransControl) via IdentityT
 

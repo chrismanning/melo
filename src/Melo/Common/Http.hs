@@ -15,10 +15,8 @@ import Control.Concurrent.Classy (MonadConc)
 import Control.Exception.Safe
 import Control.Monad.Base
 import Control.Monad.Except
-import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
-import Control.Monad.Trans.Resource
 import Data.Aeson as A
 import qualified Data.ByteString.Lazy as L
 import Data.Either.Combinators
@@ -74,10 +72,9 @@ newtype HttpSessionIOT m a = HttpSessionIOT
     MonadConc,
     MonadIO,
     MonadMask,
-    MonadParallel,
     MonadThrow,
     MonadTrans,
-    MonadUnliftIO
+    MonadTransControl
   )
 
 instance

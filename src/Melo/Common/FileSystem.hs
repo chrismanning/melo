@@ -6,10 +6,8 @@ import Control.Concurrent.Classy
 import Control.Exception.Safe
 import Control.Monad.Base
 import Control.Monad.Identity
-import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Trans
 import Control.Monad.Trans.Control
-import Control.Monad.Trans.Resource
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import GHC.IO.Exception
@@ -63,9 +61,7 @@ newtype FileSystemIOT m a = FileSystemIOT
       MonadConc,
       MonadCatch,
       MonadThrow,
-      MonadMask,
-      MonadParallel,
-      MonadUnliftIO
+      MonadMask
     )
   deriving (MonadTrans, MonadTransControl) via IdentityT
 

@@ -8,10 +8,8 @@ import Control.Exception.Safe
 import Control.Lens ((^.))
 import Control.Monad.Base
 import Control.Monad.Identity
-import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Trans
 import Control.Monad.Trans.Control
-import Control.Monad.Trans.Resource
 import Data.Coerce
 import Data.Foldable
 import Data.Text qualified as T
@@ -62,9 +60,7 @@ newtype MetadataServiceIOT m a = MetadataServiceIOT
       MonadConc,
       MonadCatch,
       MonadMask,
-      MonadThrow,
-      MonadParallel,
-      MonadUnliftIO
+      MonadThrow
     )
   deriving (MonadTrans, MonadTransControl) via IdentityT
 

@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Library.Genre.Repo where
@@ -9,7 +8,6 @@ import Control.Lens ((^.))
 import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
-import Control.Monad.Trans.Resource
 import Data.Text (Text)
 import Melo.Database.Repo
 import Melo.Database.Repo.IO
@@ -42,7 +40,6 @@ newtype GenreRepositoryIOT m a = GenreRepositoryIOT
       MonadThrow,
       MonadTrans,
       MonadTransControl,
-      MonadUnliftIO,
       Repository (GenreTable Result)
     )
 

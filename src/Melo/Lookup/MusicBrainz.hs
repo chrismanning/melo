@@ -34,10 +34,8 @@ import Control.Exception.Safe
 import Control.Lens hiding (from, lens)
 import Control.Monad
 import Control.Monad.Base
-import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
-import Control.Monad.Trans.Resource
 import Data.Aeson as A
 import Data.Aeson.Casing (trainCase)
 import Data.Default
@@ -327,9 +325,7 @@ newtype MusicBrainzServiceIOT m a = MusicBrainzServiceIOT
     MonadConc,
     MonadIO,
     MonadMask,
-    MonadParallel,
-    MonadThrow,
-    MonadUnliftIO
+    MonadThrow
   )
 
 instance MonadTrans MusicBrainzServiceIOT where

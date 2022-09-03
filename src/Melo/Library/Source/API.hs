@@ -5,9 +5,12 @@ module Melo.Library.Source.API where
 
 import Control.Applicative hiding (many)
 import Control.Concurrent.Classy
+import Control.Concurrent.Classy.Async
+import Control.Concurrent.Classy.STM
 import Control.Exception.Safe (toException)
 import Control.Lens hiding (from, lens, (|>))
 import Control.Monad
+import Control.Monad.Extra
 import Data.Aeson as A hiding (Result, (<?>))
 import Data.Char (toLower)
 import Data.Coerce
@@ -49,7 +52,10 @@ import System.FilePath as P
 import Witch
 
 resolveSources ::
-  (Tr.MonadSourceTransform m, WithOperation o) =>
+  ( Tr.MonadSourceTransform m,
+    MonadConc m,
+    WithOperation o
+  ) =>
   SourcesArgs ->
   Resolver o e m (Vector (Source (Resolver o e m)))
 resolveSources = resolveSourceEntities >=> lift . enrichSourceEntities
@@ -92,7 +98,10 @@ convertSources :: Vector Ty.SourceEntity -> Vector Ty.Source
 convertSources = V.mapMaybe (rightToMaybe . tryFrom)
 
 resolveCollectionSources ::
-  (Tr.MonadSourceTransform m, WithOperation o) =>
+  ( Tr.MonadSourceTransform m,
+    MonadConc m,
+    WithOperation o
+  ) =>
   Ty.CollectionRef ->
   CollectionSourcesArgs ->
   Resolver o e m (Vector (Source (Resolver o e m)))
@@ -124,7 +133,7 @@ enrichSourceEntities ::
   Vector Ty.SourceEntity ->
   m (Vector (Source (Resolver o e m)))
 enrichSourceEntities ss = do
-  cache <- newEmptyMVar
+  cache <- atomically newEmptyTMVar
   forM ss $ \s -> do
     pure
       Source
@@ -139,16 +148,20 @@ enrichSourceEntities ss = do
           previewTransform = \args -> lift $ previewTransformImpl cache args.transformations
         }
   where
-    previewTransformImpl :: MVar m (MVar m (Vector (UpdateSourceResult (Resolver o e m)))) -> Vector Transform -> m (Vector (UpdateSourceResult (Resolver o e m)))
+    previewTransformImpl :: TMVar (STM m) (TMVar (STM m) (Vector (UpdateSourceResult (Resolver o e m)))) -> Vector Transform -> m (Vector (UpdateSourceResult (Resolver o e m)))
     previewTransformImpl cache ts =
-      tryReadMVar cache >>= \case
-        Just res -> readMVar res
+      (atomically $ tryReadTMVar cache) >>= \case
+        Just res -> atomically $ readTMVar res
         Nothing -> do
-          res <- newEmptyMVar
-          putMVar cache res
-          ss' <- previewTransformSourcesImpl ss ts
-          putMVar res ss'
-          pure ss'
+          res <- atomically newEmptyTMVar
+          ifM
+            (atomically $ tryPutTMVar cache res)
+            ( do
+                ss' <- previewTransformSourcesImpl ss ts
+                atomically $ putTMVar res ss'
+                pure ss'
+            )
+            (previewTransformImpl cache ts)
     coverImageImpl :: Ty.SourceEntity -> m (Maybe Image)
     coverImageImpl src = case parseURI $ T.unpack $ src ^. #source_uri of
       Just uri ->
@@ -335,6 +348,7 @@ instance GQLType MappedTagsInput where
 resolveSourceGroups ::
   forall m o e.
   ( Tr.MonadSourceTransform m,
+    MonadConc m,
     WithOperation o
   ) =>
   Resolver o e m (V.Vector (SourceGroup (Resolver o e m)))
@@ -342,6 +356,7 @@ resolveSourceGroups = lift (getAll >>= enrichSourceEntities @m @o @e <&> groupSo
 
 resolveCollectionSourceGroups ::
   ( Tr.MonadSourceTransform m,
+    MonadConc m,
     WithOperation o
   ) =>
   Ty.CollectionRef ->
@@ -552,12 +567,14 @@ instance Typeable m => GQLType (UpdateSourceResult m)
 
 updateSourcesImpl ::
   forall m e.
-  Tr.MonadSourceTransform m =>
+  ( Tr.MonadSourceTransform m,
+    MonadConc m
+  ) =>
   UpdateSourcesArgs ->
   ResolverM e m (UpdatedSources (Resolver MUTATION e m))
 updateSourcesImpl (UpdateSourcesArgs updates) = lift do
   updates' <- enrich updates
-  results <- forM updates' updateSource
+  results <- forConcurrently updates' updateSource
   pure UpdatedSources {results}
   where
     updateSource :: SourceUpdate' -> m (UpdateSourceResult (Resolver MUTATION e m))
@@ -700,6 +717,7 @@ instance GQLType MetadataTransformation where
 previewTransformSourcesImpl ::
   forall m e o.
   ( Tr.MonadSourceTransform m,
+    MonadConc m,
     WithOperation o
   ) =>
   Vector Ty.SourceEntity ->
@@ -716,7 +734,9 @@ previewTransformSourcesImpl es ts = do
 
 transformSourcesImpl ::
   forall m e.
-  Tr.MonadSourceTransform m =>
+  ( MonadConc m,
+    Tr.MonadSourceTransform m
+  ) =>
   TransformSourcesArgs ->
   ResolverM e m (UpdatedSources (Resolver MUTATION e m))
 transformSourcesImpl (TransformSourcesArgs ts where') = do

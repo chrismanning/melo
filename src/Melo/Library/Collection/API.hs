@@ -3,17 +3,18 @@
 
 module Melo.Library.Collection.API where
 
+import Control.Concurrent.Classy
 import Control.Lens hiding (from, lens, (|>))
 import Data.Generics.Labels ()
 import Data.Kind
 import Data.Morpheus.Kind
 import Data.Morpheus.Types
 import Data.Text (Text)
-import qualified Data.Text as T
+import Data.Text qualified as T
 import Data.Typeable
 import Data.UUID (fromText)
-import qualified Data.Vector as V
 import Data.Vector (Vector)
+import Data.Vector qualified as V
 import GHC.Generics hiding (from)
 import Melo.Common.FileSystem
 import Melo.Common.Logging
@@ -23,14 +24,16 @@ import Melo.Format.Metadata ()
 import Melo.GraphQL.Where
 import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Service
-import qualified Melo.Library.Collection.Types as Ty
+import Melo.Library.Collection.Types qualified as Ty
 import Melo.Library.Source.API as SrcApi
-import qualified Melo.Library.Source.Transform as Tr
+import Melo.Library.Source.Transform qualified as Tr
 import Network.URI
 import Witch
 
 resolveCollections ::
-  Tr.MonadSourceTransform m =>
+  ( Tr.MonadSourceTransform m,
+    MonadConc m
+  ) =>
   CollectionsArgs ->
   ResolverQ e m (Vector (Collection (Resolver QUERY e m)))
 resolveCollections (CollectionsArgs (Just CollectionWhere {..})) =
@@ -60,7 +63,8 @@ resolveCollections (CollectionsArgs (Just CollectionWhere {..})) =
     allJust (Nothing : _) = Nothing
 resolveCollections _ =
   lift $
-    fmap (fmap from) $ getAll @Ty.Collection
+    fmap (fmap from) $
+      getAll @Ty.Collection
 
 data Collection m = Collection
   { id :: Ty.CollectionRef,
@@ -77,7 +81,7 @@ instance Typeable m => GQLType (Collection m)
 
 --  type KIND (Collection m) = INTERFACE
 
---instance Applicative m => From Ty.Collection (Collection m) where
+-- instance Applicative m => From Ty.Collection (Collection m) where
 --  from s =
 --    Collection
 --      { id = toText $ s ^. #ref . coerced,
@@ -91,6 +95,7 @@ instance Typeable m => GQLType (Collection m)
 
 instance
   ( Tr.MonadSourceTransform m,
+    MonadConc m,
     WithOperation o
   ) =>
   From Ty.Collection (Collection (Resolver o e m))
@@ -146,6 +151,7 @@ instance Typeable m => GQLType (CollectionMutation m)
 collectionMutation ::
   forall m e.
   ( Tr.MonadSourceTransform m,
+    MonadConc m,
     CollectionService m
   ) =>
   ResolverM e (m :: Type -> Type) CollectionMutation
@@ -169,6 +175,7 @@ instance GQLType AddCollectionArgs where
 addCollectionImpl ::
   forall m e.
   ( Tr.MonadSourceTransform m,
+    MonadConc m,
     CollectionService m,
     FileSystem m
   ) =>

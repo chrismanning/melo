@@ -8,7 +8,6 @@ import Control.Concurrent.Classy
 import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
-import Control.Monad.Trans.Resource
 import Data.Containers.ListUtils (nubOrd)
 import Data.Pool
 import Data.Text (Text)
@@ -41,7 +40,6 @@ newtype ArtistRepositoryIOT m a = ArtistRepositoryIOT
       MonadThrow,
       MonadTrans,
       MonadTransControl,
-      MonadUnliftIO,
       Repository (ArtistTable Result)
     )
 

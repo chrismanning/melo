@@ -2,7 +2,7 @@
 
 module Melo.Network.Discovery where
 
-import Control.Concurrent.Classy
+import Control.Concurrent
 import Control.Exception.Safe hiding (throwTo)
 import Control.Monad
 import Control.Monad.Base
@@ -11,9 +11,9 @@ import Control.Monad.Identity
 import Control.Monad.Trans
 import Control.Monad.Trans.Control
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
+import Data.ByteString qualified as BS
 import Data.ByteString.Builder
-import qualified Data.ByteString.Char8 as C8
+import Data.ByteString.Char8 qualified as C8
 import Data.ByteString.Lazy (toStrict)
 import Data.Foldable (find)
 import Data.Functor
@@ -26,7 +26,7 @@ import Data.Unique
 import Data.Word (Word16)
 import Melo.Common.Logging
 import Network.DNS hiding (TYPE (..))
-import qualified Network.DNS as DNS
+import Network.DNS qualified as DNS
 import Network.Multicast
 import Network.Socket
 import Network.Socket.ByteString
@@ -58,7 +58,17 @@ instance
 newtype NetworkDiscoveryIOT m a = NetworkDiscoveryIOT
   { runNetworkDiscoveryIOT :: m a
   }
-  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadThrow, MonadMask)
+  deriving newtype
+    ( Functor,
+      Applicative,
+      Monad,
+      MonadIO,
+      MonadBase b,
+      MonadBaseControl b,
+      MonadCatch,
+      MonadThrow,
+      MonadMask
+    )
   deriving (MonadTrans, MonadTransControl) via IdentityT
 
 instance (MonadIO m) => NetworkDiscovery (NetworkDiscoveryIOT m) where
@@ -112,21 +122,21 @@ repeatFor :: Int -> IO a -> IO [a]
 repeatFor n f
   | n <= 0 = return []
   | otherwise = do
-    pid <- myThreadId
-    ex <- fmap Timeout newUnique
-    results <- newMVar []
-    handleJust
-      (\e -> if e == ex then Just () else Nothing)
-      (\_ -> pure ())
-      ( bracket
-          (forkWithUnmask (\unmask -> unmask (threadDelay n >> throwTo pid ex)))
-          (killThread)
-          ( \_ -> forever $ do
-              r <- f
-              modifyMVar_ results (pure . (r :))
-          )
-      )
-    readMVar results
+      pid <- myThreadId
+      ex <- fmap Timeout newUnique
+      results <- newMVar []
+      handleJust
+        (\e -> if e == ex then Just () else Nothing)
+        (\_ -> pure ())
+        ( bracket
+            (forkIOWithUnmask (\unmask -> unmask (threadDelay n >> throwTo pid ex)))
+            (killThread)
+            ( \_ -> forever $ do
+                r <- f
+                modifyMVar_ results (pure . (r :))
+            )
+        )
+      readMVar results
 
 seconds :: Int -> Int
 seconds = (* (10 ^ (6 :: Int)))
@@ -165,7 +175,12 @@ encodeMulticastDNSQuestion :: Word16 -> MulticastDNSQuestion -> ByteString
 encodeMulticastDNSQuestion identifier MulticastDNSQuestion {..} =
   toStrict $
     toLazyByteString $
-      word16BE identifier <> word16BE 0 <> word16BE 1 <> word16BE 0 <> word16BE 0 <> word16BE 0
+      word16BE identifier
+        <> word16BE 0
+        <> word16BE 1
+        <> word16BE 0
+        <> word16BE 0
+        <> word16BE 0
         <> encodeDomain name
         <> word8 0
         <> encodeDNSRecordType queryType

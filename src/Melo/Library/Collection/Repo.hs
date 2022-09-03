@@ -6,10 +6,8 @@ import Control.Concurrent.Classy
 import Control.Exception.Safe
 import Control.Monad
 import Control.Monad.Base
-import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
-import Control.Monad.Trans.Resource
 import Data.Functor.Contravariant
 import Data.Pool
 import Data.Text qualified as T
@@ -57,12 +55,10 @@ newtype CollectionRepositoryIOT m a = CollectionRepositoryIOT
       MonadConc,
       MonadCatch,
       MonadMask,
-      MonadParallel,
       MonadReader (RepositoryHandle CollectionTable),
       MonadThrow,
       MonadTrans,
-      MonadTransControl,
-      MonadUnliftIO
+      MonadTransControl
     )
 
 instance MonadIO m => Repository (CollectionTable Result) (CollectionRepositoryIOT m) where

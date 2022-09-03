@@ -7,10 +7,8 @@ import Control.Exception.Safe
 import Control.Lens hiding (from)
 import Control.Monad
 import Control.Monad.Base
-import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
-import Control.Monad.Trans.Resource
 import Data.Pool
 import qualified Data.Text as T
 import Data.Vector (Vector, singleton)
@@ -53,12 +51,10 @@ newtype CollectionServiceIOT m a = CollectionServiceIOT
       MonadCatch,
       MonadConc,
       MonadMask,
-      MonadParallel,
       MonadThrow,
       MonadReader (Pool Connection),
       MonadTrans,
-      MonadTransControl,
-      MonadUnliftIO
+      MonadTransControl
     )
 
 runCollectionServiceIO :: Pool Connection -> CollectionServiceIOT m a -> m a
@@ -68,9 +64,10 @@ instance
   ( CollectionRepository m,
     FileSystemService m,
     FileSystemWatchService m,
-    MonadConc m,
-    MonadParallel m,
+    MonadBaseControl IO m,
     MonadIO m,
+    MonadConc m,
+    MonadMask m,
     Logging m
   ) =>
   CollectionService (CollectionServiceIOT m)

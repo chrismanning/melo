@@ -8,7 +8,6 @@ import Control.Lens hiding (from)
 import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
-import Control.Monad.Trans.Resource
 import Data.Containers.ListUtils (nubOrd)
 import Data.Text (Text)
 import Hasql.Connection
@@ -44,7 +43,6 @@ newtype AlbumRepositoryIOT m a = AlbumRepositoryIOT
       MonadThrow,
       MonadTrans,
       MonadTransControl,
-      MonadUnliftIO,
       Repository (AlbumTable Result)
     )
 

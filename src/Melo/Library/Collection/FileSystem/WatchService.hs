@@ -2,15 +2,14 @@
 
 module Melo.Library.Collection.FileSystem.WatchService where
 
-import Control.Concurrent.Classy
+import Control.Concurrent
+import Control.Concurrent.Classy (MonadConc)
 import Control.Concurrent.STM qualified as STM
 import Control.Exception.Safe
 import Control.Monad
 import Control.Monad.Base
-import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
-import Control.Monad.Trans.Resource
 import Data.ByteString.Char8 (ByteString, isPrefixOf, pack)
 import Data.HashMap.Strict as H
 import Data.Pool
@@ -30,19 +29,20 @@ import System.FilePath
 class Monad m => FileSystemWatchService m where
   startWatching :: CollectionRef -> FilePath -> m ()
   stopWatching :: CollectionRef -> m ()
-  lockPath :: FilePath -> ResourceT m ()
+  lockPathDuring :: FilePath -> m a -> m a
 
 instance
   {-# OVERLAPPABLE #-}
   ( Monad (t m),
     MonadTrans t,
+    MonadTransControl t,
     FileSystemWatchService m
   ) =>
   FileSystemWatchService (t m)
   where
   startWatching ref p = lift (startWatching ref p)
   stopWatching = lift . stopWatching
-  lockPath p = lockPath p
+  lockPathDuring p m = liftWith (\run -> lockPathDuring p (run m)) >>= restoreT . pure
 
 data CollectionWatchState = CollectionWatchState
   { stoppers :: STM.TVar (H.HashMap CollectionRef FS.StopListening),
@@ -51,8 +51,8 @@ data CollectionWatchState = CollectionWatchState
 
 emptyWatchState :: IO CollectionWatchState
 emptyWatchState = do
-  stoppers <- atomically $ newTVar H.empty
-  locks <- atomically $ newTVar V.empty
+  stoppers <- STM.atomically $ STM.newTVar H.empty
+  locks <- STM.atomically $ STM.newTVar V.empty
   pure CollectionWatchState {
     ..
   }
@@ -72,10 +72,8 @@ newtype FileSystemWatchServiceIOT m a = FileSystemWatchServiceIOT
       MonadThrow,
       MonadTrans,
       MonadTransControl,
-      MonadParallel,
       MonadBase b,
-      MonadBaseControl b,
-      MonadUnliftIO
+      MonadBaseControl b
     )
 
 runFileSystemWatchServiceIO ::
@@ -85,7 +83,7 @@ runFileSystemWatchServiceIO pool watchState =
 
 instance
   ( MonadIO m,
-    MonadConc m,
+    MonadMask m,
     MonadBaseControl IO m,
     Logging m
   ) =>
@@ -97,8 +95,8 @@ instance
     liftBaseWith
       ( \runInBase ->
           void $
-            fork $
-              liftIO $
+            liftIO $
+              forkIO $
                 FS.withManagerConf (FS.defaultConfig {FS.confThreadingMode = ThreadPerWatch}) $ \watchManager -> do
                   let handler e = do
                         locks <- STM.atomically $ STM.readTVar watchState.locks
@@ -113,19 +111,21 @@ instance
     case H.lookup ref stoppers' of
       Just stop -> liftIO stop
       Nothing -> pure ()
-  lockPath p = do
+  lockPathDuring p m = do
     (_pool, watchState) <- ask
     let bytes = pack p
-    liftIO $ STM.atomically $ STM.modifyTVar' watchState.locks (addLock bytes)
-    void $ register (liftIO $ STM.atomically $ STM.modifyTVar' watchState.locks (rmLock bytes))
+    bracket
+      (liftIO $ STM.atomically $ STM.modifyTVar' watchState.locks (addLock bytes))
+      (\_ -> liftIO $ STM.atomically $ STM.modifyTVar' watchState.locks (rmLock bytes))
+      (const m)
     where
       addLock = V.cons
       rmLock p' = V.filter (/= p')
 
 handleEvent ::
   ( Logging m,
-    MonadIO m,
-    MonadConc m
+    MonadMask m,
+    MonadIO m
   ) =>
   Pool Connection ->
   CollectionRef ->

@@ -3,17 +3,17 @@
 module Melo.Library.Source.Transform where
 
 import Control.Applicative hiding (many, some)
+import Control.Concurrent.Classy
+import Control.Concurrent.Classy.Async
 import Control.Exception.Safe as E hiding (try)
 import Control.Exception.Safe qualified as E
 import Control.Lens hiding (from)
 import Control.Monad
 import Control.Monad.Base
-import Control.Monad.Conc.Class
 import Control.Monad.Except
 import Control.Monad.Identity
 import Control.Monad.Trans.Control
 import Control.Monad.Trans.Except
-import Control.Monad.Trans.Resource
 import Data.Char
 import Data.Either.Combinators
 import Data.Foldable
@@ -75,8 +75,8 @@ evalTransformAction (SplitMultiTrackFile ref patterns) srcs = transformSources (
 evalTransformAction (EditMetadata metadataTransformation) srcs = transformSources (editMetadata metadataTransformation) srcs
 evalTransformAction _ _ = error "unimplemented transformation"
 
-transformSources :: (Logging m, Show e) => (a -> m (Either e a)) -> Vector a -> m (Vector a)
-transformSources t srcs = forM srcs $ \src ->
+transformSources :: (Logging m, MonadConc m, Show e) => (a -> m (Either e a)) -> Vector a -> m (Vector a)
+transformSources t srcs = forConcurrently srcs $ \src ->
   t src >>= \case
     Right transformedSrc -> pure transformedSrc
     Left e -> do
@@ -84,18 +84,19 @@ transformSources t srcs = forM srcs $ \src ->
       pure src
 
 type MonadSourceTransform m =
-  ( Monad m,
-    MonadConc m,
-    FileSystem m,
-    SourceRepository m,
+  (
     CollectionRepository m,
-    MusicBrainzService m,
-    MetadataService m,
-    TagMappingRepository m,
-    MultiTrack m,
+    FileSystem m,
     FileSystemWatchService m,
-    MonadUnliftIO m,
-    Logging m
+    Logging m,
+    MetadataService m,
+    Monad m,
+    MonadCatch m,
+    MonadConc m,
+    MultiTrack m,
+    MusicBrainzService m,
+    SourceRepository m,
+    TagMappingRepository m
   )
 
 applyTransformations :: MonadSourceTransform m => [Transform m] -> Vector Source -> m (Vector Source)
@@ -117,8 +118,8 @@ previewTransformations transformations srcs =
 newtype TransformPreviewT m a = TransformPreviewT
   { runTransformPreviewT :: m a
   }
-  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadThrow, MonadMask, MonadUnliftIO)
-  deriving (MonadTrans) via IdentityT
+  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadThrow, MonadMask)
+  deriving (MonadTrans, MonadTransControl) via IdentityT
   deriving (SourceRepository)
 
 instance MonadSourceTransform m => FileSystem (TransformPreviewT m) where
@@ -178,7 +179,6 @@ moveSourceWithPattern ::
     SourceRepository m,
     TagMappingRepository m,
     FileSystemWatchService m,
-    MonadUnliftIO m,
     Logging m
   ) =>
   Maybe CollectionRef ->
@@ -189,8 +189,7 @@ moveSourceWithPattern collectionRef pats src@Source {ref, source} =
   case uriToFilePath source of
     Just srcPath ->
       previewSourceMoveWithPattern (fromMaybe src.collectionRef collectionRef) pats src >>= \case
-        Just destPath -> runResourceT $ do
-          lockPath destPath
+        Just destPath -> lockPathDuring destPath $ do
           let SourceRef id = ref
           $(logInfo) $ "moving source " <> show id <> " from " <> srcPath <> " to " <> destPath
           r <- mapLeft from <$> movePath srcPath destPath
@@ -212,7 +211,6 @@ moveSourceAtRefWithPattern ::
     CollectionRepository m,
     TagMappingRepository m,
     FileSystemWatchService m,
-    MonadUnliftIO m,
     Logging m
   ) =>
   Maybe CollectionRef ->

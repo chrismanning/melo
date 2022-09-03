@@ -4,8 +4,7 @@ module Melo.API where
 
 import Control.Concurrent.Classy
 import Control.Monad.IO.Class
-import Control.Monad.Trans.Control (MonadBaseControl)
-import Control.Monad.Trans.Resource
+import Control.Monad.Trans.Control
 import Data.ByteString.Lazy.Char8
 import Data.Morpheus
 import Data.Morpheus.Types
@@ -94,8 +93,7 @@ type ResolverE m =
     CollectionRepository m,
     CollectionService m,
     FileSystemService m,
-    FileSystemWatchService m,
-    MonadUnliftIO m
+    FileSystemWatchService m
   )
 
 api :: (MonadIO m, MonadBaseControl IO m) => CollectionWatchState -> Pool Connection -> ScottyT LT.Text m ()

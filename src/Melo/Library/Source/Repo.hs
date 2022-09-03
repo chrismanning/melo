@@ -5,10 +5,8 @@ module Melo.Library.Source.Repo where
 import Control.Concurrent.Classy
 import Control.Exception.Safe
 import Control.Monad.Base
-import Control.Monad.Parallel (MonadParallel)
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
-import Control.Monad.Trans.Resource
 import Data.Functor.Contravariant
 import Data.Pool
 import Data.Text qualified as T
@@ -63,12 +61,10 @@ newtype SourceRepositoryIOT m a = SourceRepositoryIOT
       MonadConc,
       MonadCatch,
       MonadMask,
-      MonadParallel,
       MonadReader (RepositoryHandle SourceTable),
       MonadThrow,
       MonadTrans,
-      MonadTransControl,
-      MonadUnliftIO
+      MonadTransControl
     )
 
 instance MonadIO m => Repository SourceEntity (SourceRepositoryIOT m) where

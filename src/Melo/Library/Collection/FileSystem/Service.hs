@@ -3,14 +3,12 @@
 module Melo.Library.Collection.FileSystem.Service where
 
 import Control.Concurrent.Classy
+import Control.Concurrent.Classy.Async
 import Control.Exception.Safe
 import Control.Monad
 import Control.Monad.Base
-import Control.Monad.Parallel (MonadParallel)
-import qualified Control.Monad.Parallel as Par
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
-import Control.Monad.Trans.Resource
 import Data.Maybe
 import Data.Pool
 import Data.Vector (Vector, empty, fromList)
@@ -58,11 +56,9 @@ newtype FileSystemServiceIOT m a = FileSystemServiceIOT
       MonadConc,
       MonadCatch,
       MonadMask,
-      MonadParallel,
       MonadThrow,
       MonadTrans,
       MonadTransControl,
-      MonadUnliftIO,
       MonadReader (Pool Connection)
     )
 
@@ -72,7 +68,7 @@ runFileSystemServiceIO pool = runFileSystemIO . flip runReaderT pool . runFileSy
 type ImportT m = FileSystemServiceIOT (FileSystemIOT m)
 
 runFileSystemServiceIO' ::
-  (MonadIO m, MonadCatch m, MonadParallel m) =>
+  MonadIO m =>
   Pool Connection ->
   ImportT m a ->
   m ()
@@ -81,8 +77,7 @@ runFileSystemServiceIO' pool m =
 
 forkFileSystemServiceIO ::
   ( MonadIO m,
-    MonadConc m,
-    MonadParallel m
+    MonadConc m
   ) =>
   Pool Connection ->
   ImportT m a ->
@@ -91,9 +86,7 @@ forkFileSystemServiceIO pool m = void $ fork $ runFileSystemServiceIO' pool m
 
 instance
   ( MonadIO m,
-    MonadCatch m,
-    MonadMask m,
-    MonadParallel m,
+    MonadConc m,
     FileSystem m,
     Logging m
   ) =>
@@ -111,7 +104,7 @@ instance
           then do
             $(logDebug) $ p <> " is directory; recursing..."
             dirs <- filterM doesDirectoryExist =<< listDirectoryAbs p
-            Par.mapM_ (scanPath ref) dirs
+            mapConcurrently_ (scanPath ref) dirs
             files <- filterM doesFileExist =<< listDirectoryAbs p
             let cuefiles = filter ((== ".cue") . takeExtension) files
             case cuefiles of
@@ -134,7 +127,7 @@ instance
       importTransaction :: [FilePath] -> SourceRepositoryIOT m (Vector Source)
       importTransaction files = do
         $(logDebug) $ "Importing " <> show files
-        mfs <- catMaybes <$> mapM openMetadataFile'' files
+        mfs <- catMaybes <$> mapConcurrently openMetadataFile'' files
         $(logDebug) $ "Opened " <> show mfs
         importSources $ fromList (FileSource ref <$> mfs)
       openMetadataFile'' p =
