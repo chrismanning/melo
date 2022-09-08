@@ -5,13 +5,10 @@ module Melo.Library.Source.API where
 
 import Control.Applicative hiding (many)
 import Control.Concurrent.Classy
-import Control.Concurrent.Classy.Async
-import Control.Concurrent.Classy.STM
 import Control.Exception.Safe (toException)
 import Control.Lens hiding (from, lens, (|>))
 import Control.Monad
 import Control.Monad.Extra
-import Data.Aeson as A hiding (Result, (<?>))
 import Data.Char (toLower)
 import Data.Coerce
 import Data.Default
@@ -19,6 +16,7 @@ import Data.Either.Combinators
 import Data.Foldable
 import Data.Generics.Labels ()
 import Data.HashMap.Strict qualified as H
+import Data.Kind
 import Data.Maybe
 import Data.Morpheus.Kind
 import Data.Morpheus.Types
@@ -109,7 +107,7 @@ resolveCollectionSources collectionRef _args =
   -- TODO handle args
   lift $ getCollectionSources collectionRef >>= enrichSourceEntities
 
-data Source m = Source
+data Source (m :: Type -> Type) = Source
   { id :: Ty.SourceRef,
     format :: Text,
     metadata :: Metadata,
@@ -134,7 +132,7 @@ enrichSourceEntities ::
   m (Vector (Source (Resolver o e m)))
 enrichSourceEntities ss = do
   cache <- atomically newEmptyTMVar
-  forM ss $ \s -> do
+  iforM ss $ \i s -> do
     pure
       Source
         { id = s.id,
@@ -145,23 +143,25 @@ enrichSourceEntities ss = do
           downloadUri = "/source/" <> toText (Ty.unSourceRef s.id),
           length = pure 100,
           coverImage = lift $ coverImageImpl s,
-          previewTransform = \args -> lift $ previewTransformImpl cache args.transformations
+          previewTransform = \args -> lift $ previewTransformImpl cache args.transformations i
         }
   where
-    previewTransformImpl :: TMVar (STM m) (TMVar (STM m) (Vector (UpdateSourceResult (Resolver o e m)))) -> Vector Transform -> m (Vector (UpdateSourceResult (Resolver o e m)))
-    previewTransformImpl cache ts =
+    previewTransformImpl :: TMVar (STM m) (TMVar (STM m) (Vector (UpdateSourceResult (Resolver o e m)))) -> Vector Transform -> Int -> m (UpdateSourceResult (Resolver o e m))
+    previewTransformImpl cache ts i =
       (atomically $ tryReadTMVar cache) >>= \case
-        Just res -> atomically $ readTMVar res
+        Just res -> V.unsafeIndex <$!> atomically (readTMVar res) <*> pure i
         Nothing -> do
           res <- atomically newEmptyTMVar
           ifM
             (atomically $ tryPutTMVar cache res)
             ( do
+                $(logDebug) ("previewing transform sources" :: String)
                 ss' <- previewTransformSourcesImpl ss ts
                 atomically $ putTMVar res ss'
-                pure ss'
+                $(logDebug) ("saving previewed transformed sources" :: String)
+                pure (V.unsafeIndex ss' i)
             )
-            (previewTransformImpl cache ts)
+            (previewTransformImpl cache ts i)
     coverImageImpl :: Ty.SourceEntity -> m (Maybe Image)
     coverImageImpl src = case parseURI $ T.unpack $ src ^. #source_uri of
       Just uri ->
@@ -213,7 +213,7 @@ data TimeUnit = Seconds | Milliseconds | Nanoseconds
   deriving (Generic)
 
 data Metadata = Metadata
-  { tags :: V.Vector Tag,
+  { tags :: V.Vector Ty.TagPair,
     mappedTags :: MappedTags,
     formatId :: Text,
     format :: Text
@@ -227,7 +227,7 @@ instance From F.Metadata Metadata where
     Metadata
       { formatId = coerce m.formatId,
         format = m.formatDesc,
-        tags = from @(Text, Text) <$> coerce m.tags,
+        tags = uncurry Ty.TagPair <$> coerce m.tags,
         mappedTags = mapTags m
       }
 
@@ -238,22 +238,11 @@ instance From Ty.SourceEntity Metadata where
         JSONBEncoded (Ty.SourceMetadata tags) = s.metadata
         format = either (const "") (\m' -> m'.formatDesc) m
      in Metadata
-          { tags = from <$> tags,
+          { tags,
             mappedTags = either (const def) mapTags m,
             formatId = s.metadata_format,
             format = format
           }
-
-data Tag = Tag
-  { key :: Text,
-    value :: Text
-  }
-  deriving (Generic)
-
-instance GQLType Tag
-
-instance From (Text, Text) Tag where
-  from (k, v) = Tag k v
 
 mapTags :: F.Metadata -> MappedTags
 mapTags F.Metadata {tags, lens} =
@@ -293,8 +282,6 @@ data MappedTags = MappedTags
     musicbrainzTrackId :: Maybe Text
   }
   deriving (Generic)
-
-instance ToJSON MappedTags
 
 instance GQLType MappedTags
 
@@ -337,8 +324,6 @@ data MappedTagsInput = MappedTagsInput
     musicbrainzTrackId :: Maybe Text
   }
   deriving (Generic)
-
-instance ToJSON MappedTagsInput
 
 instance GQLType MappedTagsInput where
   type KIND MappedTagsInput = INPUT
@@ -574,7 +559,7 @@ updateSourcesImpl ::
   ResolverM e m (UpdatedSources (Resolver MUTATION e m))
 updateSourcesImpl (UpdateSourcesArgs updates) = lift do
   updates' <- enrich updates
-  results <- forConcurrently updates' updateSource
+  results <- forM updates' updateSource
   pure UpdatedSources {results}
   where
     updateSource :: SourceUpdate' -> m (UpdateSourceResult (Resolver MUTATION e m))
@@ -602,10 +587,9 @@ updateSourcesImpl (UpdateSourcesArgs updates) = lift do
                       $(logError) msg
                       pure $ FailedSourceUpdate {id, msg}
                     Just metadata -> do
-                      let F.Tags tags = F.tags metadata
                       let updatedSource =
                             originalSource
-                              { Ty.metadata = JSONBEncoded $ Ty.SourceMetadata tags,
+                              { Ty.metadata = JSONBEncoded $ from metadata.tags,
                                 Ty.metadata_format = coerce $ F.formatId metadata
                               }
                       us <- update @Ty.SourceEntity (V.singleton updatedSource)
@@ -669,7 +653,7 @@ instance TryFrom TagUpdate TagUpdateOp where
         SetMappedTags <$> setMappedTags
           <|> SetTags <$> setTags
 
-type TransformSource m = TransformSourceArgs -> m (Vector (UpdateSourceResult m))
+type TransformSource m = TransformSourceArgs -> m (UpdateSourceResult m)
 
 data TransformSourceArgs = TransformSourceArgs
   { transformations :: Vector Transform

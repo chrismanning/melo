@@ -3,7 +3,6 @@
 module Melo.Library.Collection.FileSystem.Service where
 
 import Control.Concurrent.Classy
-import Control.Concurrent.Classy.Async
 import Control.Exception.Safe
 import Control.Monad
 import Control.Monad.Base
@@ -104,7 +103,7 @@ instance
           then do
             $(logDebug) $ p <> " is directory; recursing..."
             dirs <- filterM doesDirectoryExist =<< listDirectoryAbs p
-            mapConcurrently_ (scanPath ref) dirs
+            mapM_ (fork . void . scanPath ref) dirs
             files <- filterM doesFileExist =<< listDirectoryAbs p
             let cuefiles = filter ((== ".cue") . takeExtension) files
             case cuefiles of
@@ -127,7 +126,7 @@ instance
       importTransaction :: [FilePath] -> SourceRepositoryIOT m (Vector Source)
       importTransaction files = do
         $(logDebug) $ "Importing " <> show files
-        mfs <- catMaybes <$> mapConcurrently openMetadataFile'' files
+        mfs <- catMaybes <$> mapM openMetadataFile'' files
         $(logDebug) $ "Opened " <> show mfs
         importSources $ fromList (FileSource ref <$> mfs)
       openMetadataFile'' p =

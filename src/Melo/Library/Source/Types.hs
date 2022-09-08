@@ -27,7 +27,7 @@ import Data.Time.LocalTime
 import Data.UUID
 import Data.UUID.V4
 import qualified Data.Vector as V
-import Data.Vector (Vector)
+import Data.Vector (Vector())
 import GHC.Generics hiding (from)
 import qualified Hasql.Decoders as Hasql
 import Melo.Common.Metadata
@@ -148,7 +148,7 @@ instance From NewSource (SourceTable Expr) where
       { id = nullaryFunction "uuid_generate_v4",
         kind = lit $ s ^. #kind,
         metadata_format = lit $ s ^. #metadataFormat,
-        metadata = lit $ s ^. #tags . coerced,
+        metadata = lit $ JSONBEncoded $ SourceMetadata (uncurry TagPair `V.map` coerce s.tags),
         source_uri = lit $ s ^. #source,
         idx = lit $ fromMaybe (-1 :: Int16) (s ^. #idx),
         --        sample_range = val_ $ sampleRange =<< (s ^. #range),
@@ -164,7 +164,7 @@ instance From NewSource SourceEntity where
       { id = SourceRef $ unsafeDupablePerformIO nextRandom,
         kind = s ^. #kind,
         metadata_format = s ^. #metadataFormat,
-        metadata = s ^. #tags . coerced,
+        metadata = JSONBEncoded $ SourceMetadata (uncurry TagPair `V.map` coerce s.tags),
         source_uri = s ^. #source,
         idx = fromMaybe (-1 :: Int16) (s ^. #idx),
         time_range = rightToMaybe =<< tryFrom <$> s ^. #range,
@@ -176,47 +176,35 @@ instance From NewSource SourceEntity where
 getCurrentLocalTime :: IO LocalTime
 getCurrentLocalTime = zonedTimeToLocalTime <$> getZonedTime
 
-newtype SourceMetadata = SourceMetadata (Vector (Text, Text))
+newtype SourceMetadata = SourceMetadata { tags :: Vector TagPair }
   deriving (Show, Eq, Generic)
   deriving (DBType) via JSONBEncoded SourceMetadata
 
 instance From Tags SourceMetadata where
-  from (Tags tags) = SourceMetadata tags
+  from (Tags tags) = SourceMetadata (uncurry TagPair <$> tags)
 
 instance From SourceMetadata Tags where
-  from (SourceMetadata tags) = Tags tags
+  from (SourceMetadata tags) = Tags (tags <&> (\p -> (p.key, p.value)))
+
+data TagPair = TagPair {
+  key :: Text,
+  value :: Text
+}
+  deriving (Show, Eq, Generic, GQLType)
+
+instance ToJSON TagPair where
+  toJSON t = object ["key" .= t.key, "value" .= t.value]
+  toEncoding t = pairs ("key" .= t.key <> "value" .= t.value)
+
+deriving instance FromJSON TagPair
 
 instance ToJSON SourceMetadata where
   toJSON (SourceMetadata tags) =
-    object
-      [ "tags"
-          .= toJSON
-            ( tags <&> \(k, v) ->
-                object
-                  [ "key" .= k,
-                    "value" .= v
-                  ]
-            )
-      ]
+    object ["tags" .= tags]
+  toEncoding (SourceMetadata tags) =
+    pairs ("tags" .= tags)
 
-instance FromJSON SourceMetadata where
-  parseJSON = withObject "SourceMetadata" $
-    \sm -> do
-      tagPairs <- sm .: "tags"
-      withArray
-        "Tags"
-        ( \arr ->
-            do
-              tags <- V.forM arr $
-                withObject "Tag" $
-                  \obj ->
-                    do
-                      k <- obj .: "key"
-                      v <- obj .: "value"
-                      pure (k, v)
-              pure (SourceMetadata tags)
-        )
-        tagPairs
+deriving anyclass instance FromJSON SourceMetadata
 
 data NewImportSource = FileSource CollectionRef MetadataFile
   | CueFileImportSource CollectionRef CueFileSource
@@ -384,7 +372,8 @@ instance TryFrom SourceEntity Source where
     uri <- parseURI $ T.unpack (s ^. #source_uri)
     let mid = MetadataId $ s ^. #metadata_format
     let JSONBEncoded (SourceMetadata tags) = s ^. #metadata
-    metadata <- mkCueMetadata mid (Tags tags) <|> mkMetadata mid (Tags tags)
+    let tags' = Tags $ tags <&> (\p -> (p.key, p.value))
+    metadata <- mkCueMetadata mid tags' <|> mkMetadata mid tags'
     let multiTrack = case (s ^. #idx, s ^. #time_range) of
           (idx, Just timeRange) | idx > -1 -> Just MultiTrackDesc {idx, range = from timeRange}
           _ -> Nothing

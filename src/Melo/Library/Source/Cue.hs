@@ -2,9 +2,9 @@ module Melo.Library.Source.Cue where
 
 import Control.Applicative
 import Control.Concurrent.Classy
-import Control.Concurrent.Classy.Async
 import Control.Exception.Safe
 import Control.Lens hiding (from)
+import Control.Monad
 import Control.Monad.IO.Class
 import Data.ByteString qualified as B
 import Data.List.NonEmpty qualified as NE
@@ -46,7 +46,7 @@ openCueFile cueFilePath = do
       let cueTracks = cueFiles >>= \CueFile {..} -> cueFileTracks <&> (cueFileName,)
       let cueTracks' = zip trackNums (NE.toList cueTracks)
       let cueTracks'' = filter (\(_, (_, CueTrack {..})) -> cueTrackType == CueTrackAudio) cueTracks'
-      processedTracks <- forConcurrently cueTracks'' $ \(trackNum, (filePath, CueTrack {..})) ->
+      processedTracks <- forM cueTracks'' $ \(trackNum, (filePath, CueTrack {..})) ->
         runMetadataServiceIO (openMetadataFile (takeDirectory cueFilePath </> filePath)) >>= \case
           Left e -> throwIO e
           Right mf -> do

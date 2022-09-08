@@ -4,7 +4,6 @@ module Melo.Library.Source.Transform where
 
 import Control.Applicative hiding (many, some)
 import Control.Concurrent.Classy
-import Control.Concurrent.Classy.Async
 import Control.Exception.Safe as E hiding (try)
 import Control.Exception.Safe qualified as E
 import Control.Lens hiding (from)
@@ -75,8 +74,8 @@ evalTransformAction (SplitMultiTrackFile ref patterns) srcs = transformSources (
 evalTransformAction (EditMetadata metadataTransformation) srcs = transformSources (editMetadata metadataTransformation) srcs
 evalTransformAction _ _ = error "unimplemented transformation"
 
-transformSources :: (Logging m, MonadConc m, Show e) => (a -> m (Either e a)) -> Vector a -> m (Vector a)
-transformSources t srcs = forConcurrently srcs $ \src ->
+transformSources :: (Logging m, Show e) => (a -> m (Either e a)) -> Vector a -> m (Vector a)
+transformSources t srcs = forM srcs $ \src ->
   t src >>= \case
     Right transformedSrc -> pure transformedSrc
     Left e -> do
