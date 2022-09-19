@@ -67,8 +67,8 @@ gqlApiIO collectionWatchState pool rq = runStdoutLogging do
   sess <- liftIO newAPISession
   !rs <-
     runFileSystemIO $
-      runMultiTrackIO $
-        runMetadataServiceIO $
+      runMetadataServiceIO $
+        runMultiTrackIO $
           runSourceRepositoryPooledIO pool $
             runTagMappingRepositoryPooledIO pool $
               runFileSystemServiceIO pool $

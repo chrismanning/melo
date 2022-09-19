@@ -484,7 +484,7 @@ mbWreqDefaults =
     & Wr.param "fmt" .~ ["json"]
 
 baseUrl :: IsString s => s
-baseUrl = "http://musicbrainz.org/ws/2"
+baseUrl = "https://musicbrainz.org/ws/2"
 
 runMusicBrainzServiceIO ::
   ( MonadIO m

@@ -5,7 +5,6 @@ module Melo.Library.Source.Transform where
 import Control.Applicative hiding (many, some)
 import Control.Concurrent.Classy
 import Control.Exception.Safe as E hiding (try)
-import Control.Exception.Safe qualified as E
 import Control.Lens hiding (from)
 import Control.Monad
 import Control.Monad.Base
@@ -35,7 +34,6 @@ import Melo.Format.Error qualified as F
 import Melo.Format.Internal.Metadata (Metadata (..))
 import Melo.Library.Collection.FileSystem.WatchService
 import Melo.Library.Collection.Repo
-import Melo.Library.Collection.Service
 import Melo.Library.Collection.Types
 import Melo.Library.Source.MultiTrack
 import Melo.Library.Source.Repo as Src
@@ -45,6 +43,7 @@ import Melo.Lookup.MusicBrainz
 import Melo.Metadata.Mapping.Repo
 import Melo.Metadata.Mapping.Service
 import Melo.Metadata.Mapping.Types
+import Rel8 qualified (fromJSONBEncoded)
 import System.FilePath
 import System.IO (TextEncoding)
 import Text.Megaparsec
@@ -52,35 +51,37 @@ import Text.Megaparsec.Char
 import Text.Printf
 import Witch
 
-type Transform m = Vector Source -> m (Vector Source)
+type Transform m = Source -> m (Either TransformationError Source)
 
 data TransformAction where
   Move :: Maybe CollectionRef -> NonEmpty SourcePathPattern -> TransformAction
   Copy :: Maybe CollectionRef -> NonEmpty SourcePathPattern -> TransformAction
   ExtractEmbeddedImage :: URI -> TransformAction
+  EmbedImage :: URI -> TransformAction
   MoveCoverImage :: URI -> URI -> TransformAction
   SplitMultiTrackFile :: Maybe CollectionRef -> NonEmpty SourcePathPattern -> TransformAction
   RemoveOtherFiles :: TransformAction
   MusicBrainzLookup :: TransformAction
   ConvertEncoding :: TextEncoding -> TransformAction
   EditMetadata :: MetadataTransformation -> TransformAction
+  ConvertMetadataFormat :: F.MetadataId -> TransformAction
+  ConvertFileFormat :: F.MetadataFileId -> TransformAction
 
-evalTransformActions :: MonadSourceTransform m => Vector TransformAction -> Transform m
-evalTransformActions = foldl' (\b a -> b >=> evalTransformAction a) pure
+deriving instance Show TransformAction
+
+evalTransformActions :: MonadSourceTransform m => Vector TransformAction -> Source -> m (Either TransformationError Source)
+evalTransformActions = foldl' (\b a -> b >=/> evalTransformAction a) (pure . Right)
+
+(>=/>) :: Monad m => Transform m -> Transform m -> Transform m
+f >=/> g = \x -> f x >>= \case
+  Left e -> pure $ Left e
+  Right s -> g s
 
 evalTransformAction :: MonadSourceTransform m => TransformAction -> Transform m
-evalTransformAction (Move ref patterns) srcs = transformSources (moveSourceWithPattern ref patterns) srcs
-evalTransformAction (SplitMultiTrackFile ref patterns) srcs = transformSources (extractTrack ref patterns) srcs
-evalTransformAction (EditMetadata metadataTransformation) srcs = transformSources (editMetadata metadataTransformation) srcs
-evalTransformAction _ _ = error "unimplemented transformation"
-
-transformSources :: (Logging m, Show e) => (a -> m (Either e a)) -> Vector a -> m (Vector a)
-transformSources t srcs = forM srcs $ \src ->
-  t src >>= \case
-    Right transformedSrc -> pure transformedSrc
-    Left e -> do
-      $(logError) $ show e
-      pure src
+evalTransformAction (Move ref patterns) src = mapLeft from <$> moveSourceWithPattern ref patterns src
+evalTransformAction (SplitMultiTrackFile ref patterns) src = mapLeft from <$> extractTrack ref patterns src
+evalTransformAction (EditMetadata metadataTransformation) src = mapLeft from <$> editMetadata metadataTransformation src
+evalTransformAction t _ = pure $ Left (UnsupportedTransform (show t))
 
 type MonadSourceTransform m =
   (
@@ -98,21 +99,23 @@ type MonadSourceTransform m =
     TagMappingRepository m
   )
 
-applyTransformations :: MonadSourceTransform m => [Transform m] -> Vector Source -> m (Vector Source)
-applyTransformations transformations srcs = foldM transform srcs transformations
-  where
-    transform srcs f = f srcs
+previewTransformation ::
+  MonadSourceTransform m =>
+  Transform (TransformPreviewT m) ->
+  Source ->
+  m (Either TransformationError Source)
+previewTransformation transformation src =
+  runTransformPreviewT $
+    transformation src
 
 previewTransformations ::
   MonadSourceTransform m =>
-  [Transform (TransformPreviewT m)] ->
+  Transform (TransformPreviewT m) ->
   Vector Source ->
-  m (Vector Source)
-previewTransformations transformations srcs =
+  m (Vector (Either TransformationError Source))
+previewTransformations transformation srcs =
   runTransformPreviewT $
-    foldM previewTransform srcs transformations
-  where
-    previewTransform srcs f = f srcs
+    mapM transformation srcs
 
 newtype TransformPreviewT m a = TransformPreviewT
   { runTransformPreviewT :: m a
@@ -126,13 +129,17 @@ instance MonadSourceTransform m => FileSystem (TransformPreviewT m) where
   doesDirectoryExist = lift . doesDirectoryExist
   listDirectory = lift . listDirectory
   canonicalizePath = lift . canonicalizePath
-  readFile = lift . FS.readFile
+  readFile p = lift $ do
+    $(logDebug) ("readFile called with " <> p)
+    FS.readFile p
   movePath _ _ = lift $ do
     $(logDebug) ("Preview movePath called" :: String)
     pure $ Right ()
 
 instance MonadSourceTransform m => MetadataService (TransformPreviewT m) where
-  openMetadataFile = lift . openMetadataFile
+  openMetadataFile _p = do
+    $(logDebug) ("Preview openMetadataFile called" :: String)
+    lift $ openMetadataFile _p
   openMetadataFileByExt = lift . openMetadataFileByExt
   readMetadataFile mid p = lift $ readMetadataFile mid p
   writeMetadataFile mf _p = lift $ do
@@ -153,7 +160,12 @@ instance MonadSourceTransform m => Repo.Repository SourceEntity (TransformPrevie
     pure ()
 
 instance MonadSourceTransform m => MultiTrack (TransformPreviewT m) where
-  extractTrackTo _ _ _ = pure ()
+  extractTrackTo cuefile dest = pure $ Right F.MetadataFile {
+      filePath = dest,
+      metadata = H.empty,
+      audioInfo = cuefile.audioInfo,
+      fileId = cuefile.fileId
+    }
 
 data TransformationError
   = MoveTransformError SourceMoveError
@@ -164,13 +176,20 @@ data TransformationError
   | SourceNotFound SourceRef
   | ImportFailed
   | MultiTrackError MultiTrackError
+  | SourceConversionError (TryFromException SourceEntity Source)
+  | UnsupportedTransform String
   deriving (Show)
+
+instance Exception TransformationError
 
 instance From SourceMoveError TransformationError where
   from = MoveTransformError
 
 instance From F.MetadataException TransformationError where
   from = MetadataTransformError
+
+instance From (TryFromException SourceEntity Source) TransformationError where
+  from = SourceConversionError
 
 moveSourceWithPattern ::
   ( FileSystem m,
@@ -232,14 +251,8 @@ previewSourceKeyMoveWithPattern ::
   m (Maybe FilePath)
 previewSourceKeyMoveWithPattern collectionRef pats ref =
   getSource ref >>= \case
-    Just src@Source {metadata, source} ->
-      getCollectionsByKey (V.singleton (fromMaybe src.collectionRef collectionRef)) <&> firstOf traverse >>= \case
-        Just CollectionTable {root_uri} -> case parseURI (T.unpack root_uri) >>= uriToFilePath of
-          Just rootPath -> do
-            mappings <- Repo.getAll
-            pure $ Just $ renderSourcePatterns mappings rootPath metadata pats <> takeExtension (show source)
-          Nothing -> pure Nothing
-        Nothing -> pure Nothing
+    Just src ->
+      previewSourceMoveWithPattern (fromMaybe src.collectionRef collectionRef) pats src
     Nothing -> pure Nothing
 
 previewSourceMoveWithPattern ::
@@ -255,12 +268,12 @@ previewSourceMoveWithPattern collectionRef pats Source {metadata, source} =
     Just CollectionTable {root_uri} -> case parseURI (T.unpack root_uri) >>= uriToFilePath of
       Just rootPath -> do
         mappings <- Repo.getAll
-        pure $ Just $ renderSourcePatterns mappings rootPath metadata pats <> takeExtension (show source)
+        pure $ Just $ renderSourcePath mappings rootPath metadata pats <> takeExtension (show source)
       Nothing -> pure Nothing
     Nothing -> pure Nothing
 
-renderSourcePatterns :: Vector TagMappingEntity -> FilePath -> F.Metadata -> NonEmpty SourcePathPattern -> FilePath
-renderSourcePatterns mappings basepath metadata pats =
+renderSourcePath :: Vector TagMappingEntity -> FilePath -> F.Metadata -> NonEmpty SourcePathPattern -> FilePath
+renderSourcePath mappings basepath metadata pats =
   basepath
     </> fromMaybe "" (foldMap (renderSourcePattern mappings metadata) pats)
 
@@ -328,11 +341,24 @@ extractTrack collectionRef' patterns s@Source {multiTrack = Just MultiTrackDesc 
           Nothing -> pure $ Left UnsupportedSourceKind
           Just basePath -> do
             mappings <- Repo.getAll
-            let dest = addExtension (renderSourcePatterns mappings basePath s.metadata patterns) (takeExtension filePath)
+            let dest = addExtension (renderSourcePath mappings basePath s.metadata patterns) (takeExtension filePath)
             runExceptT $ do
-              _ <- E.try (extractTrackTo filePath range dest) >>= mapE MultiTrackError
-              raw <- openMetadataFile dest >>= mapE MetadataTransformError
-              let vc = fromMaybe (F.metadataFactory @F.VorbisComments F.emptyTags) $ F.convert F.vorbisCommentsId s.metadata
+              mf <- openMetadataFile filePath >>= mapE MetadataTransformError
+              let cuefile = CueFileSource {
+                              idx,
+                              range,
+                              filePath,
+                              metadata = s.metadata,
+                              audioInfo = mf.audioInfo,
+                              fileId = s.kind,
+                              cueFilePath = filePath
+                            }
+              raw <- extractTrackTo cuefile dest >>= mapE MultiTrackError
+              let mappings' = mappings <&> \m -> Rel8.fromJSONBEncoded m.field_mappings
+              $(logDebug) $ "Mappings: " <> show mappings'
+              let vc = fromMaybe (F.metadataFactory @F.VorbisComments F.emptyTags) $ F.convert' F.vorbisCommentsId s.metadata mappings'
+              $(logDebug) $ "Original metadata: " <> show s.metadata
+              $(logDebug) $ "Converted metadata: " <> show vc
               let m = H.fromList [(F.vorbisCommentsId, vc)]
               let metadataFile = raw & #metadata .~ m
               mf <- writeMetadataFile metadataFile dest >>= mapE MetadataTransformError
@@ -350,6 +376,7 @@ data MetadataTransformation
   = SetMapping Text [Text]
   | RemoveMappings [Text]
   | Retain [Text]
+  deriving (Show)
 
 editMetadata :: MonadSourceTransform m => MetadataTransformation -> Source -> m (Either TransformationError Source)
 editMetadata (SetMapping mappingName vs) Source {metadata = m@Metadata {tags, lens = tag}, ..} =

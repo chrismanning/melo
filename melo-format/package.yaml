@@ -96,6 +96,7 @@ ghc-options:
   - -Wincomplete-uni-patterns
   - -Wredundant-constraints
   - -Wnoncanonical-monad-instances
+  - -Werror=incomplete-patterns
   - -fwrite-ide-info
   - -hiedir=../.hie
 

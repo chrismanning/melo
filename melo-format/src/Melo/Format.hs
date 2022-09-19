@@ -10,6 +10,7 @@ module Melo.Format
     module Melo.Format.Vorbis,
     module Melo.Format.WavPack,
     convert,
+    convert',
   )
 where
 
@@ -65,18 +66,24 @@ import Data.Vector ((!?))
 import Data.Functor ((<&>))
 
 convert :: MetadataId -> Metadata -> Maybe Metadata
-convert targetId Metadata{tags=(Tags tags), formatId} = mkMetadata targetId emptyTags <&> \new -> new { tags = Tags (V.mapMaybe remap tags) }
+convert targetId m@Metadata{formatId} | targetId == formatId = Just m
+convert targetId metadata = convert' targetId metadata mappings
+  where
+    mappings :: V.Vector TagMapping
+    mappings = V.fromList defaultMappings
+
+convert' :: MetadataId -> Metadata -> V.Vector TagMapping -> Maybe Metadata
+convert' targetId m@Metadata{formatId} _ | targetId == formatId = Just m
+convert' targetId Metadata{tags=(Tags tags), formatId} mappings = mkMetadata targetId emptyTags <&> \new -> new { tags = Tags (V.mapMaybe remap tags) }
   where
     remap :: (Text, Text) -> Maybe (Text, Text)
     remap (k, v) = do
       srcSelector <- selectorFor formatId
       targetSelector <- selectorFor targetId
-      let findFieldMapping (TagMapping tm) = listToMaybe $ NE.filter (\fm -> fromMaybe False (fieldMatches <$> (srcSelector fm) <*> Just k)) tm
-      mapping <- mappings !? 0
-      fm <- canonicalForm <$> (findFieldMapping mapping >>= targetSelector)
+      let findFieldMapping (TagMapping tm) = listToMaybe $ NE.filter (\fm -> fromMaybe False (fieldMatches <$> srcSelector fm <*> Just k)) tm
+      fieldMapping <- V.mapMaybe findFieldMapping mappings !? 0
+      fm <- canonicalForm <$> targetSelector fieldMapping
       Just (fm, v)
-    mappings :: V.Vector TagMapping
-    mappings = V.fromList defaultMappings
     selectorFor :: MetadataId -> Maybe FieldMappingSelector
     selectorFor mid | mid == vorbisCommentsId = Just vorbis
                     | mid == id3v24Id = Just id3v2_4

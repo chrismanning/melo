@@ -339,8 +339,8 @@ instance From MetadataImportSource NewSource where
 --toPgRangeBound (Bound a R.Exclusive) = PgB.exclusive a
 
 newtype SourceRef = SourceRef { unSourceRef :: UUID }
-  deriving (Show, Eq, Ord, Generic)
-  deriving newtype (DBType, DBEq, Hashable)
+  deriving (Generic)
+  deriving newtype (Show, Eq, Ord, DBType, DBEq, Hashable)
 
 instance GQLType SourceRef where
   type KIND SourceRef = SCALAR
