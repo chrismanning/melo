@@ -12,15 +12,17 @@ import Data.Map qualified as M
 import Data.Maybe
 import Data.Range
 import Data.Text qualified as T
-import Data.Time.LocalTime
+import Data.Time
 import Data.Vector (Vector, fromList)
 import Data.Vector qualified as V
 import GHC.Natural (naturalToInteger)
 import Melo.Common.Metadata
+import Melo.Format.Info
 import Melo.Format.Mapping qualified as Mapping
 import Melo.Format.Metadata
   ( Metadata (..),
     MetadataId (..),
+    MetadataFile (..),
     Tags (..),
     mappedTag,
   )
@@ -73,27 +75,34 @@ openCueFile cueFilePath = do
                       formatDesc = "CUE file",
                       lens = mappedTag Mapping.cue
                     }
-            pure
-              CueFileSource
-                { metadata,
-                  idx = fromIntegral trackNum,
-                  audioInfo = mf ^. #audioInfo,
-                  range = cueTimeRange (NE.head cueTrackIndices),
-                  fileId = mf ^. #fileId,
-                  filePath = mf ^. #filePath,
-                  cueFilePath
-                }
+            case audioLength mf.audioInfo of
+              Just totalFileLength ->
+                pure
+                  (CueFileSource
+                    { metadata,
+                      idx = fromIntegral trackNum,
+                      audioInfo = mf.audioInfo,
+                      range = cueTimeRange (NE.head cueTrackIndices),
+                      fileId = mf.fileId,
+                      filePath = mf.filePath,
+                      cueFilePath
+                    }, totalFileLength)
+              Nothing -> error "file has no length"
       pure $ fromList $ squashTimeRanges processedTracks
       where
         cueTimeRange (CueTime frames) = TimeRange (LowerBoundRange (Bound (framesToTime frames) Inclusive))
         framesToTime frames = CalendarDiffTime 0 (fromInteger (naturalToInteger frames) / 75.0)
-        squashTimeRanges :: [CueFileSource] -> [CueFileSource]
+        squashTimeRanges :: [(CueFileSource, NominalDiffTime)] -> [CueFileSource]
         squashTimeRanges [] = []
-        squashTimeRanges [a] = [a]
-        squashTimeRanges (a : b : rest) = combineTimeRanges a b : squashTimeRanges (b : rest)
+        squashTimeRanges [(a, aL)] = [a & #range %~ addUpperBound aL]
+        squashTimeRanges ((a, aL) : (b, bL) : rest) | aL == bL = combineTimeRanges a b : squashTimeRanges ((b, bL) : rest)
+        squashTimeRanges ((a, aL) : (b, bL) : rest) = (a & #range %~ addUpperBound aL) : squashTimeRanges ((b, bL) : rest)
         combineTimeRanges :: CueFileSource -> CueFileSource -> CueFileSource
         combineTimeRanges o@CueFileSource {range = a} CueFileSource {range = b} = o & #range .~ bp a b
         bp :: AudioRange -> AudioRange -> AudioRange
         bp (TimeRange (LowerBoundRange a)) (TimeRange (LowerBoundRange Bound {..})) =
           TimeRange $ SpanRange a (Bound boundValue Exclusive)
         bp a _ = a
+        addUpperBound :: NominalDiffTime -> AudioRange -> AudioRange
+        addUpperBound totalFileLength (TimeRange (LowerBoundRange a)) = TimeRange $ SpanRange a (Bound (calendarTimeTime totalFileLength) Exclusive)
+        addUpperBound _ a = a

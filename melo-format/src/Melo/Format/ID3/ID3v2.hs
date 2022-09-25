@@ -16,6 +16,7 @@ module Melo.Format.ID3.ID3v2
     toSyncSafe,
     changeVersion,
     getId3v2Size,
+    hSkip,
   )
 where
 
@@ -49,10 +50,9 @@ import Melo.Format.Internal.Metadata
 import Melo.Format.Internal.Tag
 import Melo.Format.Mapping
 import System.IO
-  ( SeekMode
-      ( AbsoluteSeek
-      ),
+  ( SeekMode(..),
     hSeek,
+    Handle,
   )
 
 id3v23Tag :: TagMapping -> TagLens
@@ -212,6 +212,15 @@ headerSize = 10
 
 id3v2Identifier :: IsString s => s
 id3v2Identifier = "ID3"
+
+hSkip :: Handle -> IO ()
+hSkip h = do
+  headerBuf <- BS.hGetSome h headerSize
+  hSeek h RelativeSeek (fromIntegral (negate (BS.length headerBuf)))
+  when (id3v2Identifier `BS.isPrefixOf` headerBuf) $ do
+    let header = runGet (get @Header) (L.fromStrict headerBuf)
+    let n = fromSyncSafe header.totalSize
+    hSeek h RelativeSeek n
 
 instance Binary Header where
   get = isolate headerSize $ do

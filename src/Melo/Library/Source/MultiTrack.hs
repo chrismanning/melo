@@ -6,9 +6,9 @@ import Control.Concurrent.Classy
 import Control.Exception.Safe
 import Control.Monad
 import Control.Monad.Base
-import Control.Monad.Trans.Identity
 import Control.Monad.Trans
 import Control.Monad.Trans.Control
+import Control.Monad.Trans.Identity
 import Control.Monad.Trans.Resource
 import Data.Conduit.Audio
 import Data.Conduit.Audio.Sndfile
@@ -27,8 +27,8 @@ import System.FilePath
 class Monad m => MultiTrack m where
   extractTrackTo :: CueFileSource -> FilePath -> m (Either MultiTrackError MetadataFile)
 
-data MultiTrackError =
-    NotMultiTrack
+data MultiTrackError
+  = NotMultiTrack
   | DecoderError String
   | MetadataError MetadataException
   deriving (Show)
@@ -82,10 +82,8 @@ instance (MetadataService m, MonadIO m) => MultiTrack (MultiTrackIOT m) where
       getStartTime (TimeRange (SpanRange lower _upper)) = Seconds $ toSeconds $ boundValue lower
       getStartTime (TimeRange (LowerBoundRange lower)) = Seconds $ toSeconds $ boundValue lower
       getStartTime (TimeRange _) = Seconds 0
-      getStartTime (SampleRange _range) = Frames 0
       getEndTime :: AudioRange -> Maybe Duration
       getEndTime (TimeRange (SpanRange lower upper)) = Just $ Seconds $ toSeconds (boundValue upper) - toSeconds (boundValue lower)
       getEndTime (TimeRange (LowerBoundRange _)) = Nothing
       getEndTime (TimeRange _) = Nothing
-      getEndTime (SampleRange _) = Nothing
       toSeconds = realToFrac . nominalDiffTimeToSeconds . ctTime

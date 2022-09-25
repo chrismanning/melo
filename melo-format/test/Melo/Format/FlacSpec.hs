@@ -38,7 +38,7 @@ spec = do
     it "parses STREAMINFO" $ do
       h <- openBinaryFile "test/Melo/silence-1s.flac" ReadMode
       Flac flac <- hReadFlac h
-      let (md5, _) = Hex.decode "ee67686246536453b5950b21810fde82"
+      let (Right md5) = Hex.decode "ee67686246536453b5950b21810fde82"
       streamInfo flac
         `shouldSatisfy` ( \case
                             StreamInfo
@@ -58,10 +58,10 @@ spec = do
       h <- openBinaryFile "test/Melo/silence-1s.flac" ReadMode
       flac <- hReadFlac h
       let i = info flac
-      sampleRate (i :: Info) `shouldBe` SampleRate 44100
-      channels (i :: Info) `shouldBe` Mono
-      bitsPerSample (i :: Info) `shouldBe` Just 16
-      totalSamples (i :: Info) `shouldBe` Just 44100
+      i.sampleRate `shouldBe` SampleRate 44100
+      i.channels `shouldBe` Mono
+      i.bitsPerSample `shouldBe` Just 16
+      i.totalSamples `shouldBe` Just 44100
     it "parses VORBIS COMMENT" $ do
       h <- openBinaryFile "test/Melo/silence-1s.flac" ReadMode
       Flac flac <- hReadFlac h

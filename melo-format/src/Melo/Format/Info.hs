@@ -5,7 +5,7 @@ module Melo.Format.Info
     Channels (..),
     ChannelMask (..),
     samplesPerSecond,
-    lengthMilliseconds,
+    audioLengthMilliseconds,
     audioLength,
   )
 where
@@ -24,8 +24,8 @@ audioLength i =
       samplesPerSec = fromIntegral (samplesPerSecond $ sampleRate i)
    in samples <&> (/ samplesPerSec) <&> secondsToNominalDiffTime
 
-lengthMilliseconds :: Info -> Maybe Double
-lengthMilliseconds i =
+audioLengthMilliseconds :: Info -> Maybe Double
+audioLengthMilliseconds i =
   let samples :: Maybe Double = fromIntegral <$> totalSamples i
       samplesPerSec = fromIntegral (samplesPerSecond $ sampleRate i)
    in samples <&> (/ samplesPerSec) <&> (* 1000)

@@ -12,6 +12,7 @@ module Melo.Format.Ape
     apeV1Id,
     apeV2Id,
     apeTag,
+    hSkip,
   )
 where
 
@@ -151,6 +152,14 @@ headerSize = 32
 
 preamble :: BS.ByteString
 preamble = "APETAGEX"
+
+hSkip :: Handle -> IO ()
+hSkip h = do
+  buf <- BS.hGet h (BS.length preamble)
+  hSeek h RelativeSeek (negate (fromIntegral (BS.length buf)))
+  when (buf == preamble) $ do
+    header <- runGet getHeader <$> L.hGet h headerSize
+    hSeek h RelativeSeek (fromIntegral header.numBytes)
 
 instance Binary APE where
   put a = do

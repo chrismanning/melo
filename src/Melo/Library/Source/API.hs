@@ -24,6 +24,7 @@ import Data.Sequence ((|>))
 import Data.Sequence qualified as S
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.Time.Clock
 import Data.Typeable
 import Data.UUID (fromText, toText)
 import Data.Vector (Vector)
@@ -117,7 +118,7 @@ data Source (m :: Type -> Type) = Source
     sourceUri :: Text,
     filePath :: Maybe Text,
     downloadUri :: Text,
-    length :: m Double,
+    length :: m (Maybe Double),
     coverImage :: m (Maybe Image),
     previewTransform :: TransformSource m
   }
@@ -142,11 +143,21 @@ enrichSourceEntity s = let filePath = parseURI (T.unpack s.source_uri) >>= uriTo
           sourceUri = s.source_uri,
           filePath = T.pack <$> filePath,
           downloadUri = "/source/" <> toText (Ty.unSourceRef s.id),
-          length = pure 100,
+          length = lift $ sourceLengthImpl s filePath,
           coverImage = lift $ coverImageImpl s,
           previewTransform = \args -> lift $ previewTransformSourceImpl s args.transformations
         }
   where
+    sourceLengthImpl :: Ty.SourceEntity -> Maybe FilePath -> m (Maybe Double)
+    sourceLengthImpl Ty.SourceTable {time_range=(Just intervalRange)} _ = pure $
+      realToFrac . (* 1000) . nominalDiffTimeToSeconds <$> Ty.rangeLength intervalRange
+    sourceLengthImpl _ (Just p) =
+      openMetadataFile p >>= \case
+        Left e -> do
+          $(logWarn) $ "failed to open file " <> p <> ": " <> E.displayException e
+          pure Nothing
+        Right mf -> pure $ F.audioLengthMilliseconds mf.audioInfo
+    sourceLengthImpl _ _ = pure Nothing
     coverImageImpl :: Ty.SourceEntity -> m (Maybe Image)
     coverImageImpl src = case parseURI $ T.unpack $ src ^. #source_uri of
       Just uri ->

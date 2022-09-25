@@ -178,6 +178,7 @@ data TransformationError
   | MultiTrackError MultiTrackError
   | SourceConversionError (TryFromException SourceEntity Source)
   | UnsupportedTransform String
+  | UnknownLength
   deriving (Show)
 
 instance Exception TransformationError
@@ -344,6 +345,7 @@ extractTrack collectionRef' patterns s@Source {multiTrack = Just MultiTrackDesc 
             let dest = addExtension (renderSourcePath mappings basePath s.metadata patterns) (takeExtension filePath)
             runExceptT $ do
               mf <- openMetadataFile filePath >>= mapE MetadataTransformError
+              totalFileLength <- except $ maybeToRight UnknownLength (F.audioLength mf.audioInfo)
               let cuefile = CueFileSource {
                               idx,
                               range,

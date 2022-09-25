@@ -3,27 +3,31 @@ module Melo.Format.MP3 where
 import Control.Applicative
 import Control.Exception.Safe
 import Control.Monad
-import qualified Control.Monad.Fail as F
+import Control.Monad.Fail qualified as F
 import Data.Binary
 import Data.Binary.Bits
-import qualified Data.Binary.Bits.Get as BG
-import qualified Data.Binary.Bits.Put as BP
+import Data.Binary.Bits.Get qualified as BG
+import Data.Binary.Bits.Put qualified as BP
+import Data.Binary.Get
 import Data.Binary.Put
 import Data.ByteString hiding ((!?))
-import qualified Data.ByteString.Lazy as L
+import Data.ByteString qualified as BS
+import Data.ByteString.Lazy qualified as L
+import Data.ByteString.Unsafe (unsafeHead)
 import Data.HashMap.Strict ((!))
-import qualified Data.HashMap.Strict as H
+import Data.HashMap.Strict qualified as H
 import Data.Hashable
 import Data.Maybe (catMaybes, fromMaybe, isJust)
-import qualified Data.Text as T (pack)
+import Data.Text qualified as T (pack)
 import Data.Vector ((!?))
-import qualified Data.Vector as V
+import Data.Vector qualified as V
 import GHC.Generics
 import Lens.Micro
 import Melo.Format.Ape (APEv1 (..), APEv2 (..))
+import Melo.Format.Ape qualified as Ape
 import Melo.Format.Error
-import qualified Melo.Format.ID3 as ID3
-import qualified Melo.Format.Internal.Info as I
+import Melo.Format.ID3 qualified as ID3
+import Melo.Format.Internal.Info qualified as I
 import Melo.Format.Internal.Locate
 import Melo.Format.Internal.Metadata
 import System.Directory
@@ -36,7 +40,8 @@ data MP3 = MP3
     id3v2_3 :: !(Maybe ID3.ID3v2_3),
     id3v2_4 :: !(Maybe ID3.ID3v2_4),
     apev1 :: !(Maybe APEv1),
-    apev2 :: !(Maybe APEv2)
+    apev2 :: !(Maybe APEv2),
+    samples :: !(Maybe Integer)
   }
   deriving (Show, Eq)
 
@@ -57,12 +62,16 @@ mp3Metadata :: MP3 -> H.HashMap MetadataId Metadata
 mp3Metadata MP3 {..} =
   H.fromList $
     catMaybes
-      [ (\m -> (m.formatId, m)) . extractMetadata <$> apev2,
-        (\m -> (m.formatId, m)) . extractMetadata <$> apev1,
-        (\m -> (m.formatId, m)) . extractMetadata <$> id3v2_4,
-        (\m -> (m.formatId, m)) . extractMetadata <$> id3v2_3,
-        (\m -> (m.formatId, m)) . extractMetadata <$> id3v1
+      [ asMetadata <$> apev2,
+        asMetadata <$> apev1,
+        asMetadata <$> id3v2_4,
+        asMetadata <$> id3v2_3,
+        asMetadata <$> id3v1
       ]
+  where
+    asMetadata :: MetadataFormat m => m -> (MetadataId, Metadata)
+    asMetadata = toPair . extractMetadata
+    toPair m = (m.formatId, m)
 
 readMp3File :: FilePath -> IO MetadataFile
 readMp3File p = do
@@ -86,7 +95,9 @@ hReadMp3 h = do
       apev1 <- hLocateGet' @APEv1 h
       id3v1 <- hLocateGet' @ID3.ID3v1 h
       hLocateGet' @FrameHeader h >>= \case
-        Just frameHeader ->
+        Just frameHeader -> do
+          hSeek h AbsoluteSeek 0
+          samples <- mp3Samples h
           pure
             MP3
               { frameHeader,
@@ -94,7 +105,8 @@ hReadMp3 h = do
                 id3v2_3,
                 id3v2_4,
                 apev2,
-                apev1
+                apev1,
+                samples = if samples > 0 then Just samples else Nothing
               }
         Nothing -> throwIO $ MetadataReadError "Unable to read MPEG frame header"
     else F.fail "Handle not seekable"
@@ -150,8 +162,7 @@ instance I.InfoReader MP3 where
           { sampleRate = I.SampleRate (fromIntegral sampleRate),
             channels = convertChannels channels,
             quality = Just $ T.pack $ show bitRate,
-            -- TODO total mp3 samples
-            totalSamples = Nothing,
+            totalSamples = mp3.samples,
             bitsPerSample = Nothing
           }
     where
@@ -160,6 +171,53 @@ instance I.InfoReader MP3 where
       convertChannels JointStereo = I.JointStereo
       convertChannels DualChannel = I.Stereo
       convertChannels Mono = I.Mono
+
+data FrameDuration
+  = MP3FrameSamples Integer
+  | XingHeaderSamples Integer
+
+mp3Samples :: Handle -> IO Integer
+mp3Samples h = loop h 0
+  where
+    loop h total =
+      nextFrameDuration h >>= \case
+        Just (MP3FrameSamples s) -> loop h (total + s)
+        Just (XingHeaderSamples s) -> pure s
+        Nothing -> pure total
+    nextFrameDuration h = do
+      skipZeroes h
+      Ape.hSkip h
+      skipZeroes h
+      ID3.hSkip h
+      skipZeroes h
+      buf <- hGetSome h 2
+      if BS.null buf
+        then pure Nothing
+        else
+          if frameSync == (runGet (BG.runBitGet $ getBits 11) (L.fromStrict buf))
+            then do
+              hSeek h RelativeSeek (negate (fromIntegral $ BS.length buf))
+              buf <- hGetSome h 6
+              case runGet (tryGetHeader) (L.fromStrict buf) of
+                Just header -> do
+                  let samples = samplesPerFrame header.mpegAudioVersion header.layer
+                  let padding = if header.padding then 1 else 0
+                  case header.bitRate of
+                    CBR rate -> do
+                      let bitRate = rate * 1000
+                      let frameLength = (samples `div` 8) * bitRate `div` header.sampleRate + padding
+                      hSeek h RelativeSeek (fromIntegral (frameLength - (BS.length buf)))
+                      pure $ Just (MP3FrameSamples (fromIntegral samples))
+                    VBR _rate ->
+                      -- TODO vbr samples
+                      pure Nothing
+                Nothing -> pure Nothing
+            else pure Nothing
+    skipZeroes h = do
+      buf <- hGet h 1
+      if unsafeHead buf == 0
+        then skipZeroes h
+        else hSeek h RelativeSeek (fromIntegral (negate (BS.length buf)))
 
 data FrameHeader = FrameHeader
   { mpegAudioVersion :: !MpegVersion,
@@ -326,12 +384,13 @@ data Channels = Stereo | JointStereo | DualChannel | Mono
 
 getChannels :: BG.BitGet Channels
 getChannels =
-  BG.getWord8 2 >>= pure <$> \case
-    0b00 -> Stereo
-    0b01 -> JointStereo
-    0b10 -> DualChannel
-    0b11 -> Mono
-    _ -> error "unreachable"
+  BG.getWord8 2
+    >>= pure <$> \case
+      0b00 -> Stereo
+      0b01 -> JointStereo
+      0b10 -> DualChannel
+      0b11 -> Mono
+      _ -> error "unreachable"
 
 putChannels :: Channels -> BP.BitPut ()
 putChannels Stereo = BP.putWord8 2 0b00
@@ -370,3 +429,9 @@ putSampleRate 8000 V2_5 = BP.putWord8 2 0b10
 putSampleRate sampleRate version =
   error $
     "invalid sample rate " <> show sampleRate <> " for MPEG " <> show version
+
+samplesPerFrame :: Integral a => MpegVersion -> Layer -> a
+samplesPerFrame _ Layer1 = 384
+samplesPerFrame _ Layer2 = 1152
+samplesPerFrame V1 Layer3 = 1152
+samplesPerFrame _ Layer3 = 576
