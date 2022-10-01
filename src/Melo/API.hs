@@ -68,12 +68,12 @@ gqlApiIO collectionWatchState pool rq = runStdoutLogging do
   !rs <-
     runFileSystemIO $
       runMetadataServiceIO $
-        runMultiTrackIO $
-          runSourceRepositoryPooledIO pool $
-            runTagMappingRepositoryPooledIO pool $
-              runFileSystemServiceIO pool $
-                runMusicBrainzServiceIO sess $
-                  runFileSystemWatchServiceIO pool collectionWatchState $
+        runSourceRepositoryPooledIO pool $
+          runTagMappingRepositoryPooledIO pool $
+            runFileSystemServiceIO pool $
+              runMusicBrainzServiceIO sess $
+                runFileSystemWatchServiceIO pool collectionWatchState $
+                  runMultiTrackIO $
                     runCollectionRepositoryPooledIO pool $
                       runCollectionServiceIO pool $
                         gqlApi rq

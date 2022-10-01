@@ -12,7 +12,12 @@ import Control.Monad.Reader
 import Control.Monad.Trans.Control
 import Data.ByteString.Char8 (ByteString, isPrefixOf, pack)
 import Data.HashMap.Strict as H
+import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty qualified as NE
+import Data.Maybe
 import Data.Pool
+import Data.Sequence qualified as Seq
+import Data.Sequence (Seq (..))
 import Data.Vector qualified as V
 import Hasql.Connection
 import Melo.Common.Logging
@@ -29,7 +34,7 @@ import System.FilePath
 class Monad m => FileSystemWatchService m where
   startWatching :: CollectionRef -> FilePath -> m ()
   stopWatching :: CollectionRef -> m ()
-  lockPathDuring :: FilePath -> m a -> m a
+  lockPathsDuring :: NonEmpty FilePath -> m a -> m a
 
 instance
   {-# OVERLAPPABLE #-}
@@ -42,17 +47,17 @@ instance
   where
   startWatching ref p = lift (startWatching ref p)
   stopWatching = lift . stopWatching
-  lockPathDuring p m = liftWith (\run -> lockPathDuring p (run m)) >>= restoreT . pure
+  lockPathsDuring p m = liftWith (\run -> lockPathsDuring p (run m)) >>= restoreT . pure
 
 data CollectionWatchState = CollectionWatchState
   { stoppers :: STM.TVar (H.HashMap CollectionRef FS.StopListening),
-    locks :: STM.TVar (V.Vector ByteString)
+    locks :: STM.TVar (Seq ByteString)
   }
 
 emptyWatchState :: IO CollectionWatchState
 emptyWatchState = do
   stoppers <- STM.atomically $ STM.newTVar H.empty
-  locks <- STM.atomically $ STM.newTVar V.empty
+  locks <- STM.atomically $ STM.newTVar Seq.empty
   pure CollectionWatchState {
     ..
   }
@@ -111,16 +116,23 @@ instance
     case H.lookup ref stoppers' of
       Just stop -> liftIO stop
       Nothing -> pure ()
-  lockPathDuring p m = do
+  lockPathsDuring ps m = do
     (_pool, watchState) <- ask
-    let bytes = pack p
+    let packedPaths = Seq.fromList $ NE.toList $ pack <$> ps
     bracket
-      (liftIO $ STM.atomically $ STM.modifyTVar' watchState.locks (addLock bytes))
-      (\_ -> liftIO $ STM.atomically $ STM.modifyTVar' watchState.locks (rmLock bytes))
+      (liftIO $ do
+        STM.atomically $ STM.modifyTVar' watchState.locks (lockPaths packedPaths)
+        $(logInfoIO) $ "Unwatching paths " <> show packedPaths
+      )
+      (\_ -> liftIO $ do
+        $(logInfoIO) $ "Re-watching paths " <> show packedPaths
+        STM.atomically $ STM.modifyTVar' watchState.locks (unlockPaths packedPaths)
+      )
       (const m)
     where
-      addLock = V.cons
-      rmLock p' = V.filter (/= p')
+      lockPaths = (Seq.><)
+      unlockPaths packedPaths =
+        Seq.filter (\lock -> isNothing $ Seq.elemIndexL lock packedPaths)
 
 handleEvent ::
   ( Logging m,
@@ -129,7 +141,7 @@ handleEvent ::
   ) =>
   Pool Connection ->
   CollectionRef ->
-  V.Vector ByteString ->
+  Seq ByteString ->
   FS.Event ->
   m ()
 handleEvent pool ref locks event = unless (isLocked (pack event.eventPath)) do
@@ -168,4 +180,4 @@ handleEvent pool ref locks event = unless (isLocked (pack event.eventPath)) do
     FS.Unknown p _ _ s ->
       $(logWarn) $ "unknown file system event on path " <> p <> ": " <> s
   where
-    isLocked p = V.any (\x -> isPrefixOf x p) locks
+    isLocked p = isJust $ Seq.findIndexL (\x -> isPrefixOf x p) locks

@@ -208,7 +208,8 @@ moveSourceWithPattern collectionRef pats src@Source {ref, source} =
   case uriToFilePath source of
     Just srcPath ->
       previewSourceMoveWithPattern (fromMaybe src.collectionRef collectionRef) pats src >>= \case
-        Just destPath -> lockPathDuring destPath $ do
+        Just destPath | destPath == srcPath -> pure $ Right src
+        Just destPath -> lockPathsDuring (srcPath :| [destPath]) do
           let SourceRef id = ref
           $(logInfo) $ "moving source " <> show id <> " from " <> srcPath <> " to " <> destPath
           r <- mapLeft from <$> movePath srcPath destPath
@@ -343,9 +344,8 @@ extractTrack collectionRef' patterns s@Source {multiTrack = Just MultiTrackDesc 
           Just basePath -> do
             mappings <- Repo.getAll
             let dest = addExtension (renderSourcePath mappings basePath s.metadata patterns) (takeExtension filePath)
-            runExceptT $ do
+            lockPathsDuring (dest :| []) $ runExceptT do
               mf <- openMetadataFile filePath >>= mapE MetadataTransformError
-              totalFileLength <- except $ maybeToRight UnknownLength (F.audioLength mf.audioInfo)
               let cuefile = CueFileSource {
                               idx,
                               range,

@@ -14,11 +14,13 @@ import Data.Conduit.Audio
 import Data.Conduit.Audio.Sndfile
 import Data.Either.Combinators
 import Data.Int
+import Data.List.NonEmpty (NonEmpty(..))
 import Data.Range
 import Data.Time
 import Melo.Common.Metadata
 import Melo.Format.Error
 import Melo.Format.Metadata (MetadataFile)
+import Melo.Library.Collection.FileSystem.WatchService
 import Melo.Library.Source.Types
 import Sound.File.Sndfile qualified as Sndfile
 import System.Directory qualified as Dir
@@ -65,9 +67,15 @@ newtype MultiTrackIOT m a = MultiTrackIOT
 runMultiTrackIO :: MultiTrackIOT m a -> m a
 runMultiTrackIO = runMultiTrackIOT
 
-instance (MetadataService m, MonadIO m) => MultiTrack (MultiTrackIOT m) where
-  extractTrackTo cuefile destPath = do
-    liftIO $ do
+instance
+  ( FileSystemWatchService m,
+    MetadataService m,
+    MonadIO m
+  ) =>
+  MultiTrack (MultiTrackIOT m)
+  where
+  extractTrackTo cuefile destPath = lockPathsDuring (takeDirectory destPath :| []) do
+    liftIO do
       Dir.createDirectoryIfMissing True (takeDirectory destPath)
       let start = getStartTime cuefile.range
       src <- sourceSndFrom @_ @Int16 start cuefile.filePath

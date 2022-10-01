@@ -137,8 +137,21 @@ doUpdate e ret = do
   $(logDebugIO) $ Rel8.showUpdate u
   let session = statement () $ Rel8.update u
   case connSrc of
-    Single conn' -> liftIO $ run session conn' >>= either throwIO pure
-    Pooled pool -> liftIO $ withResource pool $ \conn -> run session conn >>= either throwIO pure
+    Single conn' -> liftIO do
+      run session conn' >>= \case
+        Left e -> do
+          -- TODO add `Rel8.showUpdate u` as context with katip
+          $(logErrorIO) $ displayException e
+          throwIO e
+        Right r -> pure r
+    Pooled pool -> liftIO do
+      withResource pool $ \conn ->
+        run session conn >>= \case
+          Left e -> do
+            -- TODO add `Rel8.showUpdate u` as context with katip
+            $(logErrorIO) $ displayException e
+            throwIO e
+          Right r -> pure r
 
 runSelect ::
   (MonadIO m, Rel8.Serializable exprs (Rel8.FromExprs exprs)) =>
