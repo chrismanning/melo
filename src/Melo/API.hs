@@ -3,21 +3,24 @@
 module Melo.API where
 
 import Control.Concurrent.Classy
+import Control.Exception.Safe
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Control
 import Data.ByteString.Lazy.Char8
+import Data.Maybe
 import Data.Morpheus
 import Data.Morpheus.Types
 import Data.Pool
 import Data.Text qualified as T
 import Data.Text.Lazy qualified as LT
-import Data.Typeable
 import Data.UUID
 import GHC.Generics hiding (from)
 import Hasql.Connection
 import Melo.Common.FileSystem
 import Melo.Common.Logging
 import Melo.Common.Metadata
+import Melo.Common.Uri
+import Melo.Format.Metadata (EmbeddedPicture(..), MetadataFile(..), PictureType (..))
 import Melo.Library.API
 import Melo.Library.Collection.FileSystem.Service
 import Melo.Library.Collection.FileSystem.WatchService
@@ -27,7 +30,7 @@ import Melo.Library.Source.API qualified as API
 import Melo.Library.Source.MultiTrack
 import Melo.Library.Source.Repo
 import Melo.Library.Source.Service
-import Melo.Library.Source.Types (SourceRef (..))
+import Melo.Library.Source.Types (SourceRef (..), Source (..))
 import Melo.Lookup.MusicBrainz
 import Melo.Metadata.Mapping.Repo
 import Network.HTTP.Types.Status
@@ -128,11 +131,15 @@ api collectionWatchState pool = do
           Nothing -> do
             $(logWarnIO) $ "No cover image found for source " <> srcId
             status notFound404
-          Just path -> do
+          Just (ExternalImageFile path) -> do
             $(logInfoIO) $ "Found cover image " <> path <> " for source " <> show uuid
             file path
             let fileName' = LT.pack $ takeFileName path
             setHeader "Content-Disposition" ("attachment; filename=\"" <> fileName' <> "\"")
+          Just (EmbeddedImage pic) -> do
+            $(logInfoIO) $ "Found embedded cover image for source " <> show uuid
+            setHeader "Content-Type" (LT.fromStrict pic.mimeType)
+            raw (fromStrict pic.pictureData)
 
 getSourceFilePathIO :: (MonadIO m, MonadBaseControl IO m) => Pool Connection -> SourceRef -> m (Maybe FilePath)
 getSourceFilePathIO pool k = withResource pool $ \conn ->
@@ -142,17 +149,33 @@ getSourceFilePathIO pool k = withResource pool $ \conn ->
         runSourceRepositoryIO conn $
           getSourceFilePath k
 
-findCoverImageIO :: (MonadIO m, MonadBaseControl IO m) => Pool Connection -> SourceRef -> m (Maybe FilePath)
+data CoverImage = EmbeddedImage EmbeddedPicture | ExternalImageFile FilePath
+
+findCoverImageIO :: (MonadIO m, MonadBaseControl IO m) => Pool Connection -> SourceRef -> m (Maybe CoverImage)
 findCoverImageIO pool k = withResource pool $ \conn ->
   liftIO $
     runStdoutLogging $
       runFileSystemIO $
-        runSourceRepositoryIO conn $ do
-          getSourceFilePath k >>= \case
+        runSourceRepositoryIO conn $
+        runMetadataServiceIO do
+          getSource k >>= \case
             Nothing -> do
-              $(logWarn) $ "No local file found for source " <> show k
+              $(logWarn) $ "No source found for ref " <> show k
               pure Nothing
-            Just path -> do
-              $(logInfo) $ "Locating cover image for source " <> show k
-              let dir = takeDirectory path
-              fmap (\f -> dir <> (pathSeparator : f)) <$> API.findCoverImage dir
+            Just src -> case uriToFilePath src.source of
+              Nothing -> do
+                $(logWarn) $ "No local file found for source " <> show k
+                pure Nothing
+              Just path -> do
+                $(logInfo) $ "Locating cover image for source " <> show k <> " at path " <> show path
+                let dir = takeDirectory path
+                fmap (\f -> dir <> (pathSeparator : f)) <$> API.findCoverImage dir >>= \case
+                  Just imgPath -> pure $ Just $ ExternalImageFile imgPath
+                  Nothing -> do
+                    openMetadataFile path >>= \case
+                      Left e -> do
+                        $(logWarn) $ "Could not look for embedded image in file " <> show path <> ": " <> displayException e
+                        pure Nothing
+                      Right mf -> do
+                        let coverKey = fromMaybe FrontCover src.cover
+                        pure $ EmbeddedImage <$> lookup coverKey mf.pictures

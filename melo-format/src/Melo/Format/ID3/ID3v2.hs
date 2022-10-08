@@ -17,9 +17,12 @@ module Melo.Format.ID3.ID3v2
     changeVersion,
     getId3v2Size,
     hSkip,
+    Picture(..),
+    id3v2Pictures,
   )
 where
 
+import Control.Applicative
 import Control.Exception.Safe
 import Control.Monad
 import Control.Monad.Fail as F
@@ -29,8 +32,8 @@ import Data.Binary.Get
 import Data.Binary.Put
 import Data.Bits
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as L
+import Data.ByteString qualified as BS
+import Data.ByteString.Lazy qualified as L
 import Data.Coerce
 import Data.Foldable as F
 import Data.Functor
@@ -39,8 +42,8 @@ import Data.Maybe
 import Data.String (IsString)
 import Data.Text as T
 import Data.Text.Encoding
-import qualified Data.Vector as V
-import GHC.Generics
+import Data.Vector qualified as V
+import GHC.Generics hiding (from)
 import Lens.Micro
 import Melo.Format.Error
 import Melo.Format.Internal.BinaryUtil
@@ -50,10 +53,11 @@ import Melo.Format.Internal.Metadata
 import Melo.Format.Internal.Tag
 import Melo.Format.Mapping
 import System.IO
-  ( SeekMode(..),
+  ( Handle,
+    SeekMode (..),
     hSeek,
-    Handle,
   )
+import Witch
 
 id3v23Tag :: TagMapping -> TagLens
 id3v23Tag = mappedTag id3v2_3
@@ -234,15 +238,6 @@ instance Binary Header where
     put flags
     put totalSize
 
-newtype Footer = Footer Header
-
---instance Binary Footer where
---  get = do
---    expectGetEq (getByteString 3) "3DI" "Expected ID3v2 identifier"
---    footer <- Header <$> get <*> get <*> get
---    expect (isReadable (flags footer)) "Unrecognised ID3v2 flags found"
---    pure $ Footer footer
-
 data ID3v2Version = ID3v24 | ID3v23
   deriving (Eq)
 
@@ -301,6 +296,14 @@ newtype Frames (v :: ID3v2Version) = Frames (NonEmpty (Frame v))
 foldlFrames :: (b -> Frame v -> b) -> b -> Frames v -> b
 foldlFrames f z (Frames frms) = F.foldl' f z frms
 
+pictureFrames :: Frames v -> [Picture]
+pictureFrames (Frames frames) = catMaybes $ NE.toList $ frames <&> \frame -> case frame.frameContent of
+  PictureFrame _ picture -> Just picture
+  _ -> Nothing
+
+id3v2Pictures :: ID3v2 v -> [Picture]
+id3v2Pictures id3 = pictureFrames id3.frames
+
 type GetFrame v = (GetFrameHeader v, GetEncoding v, Version v)
 
 getFrames :: (GetFrame v, PutFrame v) => Header -> Get (Frames v)
@@ -344,13 +347,22 @@ instance (GetFrame v, PutFrame v) => Binary (Frame v) where
         frameId' <- getFrameId @v header enc
         let enc' = if "W" `T.isPrefixOf` frameId then NullTerminated else enc
         Frame frameId' frameFlags . mkFrameContent frameId' enc <$> getTextContent header frameId' enc'
-      else do
-        frameId' <- getFrameId @v header NullTerminated
-        frameContent <- OtherFrame <$> getByteString (fromIntegral frameSize)
-        pure $ Frame frameId' frameFlags frameContent
+      else
+        if isPicture header
+          then do
+            enc <- getEncoding @v
+            picture <- getPicture @v header enc
+            let frameId' = PreDefinedId frameId
+            pure $ Frame frameId' frameFlags (PictureFrame enc picture)
+          else do
+            frameId' <- getFrameId @v header NullTerminated
+            frameContent <- OtherFrame <$> getByteString (fromIntegral frameSize)
+            pure $ Frame frameId' frameFlags frameContent
     where
       isText :: FrameHeader v -> Bool
       isText FrameHeader {frameId} = T.isPrefixOf "T" frameId || T.isPrefixOf "W" frameId
+      isPicture :: FrameHeader v -> Bool
+      isPicture header = header.frameId == "APIC"
 
   put Frame {..} = do
     let fid = case frameId of
@@ -464,6 +476,7 @@ instance Binary FrameHeaderFlags where
 data FrameContent (v :: ID3v2Version)
   = TextFrame !TextEncoding ![Text]
   | UrlFrame !TextEncoding ![Text]
+  | PictureFrame !TextEncoding !Picture
   | OtherFrame !ByteString
   deriving (Show, Eq)
 
@@ -480,6 +493,7 @@ mkFrameContent fid enc t = case fid of
 putFrameContent :: forall v. PutFrame v => FrameId -> FrameContent v -> Put
 putFrameContent f (TextFrame enc content) = putTextContent @v f enc content
 putFrameContent f (UrlFrame enc content) = putTextContent @v f enc content
+putFrameContent _ (PictureFrame enc picture) = putPicture @v enc picture
 putFrameContent _ (OtherFrame content) = putByteString content
 
 extractFrameContent :: Frame v -> Maybe (FrameId, [Text])
@@ -501,6 +515,7 @@ createFrameContent frameId val =
 changeContentVersion :: FrameContent v1 -> FrameContent v2
 changeContentVersion (TextFrame enc content) = TextFrame enc content
 changeContentVersion (UrlFrame enc content) = UrlFrame enc content
+changeContentVersion (PictureFrame enc picture) = PictureFrame enc picture
 changeContentVersion (OtherFrame content) = OtherFrame content
 
 getTextContent :: forall (v :: ID3v2Version). FrameHeader v -> FrameId -> TextEncoding -> Get [Text]
@@ -517,8 +532,8 @@ splitFields :: ByteString -> ByteString -> [ByteString]
 splitFields term fields
   | BS.null fields = []
   | otherwise =
-    h :
-    if BS.null t then [] else splitFields term (BS.drop (BS.length term) t)
+      h
+        : if BS.null t then [] else splitFields term (BS.drop (BS.length term) t)
   where
     (h, t) = BS.breakSubstring term (fromMaybe fields $ BS.stripSuffix term fields)
 
@@ -593,7 +608,8 @@ instance PutEncoding 'ID3v23 where
     UCS2 -> putWord8 1
     x ->
       impureThrow $
-        MetadataWriteError $ "Unsupported ID3v2.3 encoding flag " <> T.pack (show x)
+        MetadataWriteError $
+          "Unsupported ID3v2.3 encoding flag " <> T.pack (show x)
 
 instance PutEncoding 'ID3v24 where
   putEncoding = \case
@@ -603,7 +619,47 @@ instance PutEncoding 'ID3v24 where
     UTF8 -> putWord8 3
     x ->
       impureThrow $
-        MetadataWriteError $ "Unsupported ID3v2.4 encoding flag " <> T.pack (show x)
+        MetadataWriteError $
+          "Unsupported ID3v2.4 encoding flag " <> T.pack (show x)
+
+data Picture = Picture
+  { pictureType :: !Word8,
+    mimeType :: !Text,
+    description :: !Text,
+    pictureData :: !ByteString
+  }
+  deriving (Show, Eq)
+
+instance From Picture EmbeddedPicture where
+  from Picture {..} = EmbeddedPicture {
+    mimeType,
+    pictureData
+  }
+
+getPicture :: forall (v :: ID3v2Version). FrameHeader v -> TextEncoding -> Get Picture
+getPicture header enc = do
+  mimeType <- getNullTerminatedAscii
+  pictureType <- mfilter (<= 20) getWord8 <|> fail "Invalid picture type"
+  let sz = fromIntegral header.frameSize - 1 - T.length header.frameId
+  buf <- getByteString sz
+  let term = terminator enc
+  let (description, pictureData) = BS.breakSubstring term buf
+  description' <- decodeID3Text enc description
+  pure $
+    Picture
+      { pictureType,
+        mimeType,
+        description = description',
+        pictureData = BS.drop (BS.length term) pictureData
+      }
+
+putPicture :: forall (v :: ID3v2Version). PutEncoding v => TextEncoding -> Picture -> Put
+putPicture enc picture = do
+  putEncoding @v enc
+  putByteString (encodeLatin1 picture.mimeType)
+  putWord8 picture.pictureType
+  putByteString $ encodeID3Text enc picture.description
+  putByteString picture.pictureData
 
 newtype SyncSafe = SyncSafe
   { syncSafe :: ByteString

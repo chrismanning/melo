@@ -13,7 +13,6 @@ import Melo.Format.MP3
 import Melo.Format.Mapping as M
 import Melo.Format.Metadata
 import System.Directory
-import System.FilePath
 import System.IO
 import Test.Hspec
 
@@ -32,7 +31,7 @@ spec =
               FrameHeader
                 { mpegAudioVersion = V1,
                   layer = Layer3,
-                  bitRate = CBR 64,
+                  bitRate = FrameBitRate 64,
                   sampleRate = 44100,
                   padding = False,
                   private = False,
@@ -48,7 +47,7 @@ spec =
             id3v2_4 = Nothing,
             apev1 = Nothing,
             apev2 = Nothing,
-            samples = (Just 0)
+            samples = Just 47232
           }
     it "reads mp3 file" $ do
       MetadataFile {..} <- readMp3File "test/Melo/silence-1s.mp3"
@@ -58,9 +57,9 @@ spec =
         `shouldBe` I.Info
           { sampleRate = I.SampleRate 44100,
             channels = I.Mono,
-            totalSamples = Nothing,
+            totalSamples = Just 47232,
             bitsPerSample = Nothing,
-            quality = Just "CBR 64"
+            quality = Just "64 kbps"
           }
     it "writes mp3 file" $ do
       let origFile = "test/Melo/silence-1s.mp3"
@@ -122,9 +121,9 @@ spec =
         `shouldBe` I.Info
           { sampleRate = I.SampleRate 32000,
             channels = I.Mono,
-            totalSamples = Nothing,
+            totalSamples = Just 2304,
             bitsPerSample = Nothing,
-            quality = Just "CBR 64"
+            quality = Just "64 kbps"
           }
     it "reads mp3 file with id3v2.3" $ do
       MetadataFile {..} <- readMp3File "test/Melo/silence-1s-id3v23.mp3"
@@ -152,9 +151,9 @@ spec =
         `shouldBe` I.Info
           { sampleRate = I.SampleRate 44100,
             channels = I.Mono,
-            totalSamples = Nothing,
+            totalSamples = Just 47232,
             bitsPerSample = Nothing,
-            quality = Just "CBR 64"
+            quality = Just "64 kbps"
           }
     it "reads mp3 file with id3v2.4" $ do
       MetadataFile {..} <- readMp3File "test/Melo/silence-1s-id3v24.mp3"
@@ -182,9 +181,9 @@ spec =
         `shouldBe` I.Info
           { sampleRate = I.SampleRate 44100,
             channels = I.Mono,
-            totalSamples = Nothing,
+            totalSamples = Just 47232,
             bitsPerSample = Nothing,
-            quality = Just "CBR 64"
+            quality = Just "64 kbps"
           }
     it "reads mp3 file with id3v2.3 and extra padding" $ do
       MetadataFile {..} <- readMp3File "test/Melo/silence-1s-id3v23-extra-padding.mp3"
@@ -212,9 +211,9 @@ spec =
         `shouldBe` I.Info
           { sampleRate = I.SampleRate 44100,
             channels = I.Mono,
-            totalSamples = Nothing,
+            totalSamples = Just 47232,
             bitsPerSample = Nothing,
-            quality = Just "CBR 64"
+            quality = Just "64 kbps"
           }
 
     it "reads mp3 file with id3v2.4 and extra padding" $ do
@@ -243,21 +242,7 @@ spec =
         `shouldBe` I.Info
           { sampleRate = I.SampleRate 44100,
             channels = I.Mono,
-            totalSamples = Nothing,
+            totalSamples = Just 47232,
             bitsPerSample = Nothing,
-            quality = Just "CBR 64"
-          }
-
-    it "reads mp3 file with samples" $ do
---      MetadataFile {..} <- readMp3File "/home/chris/Music/1997 - Into the Void We Travelled/01 - Herd.mp3"
-      MetadataFile {..} <- readMp3File "/home/chris/Music/1999 - Bleed/01 - Bleed.mp3"
-      fileId `shouldBe` MetadataFileId "MP3"
---      metadata `shouldBe` H.empty
-      audioInfo
-        `shouldBe` I.Info
-          { sampleRate = I.SampleRate 44100,
-            channels = I.Mono,
-            totalSamples = Just 100,
-            bitsPerSample = Nothing,
-            quality = Just "CBR 64"
+            quality = Just "64 kbps"
           }

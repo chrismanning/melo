@@ -59,7 +59,8 @@ readWavPackFile p = do
       { metadata = wavPackMetadata wv,
         audioInfo = info wv,
         fileId = wavPackFileKind,
-        filePath = p
+        filePath = p,
+        pictures = []
       }
 
 wavPackMetadata :: WavPack -> H.HashMap MetadataId Metadata

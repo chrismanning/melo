@@ -48,6 +48,7 @@ import Rel8
     DBType (..),
     Expr,
     JSONBEncoded (..),
+    ReadShow(..),
     Rel8able,
     Result,
     TypeInformation (..),
@@ -55,6 +56,7 @@ import Rel8
     nullaryFunction,
   )
 import System.IO.Unsafe
+import Text.Read
 import Witch
 
 data SourceTable f = SourceTable
@@ -66,20 +68,37 @@ data SourceTable f = SourceTable
     idx :: Column f Int16,
     time_range :: Column f (Maybe IntervalRange),
     scanned :: Column f LocalTime,
-    collection_id :: Column f UUID
+    collection_id :: Column f UUID,
+    cover :: Column f (Maybe PictureTypeWrapper)
   }
   deriving (Generic, Rel8able)
 
 type SourceEntity = SourceTable Result
 
-deriving newtype instance Show (JSONBEncoded SourceMetadata)
-
 deriving instance Show SourceEntity
+
+deriving newtype instance Show (JSONBEncoded SourceMetadata)
 
 instance Entity SourceEntity where
   type NewEntity SourceEntity = NewSource
   type PrimaryKey SourceEntity = SourceRef
   primaryKey e = e.id
+
+newtype PictureTypeWrapper = PictureTypeWrapper PictureType
+  deriving (Generic, Show, Eq)
+  deriving DBType via ReadShow PictureType
+
+instance GQLType PictureTypeWrapper where
+  type KIND PictureTypeWrapper = SCALAR
+
+instance EncodeScalar PictureTypeWrapper where
+  encodeScalar (PictureTypeWrapper pictureType) =
+    M.String $ T.pack $ show pictureType
+
+instance DecodeScalar PictureTypeWrapper where
+  decodeScalar (M.String s) =
+    mapLeft T.pack $ PictureTypeWrapper <$> readEither (T.unpack s)
+  decodeScalar _ = Left "PictureType must be a String"
 
 newtype IntervalRange = IntervalRange (Range CalendarDiffTime)
   deriving (Show, Eq)
@@ -166,7 +185,8 @@ instance From NewSource (SourceTable Expr) where
         idx = lit $ fromMaybe (-1 :: Int16) s.idx,
         time_range = lit $ from <$> s.range,
         scanned = lit $ unsafeDupablePerformIO getCurrentLocalTime,
-        collection_id = lit $ coerce s.collection
+        collection_id = lit $ coerce s.collection,
+        cover = lit $ coerce s.cover
       }
 
 instance From NewSource SourceEntity where
@@ -180,7 +200,8 @@ instance From NewSource SourceEntity where
         idx = fromMaybe (-1 :: Int16) s.idx,
         time_range = from <$> s.range,
         scanned = unsafeDupablePerformIO getCurrentLocalTime,
-        collection_id = coerce s.collection
+        collection_id = coerce s.collection,
+        cover = coerce s.cover
       }
 
 getCurrentLocalTime :: IO LocalTime
@@ -228,7 +249,8 @@ data CueFileSource = CueFileSource
     range :: AudioRange,
     fileId :: MetadataFileId,
     filePath :: FilePath,
-    cueFilePath :: FilePath
+    cueFilePath :: FilePath,
+    pictures :: [(PictureType, EmbeddedPicture)]
   }
   deriving (Eq, Show, Generic)
 
@@ -239,7 +261,8 @@ data MetadataImportSource = MetadataImportSource
     metadataFileId :: MetadataFileId,
     idx :: Maybe Int16,
     range :: Maybe AudioRange,
-    collection :: CollectionRef
+    collection :: CollectionRef,
+    cover :: Maybe PictureType
   }
   deriving (Show, Generic)
 
@@ -247,6 +270,7 @@ instance TryFrom NewImportSource MetadataImportSource where
   tryFrom s = maybeToRight (TryFromException s Nothing) $ do
     metadata <- chooseMetadata (getAllMetadata s)
     src <- parseURI (show $ getSourceUri s)
+    let pictures = getPictures s
     pure
       MetadataImportSource
         { audioInfo = getInfo s,
@@ -255,13 +279,16 @@ instance TryFrom NewImportSource MetadataImportSource where
           metadataFileId = getMetadataFileId s,
           idx = getIdx s,
           range = getRange s,
-          collection = getCollectionRef s
+          collection = getCollectionRef s,
+          cover = fmap (const FrontCover) $ lookup FrontCover pictures
         }
     where
       getIdx (CueFileImportSource _ CueFileSource {idx}) = Just idx
       getIdx _ = Nothing
       getRange (CueFileImportSource _ CueFileSource {range}) = Just range
       getRange (FileSource _ mf) = TimeRange . R.ubi . calendarTimeTime <$> audioLength mf.audioInfo
+      getPictures (CueFileImportSource _ cue) = cue.pictures
+      getPictures (FileSource _ mf) = mf.pictures
 
 getSourceUri :: NewImportSource -> URI
 getSourceUri (FileSource _ f) = fileUri f.filePath
@@ -304,7 +331,8 @@ data NewSource = NewSource
     source :: Text,
     idx :: Maybe Int16,
     range :: Maybe AudioRange,
-    collection :: CollectionRef
+    collection :: CollectionRef,
+    cover :: Maybe PictureType
   }
   deriving (Show, Eq, Generic)
 
@@ -326,7 +354,8 @@ instance From MetadataImportSource NewSource where
         source = T.pack $ show $ ms.src,
         idx = ms.idx,
         range = ms.range,
-        collection = ms.collection
+        collection = ms.collection,
+        cover = ms.cover
       }
 
 newtype SourceRef = SourceRef {unSourceRef :: UUID}
@@ -354,7 +383,8 @@ data Source = Source
     source :: URI,
     kind :: MetadataFileId,
     multiTrack :: Maybe MultiTrackDesc,
-    collectionRef :: CollectionRef
+    collectionRef :: CollectionRef,
+    cover :: Maybe PictureType
   }
   deriving (Generic, Show, Eq)
 
@@ -375,6 +405,7 @@ instance TryFrom SourceEntity Source where
           source = uri,
           kind = MetadataFileId s.kind,
           collectionRef = CollectionRef s.collection_id,
+          cover = coerce s.cover,
           metadata
         }
 
@@ -407,7 +438,8 @@ instance From Source SourceEntity where
         idx = fromMaybe (-1) (multiTrack ^? _Just . #idx),
         time_range = from <$> multiTrack ^? _Just . #range,
         scanned = unsafeDupablePerformIO getCurrentLocalTime,
-        collection_id = coerce collectionRef
+        collection_id = coerce collectionRef,
+        cover = coerce cover
       }
 
 type UpdateSource = SourceEntity

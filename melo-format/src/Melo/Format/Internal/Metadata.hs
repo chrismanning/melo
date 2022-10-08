@@ -3,6 +3,7 @@
 
 module Melo.Format.Internal.Metadata where
 
+import Data.ByteString
 import Data.Generics.Labels ()
 import Data.HashMap.Strict
 import Data.Hashable
@@ -29,7 +30,8 @@ data MetadataFile = MetadataFile
   { metadata :: !(HashMap MetadataId Metadata),
     audioInfo :: !Info,
     fileId :: !MetadataFileId,
-    filePath :: !FilePath
+    filePath :: !FilePath,
+    pictures :: ![(PictureType, EmbeddedPicture)]
   }
   deriving (Generic, Eq, Show)
 
@@ -48,7 +50,8 @@ data Metadata = Metadata
 
 instance Show Metadata where
   showsPrec d Metadata {..} =
-    showString "Metadata {formatId = " . showsPrec d formatId
+    showString "Metadata {formatId = "
+      . showsPrec d formatId
       . showString ", formatDesc = "
       . showsPrec d formatDesc
       . showString ", tags = "
@@ -86,11 +89,42 @@ data MetadataFormatDesc = MetadataFormat
 
 instance Hashable MetadataFormatDesc
 
+data PictureType
+  = Other
+  | Icon32
+  | IconOther
+  | FrontCover
+  | BackCover
+  | Leaflet
+  | Media
+  | LeadArtist
+  | Artist
+  | Conductor
+  | Band
+  | Composer
+  | Lyricist
+  | RecordingLocation
+  | DuringRecording
+  | DuringPerformance
+  | ScreenCapture
+  | BrightColouredFish
+  | Illustration
+  | ArtistLogo
+  | PublisherLogo
+  deriving (Generic, Show, Eq, Enum, Read)
+
+data EmbeddedPicture = EmbeddedPicture
+  { mimeType :: Text,
+    pictureData :: ByteString
+  }
+  deriving (Generic, Show, Eq)
+
 extractMetadata :: forall a. MetadataFormat a => a -> Metadata
-extractMetadata a = let fmt = metadataFormat @a in
-  Metadata
-    { formatId = fmt.formatId,
-      formatDesc = fmt.formatDesc,
-      tags = readTags a,
-      lens = metadataLens @a
-    }
+extractMetadata a =
+  let fmt = metadataFormat @a
+   in Metadata
+        { formatId = fmt.formatId,
+          formatDesc = fmt.formatDesc,
+          tags = readTags a,
+          lens = metadataLens @a
+        }

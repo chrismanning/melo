@@ -8,6 +8,8 @@ module Melo.Format.Metadata
     MetadataId (..),
     MetadataFileFactory (..),
     MetadataFileId (..),
+    EmbeddedPicture (..),
+    PictureType (..),
     openMetadataFile,
     openMetadataFileByExt,
     mkMetadata,

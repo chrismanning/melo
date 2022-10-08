@@ -15,39 +15,41 @@ module Melo.Format.Flac
     removeID3,
     flacFileId,
     flac,
+    Picture,
+    numColors,
   )
 where
 
 import Control.Applicative
 import Control.Exception.Safe
 import Control.Monad
-import qualified Control.Monad.Fail as Fail
+import Control.Monad.Fail qualified as Fail
 import Data.Binary
 import Data.Binary.Bits.Get ()
-import qualified Data.Binary.Bits.Get as BG
+import Data.Binary.Bits.Get qualified as BG
 import Data.Binary.Bits.Put ()
-import qualified Data.Binary.Bits.Put as BP
+import Data.Binary.Bits.Put qualified as BP
 import Data.Binary.Get
 import Data.Binary.Put
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as L
+import Data.ByteString qualified as BS
+import Data.ByteString.Lazy qualified as L
 import Data.Foldable
 import Data.Generics.Labels ()
-import qualified Data.HashMap.Strict as H
+import Data.HashMap.Strict qualified as H
 import Data.Maybe
 import Data.Monoid
 import Data.String (IsString)
 import Data.Text (Text)
-import qualified Data.Text as T
+import Data.Text qualified as T
 import Data.Text.Encoding
 import Data.Vector (Vector)
-import qualified Data.Vector as V
-import GHC.Generics
+import Data.Vector qualified as V
+import GHC.Generics hiding (from)
 import GHC.Records
 import Lens.Micro
 import Melo.Format.Error
-import Melo.Format.ID3.ID3v2 as ID3v2
+import Melo.Format.ID3.ID3v2 as ID3v2 hiding (Picture)
 import Melo.Format.Internal.Binary
 import Melo.Format.Internal.BinaryUtil
 import Melo.Format.Internal.Info
@@ -58,6 +60,7 @@ import Melo.Format.Vorbis
 import System.Directory
 import System.FilePath
 import System.IO
+import Witch
 
 readFlacOrFail :: FilePath -> IO (Either (ByteOffset, String) Flac)
 readFlacOrFail p = fmap MkFlac <$> bdecodeFileOrFail p
@@ -67,6 +70,11 @@ data Flac
   | MkFlacWithID3v2_3 !ID3v2_3 !FlacMetadata
   | MkFlacWithID3v2_4 !ID3v2_4 !FlacMetadata
   deriving (Show)
+
+flacMetadata :: Flac -> FlacMetadata
+flacMetadata (Flac m) = m
+flacMetadata (FlacWithID3v2_3 _ m) = m
+flacMetadata (FlacWithID3v2_4 _ m) = m
 
 pattern Flac :: FlacMetadata -> Flac
 pattern Flac flac = MkFlac flac
@@ -92,6 +100,12 @@ flac =
       writeMetadataFile = writeFlacFile
     }
 
+flacPictures :: Flac -> [(PictureType, EmbeddedPicture)]
+flacPictures flac =
+  fmap
+    (\p -> (toEnum $ fromIntegral p.pictureType, from p))
+    (flacMetadataPictures (flacMetadata flac))
+
 readFlacFile :: FilePath -> IO MetadataFile
 readFlacFile p = do
   f <- withBinaryFile p ReadMode hReadFlac
@@ -100,7 +114,8 @@ readFlacFile p = do
       { metadata = collectFlacMetadata f,
         audioInfo = info f,
         fileId = flacFileId,
-        filePath = p
+        filePath = p,
+        pictures = flacPictures f
       }
 
 writeFlacFile :: MetadataFile -> FilePath -> IO ()
@@ -138,30 +153,31 @@ replaceMetadata (Flac flacMetadata) Metadata {formatId, tags} = case formatId of
   fid | fid == id3v24Id -> MkFlacWithID3v2_4 (newId3v2 tags) flacMetadata
   fid
     | fid == vorbisCommentsId ->
-      MkFlac (replaceVorbisCommentBlock flacMetadata tags)
+        MkFlac (replaceVorbisCommentBlock flacMetadata tags)
   _otherwise -> impureThrow $ IncompatibleFormat flacFileId formatId
 replaceMetadata (FlacWithID3v2_3 id3v23 flacMetadata) Metadata {formatId, tags} = case formatId of
   fid | fid == id3v23Id -> MkFlacWithID3v2_3 (replaceWithTags id3v23 tags) flacMetadata
   fid | fid == id3v24Id -> MkFlacWithID3v2_4 (replaceWithTags (changeVersion id3v23) tags) flacMetadata
   fid
     | fid == vorbisCommentsId ->
-      MkFlacWithID3v2_3 id3v23 (replaceVorbisCommentBlock flacMetadata tags)
+        MkFlacWithID3v2_3 id3v23 (replaceVorbisCommentBlock flacMetadata tags)
   _otherwise -> impureThrow $ IncompatibleFormat flacFileId formatId
 replaceMetadata (FlacWithID3v2_4 id3v24 flacMetadata) Metadata {formatId, tags} = case formatId of
   fid | fid == id3v23Id -> MkFlacWithID3v2_3 (replaceWithTags (changeVersion id3v24) tags) flacMetadata
   fid | fid == id3v24Id -> MkFlacWithID3v2_4 (replaceWithTags id3v24 tags) flacMetadata
   fid
     | fid == vorbisCommentsId ->
-      MkFlacWithID3v2_4 id3v24 (replaceVorbisCommentBlock flacMetadata tags)
+        MkFlacWithID3v2_4 id3v24 (replaceVorbisCommentBlock flacMetadata tags)
   _otherwise -> impureThrow $ IncompatibleFormat flacFileId formatId
 
 replaceVorbisCommentBlock :: FlacMetadata -> Tags -> FlacMetadata
 replaceVorbisCommentBlock flacMetadata tags =
-  flacMetadata & #metadataBlocks . mapped %~ \case
-    VorbisCommentBlock isLast vcs ->
-      VorbisCommentBlock isLast $
-        replaceUserComments vcs (toUserComments tags)
-    block -> block
+  flacMetadata
+    & #metadataBlocks . mapped %~ \case
+      VorbisCommentBlock isLast vcs ->
+        VorbisCommentBlock isLast $
+          replaceUserComments vcs (toUserComments tags)
+      block -> block
 
 flacSize :: Flac -> Integer
 flacSize (Flac m) = flacMetadataSize m
@@ -170,7 +186,9 @@ flacSize (FlacWithID3v2_4 id3v24 m) = metadataSize id3v24 + flacMetadataSize m
 
 flacMetadataSize :: FlacMetadata -> Integer
 flacMetadataSize m =
-  fromIntegral (BS.length marker) + blockHeaderSize + streamInfoSize
+  fromIntegral (BS.length marker)
+    + blockHeaderSize
+    + streamInfoSize
     + getSum (foldMap (Sum . metadataBlockSize) (metadataBlocks m))
 
 hReadFlac :: Handle -> IO Flac
@@ -299,6 +317,14 @@ vorbisComment (FlacMetadata _ blocks) = findVcs $ V.toList blocks
     findVcs (m : ms) = case m of
       VorbisCommentBlock _ vcs -> Just vcs
       _otherBlock -> findVcs ms
+
+flacMetadataPictures :: FlacMetadata -> [Picture]
+flacMetadataPictures (FlacMetadata _ blocks) = findPictures (V.toList blocks)
+  where
+    findPictures [] = []
+    findPictures (b : bs) = case b of
+      PictureBlock _ picture -> picture : findPictures bs
+      _otherBlock -> findPictures bs
 
 instance Binary FlacMetadata where
   get = do
@@ -489,6 +515,12 @@ data Picture = Picture
 
 numColors :: Picture -> Maybe Word32
 numColors = numColours
+
+instance From Picture EmbeddedPicture where
+  from Picture {..} = EmbeddedPicture {
+    mimeType,
+    pictureData
+  }
 
 instance Binary Picture where
   get = do

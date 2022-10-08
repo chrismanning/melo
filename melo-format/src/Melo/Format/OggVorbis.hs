@@ -54,7 +54,8 @@ readOggVorbisFile p = do
       { audioInfo = info ogg,
         fileId = oggVorbisFileId,
         metadata = oggVorbisMetadata ogg,
-        filePath = p
+        filePath = p,
+        pictures = []
       }
 
 oggVorbisMetadata :: OggVorbis -> H.HashMap MetadataId Metadata

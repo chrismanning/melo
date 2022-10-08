@@ -85,6 +85,7 @@ openCueFile cueFilePath = do
                       range = cueTimeRange (NE.head cueTrackIndices),
                       fileId = mf.fileId,
                       filePath = mf.filePath,
+                      pictures = mf.pictures,
                       cueFilePath
                     }, totalFileLength)
               Nothing -> error "file has no length"

@@ -13,15 +13,16 @@ import Data.Binary.Put
 import Data.ByteString hiding ((!?))
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as L
-import Data.ByteString.Unsafe (unsafeHead)
+import Data.Coerce
 import Data.HashMap.Strict ((!))
 import Data.HashMap.Strict qualified as H
 import Data.Hashable
 import Data.Maybe (catMaybes, fromMaybe, isJust)
+import Data.Text (Text)
 import Data.Text qualified as T (pack)
 import Data.Vector ((!?))
 import Data.Vector qualified as V
-import GHC.Generics
+import GHC.Generics hiding (from)
 import Lens.Micro
 import Melo.Format.Ape (APEv1 (..), APEv2 (..))
 import Melo.Format.Ape qualified as Ape
@@ -33,6 +34,7 @@ import Melo.Format.Internal.Metadata
 import System.Directory
 import System.FilePath
 import System.IO
+import Witch
 
 data MP3 = MP3
   { frameHeader :: !FrameHeader,
@@ -73,6 +75,14 @@ mp3Metadata MP3 {..} =
     asMetadata = toPair . extractMetadata
     toPair m = (m.formatId, m)
 
+mp3Pictures :: MP3 -> [(PictureType, EmbeddedPicture)]
+mp3Pictures MP3 {id3v2_3, id3v2_4} =
+  let pictures = (ID3.id3v2Pictures <$> id3v2_4) `cc` (ID3.id3v2Pictures <$> id3v2_3) in
+  pictures <&> \p -> (toEnum $ fromIntegral p.pictureType, from p)
+    where
+      cc :: Maybe [a] -> Maybe [a] -> [a]
+      cc a b = fromMaybe [] a <> fromMaybe [] b
+
 readMp3File :: FilePath -> IO MetadataFile
 readMp3File p = do
   mp3 <- withBinaryFile p ReadMode hReadMp3
@@ -81,7 +91,8 @@ readMp3File p = do
       { metadata = mp3Metadata mp3,
         audioInfo = I.info mp3,
         fileId = mp3FileKind,
-        filePath = p
+        filePath = p,
+        pictures = mp3Pictures mp3
       }
 
 hReadMp3 :: Handle -> IO MP3
@@ -161,7 +172,7 @@ instance I.InfoReader MP3 where
      in I.Info
           { sampleRate = I.SampleRate (fromIntegral sampleRate),
             channels = convertChannels channels,
-            quality = Just $ T.pack $ show bitRate,
+            quality = Just ((T.pack $ show @Int $ coerce bitRate) <> " kbps"),
             totalSamples = mp3.samples,
             bitsPerSample = Nothing
           }
@@ -202,27 +213,22 @@ mp3Samples h = loop h 0
                 Just header -> do
                   let samples = samplesPerFrame header.mpegAudioVersion header.layer
                   let padding = if header.padding then 1 else 0
-                  case header.bitRate of
-                    CBR rate -> do
-                      let bitRate = rate * 1000
-                      let frameLength = (samples `div` 8) * bitRate `div` header.sampleRate + padding
-                      hSeek h RelativeSeek (fromIntegral (frameLength - (BS.length buf)))
-                      pure $ Just (MP3FrameSamples (fromIntegral samples))
-                    VBR _rate ->
-                      -- TODO vbr samples
-                      pure Nothing
+                  let bitRate = (coerce header.bitRate) * 1000
+                  let frameLength = (samples `div` 8) * bitRate `div` header.sampleRate + padding
+                  hSeek h RelativeSeek (fromIntegral (frameLength - (BS.length buf)))
+                  pure $ Just (MP3FrameSamples (fromIntegral samples))
                 Nothing -> pure Nothing
             else pure Nothing
     skipZeroes h = do
-      buf <- hGet h 1
-      if unsafeHead buf == 0
+      buf <- hGetSome h 1
+      if buf BS.!? 0 == Just 0
         then skipZeroes h
         else hSeek h RelativeSeek (fromIntegral (negate (BS.length buf)))
 
 data FrameHeader = FrameHeader
   { mpegAudioVersion :: !MpegVersion,
     layer :: !Layer,
-    bitRate :: !BitRate,
+    bitRate :: !FrameBitRate,
     sampleRate :: !Int,
     padding :: !Bool,
     private :: !Bool,
@@ -314,10 +320,10 @@ getMpegVersion :: BG.BitGet MpegVersion
 getMpegVersion =
   BG.getWord8 2 >>= \case
     0b00 -> pure V2_5
-    0b01 -> F.fail "reserved MPEG version ID"
+    0b01 -> fail "reserved MPEG version ID"
     0b10 -> pure V2
     0b11 -> pure V1
-    _ -> error "unreachable"
+    x -> fail $ "unknown MPEG version ID " <> show x
 
 putMpegVersion :: MpegVersion -> BP.BitPut ()
 putMpegVersion V1 = BP.putWord8 2 0b11
@@ -332,18 +338,18 @@ instance Hashable Layer
 getLayer :: BG.BitGet Layer
 getLayer =
   BG.getWord8 2 >>= \case
-    0b00 -> F.fail "reserved MPEG version ID"
+    0b00 -> fail "reserved MPEG version ID"
     0b01 -> pure Layer3
     0b10 -> pure Layer2
     0b11 -> pure Layer1
-    _ -> error "unreachable"
+    x -> fail $ "unknown MPEG layer ID " <> show x
 
 putLayer :: Layer -> BP.BitPut ()
 putLayer Layer1 = BP.putWord8 2 0b11
 putLayer Layer2 = BP.putWord8 2 0b10
 putLayer Layer3 = BP.putWord8 2 0b01
 
-data BitRate = VBR !Int | CBR !Int
+newtype FrameBitRate = FrameBitRate Int
   deriving (Show, Eq)
 
 bitRateIndex :: H.HashMap (MpegVersion, Layer) (V.Vector Int)
@@ -360,23 +366,20 @@ bitRateIndex =
       ((V2_5, Layer3), V.fromList [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160])
     ]
 
-getBitRate :: MpegVersion -> Layer -> BG.BitGet BitRate
+getBitRate :: MpegVersion -> Layer -> BG.BitGet FrameBitRate
 getBitRate version layer = do
   idx <- fromIntegral <$> BG.getWord8 4
   case H.lookup (version, layer) bitRateIndex >>= (!? idx) of
-    Nothing -> error "invalid bitrate index"
-    -- TODO VBR
-    Just bitrate -> pure (CBR bitrate)
+    Nothing -> fail $ "invalid bitrate index " <> show idx
+    Just bitrate -> pure (FrameBitRate bitrate)
 
-putBitRate :: BitRate -> MpegVersion -> Layer -> BP.BitPut ()
--- TODO VBR
-putBitRate (VBR _) _ _ = error "VBR support not implemented"
-putBitRate (CBR bitRate) version layer = do
+putBitRate :: FrameBitRate -> MpegVersion -> Layer -> BP.BitPut ()
+putBitRate (FrameBitRate bitRate) version layer = do
   let bitRates = bitRateIndex ! (version, layer)
   case V.elemIndex bitRate bitRates of
     Just idx -> BP.putWord8 4 (fromIntegral idx)
     Nothing ->
-      error $
+      fail $
         "invalid bit rate " <> show bitRate
 
 data Channels = Stereo | JointStereo | DualChannel | Mono
@@ -385,12 +388,12 @@ data Channels = Stereo | JointStereo | DualChannel | Mono
 getChannels :: BG.BitGet Channels
 getChannels =
   BG.getWord8 2
-    >>= pure <$> \case
-      0b00 -> Stereo
-      0b01 -> JointStereo
-      0b10 -> DualChannel
-      0b11 -> Mono
-      _ -> error "unreachable"
+    >>= \case
+      0b00 -> pure Stereo
+      0b01 -> pure JointStereo
+      0b10 -> pure DualChannel
+      0b11 -> pure Mono
+      x -> fail $ "unknown channel index " <> show x
 
 putChannels :: Channels -> BP.BitPut ()
 putChannels Stereo = BP.putWord8 2 0b00
@@ -413,8 +416,8 @@ getSampleRate version =
       V1 -> pure 32000
       V2 -> pure 16000
       V2_5 -> pure 8000
-    0b11 -> error "reserved sample rate"
-    _ -> error "unreachable"
+    0b11 -> fail "reserved sample rate"
+    x -> fail $ "unknown sample rate index " <> show x
 
 putSampleRate :: Int -> MpegVersion -> BP.BitPut ()
 putSampleRate 44100 V1 = BP.putWord8 2 0b00
@@ -427,7 +430,7 @@ putSampleRate 11025 V2_5 = BP.putWord8 2 0b00
 putSampleRate 12000 V2_5 = BP.putWord8 2 0b01
 putSampleRate 8000 V2_5 = BP.putWord8 2 0b10
 putSampleRate sampleRate version =
-  error $
+  fail $
     "invalid sample rate " <> show sampleRate <> " for MPEG " <> show version
 
 samplesPerFrame :: Integral a => MpegVersion -> Layer -> a

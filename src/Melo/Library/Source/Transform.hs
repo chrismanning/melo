@@ -164,7 +164,8 @@ instance MonadSourceTransform m => MultiTrack (TransformPreviewT m) where
       filePath = dest,
       metadata = H.empty,
       audioInfo = cuefile.audioInfo,
-      fileId = cuefile.fileId
+      fileId = cuefile.fileId,
+      pictures = []
     }
 
 data TransformationError
@@ -353,7 +354,8 @@ extractTrack collectionRef' patterns s@Source {multiTrack = Just MultiTrackDesc 
                               metadata = s.metadata,
                               audioInfo = mf.audioInfo,
                               fileId = s.kind,
-                              cueFilePath = filePath
+                              cueFilePath = filePath,
+                              pictures = mf.pictures
                             }
               raw <- extractTrackTo cuefile dest >>= mapE MultiTrackError
               let mappings' = mappings <&> \m -> Rel8.fromJSONBEncoded m.field_mappings

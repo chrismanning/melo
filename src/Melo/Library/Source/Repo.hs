@@ -144,7 +144,8 @@ sourceSchema =
             idx = "idx",
             time_range = "time_range",
             scanned = "scanned",
-            collection_id = "collection_id"
+            collection_id = "collection_id",
+            cover = "cover"
           }
     }
 

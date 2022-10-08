@@ -207,7 +207,8 @@ CREATE TABLE melo.source (
     idx bigint NOT NULL,
     time_range melo.intervalrange,
     scanned timestamp without time zone,
-    collection_id uuid NOT NULL
+    collection_id uuid NOT NULL,
+    cover text
 );
 
 
@@ -796,4 +797,5 @@ INSERT INTO melo.schema_migrations (version) VALUES
     ('20211209202153'),
     ('20220712201124'),
     ('20220802210615'),
-    ('20220920222818');
+    ('20220920222818'),
+    ('20221004171024');

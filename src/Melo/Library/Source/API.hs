@@ -5,7 +5,7 @@ module Melo.Library.Source.API where
 
 import Control.Applicative hiding (many)
 import Control.Concurrent.Classy
-import Control.Exception.Safe (toException)
+import Control.Exception.Safe (displayException, toException)
 import Control.Exception.Safe qualified as E
 import Control.Lens hiding (from, lens, (|>))
 import Control.Monad
@@ -39,7 +39,7 @@ import Melo.Database.Repo
 import Melo.Format ()
 import Melo.Format qualified as F
 import Melo.Format.Mapping qualified as M
-import Melo.Format.Metadata ()
+import Melo.Format.Metadata (PictureType(..))
 import Melo.GraphQL.Where
 import Melo.Library.Collection.Types qualified as Ty
 import Melo.Library.Source.Repo
@@ -144,7 +144,7 @@ enrichSourceEntity s = let filePath = parseURI (T.unpack s.source_uri) >>= uriTo
           filePath = T.pack <$> filePath,
           downloadUri = "/source/" <> toText (Ty.unSourceRef s.id),
           length = lift $ sourceLengthImpl s filePath,
-          coverImage = lift $ coverImageImpl s,
+          coverImage = lift $ coverImageImpl s filePath,
           previewTransform = \args -> lift $ previewTransformSourceImpl s args.transformations
         }
   where
@@ -158,21 +158,19 @@ enrichSourceEntity s = let filePath = parseURI (T.unpack s.source_uri) >>= uriTo
           pure Nothing
         Right mf -> pure $ F.audioLengthMilliseconds mf.audioInfo
     sourceLengthImpl _ _ = pure Nothing
-    coverImageImpl :: Ty.SourceEntity -> m (Maybe Image)
-    coverImageImpl src = case parseURI $ T.unpack $ src ^. #source_uri of
-      Just uri ->
-        case uriToFilePath uri of
-          Just path ->
-            findCoverImage (takeDirectory path) >>= \case
-              Nothing -> pure Nothing
-              Just imgPath ->
-                pure $
-                  Just
-                    Image
-                      { fileName = T.pack $ takeFileName imgPath,
-                        downloadUri = "/source/" <> toText (Ty.unSourceRef src.id) <> "/image"
-                      }
-          Nothing -> pure Nothing
+    coverImageImpl :: Ty.SourceEntity -> Maybe FilePath -> m (Maybe Image)
+    coverImageImpl src = let downloadUri = "/source/" <> toText (Ty.unSourceRef src.id) <> "/image" in \case
+      Just path ->
+        findCoverImage (takeDirectory path) >>= \case
+          Just imgPath ->
+            pure $
+              Just
+                ExternalImage
+                  { fileName = T.pack $ takeFileName imgPath,
+                    downloadUri
+                  }
+          Nothing ->
+            pure (EmbeddedImage <$> coerce src.cover <*> pure downloadUri)
       Nothing -> pure Nothing
 
 newtype CollectionSourcesArgs = CollectionSourcesArgs
@@ -350,8 +348,11 @@ data SourceGroup m = SourceGroup
 
 instance Typeable m => GQLType (SourceGroup m)
 
-data Image = Image
+data Image = ExternalImage
   { fileName :: Text,
+    downloadUri :: Text
+  } | EmbeddedImage {
+    imageType :: Ty.PictureTypeWrapper,
     downloadUri :: Text
   }
   deriving (Generic)
@@ -391,28 +392,27 @@ groupSources = V.fromList . toList . fmap trSrcGrp . foldl' acc S.empty
         { groupTags = g.groupTags,
           groupParentUri = g.groupParentUri,
           sources = toList $ S.unstableSortBy (compareNaturalBy srcTrackNum) g.sources,
-          coverImage = lift $ coverImageImpl g
+          coverImage = coverImageImpl g
         }
     srcTrackNum :: Source n -> Text
     srcTrackNum src = fromMaybe src.sourceUri src.metadata.mappedTags.trackNumber
-    coverImageImpl :: SourceGroup' (Resolver o e m) -> m (Maybe Image)
-    coverImageImpl g = case parseURI $ T.unpack $ g.groupParentUri of
-      Just uri ->
-        case uriToFilePath uri of
-          Just dir ->
-            findCoverImage dir >>= \case
+    coverImageImpl :: SourceGroup' (Resolver o e m) -> Resolver o e m (Maybe Image)
+    coverImageImpl g = case parseURI (T.unpack g.groupParentUri) >>= uriToFilePath of
+      Just dir ->
+        lift (findCoverImage dir) >>= \case
+          Nothing -> case S.lookup 0 g.sources of
+            Just src -> src.coverImage
+            _ -> pure Nothing
+          Just imgPath ->
+            case S.lookup 0 g.sources of
               Nothing -> pure Nothing
-              Just imgPath ->
-                case S.lookup 0 $ g.sources of
-                  Nothing -> pure Nothing
-                  Just src ->
-                    pure $
-                      Just
-                        Image
-                          { fileName = T.pack $ takeFileName imgPath,
-                            downloadUri = "/source/" <> toText (Ty.unSourceRef (src.id)) <> "/image"
-                          }
-          Nothing -> pure Nothing
+              Just src ->
+                pure $
+                  Just
+                    ExternalImage
+                      { fileName = T.pack $ takeFileName imgPath,
+                        downloadUri = "/source/" <> toText (Ty.unSourceRef (src.id)) <> "/image"
+                      }
       Nothing -> pure Nothing
 
 findCoverImage :: FileSystem m => FilePath -> m (Maybe FilePath)
@@ -425,12 +425,13 @@ findCoverImage p = do
         find (\e -> P.takeBaseName e =~= "cover" && isImage e) entries
           <|> find (\e -> P.takeBaseName e =~= "front" && isImage e) entries
           <|> find (\e -> P.takeBaseName e =~= "folder" && isImage e) entries
-    else pure Nothing
+    else
+      pure Nothing
   where
     a =~= b = fmap toLower a == fmap toLower b
     isImage :: FilePath -> Bool
     isImage p =
-      let ext = takeExtension p
+      let ext = toLower <$> takeExtension p
        in ext == ".jpeg"
             || ext == ".jpg"
             || ext == ".png"

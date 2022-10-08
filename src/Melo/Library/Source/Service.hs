@@ -8,11 +8,11 @@ import qualified Data.Text as T
 import Data.Time
 import Data.Vector (Vector, empty, singleton)
 import Melo.Common.Logging
+import Melo.Common.Uri
 import Melo.Common.Vector
 import qualified Melo.Database.Repo as Repo
 import qualified Melo.Library.Source.Repo as Repo
 import Melo.Library.Source.Types
-import Network.URI
 import System.Directory
 import Witch
 
@@ -56,9 +56,4 @@ modificationTime (CueFileImportSource _ f) = utcToLocalTime utc <$> getModificat
 getSourceFilePath :: (Repo.SourceRepository m) => SourceRef -> m (Maybe FilePath)
 getSourceFilePath key = do
   s <- firstOf traverse <$> Repo.getByKey (singleton key)
-  case s >>= parseURI . T.unpack . (^. #source_uri) of
-    Nothing -> pure Nothing
-    Just uri ->
-      case uriScheme uri of
-        "file:" -> pure (Just $ unEscapeString $ uriPath uri)
-        _otherScheme -> pure Nothing
+  pure (s >>= parseURI . T.unpack . (^. #source_uri) >>= uriToFilePath)
