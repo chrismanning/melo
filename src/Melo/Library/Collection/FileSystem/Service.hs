@@ -15,7 +15,6 @@ import Hasql.Connection
 import Melo.Common.FileSystem
 import Melo.Common.Logging
 import Melo.Common.Metadata
-import Melo.Common.NaturalSort
 import Melo.Database.Transaction
 import qualified Melo.Format.Error as F
 import Melo.Library.Collection.Types
@@ -28,6 +27,7 @@ import Melo.Library.Source.Types
 import Melo.Library.Source.Cue
 import System.FilePath
 import Data.Functor ((<&>))
+import GHC.Exts (groupWith)
 
 class Monad m => FileSystemService m where
   scanPath :: CollectionRef -> FilePath -> m (Vector Source)
@@ -102,9 +102,12 @@ instance
         if isDir
           then do
             $(logDebug) $ p <> " is directory; recursing..."
-            dirs <- filterM doesDirectoryExist =<< listDirectoryAbs p
-            mapM_ (fork . void . scanPath ref) dirs
-            files <- filterM doesFileExist =<< listDirectoryAbs p
+            entries <- listDirectory p
+            dirs <- filterM (doesDirectoryExist . (p </>)) entries
+            let initialChunks = groupWith head dirs
+            fork $
+              forM_ initialChunks (mapM_ (fork . void . scanPath ref . (p </>)))
+            files <- filterM doesFileExist ((p </>) <$> entries)
             let cuefiles = filter ((== ".cue") . takeExtension) files
             case cuefiles of
               [] -> lift $ withTransaction pool runSourceRepositoryIO (importTransaction files)
@@ -147,8 +150,3 @@ instance
       handleScanException e = do
         $(logError) $ "error during scan: " <> show e
         pure empty
-
-listDirectoryAbs :: FileSystem m => FilePath -> m [FilePath]
-listDirectoryAbs p = do
-  es <- listDirectory p
-  pure $ (p </>) <$> sortNaturalBy (\x -> x) es

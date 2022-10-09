@@ -5,7 +5,7 @@ module Melo.Library.Source.API where
 
 import Control.Applicative hiding (many)
 import Control.Concurrent.Classy
-import Control.Exception.Safe (displayException, toException)
+import Control.Exception.Safe (toException)
 import Control.Exception.Safe qualified as E
 import Control.Lens hiding (from, lens, (|>))
 import Control.Monad

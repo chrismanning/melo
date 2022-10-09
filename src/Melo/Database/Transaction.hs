@@ -30,5 +30,5 @@ withTransaction pool runner t =
     cleanUp conn localPool =
       liftIO $ do
         run rollback conn >>= either throwIO pure
-        $(logWarnShowIO) ("transaction rolled back" :: String)
+        $(logWarnIO) ("transaction rolled back" :: String)
         putResource localPool conn
