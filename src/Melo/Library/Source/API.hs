@@ -5,10 +5,13 @@ module Melo.Library.Source.API where
 
 import Control.Applicative hiding (many)
 import Control.Concurrent.Classy
-import Control.Exception.Safe (toException)
+import Control.Exception.Safe (throwIO, toException)
 import Control.Exception.Safe qualified as E
 import Control.Lens hiding (from, lens, (|>))
 import Control.Monad
+import Control.Monad.IO.Class
+import Data.Binary.Builder (fromLazyByteString)
+import Data.ByteString.Lazy qualified as L (ByteString)
 import Data.Char (toLower)
 import Data.Coerce
 import Data.Default
@@ -17,9 +20,12 @@ import Data.Foldable
 import Data.Generics.Labels ()
 import Data.HashMap.Strict qualified as H
 import Data.Kind
+import Data.List (sortBy)
 import Data.Maybe
+import Data.Morpheus
 import Data.Morpheus.Kind
 import Data.Morpheus.Types
+import Data.Pool
 import Data.Sequence ((|>))
 import Data.Sequence qualified as S
 import Data.Text (Text)
@@ -30,23 +36,37 @@ import Data.UUID (fromText, toText)
 import Data.Vector (Vector)
 import Data.Vector qualified as V
 import GHC.Generics hiding (from)
+import Hasql.Connection
+import Hasql.CursorTransactionIO.TransactionIO
+import Hasql.Session
+import Hasql.TransactionIO.Sessions
 import Melo.Common.FileSystem
 import Melo.Common.Logging
 import Melo.Common.Metadata
 import Melo.Common.NaturalSort
 import Melo.Common.Uri
 import Melo.Database.Repo
+import Melo.Database.Repo.IO (selectStream)
 import Melo.Format ()
 import Melo.Format qualified as F
 import Melo.Format.Mapping qualified as M
-import Melo.Format.Metadata (PictureType(..))
 import Melo.GraphQL.Where
+import Melo.Library.Collection.FileSystem.Service
+import Melo.Library.Collection.FileSystem.WatchService
+import Melo.Library.Collection.Repo (runCollectionRepositoryPooledIO)
+import Melo.Library.Collection.Service
 import Melo.Library.Collection.Types qualified as Ty
+import Melo.Library.Source.MultiTrack
 import Melo.Library.Source.Repo
 import Melo.Library.Source.Transform qualified as Tr
 import Melo.Library.Source.Types qualified as Ty
-import Melo.Lookup.MusicBrainz qualified as MB
-import Rel8 (JSONBEncoded (..))
+import Melo.Lookup.MusicBrainz as MB
+import Melo.Metadata.Mapping.Repo
+import Network.Wai (StreamingBody)
+import Network.Wreq.Session (newAPISession)
+import Rel8 (JSONBEncoded (..), (==.))
+import Rel8 qualified
+import Streaming.Prelude qualified as S
 import System.FilePath as P
 import Witch
 
@@ -134,8 +154,9 @@ enrichSourceEntity ::
   ) =>
   Ty.SourceEntity ->
   Source (Resolver o e m)
-enrichSourceEntity s = let filePath = parseURI (T.unpack s.source_uri) >>= uriToFilePath in
-    Source
+enrichSourceEntity s =
+  let filePath = parseURI (T.unpack s.source_uri) >>= uriToFilePath
+   in Source
         { id = s.id,
           format = s.kind,
           metadata = from s,
@@ -149,8 +170,9 @@ enrichSourceEntity s = let filePath = parseURI (T.unpack s.source_uri) >>= uriTo
         }
   where
     sourceLengthImpl :: Ty.SourceEntity -> Maybe FilePath -> m (Maybe Double)
-    sourceLengthImpl Ty.SourceTable {time_range=(Just intervalRange)} _ = pure $
-      realToFrac . (* 1000) . nominalDiffTimeToSeconds <$> Ty.rangeLength intervalRange
+    sourceLengthImpl Ty.SourceTable {time_range = (Just intervalRange)} _ =
+      pure $
+        realToFrac . (* 1000) . nominalDiffTimeToSeconds <$> Ty.rangeLength intervalRange
     sourceLengthImpl _ (Just p) =
       openMetadataFile p >>= \case
         Left e -> do
@@ -159,19 +181,19 @@ enrichSourceEntity s = let filePath = parseURI (T.unpack s.source_uri) >>= uriTo
         Right mf -> pure $ F.audioLengthMilliseconds mf.audioInfo
     sourceLengthImpl _ _ = pure Nothing
     coverImageImpl :: Ty.SourceEntity -> Maybe FilePath -> m (Maybe Image)
-    coverImageImpl src = let downloadUri = "/source/" <> toText (Ty.unSourceRef src.id) <> "/image" in \case
-      Just path ->
-        findCoverImage (takeDirectory path) >>= \case
-          Just imgPath ->
-            pure $
-              Just
-                ExternalImage
-                  { fileName = T.pack $ takeFileName imgPath,
-                    downloadUri
-                  }
-          Nothing ->
-            pure (EmbeddedImage <$> coerce src.cover <*> pure downloadUri)
-      Nothing -> pure Nothing
+    coverImageImpl _ Nothing = pure Nothing
+    coverImageImpl src (Just path) =
+      let downloadUri = "/source/" <> toText (Ty.unSourceRef src.id) <> "/image"
+       in findCoverImage (takeDirectory path) >>= \case
+            Just imgPath ->
+              pure $
+                Just
+                  ExternalImage
+                    { fileName = T.pack $ takeFileName imgPath,
+                      downloadUri
+                    }
+            Nothing ->
+              pure (EmbeddedImage <$> coerce src.cover <*> pure downloadUri)
 
 newtype CollectionSourcesArgs = CollectionSourcesArgs
   { where' :: Maybe SourceWhere
@@ -348,13 +370,15 @@ data SourceGroup m = SourceGroup
 
 instance Typeable m => GQLType (SourceGroup m)
 
-data Image = ExternalImage
-  { fileName :: Text,
-    downloadUri :: Text
-  } | EmbeddedImage {
-    imageType :: Ty.PictureTypeWrapper,
-    downloadUri :: Text
-  }
+data Image
+  = ExternalImage
+      { fileName :: Text,
+        downloadUri :: Text
+      }
+  | EmbeddedImage
+      { imageType :: Ty.PictureTypeWrapper,
+        downloadUri :: Text
+      }
   deriving (Generic)
 
 instance GQLType Image
@@ -368,6 +392,170 @@ data SourceContent
   deriving (Generic)
 
 instance GQLType SourceContent
+
+data SourceGroupStream m = SourceGroupStream
+  { sourceGroup :: SourceGroup m
+  }
+  deriving (Generic)
+
+instance Typeable m => GQLType (SourceGroupStream m)
+
+data SourceGroupStreamArgs = SourceGroupStreamArgs
+  { collectionId :: Ty.CollectionRef
+  }
+  deriving (Generic)
+
+instance GQLType SourceGroupStreamArgs
+
+streamSourceGroups :: CollectionWatchState -> Pool Connection -> Ty.CollectionRef -> L.ByteString -> StreamingBody
+streamSourceGroups collectionWatchState pool (Ty.CollectionRef collectionId) rq sendChunk flush =
+  withResource pool (streamSession >=> either throwIO pure)
+  where
+    mkRoot :: SourceGroup (Resolver QUERY () m) -> RootResolver m () SourceGroupStream Undefined Undefined
+    mkRoot sourceGroup =
+      defaultRootResolver
+        { queryResolver =
+            SourceGroupStream
+              { sourceGroup
+              }
+        }
+    query = do
+      srcs <- orderByUri $ Rel8.each sourceSchema
+      Rel8.where_ (srcs.collection_id ==. Rel8.lit collectionId)
+      pure srcs
+    streamSession :: Connection -> IO (Either QueryError ())
+    streamSession =
+      run $
+        transactionIO ReadCommitted ReadOnly NotDeferrable $
+          cursorTransactionIO $
+            processStream (selectStream query)
+    processStream :: MonadIO m => S.Stream (S.Of Ty.SourceEntity) m () -> m ()
+    processStream s =
+      s
+        & S.map (enrichSourceEntityIO collectionWatchState pool)
+        & S.groupBy sameGroup
+        & S.mapped S.toList
+        & S.map toSourceGroup
+        & S.mapM (\srcGrp -> liftIO $ interpreter (mkRoot srcGrp) rq)
+        & S.mapM_ sendFlush
+    sendFlush :: MonadIO m => L.ByteString -> m ()
+    sendFlush = (liftIO . (const flush)) <=< liftIO . sendChunk . fromLazyByteString
+
+toSourceGroup :: forall m o e. (MonadIO m, WithOperation o) => [Source (Resolver o e m)] -> SourceGroup (Resolver o e m)
+toSourceGroup sources =
+  SourceGroup
+    { groupParentUri,
+      coverImage,
+      groupTags = groupMappedTags src.metadata.mappedTags,
+      sources = sortBy (compareNaturalBy srcTrackNum) sources
+    }
+  where
+    src = head sources
+    groupParentUri = getParentUri src.sourceUri
+    srcTrackNum :: Source n -> T.Text
+    srcTrackNum src = fromMaybe src.sourceUri src.metadata.mappedTags.trackNumber
+    coverImage :: Resolver o e m (Maybe Image)
+    coverImage = case parseURI (T.unpack groupParentUri) >>= uriToFilePath of
+      Just dir ->
+        lift (runFileSystemIO $ findCoverImage dir) >>= \case
+          Nothing -> src.coverImage
+          Just imgPath ->
+            pure $
+              Just
+                ExternalImage
+                  { fileName = T.pack $ takeFileName imgPath,
+                    downloadUri = "/source/" <> toText (coerce (src.id)) <> "/image"
+                  }
+      Nothing -> pure Nothing
+
+enrichSourceEntityIO ::
+  CollectionWatchState ->
+  Pool Connection ->
+  Ty.SourceEntity ->
+  Source (Resolver QUERY () IO)
+enrichSourceEntityIO collectionWatchState pool s =
+  let filePath = parseURI (T.unpack s.source_uri) >>= uriToFilePath
+   in Source
+        { id = s.id,
+          format = s.kind,
+          metadata = from s,
+          sourceName = fromMaybe s.source_uri $ T.pack . takeFileName <$> filePath,
+          sourceUri = s.source_uri,
+          filePath = T.pack <$> filePath,
+          downloadUri = "/source/" <> toText (coerce s.id),
+          length = lift $ sourceLengthImpl s filePath,
+          coverImage = lift $ coverImageImpl s filePath,
+          previewTransform = \args ->
+            lift $
+              previewTransformSourceIO collectionWatchState pool s args.transformations
+        }
+  where
+    sourceLengthImpl :: Ty.SourceEntity -> Maybe FilePath -> IO (Maybe Double)
+    sourceLengthImpl Ty.SourceTable {time_range = (Just intervalRange)} _ =
+      pure $
+        realToFrac . (* 1000) . nominalDiffTimeToSeconds <$> Ty.rangeLength intervalRange
+    sourceLengthImpl _ (Just p) =
+      runMetadataServiceIO (openMetadataFile p) >>= \case
+        Left e -> do
+          $(logWarnIO) $ "failed to open file " <> p <> ": " <> E.displayException e
+          pure Nothing
+        Right mf -> pure $ F.audioLengthMilliseconds mf.audioInfo
+    sourceLengthImpl _ _ = pure Nothing
+    coverImageImpl :: Ty.SourceEntity -> Maybe FilePath -> IO (Maybe Image)
+    coverImageImpl _ Nothing = pure Nothing
+    coverImageImpl src (Just path) =
+      let downloadUri = "/source/" <> toText (coerce src.id) <> "/image"
+       in runFileSystemIO (findCoverImage (takeDirectory path)) >>= \case
+            Just imgPath ->
+              pure $
+                Just
+                  ExternalImage
+                    { fileName = T.pack $ takeFileName imgPath,
+                      downloadUri
+                    }
+            Nothing ->
+              pure (EmbeddedImage <$> coerce src.cover <*> pure downloadUri)
+
+previewTransformSourceIO ::
+  CollectionWatchState ->
+  Pool Connection ->
+  Ty.SourceEntity ->
+  Vector Transform ->
+  IO (UpdateSourceResult (Resolver QUERY () IO))
+previewTransformSourceIO collectionWatchState pool s ts = do
+  $(logDebugIO) $ "Preview; Transforming source " <> show s.id <> " with " <> show ts
+  E.catchAny
+    ( case tryFrom s of
+        Left e -> E.throwM (into @Tr.TransformationError e)
+        Right s' -> do
+          previewTransformationIO (Tr.evalTransformActions (interpretTransforms ts) s') >>= \case
+            Left e -> E.throwM e
+            Right s'' -> pure $ UpdatedSource (enrichSourceEntityIO collectionWatchState pool (from s''))
+    )
+    ( \e -> do
+        $(logError) $ E.displayException e
+        pure $ FailedSourceUpdate s.id (T.pack $ E.displayException e)
+    )
+  where
+    interpretTransforms :: Vector Transform -> Vector Tr.TransformAction
+    interpretTransforms ts = V.mapMaybe (rightToMaybe . tryFrom) ts
+    previewTransformationIO m = runStdoutLogging do
+      sess <- liftIO newAPISession
+      runFileSystemIO $
+        runMetadataServiceIO $
+          runSourceRepositoryPooledIO pool $
+            runTagMappingRepositoryPooledIO pool $
+              runFileSystemServiceIO pool $
+                runMusicBrainzServiceIO sess $
+                  runFileSystemWatchServiceIO pool collectionWatchState $
+                    runMultiTrackIO $
+                      runCollectionRepositoryPooledIO pool $
+                        runCollectionServiceIO pool m
+
+sameGroup :: Source m -> Source m -> Bool
+sameGroup a b =
+  groupMappedTags a.metadata.mappedTags == groupMappedTags b.metadata.mappedTags
+    && getParentUri a.sourceUri == getParentUri b.sourceUri
 
 groupSources :: forall m o e. (FileSystem m, WithOperation o) => V.Vector (Source (Resolver o e m)) -> V.Vector (SourceGroup (Resolver o e m))
 groupSources = V.fromList . toList . fmap trSrcGrp . foldl' acc S.empty
@@ -425,8 +613,7 @@ findCoverImage p = do
         find (\e -> P.takeBaseName e =~= "cover" && isImage e) entries
           <|> find (\e -> P.takeBaseName e =~= "front" && isImage e) entries
           <|> find (\e -> P.takeBaseName e =~= "folder" && isImage e) entries
-    else
-      pure Nothing
+    else pure Nothing
   where
     a =~= b = fmap toLower a == fmap toLower b
     isImage :: FilePath -> Bool
@@ -676,7 +863,7 @@ instance GQLType MetadataTransformation where
 previewTransformSourceImpl ::
   forall m e o.
   ( Tr.MonadSourceTransform m,
-    MonadConc m,
+    --    MonadConc m,
     WithOperation o
   ) =>
   Ty.SourceEntity ->
@@ -684,17 +871,17 @@ previewTransformSourceImpl ::
   m (UpdateSourceResult (Resolver o e m))
 previewTransformSourceImpl s ts = do
   $(logDebug) $ "Preview; Transforming source " <> show s.id <> " with " <> show ts
-  E.catchAny (
-      case tryFrom s of
+  E.catchAny
+    ( case tryFrom s of
         Left e -> E.throwM (into @Tr.TransformationError e)
         Right s' -> do
           Tr.previewTransformation (Tr.evalTransformActions (interpretTransforms ts)) s' >>= \case
             Left e -> E.throwM e
             Right s'' -> pure $ UpdatedSource (enrichSourceEntity (from s''))
-      )
-    (\e -> do
-      $(logError) $ E.displayException e
-      pure $ FailedSourceUpdate s.id (T.pack $ E.displayException e)
+    )
+    ( \e -> do
+        $(logError) $ E.displayException e
+        pure $ FailedSourceUpdate s.id (T.pack $ E.displayException e)
     )
   where
     interpretTransforms :: Vector Transform -> Vector Tr.TransformAction
@@ -710,19 +897,20 @@ transformSourcesImpl ::
 transformSourcesImpl (TransformSourcesArgs ts where') = do
   es <- resolveSourceEntities (SourceArgs where')
   $(logDebug) $ "Transforming sources " <> show (es <&> \e -> e.id) <> " with " <> show ts
-  forM es $ \s -> lift $
-    E.catchAny (
-        case tryFrom s of
-          Left e -> E.throwM (into @Tr.TransformationError e)
-          Right s' -> do
-            Tr.evalTransformActions (interpretTransforms ts) s' >>= \case
-              Left e -> E.throwM e
-              Right s'' -> pure $ UpdatedSource (enrichSourceEntity @m @MUTATION (from s''))
+  forM es $ \s ->
+    lift $
+      E.catchAny
+        ( case tryFrom s of
+            Left e -> E.throwM (into @Tr.TransformationError e)
+            Right s' -> do
+              Tr.evalTransformActions (interpretTransforms ts) s' >>= \case
+                Left e -> E.throwM e
+                Right s'' -> pure $ UpdatedSource (enrichSourceEntity @m @MUTATION (from s''))
         )
-      (\e -> do
-        $(logError) $ E.displayException e
-        pure $ FailedSourceUpdate s.id (T.pack $ E.displayException e)
-      )
+        ( \e -> do
+            $(logError) $ E.displayException e
+            pure $ FailedSourceUpdate s.id (T.pack $ E.displayException e)
+        )
   where
     interpretTransforms :: Vector Transform -> Vector Tr.TransformAction
     interpretTransforms ts = V.mapMaybe (rightToMaybe . tryFrom) ts

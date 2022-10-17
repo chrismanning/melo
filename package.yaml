@@ -50,6 +50,7 @@ library:
   - exceptions
   - extra
   - filepath
+  - foldl
   - fsnotify
   - generic-aeson
   - generic-deriving
@@ -57,7 +58,9 @@ library:
   - hashable
   - hashtables
   - hasql
+  - hasql-streams-streaming
   - hasql-transaction
+  - hasql-transaction-io
   - hsndfile
   - http-client
   - http-client-tls
@@ -71,7 +74,10 @@ library:
   - monad-control
   - monad-logger
   - morpheus-graphql
+  - morpheus-graphql-app
   - morpheus-graphql-core
+  - morpheus-graphql-server
+  - morpheus-graphql-subscriptions
   - mtl
   - multistate
   - natural-sort
@@ -98,6 +104,7 @@ library:
   - servant-server
   - singletons
   - stm
+  - streaming
   - string-combinators
   - tagged
   - template-haskell
@@ -114,8 +121,10 @@ library:
   - wai
   - wai-cors
   - wai-extra
+  - wai-websockets
   - warp
   - wave
+  - websockets
   - witch
   - wreq
 

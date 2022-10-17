@@ -13,11 +13,14 @@ import Data.Maybe
 import Data.Pool
 import Data.Vector (Vector, empty, fromList)
 import Hasql.Connection
+import Hasql.CursorTransactionIO
 import Hasql.Session
+import Hasql.Streaming
 import Melo.Common.Logging
 import Melo.Database.Repo
 import qualified Rel8
 import Rel8 ((==.))
+import Streaming.Prelude (Stream(..), Of)
 import Witch
 
 data DbConnection = Single Connection | Pooled (Pool Connection)
@@ -164,6 +167,11 @@ runSelect connSrc q = do
   case connSrc of
     Single conn' -> liftIO $ run session conn' >>= either throwIO pure
     Pooled pool -> liftIO $ withResource pool $ \conn -> run session conn >>= either throwIO pure
+
+selectStream :: (
+  Rel8.Serializable exprs (Rel8.FromExprs exprs)
+  ) => Rel8.Query exprs -> Stream (Of (Rel8.FromExprs exprs)) (CursorTransactionIO s) ()
+selectStream q = streamingQuery (Rel8.select q) ()
 
 runInsert :: MonadIO m => DbConnection -> Rel8.Insert a -> m a
 runInsert connSrc i = do

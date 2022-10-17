@@ -42,11 +42,11 @@ packages:
 # (e.g., acme-missiles-0.3)
 extra-deps:
   - github: morpheusgraphql/morpheus-graphql
-    commit: f8470c010ee50dec8f57b25cb74f4765ccf64646
+    commit: 97ba7a98a44b686108cb238d52d49fee844cd643
     subdirs:
-#      - .
       - morpheus-graphql-app
       - morpheus-graphql-core
+      - morpheus-graphql-server
       - morpheus-graphql-subscriptions
   - github: chrismanning/postgresql-pure
     commit: 9a28b9518fbef3f4d50d8975be9efa620a9a3c46
@@ -85,6 +85,9 @@ extra-deps:
 #  - generic-lens-2.2.1.0
 #  - generic-lens-core-2.2.1.0
   - harg-0.4.2.0
+  - hasql-streams-core-0.1.0.0
+  - hasql-streams-streaming-0.1.0.0
+  - hasql-transaction-io-0.1.0.0
   - hsndfile-0.8.0
   - hsndfile-vector-0.5.2
   - linkedhashmap-0.4.0.0
