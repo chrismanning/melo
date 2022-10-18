@@ -139,10 +139,15 @@ data CollectionWhere = CollectionWhere
 instance GQLType CollectionWhere where
   type KIND CollectionWhere = INPUT
 
+data Unit = Unit
+  deriving (Generic)
+
+instance GQLType Unit
+
 data CollectionMutation (m :: Type -> Type) = CollectionMutation
   { add :: AddCollectionArgs -> m (Collection m),
-    delete :: DeleteCollectionArgs -> m (),
-    deleteAll :: m ()
+    delete :: DeleteCollectionArgs -> m Unit,
+    deleteAll :: m Unit
   }
   deriving (Generic)
 
@@ -200,12 +205,13 @@ instance GQLType DeleteCollectionArgs where
 deleteCollectionImpl ::
   (CollectionRepository m, Logging m) =>
   DeleteCollectionArgs ->
-  ResolverM e m ()
-deleteCollectionImpl args = lift $ Repo.delete (V.singleton args.id)
+  ResolverM e m Unit
+deleteCollectionImpl args = lift $ Repo.delete (V.singleton args.id) >> pure Unit
 
 deleteAllCollectionsImpl ::
   (CollectionRepository m) =>
-  ResolverM e m ()
+  ResolverM e m Unit
 deleteAllCollectionsImpl = lift do
   collections <- getAll
   Repo.delete (fmap (^. #id) collections)
+  pure Unit

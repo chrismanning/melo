@@ -26,7 +26,7 @@ import Melo.Library.Collection.FileSystem.Service
 import Melo.Library.Collection.FileSystem.WatchService
 import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Service
-import Melo.Library.Collection.Types (CollectionRef (..),)
+import Melo.Library.Collection.Types (CollectionRef (..))
 import Melo.Library.Source.API qualified as API
 import Melo.Library.Source.MultiTrack
 import Melo.Library.Source.Repo as Source
