@@ -21,7 +21,7 @@ import Melo.Library.Collection.Types
 import Melo.Library.Source.Repo
 import Melo.Metadata.Mapping.Repo
 import Melo.Metadata.Mapping.Service
-import Network.Socket
+import Network.Wai.Handler.Warp
 import System.Exit
 import System.IO
 import Web.Scotty.Trans
@@ -50,15 +50,8 @@ app = do
       )
   $(logInfoIO) ("starting web server" :: String)
 
-  let runScottyAt addr = do
-        sock <- openSocket addr
-        bind sock addr.addrAddress
-        listen sock 2
-        scottySocketT def sock Prelude.id (api collectionWatchState pool)
-  addr6:_ <- getAddrInfo (Just defaultHints { addrSocketType = Stream }) (Just "::1") (Just "5001")
-  fork $ runScottyAt addr6
-  addr4:_ <- getAddrInfo (Just defaultHints { addrSocketType = Stream }) (Just "127.0.0.1") (Just "5000")
-  runScottyAt addr4
+  let opts = def { settings = setHost "*6" $ setPort 5000 defaultSettings }
+  scottyOptsT opts Prelude.id (api collectionWatchState pool)
 
 initApp :: CollectionWatchState -> Pool Hasql.Connection -> IO ()
 initApp collectionWatchState pool =
