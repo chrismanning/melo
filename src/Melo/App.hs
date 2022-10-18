@@ -55,9 +55,9 @@ app = do
         bind sock addr.addrAddress
         listen sock 2
         scottySocketT def sock Prelude.id (api collectionWatchState pool)
-  addr6:_ <- getAddrInfo (Just defaultHints) (Just "::1") (Just "5001")
+  addr6:_ <- getAddrInfo (Just defaultHints { addrSocketType = Stream }) (Just "::1") (Just "5001")
   fork $ runScottyAt addr6
-  addr4:_ <- getAddrInfo (Just defaultHints) (Just "127.0.0.1") (Just "5000")
+  addr4:_ <- getAddrInfo (Just defaultHints { addrSocketType = Stream }) (Just "127.0.0.1") (Just "5000")
   runScottyAt addr4
 
 initApp :: CollectionWatchState -> Pool Hasql.Connection -> IO ()
