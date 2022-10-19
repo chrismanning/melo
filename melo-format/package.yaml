@@ -98,6 +98,7 @@ ghc-options:
   - -Wredundant-constraints
   - -Wnoncanonical-monad-instances
   - -Werror=incomplete-patterns
+  - -Werror=missing-methods
   - -fwrite-ide-info
   - -hiedir=../.hie
 

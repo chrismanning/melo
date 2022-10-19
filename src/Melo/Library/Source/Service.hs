@@ -32,9 +32,9 @@ importSources ::
   m (Vector Source)
 importSources ss | null ss = pure empty
 importSources ss = do
-  $(logDebug) $ "Importing sources: " <> show ss
+  $(logDebug) $ "Importing " <> show (length ss) <> " sources"
   let metadataSources = rights $ fmap tryFrom ss
-  $(logDebug) $ "Importing metadata sources: " <> show metadataSources
+  $(logDebug) $ "Importing " <> show (length metadataSources) <> " metadata sources"
   srcs <- Repo.insert (fmap (from @MetadataImportSource) metadataSources)
   pure (rights $ fmap tryFrom srcs)
 

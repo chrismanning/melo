@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 4720eea8a829897c96bf43395d51c3e92d3d58fc531fc23c54e8f4a77536cbb8
+-- hash: 5574c6a3172226baccb71924507a629c5ea926734ec51b52441dcb8ec9c7ba89
 
 name:           melo-format
 version:        0.1.0.0
@@ -78,7 +78,7 @@ library
       TypeFamilies
       TypeFamilyDependencies
       ViewPatterns
-  ghc-options: -O2 -Wall -Wcompat -fno-warn-name-shadowing -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wnoncanonical-monad-instances -Werror=incomplete-patterns -fwrite-ide-info -hiedir=../.hie
+  ghc-options: -O2 -Wall -Wcompat -fno-warn-name-shadowing -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wnoncanonical-monad-instances -Werror=incomplete-patterns -Werror=missing-methods -fwrite-ide-info -hiedir=../.hie
   build-depends:
       array
     , base >=4.7 && <5
@@ -143,7 +143,7 @@ test-suite melo-format-test
       TypeFamilies
       TypeFamilyDependencies
       ViewPatterns
-  ghc-options: -O2 -Wall -Wcompat -fno-warn-name-shadowing -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wnoncanonical-monad-instances -Werror=incomplete-patterns -fwrite-ide-info -hiedir=../.hie -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -O2 -Wall -Wcompat -fno-warn-name-shadowing -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wnoncanonical-monad-instances -Werror=incomplete-patterns -Werror=missing-methods -fwrite-ide-info -hiedir=../.hie -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
     , base16-bytestring

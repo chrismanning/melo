@@ -17,6 +17,7 @@ module Melo.Format.Metadata
     module Melo.Format.Internal.Tag,
     metadataFileFactoryIO,
     metadataFileFactoriesIO,
+    fileFactoryByExt,
   )
 where
 
@@ -64,6 +65,16 @@ openMetadataFileByExt p =
     ".wv" -> wavPack ^. #readMetadataFile $ p
     ".wvpk" -> wavPack ^. #readMetadataFile $ p
     _unknownExtension -> throwIO UnknownFormat
+
+fileFactoryByExt :: FilePath -> Maybe (MetadataFileFactory IO)
+fileFactoryByExt p =
+  case takeExtension p of
+    ".flac" -> Just flac
+    ".mp3" -> Just mp3
+    ".ogg" -> Just oggVorbis
+    ".wv" -> Just wavPack
+    ".wvpk" -> Just wavPack
+    _ -> Nothing
 
 mkMetadata :: MetadataId -> Tags -> Maybe Metadata
 mkMetadata = mk' @SupportedMetadataFormats

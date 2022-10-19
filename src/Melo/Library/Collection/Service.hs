@@ -89,7 +89,7 @@ instance
         case parseURI (T.unpack root_uri) >>= uriToFilePath of
           Just rootPath -> do
             $(logInfo) $ "re-scanning collection " <> show id <> " at " <> rootPath
-            scanPath ref rootPath >> pure ()
+            scanPathUpdates ref rootPath >> pure ()
           Nothing -> $(logWarn) $ "collection " <> show id <> " not a local file system"
       Nothing -> $(logWarn) $ "collection " <> show id <> " not found"
     pure ()
