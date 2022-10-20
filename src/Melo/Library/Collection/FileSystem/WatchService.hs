@@ -8,6 +8,7 @@ import Control.Concurrent.STM qualified as STM
 import Control.Exception.Safe
 import Control.Monad
 import Control.Monad.Base
+import Control.Monad.Par.IO
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
 import Data.ByteString.Char8 (ByteString, isPrefixOf, pack)
@@ -55,12 +56,8 @@ data CollectionWatchState = CollectionWatchState
   }
 
 emptyWatchState :: IO CollectionWatchState
-emptyWatchState = do
-  stoppers <- STM.atomically $ STM.newTVar H.empty
-  locks <- STM.atomically $ STM.newTVar Seq.empty
-  pure CollectionWatchState {
-    ..
-  }
+emptyWatchState = STM.atomically $
+  CollectionWatchState <$> STM.newTVar H.empty <*> STM.newTVar Seq.empty
 
 newtype FileSystemWatchServiceIOT m a = FileSystemWatchServiceIOT
   { runFileSystemWatchServiceIOT :: ReaderT (Pool Connection, CollectionWatchState) m a
@@ -148,15 +145,15 @@ handleEvent pool ref locks event = unless (isLocked (pack event.eventPath)) do
   case event of
     FS.Added p _ _ -> do
       $(logInfo) $ "file/directory added; scanning " <> p
-      liftIO $ runFileSystemServiceIO' pool (scanPath ref p)
+      liftIO $ runParIO (scanPathIO pool ScanAll ref p)
       pure ()
     FS.Modified p _ _ -> do
       $(logInfo) $ "file/directory modified; scanning " <> p
-      liftIO $ runFileSystemServiceIO' pool (scanPath ref p)
+      liftIO $ runParIO (scanPathIO pool ScanNewOrModified ref p)
       pure ()
     FS.ModifiedAttributes p _ _ -> do
       $(logInfo) $ "file/directory attributes modified; scanning " <> p
-      liftIO $ runFileSystemServiceIO' pool (scanPath ref p)
+      liftIO $ runParIO (scanPathIO pool ScanNewOrModified ref p)
       pure ()
     FS.WatchedDirectoryRemoved p _ _ -> do
       $(logInfo) $ "watched directory removed " <> p

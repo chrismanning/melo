@@ -6,6 +6,8 @@ module Melo.Library.Collection.FileSystem.Service
     FileSystemServiceIOT (..),
     runFileSystemServiceIO,
     runFileSystemServiceIO',
+    scanPathIO,
+    ScanType (..),
   )
 where
 
@@ -14,7 +16,6 @@ import Control.Exception.Safe
 import Control.Monad
 import Control.Monad.Base
 import Control.Monad.Extra
-import Control.Monad.Par.Class
 import Control.Monad.Par.Combinator
 import Control.Monad.Par.IO
 import Control.Monad.Reader
@@ -96,22 +97,25 @@ runFileSystemServiceIO' pool m =
 instance MonadIO m =>
   FileSystemService (FileSystemServiceIOT m)
   where
-  scanPath ref p = ask >>= \pool -> liftIO $ runParIO $ scanPathIO pool False ref p
-  scanPathUpdates ref p = ask >>= \pool -> liftIO $ runParIO $ scanPathIO pool True ref p
+  scanPath ref p = ask >>= \pool -> liftIO $ runParIO $ scanPathIO pool ScanAll ref p
+  scanPathUpdates ref p = ask >>= \pool -> liftIO $ runParIO $ scanPathIO pool ScanNewOrModified ref p
+
+data ScanType = ScanNewOrModified | ScanAll
+  deriving (Eq)
 
 scanPathIO ::
   Pool Connection ->
-  Bool ->
+  ScanType ->
   CollectionRef ->
   FilePath ->
   ParIO ()
-scanPathIO pool onlyNewer ref p' =
+scanPathIO pool scanType ref p' =
   do
     p <- Dir.canonicalizePath p'
     $(logInfoIO) $ "Scanning " <> show p
-    if onlyNewer
+    if scanType == ScanNewOrModified
       then $(logDebugIO) $ "Looking for updated/new files in " <> show p
-      else $(logDebugIO) $ "Looking for new files in " <> show p
+      else $(logDebugIO) $ "Looking for files in " <> show p
     isDir <- Dir.doesDirectoryExist p
     isFile <- Dir.doesFileExist p
     srcs <-
@@ -119,17 +123,17 @@ scanPathIO pool onlyNewer ref p' =
         then do
           $(logDebugIO) $ p <> " is directory; recursing..."
           entries <- Dir.listDirectory p
-          dirs <- filterM (Dir.doesDirectoryExist . (p </>)) entries
+          dirs <- filterM Dir.doesDirectoryExist ((p </>) <$> entries)
 
-          _ <- parMapM (\dir -> scanPathIO pool onlyNewer ref (p </> dir)) dirs
+          _ <- parMapM (scanPathIO pool scanType ref) dirs
 
           files <- filterM Dir.doesFileExist ((p </>) <$> entries)
           let cuefiles = filter ((== ".cue") . takeExtension) files
           case cuefiles of
-            [] -> eval $ withTransaction pool runSourceRepositoryIO (importTransaction files)
+            [] -> handleScanErrors $ importTransaction files
             [cuefile] -> do
               $(logDebugIO) $ "Cue file found " <> show cuefile
-              srcs <- eval $ withTransaction pool runSourceRepositoryIO (openCueFile cuefile <&> (CueFileImportSource ref <$>) >>= importSources')
+              srcs <- handleScanErrors $ withTransaction pool runSourceRepositoryIO (openCueFile cuefile <&> (CueFileImportSource ref <$>) >>= importSources')
               pure srcs
             _ -> do
               $(logWarnIO) $ "Multiple cue file found in " <> show p <> "; skipping..."
@@ -137,16 +141,17 @@ scanPathIO pool onlyNewer ref p' =
         else
           if isFile
             then
-              ifM
-                (liftIO $ runSourceRepositoryPooledIO pool $ shouldImport [p])
-                (liftIO $ withTransaction pool runSourceRepositoryIO (importTransaction [p]))
+              liftIO $ ifM
+                (shouldImport [p])
+                (importTransaction [p])
                 (pure 0)
             else pure 0
     $(logInfoIO) $ show srcs <> " sources imported from path " <> show p
     pure ()
   where
-    eval = liftIO . handle handleScanException
-    importTransaction :: [FilePath] -> SourceRepositoryIOT _ Int
+    handleScanErrors :: (MonadIO m) => IO Int -> m Int
+    handleScanErrors = liftIO . handle (logShow >=> \_ -> pure 0)
+    importTransaction :: [FilePath] -> IO Int
     importTransaction files = do
       ifM
         (shouldImport files)
@@ -154,7 +159,8 @@ scanPathIO pool onlyNewer ref p' =
             $(logDebugIO) $ "Importing " <> show files
             mfs <- catMaybes <$> mapM openMetadataFile'' files
             $(logDebugIO) $ "Opened " <> show (mfs <&> \mf -> mf.filePath)
-            importSources' $ V.fromList (FileSource ref <$> mfs)
+            runSourceRepositoryPooledIO pool $
+              importSources' $ V.fromList (FileSource ref <$> mfs)
         )
         (pure 0)
     openMetadataFile'' p =
@@ -171,13 +177,11 @@ scanPathIO pool onlyNewer ref p' =
           Left e -> do
             $(logErrorIO) $ "Could not open by extension " <> p <> ": " <> show e
             pure Nothing
-    handleScanException :: SomeException -> _ Int
-    handleScanException e = do
-      $(logErrorIO) $ "error during scan: " <> show e
-      pure 0
-    shouldImport :: [FilePath] -> SourceRepositoryIOT _ Bool
-    shouldImport _ | onlyNewer == False = pure True
-    shouldImport files = do
+    logShow :: SomeException -> IO ()
+    logShow e = $(logErrorIO) $ "error during scan: " <> displayException e
+    shouldImport :: [FilePath] -> IO Bool
+    shouldImport _ | scanType == ScanAll = pure True
+    shouldImport files = handle (logShow >=> \_ -> pure False) do
       tz <- liftIO getCurrentTimeZone
       ss <- sourceMap files
       updated <- forM files $ \p ->
@@ -196,7 +200,7 @@ scanPathIO pool onlyNewer ref p' =
                 pure True
               else pure False
       pure $ any (== True) updated
-    sourceMap :: [FilePath] -> SourceRepositoryIOT _ (H.Map T.Text SourceEntity)
-    sourceMap files = do
+    sourceMap :: [FilePath] -> IO (H.Map T.Text SourceEntity)
+    sourceMap files = runSourceRepositoryPooledIO pool do
       ss <- V.toList <$> getByUri (V.fromList $ fileUri <$> files)
       pure $ H.fromList $ (\s -> (s.source_uri, s)) <$> ss

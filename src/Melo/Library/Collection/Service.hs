@@ -7,6 +7,7 @@ import Control.Exception.Safe
 import Control.Lens hiding (from)
 import Control.Monad
 import Control.Monad.Base
+import Control.Monad.Par.IO
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
 import Data.Pool
@@ -67,19 +68,18 @@ instance
     MonadBaseControl IO m,
     MonadIO m,
     MonadConc m,
-    MonadMask m,
     Logging m
   ) =>
   CollectionService (CollectionServiceIOT m)
   where
   addCollection c@NewFilesystemCollection {..} = do
-    pool <- ask
     $(logInfo) $ "Adding collection " <> name
     $(logDebug) $ "Adding collection " <> show c
     cs <- Repo.insert (singleton c)
     case firstOf traverse cs of
       Just CollectionTable {..} -> do
-        fork $ runFileSystemServiceIO pool $ scanPath id (T.unpack rootPath)
+        pool <- ask
+        fork $ liftIO $ runParIO $ scanPathIO pool ScanAll id (T.unpack rootPath)
         when watch $ startWatching id (T.unpack rootPath)
         pure id
       Nothing -> error "unexpected insertCollections result"
@@ -88,8 +88,9 @@ instance
       Just CollectionTable {id, root_uri} ->
         case parseURI (T.unpack root_uri) >>= uriToFilePath of
           Just rootPath -> do
+            pool <- ask
             $(logInfo) $ "re-scanning collection " <> show id <> " at " <> rootPath
-            scanPathUpdates ref rootPath >> pure ()
+            liftIO $ runParIO $ scanPathIO pool ScanNewOrModified ref rootPath
           Nothing -> $(logWarn) $ "collection " <> show id <> " not a local file system"
       Nothing -> $(logWarn) $ "collection " <> show id <> " not found"
     pure ()
