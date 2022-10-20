@@ -64,8 +64,8 @@ initApp collectionWatchState pool =
               runCollectionRepositoryPooledIO pool $
                 runFileSystemWatchServiceIO pool collectionWatchState $
                   runCollectionServiceIO pool $ do
-                    initCollections
                     insertDefaultMappings
+                    initCollections
 
 initCollections ::
   ( FileSystemWatchService m,

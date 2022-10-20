@@ -43,10 +43,11 @@ newtype GenreRepositoryIOT m a = GenreRepositoryIOT
       Repository (GenreTable Result)
     )
 
-instance
-  (MonadIO m) =>
-  GenreRepository (GenreRepositoryIOT m)
-  where
+--instance
+--  (MonadIO m) =>
+--  GenreRepository (GenreRepositoryIOT m)
+--  where
+
 --  getGenresByName [] = pure []
 --  getGenresByName ns = GenreRepositoryIOT $
 --    ReaderT $ \conn -> do

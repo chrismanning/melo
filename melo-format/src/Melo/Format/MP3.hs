@@ -10,6 +10,7 @@ import Data.Binary.Bits.Get qualified as BG
 import Data.Binary.Bits.Put qualified as BP
 import Data.Binary.Get
 import Data.Binary.Put
+import Data.Bits
 import Data.ByteString hiding ((!?))
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as L
@@ -18,7 +19,6 @@ import Data.HashMap.Strict ((!))
 import Data.HashMap.Strict qualified as H
 import Data.Hashable
 import Data.Maybe (catMaybes, fromMaybe, isJust)
-import Data.Text (Text)
 import Data.Text qualified as T (pack)
 import Data.Vector ((!?))
 import Data.Vector qualified as V
@@ -201,29 +201,55 @@ mp3Samples h = loop h 0
       skipZeroes h
       ID3.hSkip h
       skipZeroes h
-      buf <- hGetSome h 2
-      if BS.null buf
+      buf <- L.hGet h 2
+      if L.null buf
         then pure Nothing
         else
-          if frameSync == (runGet (BG.runBitGet $ getBits 11) (L.fromStrict buf))
+          if frameSync == (runGet (BG.runBitGet $ getBits 11) buf)
             then do
-              hSeek h RelativeSeek (negate (fromIntegral $ BS.length buf))
-              buf <- hGetSome h 6
-              case runGet (tryGetHeader) (L.fromStrict buf) of
+              hSeek h RelativeSeek (negate (fromIntegral $ L.length buf))
+              buf <- L.hGet h 6
+              case runGet (tryGetHeader) buf of
                 Just header -> do
-                  let samples = samplesPerFrame header.mpegAudioVersion header.layer
-                  let padding = if header.padding then 1 else 0
-                  let bitRate = (coerce header.bitRate) * 1000
-                  let frameLength = (samples `div` 8) * bitRate `div` header.sampleRate + padding
-                  hSeek h RelativeSeek (fromIntegral (frameLength - (BS.length buf)))
-                  pure $ Just (MP3FrameSamples (fromIntegral samples))
+                  let headerDiff = if isJust header.crc then 0 else (-2)
+                  let headerSize = fromIntegral (L.length buf) + headerDiff
+                  mark <- hTell h <&> (+ headerDiff)
+                  -- look for Xing/Lame header - offset never includes crc
+                  hSeek h RelativeSeek (infoHeaderOffset header - 2)
+                  info <- hGetSome h 4
+                  if info == "Info" || info == "Xing" then do
+                    flags <- hGetSome h 4
+                    if ((flags `BS.index` 3) .&. 0b1) == 0b1 then do
+                      totalFrames <- L.hGet h 4 <&> runGet getWord32be
+                      let samples = samplesPerFrame header.mpegAudioVersion header.layer
+                      pure $ Just (XingHeaderSamples (fromIntegral (totalFrames * samples)))
+                    else do
+                      findNextFrame header mark headerSize
+                  else do
+                    findNextFrame header mark headerSize
                 Nothing -> pure Nothing
             else pure Nothing
+    findNextFrame header mark headerSize = do
+      let padding = if header.padding then 1 else 0
+      let bitRate = (coerce header.bitRate) * 1000
+      let samples = samplesPerFrame header.mpegAudioVersion header.layer
+      let frameLength = (samples `div` 8) * bitRate `div` header.sampleRate + padding
+      hSeek h AbsoluteSeek (mark + fromIntegral frameLength - headerSize)
+      pure $ Just (MP3FrameSamples (fromIntegral samples))
     skipZeroes h = do
       buf <- hGetSome h 1
       if buf BS.!? 0 == Just 0
         then skipZeroes h
         else hSeek h RelativeSeek (fromIntegral (negate (BS.length buf)))
+    infoHeaderOffset :: FrameHeader -> Integer
+    infoHeaderOffset header =
+      case header.mpegAudioVersion of
+        V1 -> case header.channels of
+          Mono -> 17
+          _ -> 32
+        _ -> case header.channels of
+          Mono -> 9
+          _ -> 17
 
 data FrameHeader = FrameHeader
   { mpegAudioVersion :: !MpegVersion,
@@ -271,7 +297,7 @@ tryGetHeader =
       else do
         version <- getMpegVersion
         layer <- getLayer
-        protected <- BG.getBool
+        protected <- not <$> BG.getBool
         h <-
           FrameHeader version layer
             <$> getBitRate version layer
