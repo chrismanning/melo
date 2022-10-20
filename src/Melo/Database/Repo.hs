@@ -20,7 +20,7 @@ class (Monad m, Entity e) => Repository e m | m -> e where
   getAll :: m (Vector e)
   getByKey :: Vector (PrimaryKey e) -> m (Vector e)
   insert :: Vector (NewEntity e) -> m (Vector e)
-  insert' :: Vector (NewEntity e) -> m ()
+  insert' :: Vector (NewEntity e) -> m Int
   delete :: Vector (PrimaryKey e) -> m ()
   update :: Vector e -> m (Vector e)
   update' :: Vector e -> m ()

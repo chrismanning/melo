@@ -20,7 +20,7 @@ import Melo.Common.Logging
 import Melo.Database.Repo
 import qualified Rel8
 import Rel8 ((==.))
-import Streaming.Prelude (Stream(..), Of)
+import Streaming.Prelude (Stream, Of)
 import Witch
 
 data DbConnection = Single Connection | Pooled (Pool Connection)
@@ -86,7 +86,7 @@ instance
           onConflict = fromMaybe Rel8.Abort (Rel8.DoUpdate <$> upsert),
           returning = Rel8.Projection (\x -> x)
         }
-  insert' es | null es = pure ()
+  insert' es | null es = pure 0
   insert' es = do
     RepositoryHandle {connSrc, tbl, upsert} <- ask
     runInsert
@@ -95,7 +95,7 @@ instance
         { into = tbl,
           rows = Rel8.values (from <$> es),
           onConflict = fromMaybe Rel8.Abort (Rel8.DoUpdate <$> upsert),
-          returning = pure ()
+          returning = fromIntegral <$> Rel8.NumberOfRowsAffected
         }
   delete ks | null ks = pure ()
   delete ks = do

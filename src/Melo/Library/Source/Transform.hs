@@ -16,7 +16,7 @@ import Data.Char
 import Data.Either.Combinators
 import Data.Foldable
 import Data.HashMap.Strict qualified as H
-import Data.List.NonEmpty
+import Data.List.NonEmpty hiding (length)
 import Data.Maybe
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -150,7 +150,7 @@ instance MonadSourceTransform m => Repo.Repository SourceEntity (TransformPrevie
   getAll = lift $ Repo.getAll @SourceEntity
   getByKey = lift . Repo.getByKey @SourceEntity
   insert = pure . fmap from
-  insert' _ = pure ()
+  insert' = pure . length
   delete _ = pure ()
   update e = lift $ do
     $(logDebug) ("Preview update @SourceEntity called" :: String)

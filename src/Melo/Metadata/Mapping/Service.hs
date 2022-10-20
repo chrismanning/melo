@@ -1,6 +1,7 @@
 module Melo.Metadata.Mapping.Service where
 
 import Control.Exception.Safe
+import Control.Monad
 import Data.Coerce
 import Data.Text (Text)
 import Data.Vector (Vector, find, fromList)
@@ -13,7 +14,7 @@ findMappingNamed :: Vector TagMappingEntity -> Text -> Maybe M.TagMapping
 findMappingNamed ms name = fmap (\m -> m.tagMapping) $ find (\mapping -> mapping.name == name) ms
 
 insertDefaultMappings :: (MonadCatch m, TagMappingRepository m) => m ()
-insertDefaultMappings = insert' defaultMappings `catchIO` (\_ -> pure ())
+insertDefaultMappings = void (insert' defaultMappings) `catchIO` (\_ -> pure ())
 
 defaultMappings :: Vector NewTagMapping
 defaultMappings =

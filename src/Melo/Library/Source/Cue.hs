@@ -1,7 +1,6 @@
 module Melo.Library.Source.Cue where
 
 import Control.Applicative
-import Control.Concurrent.Classy
 import Control.Exception.Safe
 import Control.Lens hiding (from)
 import Control.Monad
@@ -34,8 +33,8 @@ cueId :: MetadataId
 cueId = MetadataId "CUE"
 
 openCueFile ::
-  ( MonadConc m,
-    MonadIO m
+  ( MonadIO m,
+    MonadThrow m
   ) =>
   FilePath ->
   m (Vector CueFileSource)

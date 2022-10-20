@@ -38,6 +38,19 @@ importSources ss = do
   srcs <- Repo.insert (fmap (from @MetadataImportSource) metadataSources)
   pure (rights $ fmap tryFrom srcs)
 
+importSources' ::
+  ( Repo.SourceRepository m,
+    Logging m
+  ) =>
+  Vector NewImportSource ->
+  m Int
+importSources' ss | null ss = pure 0
+importSources' ss = do
+  $(logDebug) $ "Importing " <> show (length ss) <> " sources"
+  let metadataSources = rights $ fmap tryFrom ss
+  $(logDebug) $ "Importing " <> show (length metadataSources) <> " metadata sources"
+  Repo.insert' (fmap (from @MetadataImportSource) metadataSources)
+
 getSourcesByUriPrefix ::
   Repo.SourceRepository m =>
   URI ->

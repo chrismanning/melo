@@ -79,7 +79,7 @@ instance
     cs <- Repo.insert (singleton c)
     case firstOf traverse cs of
       Just CollectionTable {..} -> do
-        forkFileSystemServiceIO pool $ scanPath id (T.unpack rootPath)
+        fork $ runFileSystemServiceIO pool $ scanPath id (T.unpack rootPath)
         when watch $ startWatching id (T.unpack rootPath)
         pure id
       Nothing -> error "unexpected insertCollections result"
