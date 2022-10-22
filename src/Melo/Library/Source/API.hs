@@ -10,7 +10,7 @@ import Control.Exception.Safe qualified as E
 import Control.Lens hiding (from, lens, (|>))
 import Control.Monad
 import Control.Monad.IO.Class
-import Data.Binary.Builder (fromLazyByteString, fromByteString)
+import Data.Binary.Builder (fromLazyByteString, fromByteString, append, putStringUtf8)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as L
 import Data.Char (toLower)
@@ -442,7 +442,7 @@ streamSourceGroups collectionWatchState pool (Ty.CollectionRef collectionId) rq 
         & S.mapM_ sendFlush
       $(logInfoIO) $ "Finished streaming sources from collection " <> show collectionId
     sendFlush :: MonadIO m => BS.ByteString -> m ()
-    sendFlush = (liftIO . (const flush)) <=< liftIO . sendChunk . fromByteString
+    sendFlush = (liftIO . (const flush)) <=< liftIO . sendChunk . append (putStringUtf8 "\n\n") . fromByteString
 
 toSourceGroup :: forall m o e. (MonadIO m, WithOperation o) => [Source (Resolver o e m)] -> SourceGroup (Resolver o e m)
 toSourceGroup sources =
