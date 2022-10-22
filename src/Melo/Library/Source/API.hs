@@ -431,7 +431,8 @@ streamSourceGroups collectionWatchState pool (Ty.CollectionRef collectionId) rq 
           cursorTransactionIO $
             processStream (selectStream query)
     processStream :: MonadIO m => S.Stream (S.Of Ty.SourceEntity) m () -> m ()
-    processStream s =
+    processStream s = do
+      $(logInfoIO) $ "Starting streaming sources from collection " <> show collectionId
       s
         & S.map (enrichSourceEntityIO collectionWatchState pool)
         & S.groupBy sameGroup
@@ -439,6 +440,7 @@ streamSourceGroups collectionWatchState pool (Ty.CollectionRef collectionId) rq 
         & S.map toSourceGroup
         & S.mapM (\srcGrp -> liftIO $ interpreter (mkRoot srcGrp) (L.toStrict rq))
         & S.mapM_ sendFlush
+      $(logInfoIO) $ "Finished streaming sources from collection " <> show collectionId
     sendFlush :: MonadIO m => BS.ByteString -> m ()
     sendFlush = (liftIO . (const flush)) <=< liftIO . sendChunk . fromByteString
 
