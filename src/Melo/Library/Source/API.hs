@@ -10,8 +10,9 @@ import Control.Exception.Safe qualified as E
 import Control.Lens hiding (from, lens, (|>))
 import Control.Monad
 import Control.Monad.IO.Class
-import Data.Binary.Builder (fromLazyByteString)
-import Data.ByteString.Lazy qualified as L (ByteString)
+import Data.Binary.Builder (fromLazyByteString, fromByteString)
+import Data.ByteString qualified as BS
+import Data.ByteString.Lazy qualified as L
 import Data.Char (toLower)
 import Data.Coerce
 import Data.Default
@@ -436,10 +437,10 @@ streamSourceGroups collectionWatchState pool (Ty.CollectionRef collectionId) rq 
         & S.groupBy sameGroup
         & S.mapped S.toList
         & S.map toSourceGroup
-        & S.mapM (\srcGrp -> liftIO $ interpreter (mkRoot srcGrp) rq)
+        & S.mapM (\srcGrp -> liftIO $ interpreter (mkRoot srcGrp) (L.toStrict rq))
         & S.mapM_ sendFlush
-    sendFlush :: MonadIO m => L.ByteString -> m ()
-    sendFlush = (liftIO . (const flush)) <=< liftIO . sendChunk . fromLazyByteString
+    sendFlush :: MonadIO m => BS.ByteString -> m ()
+    sendFlush = (liftIO . (const flush)) <=< liftIO . sendChunk . fromByteString
 
 toSourceGroup :: forall m o e. (MonadIO m, WithOperation o) => [Source (Resolver o e m)] -> SourceGroup (Resolver o e m)
 toSourceGroup sources =
