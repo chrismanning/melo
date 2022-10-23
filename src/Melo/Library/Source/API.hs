@@ -442,7 +442,7 @@ streamSourceGroups collectionWatchState pool (Ty.CollectionRef collectionId) rq 
         & S.mapM_ sendFlush
       $(logInfoIO) $ "Finished streaming sources from collection " <> show collectionId
     sendFlush :: MonadIO m => BS.ByteString -> m ()
-    sendFlush = (liftIO . (const flush)) <=< liftIO . sendChunk . append (putStringUtf8 "\n\n") . fromByteString
+    sendFlush = (liftIO . (const flush)) <=< liftIO . sendChunk . (`append` (putStringUtf8 "\n\n")) . fromByteString
 
 toSourceGroup :: forall m o e. (MonadIO m, WithOperation o) => [Source (Resolver o e m)] -> SourceGroup (Resolver o e m)
 toSourceGroup sources =
