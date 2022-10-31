@@ -1,9 +1,11 @@
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UnboxedTuples #-}
 
 module Melo.Library.Collection.Repo where
 
 import Control.Concurrent.Classy
 import Control.Exception.Safe
+import Control.Foldl (PrimMonad)
 import Control.Monad
 import Control.Monad.Base
 import Control.Monad.Reader
@@ -58,7 +60,8 @@ newtype CollectionRepositoryIOT m a = CollectionRepositoryIOT
       MonadReader (RepositoryHandle CollectionTable),
       MonadThrow,
       MonadTrans,
-      MonadTransControl
+      MonadTransControl,
+      PrimMonad
     )
 
 instance MonadIO m => Repository (CollectionTable Result) (CollectionRepositoryIOT m) where

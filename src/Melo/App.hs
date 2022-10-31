@@ -13,15 +13,19 @@ import Melo.Common.Logging
 import Melo.Common.Metadata
 import Melo.Common.Uri
 import Melo.Database.Repo
-import Melo.Library.Collection.FileSystem.Service
+import Melo.Library.Album.Repo
+import Melo.Library.Artist.Name.Repo
+import Melo.Library.Artist.Repo
 import Melo.Library.Collection.FileSystem.WatchService
 import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Service
 import Melo.Library.Collection.Types
 import Melo.Library.Source.Repo
+import Melo.Lookup.MusicBrainz qualified as MB
 import Melo.Metadata.Mapping.Repo
 import Melo.Metadata.Mapping.Service
 import Network.Wai.Handler.Warp
+import Network.Wreq.Session qualified as Wreq
 import System.Exit
 import System.IO
 import Web.Scotty.Trans
@@ -42,28 +46,33 @@ app = do
       exitFailure
     )
 
+  sess <- Wreq.newAPISession
+
   collectionWatchState <- emptyWatchState
   fork $
-    catchAny (initApp collectionWatchState pool) (\e -> do
+    catchAny (initApp collectionWatchState pool sess) (\e -> do
         $(logErrorIO) $ "error initialising app: " <> show e
         exitFailure
       )
   $(logInfoIO) ("starting web server" :: String)
 
   let opts = def { settings = setHost "*6" $ setPort 5000 defaultSettings }
-  scottyOptsT opts Prelude.id (api collectionWatchState pool)
+  scottyOptsT opts Prelude.id (api collectionWatchState pool sess)
 
-initApp :: CollectionWatchState -> Pool Hasql.Connection -> IO ()
-initApp collectionWatchState pool =
+initApp :: CollectionWatchState -> Pool Hasql.Connection -> Wreq.Session -> IO ()
+initApp collectionWatchState pool sess =
   runStdoutLogging $
     runFileSystemIO $
       runMetadataServiceIO $
         runSourceRepositoryPooledIO pool $
           runTagMappingRepositoryPooledIO pool $
-            runFileSystemServiceIO pool $
+            runAlbumRepositoryPooledIO pool $
+            runArtistNameRepositoryPooledIO pool $
+            runArtistRepositoryPooledIO pool $
+            MB.runMusicBrainzServiceUnlimitedIO sess $
               runCollectionRepositoryPooledIO pool $
-                runFileSystemWatchServiceIO pool collectionWatchState $
-                  runCollectionServiceIO pool $ do
+                runFileSystemWatchServiceIO pool collectionWatchState sess $
+                  runCollectionServiceIO pool sess $ do
                     insertDefaultMappings
                     initCollections
 

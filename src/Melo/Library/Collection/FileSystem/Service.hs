@@ -2,39 +2,34 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Library.Collection.FileSystem.Service
-  ( FileSystemService (..),
-    FileSystemServiceIOT (..),
-    runFileSystemServiceIO,
-    runFileSystemServiceIO',
-    scanPathIO,
+  ( scanPathIO,
     ScanType (..),
   )
 where
 
-import Control.Concurrent.Classy (MonadConc)
 import Control.Exception.Safe
 import Control.Monad
-import Control.Monad.Base
 import Control.Monad.Extra
 import Control.Monad.Par.Combinator
 import Control.Monad.Par.IO
 import Control.Monad.Reader
-import Control.Monad.Trans.Control
 import Data.Functor ((<&>))
-import Data.Map.Strict qualified as H
+import Data.Map.Strict qualified as M
 import Data.Maybe
 import Data.Pool
 import Data.Text qualified as T
 import Data.Time.LocalTime
 import Data.Vector qualified as V
 import Hasql.Connection
-import Melo.Common.FileSystem
 import Melo.Common.Logging
 import Melo.Common.Metadata
 import Melo.Common.Uri
-import Melo.Database.Transaction
 import Melo.Format.Error qualified as F
 import Melo.Format.Metadata (MetadataFile (..), fileFactoryByExt)
+import Melo.Library.Album.ArtistName.Repo
+import Melo.Library.Album.Repo
+import Melo.Library.Artist.Name.Repo
+import Melo.Library.Artist.Repo
 import Melo.Library.Collection.Types
 import Melo.Library.Source.Cue
 import Melo.Library.Source.Repo
@@ -44,72 +39,24 @@ import Melo.Library.Source.Types
     SourceEntity,
     SourceTable (..),
   )
+import Melo.Library.Track.ArtistName.Repo
+import Melo.Library.Track.Repo
+import Melo.Lookup.MusicBrainz qualified as MB
+import Network.Wreq.Session qualified as Wreq
 import System.FilePath
 import UnliftIO.Directory qualified as Dir
-
-class Monad m => FileSystemService m where
-  scanPath :: CollectionRef -> FilePath -> m ()
-  scanPathUpdates :: CollectionRef -> FilePath -> m ()
-
-instance
-  {-# OVERLAPPABLE #-}
-  ( Monad (t m),
-    MonadTrans t,
-    FileSystemService m
-  ) =>
-  FileSystemService (t m)
-  where
-  scanPath ref p = lift (scanPath ref p)
-  scanPathUpdates ref p = lift (scanPathUpdates ref p)
-
-newtype FileSystemServiceIOT m a = FileSystemServiceIOT
-  { runFileSystemServiceIOT :: ReaderT (Pool Connection) m a
-  }
-  deriving
-    ( Functor,
-      Applicative,
-      Monad,
-      MonadBase b,
-      MonadBaseControl b,
-      MonadIO,
-      MonadConc,
-      MonadCatch,
-      MonadMask,
-      MonadThrow,
-      MonadTrans,
-      MonadTransControl,
-      MonadReader (Pool Connection)
-    )
-
-runFileSystemServiceIO :: (MonadIO m) => Pool Connection -> FileSystemServiceIOT (FileSystemIOT m) a -> m a
-runFileSystemServiceIO pool = runFileSystemIO . flip runReaderT pool . runFileSystemServiceIOT
-
-type ImportT m = FileSystemServiceIOT (FileSystemIOT m)
-
-runFileSystemServiceIO' ::
-  MonadIO m =>
-  Pool Connection ->
-  ImportT m a ->
-  m ()
-runFileSystemServiceIO' pool m =
-  void $ runFileSystemServiceIO pool m
-
-instance MonadIO m =>
-  FileSystemService (FileSystemServiceIOT m)
-  where
-  scanPath ref p = ask >>= \pool -> liftIO $ runParIO $ scanPathIO pool ScanAll ref p
-  scanPathUpdates ref p = ask >>= \pool -> liftIO $ runParIO $ scanPathIO pool ScanNewOrModified ref p
 
 data ScanType = ScanNewOrModified | ScanAll
   deriving (Eq)
 
 scanPathIO ::
   Pool Connection ->
+  Wreq.Session ->
   ScanType ->
   CollectionRef ->
   FilePath ->
   ParIO ()
-scanPathIO pool scanType ref p' =
+scanPathIO pool sess scanType ref p' =
   do
     p <- Dir.canonicalizePath p'
     $(logInfoIO) $ "Scanning " <> show p
@@ -125,7 +72,7 @@ scanPathIO pool scanType ref p' =
           entries <- Dir.listDirectory p
           dirs <- filterM Dir.doesDirectoryExist ((p </>) <$> entries)
 
-          _ <- parMapM (scanPathIO pool scanType ref) dirs
+          _ <- parMapM (scanPathIO pool sess scanType ref) dirs
 
           files <- filterM Dir.doesFileExist ((p </>) <$> entries)
           let cuefiles = filter ((== ".cue") . takeExtension) files
@@ -133,18 +80,26 @@ scanPathIO pool scanType ref p' =
             [] -> handleScanErrors $ importTransaction files
             [cuefile] -> do
               $(logDebugIO) $ "Cue file found " <> show cuefile
-              srcs <- handleScanErrors $ withTransaction pool runSourceRepositoryIO (openCueFile cuefile <&> (CueFileImportSource ref <$>) >>= importSources')
-              pure srcs
+              srcs <-
+                liftIO $
+                  handle (logShow >=> \_ -> pure V.empty) $
+                    runImport
+                      pool
+                      sess
+                      ( openCueFile cuefile <&> (CueFileImportSource ref <$>) >>= importSources
+                      )
+              pure (V.length srcs)
             _ -> do
               $(logWarnIO) $ "Multiple cue file found in " <> show p <> "; skipping..."
               pure 0
         else
           if isFile
             then
-              liftIO $ ifM
-                (shouldImport [p])
-                (importTransaction [p])
-                (pure 0)
+              liftIO $
+                ifM
+                  (shouldImport [p])
+                  (importTransaction [p])
+                  (pure 0)
             else pure 0
     $(logInfoIO) $ show srcs <> " sources imported from path " <> show p
     pure ()
@@ -159,10 +114,22 @@ scanPathIO pool scanType ref p' =
             $(logDebugIO) $ "Importing " <> show files
             mfs <- catMaybes <$> mapM openMetadataFile'' files
             $(logDebugIO) $ "Opened " <> show (mfs <&> \mf -> mf.filePath)
-            runSourceRepositoryPooledIO pool $
-              importSources' $ V.fromList (FileSource ref <$> mfs)
+            srcs <-
+              runImport pool sess $
+                importSources $
+                  V.fromList (FileSource ref <$> mfs)
+            pure (V.length srcs)
         )
         (pure 0)
+    runImport pool sess =
+      runSourceRepositoryPooledIO pool
+        . runArtistRepositoryPooledIO pool
+        . runArtistNameRepositoryPooledIO pool
+        . runAlbumArtistNameRepositoryPooledIO pool
+        . runAlbumRepositoryPooledIO pool
+        . runTrackRepositoryPooledIO pool
+        . runTrackArtistNameRepositoryPooledIO pool
+        . MB.runMusicBrainzServiceUnlimitedIO sess
     openMetadataFile'' p =
       runMetadataServiceIO $
         openMetadataFileByExt p >>= \case
@@ -185,7 +152,7 @@ scanPathIO pool scanType ref p' =
       tz <- liftIO getCurrentTimeZone
       ss <- sourceMap files
       updated <- forM files $ \p ->
-        case H.lookup (T.pack $ show $ fileUri p) ss of
+        case M.lookup (T.pack $ show $ fileUri p) ss of
           Just s -> do
             mtime <- utcToLocalTime tz <$> Dir.getModificationTime p
             if mtime > s.scanned
@@ -200,7 +167,7 @@ scanPathIO pool scanType ref p' =
                 pure True
               else pure False
       pure $ any (== True) updated
-    sourceMap :: [FilePath] -> IO (H.Map T.Text SourceEntity)
+    sourceMap :: [FilePath] -> IO (M.Map T.Text SourceEntity)
     sourceMap files = runSourceRepositoryPooledIO pool do
       ss <- V.toList <$> getByUri (V.fromList $ fileUri <$> files)
-      pure $ H.fromList $ (\s -> (s.source_uri, s)) <$> ss
+      pure $ M.fromList $ (\s -> (s.source_uri, s)) <$> ss

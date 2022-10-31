@@ -4,6 +4,7 @@ module Melo.API where
 
 import Control.Concurrent.Classy
 import Control.Exception.Safe
+import Control.Foldl (PrimMonad)
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Control
 import Data.ByteString.Lazy.Char8
@@ -22,7 +23,10 @@ import Melo.Common.Metadata
 import Melo.Common.Uri
 import Melo.Format.Metadata (EmbeddedPicture (..), MetadataFile (..), PictureType (..))
 import Melo.Library.API
-import Melo.Library.Collection.FileSystem.Service
+import Melo.Library.Album.Repo
+import Melo.Library.Album.ArtistName.Repo
+import Melo.Library.Artist.Name.Repo
+import Melo.Library.Artist.Repo
 import Melo.Library.Collection.FileSystem.WatchService
 import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Service
@@ -31,12 +35,14 @@ import Melo.Library.Source.API qualified as API
 import Melo.Library.Source.MultiTrack
 import Melo.Library.Source.Repo as Source
 import Melo.Library.Source.Service
-import Melo.Library.Source.Types (SourceRef (..), Source (..))
+import Melo.Library.Source.Types (Source (..), SourceRef (..))
+import Melo.Library.Track.ArtistName.Repo
+import Melo.Library.Track.Repo
 import Melo.Lookup.MusicBrainz
 import Melo.Metadata.Mapping.Repo
 import Network.HTTP.Types.Status
 import Network.Wai.Middleware.Cors
-import Network.Wreq.Session (newAPISession)
+import Network.Wreq.Session qualified as Wreq
 import System.FilePath (pathSeparator, takeDirectory, takeFileName)
 import Web.Scotty.Trans
 
@@ -64,29 +70,34 @@ rootResolver =
 gqlApi :: forall m. (ResolverE m, Typeable m) => ByteString -> m ByteString
 gqlApi = interpreter (rootResolver)
 
-gqlApiIO :: CollectionWatchState -> Pool Connection -> ByteString -> IO ByteString
-gqlApiIO collectionWatchState pool rq = runStdoutLogging do
+gqlApiIO :: CollectionWatchState -> Pool Connection -> Wreq.Session -> ByteString -> IO ByteString
+gqlApiIO collectionWatchState pool sess rq = runStdoutLogging do
   $(logInfo) ("handling graphql request" :: T.Text)
   $(logDebug) $ "graphql request: " <> rq
-  sess <- liftIO newAPISession
   !rs <-
     runFileSystemIO $
       runMetadataServiceIO $
         runSourceRepositoryPooledIO pool $
           runTagMappingRepositoryPooledIO pool $
-            runFileSystemServiceIO pool $
-              runMusicBrainzServiceIO sess $
-                runFileSystemWatchServiceIO pool collectionWatchState $
-                  runMultiTrackIO $
-                    runCollectionRepositoryPooledIO pool $
-                      runCollectionServiceIO pool $
-                        gqlApi rq
+            runAlbumRepositoryPooledIO pool $
+            runAlbumArtistNameRepositoryPooledIO pool $
+              runArtistNameRepositoryPooledIO pool $
+                runArtistRepositoryPooledIO pool $
+                runTrackArtistNameRepositoryPooledIO pool $
+                runTrackRepositoryPooledIO pool $
+                  runMusicBrainzServiceUnlimitedIO sess $
+                    runFileSystemWatchServiceIO pool collectionWatchState sess $
+                      runMultiTrackIO $
+                        runCollectionRepositoryPooledIO pool $
+                          runCollectionServiceIO pool sess $
+                            gqlApi rq
   $(logInfo) ("finished handling graphql request" :: T.Text)
   pure rs
 
 type ResolverE m =
   ( MonadIO m,
     MonadConc m,
+    PrimMonad m,
     Logging m,
     FileSystem m,
     TagMappingRepository m,
@@ -96,16 +107,26 @@ type ResolverE m =
     MusicBrainzService m,
     CollectionRepository m,
     CollectionService m,
-    FileSystemService m,
+    AlbumRepository m,
+    AlbumArtistNameRepository m,
+    ArtistNameRepository m,
+    ArtistRepository m,
+    TrackRepository m,
+    TrackArtistNameRepository m,
     FileSystemWatchService m
   )
 
-api :: (MonadIO m, MonadBaseControl IO m) => CollectionWatchState -> Pool Connection -> ScottyT LT.Text m ()
-api collectionWatchState pool = do
+api ::
+  (MonadIO m, MonadBaseControl IO m) =>
+  CollectionWatchState ->
+  Pool Connection ->
+  Wreq.Session ->
+  ScottyT LT.Text m ()
+api collectionWatchState pool sess = do
   middleware (cors (const $ Just simpleCorsResourcePolicy {corsRequestHeaders = ["Content-Type"]}))
   matchAny "/api" $ do
     setHeader "Content-Type" "application/json; charset=utf-8"
-    raw =<< (liftIO . gqlApiIO collectionWatchState pool =<< body)
+    raw =<< (liftIO . gqlApiIO collectionWatchState pool sess =<< body)
   get "/graphiql" $ do
     setHeader "Content-Type" "text/html; charset=utf-8"
     file "graphiql.html"

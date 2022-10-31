@@ -1,14 +1,15 @@
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UnboxedTuples #-}
 
 module Melo.Library.Track.Repo where
 
 import Control.Concurrent.Classy
 import Control.Exception.Safe
-import Control.Lens ((^.))
+import Control.Foldl (PrimMonad)
+import Control.Lens ((^.), firstOf)
 import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
-import Data.Containers.ListUtils (nubOrd)
 import Data.Hashable
 import Data.Int (Int16)
 import Data.Pool
@@ -23,15 +24,28 @@ import Melo.Library.Artist.Types
 import Melo.Library.Genre.Types
 import Melo.Library.Source.Types
 import Melo.Library.Track.Types
+import Melo.Lookup.MusicBrainz as MB
 import Rel8
 import Witch
 
-class Repository (TrackTable Result) m => TrackRepository m where
-  getTrackSource :: UUID -> m Source
-  getTrackArtists :: UUID -> m [Artist]
-  getTrackAlbum :: UUID -> m Album
-  getTrackGenres :: UUID -> m [Genre]
-  searchTracks :: Text -> m [Track]
+class Repository TrackEntity m => TrackRepository m where
+  getByMusicBrainzId :: MB.MusicBrainzId -> m (Maybe TrackEntity)
+
+--  getTrackSource :: UUID -> m Source
+--  getTrackArtists :: UUID -> m [Artist]
+--  getTrackAlbum :: UUID -> m Album
+--  getTrackGenres :: UUID -> m [Genre]
+--  searchTracks :: Text -> m [Track]
+
+instance
+  {-# OVERLAPPABLE #-}
+  ( Monad (t m),
+    MonadTrans t,
+    TrackRepository m
+  ) =>
+  TrackRepository (t m)
+  where
+  getByMusicBrainzId = lift . getByMusicBrainzId
 
 newtype TrackRepositoryIOT m a = TrackRepositoryIOT
   { runTrackRepositoryIOT :: RepositoryIOT TrackTable m a
@@ -50,6 +64,7 @@ newtype TrackRepositoryIOT m a = TrackRepositoryIOT
       MonadThrow,
       MonadTrans,
       MonadTransControl,
+      PrimMonad,
       Repository (TrackTable Result)
     )
 
@@ -58,11 +73,12 @@ instance
   ) =>
   TrackRepository (TrackRepositoryIOT m)
   where
-  getTrackSource k = error "unimplemented"
-  getTrackArtists k = error "unimplemented"
-  getTrackAlbum k = error "unimplemented"
-  getTrackGenres k = error "unimplemented"
-  searchTracks t = error "unimplemented"
+  getByMusicBrainzId mbid = do
+    RepositoryHandle {connSrc, tbl} <- ask
+    firstOf traverse <$> runSelect connSrc do
+      track <- Rel8.each tbl
+      Rel8.where_ $ track.musicbrainz_id ==. lit (Just mbid.mbid)
+      pure track
 
 trackSchema :: TableSchema (TrackTable Name)
 trackSchema =
@@ -77,7 +93,9 @@ trackSchema =
             track_number = "track_number",
             disc_number = "disc_number",
             comment = "comment",
-            source_id = "source_id"
+            length = "length",
+            source_id = "source_id",
+            musicbrainz_id = "musicbrainz_id"
           }
     }
 
@@ -92,9 +110,11 @@ runTrackRepositoryPooledIO pool =
         upsert =
           Just
             Upsert
-              { index = (^. #id),
+              { index = \e -> (e.track_number, e.disc_number, e.album_id),
                 set = const,
-                updateWhere = \new old -> new ^. #id ==. old ^. #id
+                updateWhere = \new old -> new.track_number ==. old.track_number
+                  &&. new.disc_number ==. old.disc_number
+                  &&. new.album_id ==. old.album_id
               }
       }
     . runRepositoryIOT
@@ -111,9 +131,11 @@ runTrackRepositoryIO conn =
         upsert =
           Just
             Upsert
-              { index = (^. #id),
+              { index = \e -> (e.track_number, e.disc_number, e.album_id),
                 set = const,
-                updateWhere = \new old -> new ^. #id ==. old ^. #id
+                updateWhere = \new old -> new.track_number ==. old.track_number
+                  &&. new.disc_number ==. old.disc_number
+                  &&. new.album_id ==. old.album_id
               }
       }
     . runRepositoryIOT

@@ -3,52 +3,69 @@
 module Melo.Library.Artist.Service where
 
 import Control.Lens hiding (from, lens)
-import Data.Foldable
-import Data.Vector (Vector, fromList)
+import Data.Maybe
+import Data.Vector (fromList, singleton)
 import Melo.Common.Logging
 import Melo.Database.Repo
 import Melo.Format.Mapping qualified as M
 import Melo.Format.Metadata
-import Melo.Library.Artist.Staging.Repo
-import Melo.Library.Artist.Staging.Types
+import Melo.Library.Artist.Name.Repo
+import Melo.Library.Artist.Name.Types
+import Melo.Library.Artist.Repo
 import Melo.Library.Artist.Types
-import Melo.Library.Source.Types
 import Melo.Lookup.MusicBrainz qualified as MB
+import Melo.Lookup.MusicBrainz ((<<|>>))
 import Witch
 
-importArtists ::
-  ( Foldable f,
-    Traversable f,
-    MB.MusicBrainzService m,
-    ArtistStagingRepository m,
+importArtistCredit ::
+  ( MB.MusicBrainzService m,
+    ArtistRepository m,
+    ArtistNameRepository m,
     Logging m
   ) =>
-  f Source ->
-  m (Vector StagedArtist)
-importArtists ss = do
-  mbArtists <- fold <$> mapM (MB.getArtistFromMetadata . (^. #metadata)) ss
-  $(logDebugShow) mbArtists
-  artists <- insert (fromList $ toList $ fmap from mbArtists) <&> fmap (^. #id) >>= getByKey
-  pure $ fmap from artists
+  MB.ArtistCredit ->
+  m (Maybe ArtistNameEntity)
+importArtistCredit artistCredit = do
+  getByMusicBrainzId artistCredit.artist.id <<|>> newArtist >>= \case
+    Just artist ->
+      case artistCredit.name of
+        Just alias -> do
+          artistName <- firstOf traverse <$> insert @ArtistNameEntity
+            ( singleton
+                NewArtistName
+                  { artist = artist.id,
+                    name = alias
+                  }
+            )
+          pure artistName <<|>> getAlias artist.id alias
+        Nothing -> pure Nothing
+    Nothing -> do
+      $(logError) $ "Unable to find artist in MusicBrainz with MBID " <> show artistCredit.artist.id
+      pure Nothing
+  where
+    newArtist = do
+      artist <- MB.getArtist artistCredit.artist.id <&> fromMaybe artistCredit.artist
+      fmap (firstOf traverse) (insert (singleton $ from artist))
 
--- TODO search Discogs (https://www.discogs.com/developers/#page:database)
--- TODO search Spotify (https://developer.spotify.com/documentation/web-api/reference/search/search/)
--- TODO search Rovi (http://developer.rovicorp.com/docs)
-
--- commitArtists ::
---  ( Has ArtistStagingRepository sig m,
---    Has ArtistRepository sig m,
---    Has Logging sig m
---  ) => [StagedArtistRef] -> m [DB.ArtistKey]
---
--- mergeArtists ::
---  ( Has ArtistRepository sig m,
---    Has Logging sig m
---  ) =>
---  [DB.ArtistKey] -> DB.ArtistT x -> m DB.ArtistKey
+getArtistNamed ::
+  ( MB.MusicBrainzService m,
+    ArtistRepository m,
+    ArtistNameRepository m,
+    Logging m
+  ) =>
+  ArtistNameRef ->
+  m (Maybe Artist)
+getArtistNamed ref = do
+  -- TODO getArtistNamed
+  undefined
 
 setArtists :: Metadata -> [Artist] -> Metadata
 setArtists m a =
   let tag = lens m
-      ts = m.tags
-   in m {tags = ts & tag M.trackArtistTag .~ (fromList a <&> (^. #name))}
+      tags :: Tags = m.tags & tag M.trackArtistTag .~ (fromList a <&> (^. #name))
+   in Metadata
+        { formatId = m.formatId,
+          formatDesc = m.formatDesc,
+          lens = tag,
+          tags
+        }

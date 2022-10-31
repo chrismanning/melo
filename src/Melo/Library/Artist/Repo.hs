@@ -1,27 +1,42 @@
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UnboxedTuples #-}
 
 module Melo.Library.Artist.Repo where
 
 import Control.Exception.Safe
-import Control.Lens ((^.))
+import Control.Foldl (PrimMonad)
+import Control.Lens ((^.), firstOf)
 import Control.Concurrent.Classy
 import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
-import Data.Containers.ListUtils (nubOrd)
+import Data.Coerce
 import Data.Pool
-import Data.Text (Text)
 import Hasql.Connection
 import Melo.Database.Repo
 import Melo.Database.Repo.IO
 import Melo.Library.Artist.Types
+import Melo.Lookup.MusicBrainz qualified as MB
 import Rel8
-import Witch
 
-class Repository (ArtistTable Result) m => ArtistRepository m where
-  getArtistAlbums :: ArtistRef -> m [ArtistTable Result]
-  getArtistTracks :: ArtistRef -> m [ArtistTable Result]
-  searchArtists :: Text -> m [ArtistTable Result]
+class Repository ArtistEntity m => ArtistRepository m where
+--  getArtistAlbums :: ArtistRef -> m [ArtistTable Result]
+--  getArtistTracks :: ArtistRef -> m [ArtistTable Result]
+--  searchArtists :: Text -> m [ArtistTable Result]
+  getByMusicBrainzId :: MB.MusicBrainzId -> m (Maybe ArtistEntity)
+
+instance
+  {-# OVERLAPPABLE #-}
+  ( Monad (t m),
+    MonadTrans t,
+    ArtistRepository m
+  ) =>
+  ArtistRepository (t m)
+  where
+--  getArtistAlbums = lift . getArtistAlbums
+--  getArtistTracks = lift . getArtistTracks
+--  searchArtists = lift . searchArtists
+  getByMusicBrainzId = lift . getByMusicBrainzId
 
 newtype ArtistRepositoryIOT m a = ArtistRepositoryIOT
   { runArtistRepositoryIOT :: RepositoryIOT ArtistTable m a
@@ -40,7 +55,8 @@ newtype ArtistRepositoryIOT m a = ArtistRepositoryIOT
       MonadThrow,
       MonadTrans,
       MonadTransControl,
-      Repository (ArtistTable Result)
+      PrimMonad,
+      Repository ArtistEntity
     )
 
 instance
@@ -48,9 +64,12 @@ instance
   ) =>
   ArtistRepository (ArtistRepositoryIOT m)
   where
-  getArtistAlbums k = error "unimplemented"
-  getArtistTracks k = error "unimplemented"
-  searchArtists t = error "unimplemented"
+  getByMusicBrainzId mbid = do
+    RepositoryHandle {connSrc, tbl} <- ask
+    firstOf traverse <$> runSelect connSrc do
+      artist <- Rel8.each tbl
+      Rel8.where_ $ artist.musicbrainz_id ==. lit (Just $ coerce mbid)
+      pure artist
 
 artistSchema :: TableSchema (ArtistTable Name)
 artistSchema =

@@ -1,8 +1,10 @@
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UnboxedTuples #-}
 
 module Melo.Database.Repo.IO where
 
 import Control.Exception.Safe
+import Control.Foldl (PrimMonad)
 import Control.Lens hiding (from)
 import Control.Monad.Base
 import Control.Monad.Conc.Class
@@ -47,7 +49,8 @@ newtype RepositoryIOT (t :: (Type -> Type) -> Type) m a = RepositoryIOT
       MonadCatch,
       MonadMask,
       MonadThrow,
-      MonadTransControl
+      MonadTransControl,
+      PrimMonad
     )
 
 instance MonadTrans (RepositoryIOT a) where

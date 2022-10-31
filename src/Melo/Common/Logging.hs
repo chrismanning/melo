@@ -1,4 +1,5 @@
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UnboxedTuples #-}
 
 module Melo.Common.Logging
   ( Logging (..),
@@ -29,6 +30,7 @@ where
 
 import Control.Concurrent.Classy
 import Control.Exception.Safe
+import Control.Foldl (PrimMonad)
 import Control.Lens hiding (from)
 import Control.Monad.Base
 import Control.Monad.IO.Class
@@ -92,7 +94,8 @@ newtype LoggingIOT m a = LoggingIOT
       MonadConc,
       MonadCatch,
       MonadMask,
-      MonadThrow
+      MonadThrow,
+      PrimMonad
     )
   deriving (MonadTrans, MonadTransControl)
 
@@ -104,7 +107,7 @@ instance Logging IO where
     logEnv <- registerScribe "stdout" handleScribe defaultScribeSettings =<< initLogEnv "melo" "local"
     let LogMessage msg' = from msg
     K.runKatipT logEnv $ K.logMsg ns severity (logStr msg')
-    handleScribe.scribeFinalizer
+--    handleScribe.scribeFinalizer
 
 instance
   (MonadIO m) =>

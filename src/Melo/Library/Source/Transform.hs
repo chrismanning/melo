@@ -1,10 +1,12 @@
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UnboxedTuples #-}
 
 module Melo.Library.Source.Transform where
 
 import Control.Applicative hiding (many, some)
 import Control.Concurrent.Classy
 import Control.Exception.Safe as E hiding (try)
+import Control.Foldl (PrimMonad)
 import Control.Lens hiding (from)
 import Control.Monad
 import Control.Monad.Base
@@ -32,6 +34,10 @@ import Melo.Database.Repo qualified as Repo
 import Melo.Format qualified as F
 import Melo.Format.Error qualified as F
 import Melo.Format.Internal.Metadata (Metadata (..))
+import Melo.Library.Album.Repo
+import Melo.Library.Album.ArtistName.Repo
+import Melo.Library.Artist.Name.Repo
+import Melo.Library.Artist.Repo
 import Melo.Library.Collection.FileSystem.WatchService
 import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Types
@@ -39,6 +45,8 @@ import Melo.Library.Source.MultiTrack
 import Melo.Library.Source.Repo as Src
 import Melo.Library.Source.Service
 import Melo.Library.Source.Types
+import Melo.Library.Track.ArtistName.Repo
+import Melo.Library.Track.Repo
 import Melo.Lookup.MusicBrainz
 import Melo.Metadata.Mapping.Repo
 import Melo.Metadata.Mapping.Service
@@ -93,10 +101,17 @@ type MonadSourceTransform m =
     Monad m,
     MonadCatch m,
     MonadConc m,
+    PrimMonad m,
     MultiTrack m,
     MusicBrainzService m,
     SourceRepository m,
-    TagMappingRepository m
+    TagMappingRepository m,
+    AlbumRepository m,
+    AlbumArtistNameRepository m,
+    ArtistNameRepository m,
+    ArtistRepository m,
+    TrackRepository m,
+    TrackArtistNameRepository m
   )
 
 previewTransformation ::
@@ -120,7 +135,7 @@ previewTransformations transformation srcs =
 newtype TransformPreviewT m a = TransformPreviewT
   { runTransformPreviewT :: m a
   }
-  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadThrow, MonadMask)
+  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadThrow, MonadMask, PrimMonad)
   deriving (MonadTrans, MonadTransControl) via IdentityT
   deriving (SourceRepository)
 
@@ -150,7 +165,7 @@ instance MonadSourceTransform m => Repo.Repository SourceEntity (TransformPrevie
   getAll = lift $ Repo.getAll @SourceEntity
   getByKey = lift . Repo.getByKey @SourceEntity
   insert = pure . fmap from
-  insert' = pure . length
+  insert' = pure . V.length
   delete _ = pure ()
   update e = lift $ do
     $(logDebug) ("Preview update @SourceEntity called" :: String)

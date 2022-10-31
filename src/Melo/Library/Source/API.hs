@@ -10,7 +10,7 @@ import Control.Exception.Safe qualified as E
 import Control.Lens hiding (from, lens, (|>))
 import Control.Monad
 import Control.Monad.IO.Class
-import Data.Binary.Builder (fromLazyByteString, fromByteString, append, putStringUtf8)
+import Data.Binary.Builder (append, fromByteString, putStringUtf8)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as L
 import Data.Char (toLower)
@@ -52,6 +52,10 @@ import Melo.Format ()
 import Melo.Format qualified as F
 import Melo.Format.Mapping qualified as M
 import Melo.GraphQL.Where
+import Melo.Library.Album.ArtistName.Repo
+import Melo.Library.Album.Repo
+import Melo.Library.Artist.Name.Repo
+import Melo.Library.Artist.Repo
 import Melo.Library.Collection.FileSystem.Service
 import Melo.Library.Collection.FileSystem.WatchService
 import Melo.Library.Collection.Repo (runCollectionRepositoryPooledIO)
@@ -61,6 +65,8 @@ import Melo.Library.Source.MultiTrack
 import Melo.Library.Source.Repo
 import Melo.Library.Source.Transform qualified as Tr
 import Melo.Library.Source.Types qualified as Ty
+import Melo.Library.Track.ArtistName.Repo
+import Melo.Library.Track.Repo
 import Melo.Lookup.MusicBrainz as MB
 import Melo.Metadata.Mapping.Repo
 import Network.Wai (StreamingBody)
@@ -409,7 +415,7 @@ data SourceGroupStreamArgs = SourceGroupStreamArgs
 instance GQLType SourceGroupStreamArgs
 
 streamSourceGroups :: CollectionWatchState -> Pool Connection -> Ty.CollectionRef -> L.ByteString -> StreamingBody
-streamSourceGroups collectionWatchState pool (Ty.CollectionRef collectionId) rq sendChunk flush =
+streamSourceGroups collectionWatchState pool collectionRef rq sendChunk flush =
   withResource pool (streamSession >=> either throwIO pure)
   where
     mkRoot :: SourceGroup (Resolver QUERY () m) -> RootResolver m () SourceGroupStream Undefined Undefined
@@ -422,7 +428,7 @@ streamSourceGroups collectionWatchState pool (Ty.CollectionRef collectionId) rq 
         }
     query = do
       srcs <- orderByUri $ Rel8.each sourceSchema
-      Rel8.where_ (srcs.collection_id ==. Rel8.lit collectionId)
+      Rel8.where_ (srcs.collection_id ==. Rel8.lit collectionRef)
       pure srcs
     streamSession :: Connection -> IO (Either QueryError ())
     streamSession =
@@ -432,7 +438,7 @@ streamSourceGroups collectionWatchState pool (Ty.CollectionRef collectionId) rq 
             processStream (selectStream query)
     processStream :: MonadIO m => S.Stream (S.Of Ty.SourceEntity) m () -> m ()
     processStream s = do
-      $(logInfoIO) $ "Starting streaming sources from collection " <> show collectionId
+      $(logInfoIO) $ "Starting streaming sources from collection " <> show collectionRef
       s
         & S.map (enrichSourceEntityIO collectionWatchState pool)
         & S.groupBy sameGroup
@@ -440,7 +446,7 @@ streamSourceGroups collectionWatchState pool (Ty.CollectionRef collectionId) rq 
         & S.map toSourceGroup
         & S.mapM (\srcGrp -> liftIO $ interpreter (mkRoot srcGrp) (L.toStrict rq))
         & S.mapM_ sendFlush
-      $(logInfoIO) $ "Finished streaming sources from collection " <> show collectionId
+      $(logInfoIO) $ "Finished streaming sources from collection " <> show collectionRef
     sendFlush :: MonadIO m => BS.ByteString -> m ()
     sendFlush = (liftIO . (const flush)) <=< liftIO . sendChunk . (`append` (putStringUtf8 "\n\n")) . fromByteString
 
@@ -544,16 +550,22 @@ previewTransformSourceIO collectionWatchState pool s ts = do
     interpretTransforms ts = V.mapMaybe (rightToMaybe . tryFrom) ts
     previewTransformationIO m = runStdoutLogging do
       sess <- liftIO newAPISession
-      runFileSystemIO $
-        runMetadataServiceIO $
-          runSourceRepositoryPooledIO pool $
-            runTagMappingRepositoryPooledIO pool $
-              runFileSystemServiceIO pool $
-                runMusicBrainzServiceIO sess $
-                  runFileSystemWatchServiceIO pool collectionWatchState $
-                    runMultiTrackIO $
-                      runCollectionRepositoryPooledIO pool $
-                        runCollectionServiceIO pool m
+      run' sess m
+    run' sess = runFileSystemIO
+        . runMetadataServiceIO
+        . runSourceRepositoryPooledIO pool
+        . runTagMappingRepositoryPooledIO pool
+        . runAlbumRepositoryPooledIO pool
+        . runAlbumArtistNameRepositoryPooledIO pool
+        . runArtistNameRepositoryPooledIO pool
+        . runArtistRepositoryPooledIO pool
+        . runTrackArtistNameRepositoryPooledIO pool
+        . runTrackRepositoryPooledIO pool
+        . runMusicBrainzServiceUnlimitedIO sess
+        . runFileSystemWatchServiceIO pool collectionWatchState sess
+        . runMultiTrackIO
+        . runCollectionRepositoryPooledIO pool
+        . runCollectionServiceIO pool sess
 
 sameGroup :: Source m -> Source m -> Bool
 sameGroup a b =

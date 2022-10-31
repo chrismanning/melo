@@ -1,9 +1,11 @@
 {-# LANGUAGE PartialTypeSignatures #-}
+{-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Lookup.MusicBrainz
   ( MusicBrainzId (..),
     runMusicBrainzServiceIO,
+    runMusicBrainzServiceUnlimitedIO,
     MusicBrainzService (..),
     MusicBrainzServiceIOT (..),
     Artist (..),
@@ -19,11 +21,13 @@ module Melo.Lookup.MusicBrainz
     albumArtistIdTag,
     albumIdTag,
     trackIdTag,
+    recordingIdTag,
     releaseTrackIdTag,
     releaseGroupIdTag,
     releaseIdTag,
-    getArtistFromMetadata,
-    getReleaseFromMetadata,
+    getReleaseGroupFromMetadata,
+    getRecordingFromMetadata,
+    (<<|>>)
   )
 where
 
@@ -31,22 +35,26 @@ import Control.Applicative as A
 import Control.Concurrent.Classy
 import Control.Concurrent.TokenLimiter
 import Control.Exception.Safe
+import Control.Foldl (PrimMonad)
 import Control.Lens hiding (from, lens)
 import Control.Monad
 import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
+import Control.Monad.Trans.Identity
 import Data.Aeson as A
 import Data.Aeson.Casing (trainCase)
 import Data.Default
 import Data.Generics.Labels ()
 import Data.Hashable
+import Data.List (find)
 import Data.Maybe
 import Data.String (IsString)
 import Data.Text (Text)
-import qualified Data.Text as T
-import qualified Data.Vector as V
+import Data.Text qualified as T
+import Data.Vector qualified as V
 import GHC.Generics (Generic)
+import GHC.Records
 import Melo.Common.Http
 import Melo.Common.Logging
 import Melo.Common.RateLimit
@@ -56,10 +64,10 @@ import Melo.Format.Mapping
     caseInsensitiveMapping,
     singletonTagMapping,
   )
-import qualified Melo.Format.Mapping as M
-import Melo.Format.Metadata
-import qualified Network.Wreq as Wr
-import qualified Network.Wreq.Session as WrS
+import Melo.Format.Mapping qualified as M
+import Melo.Format.Metadata qualified as F
+import Network.Wreq qualified as Wr
+import Network.Wreq.Session qualified as WrS
 import Prelude as P
 
 newtype MusicBrainzId = MusicBrainzId
@@ -141,12 +149,16 @@ newtype ReleaseGroupSearchResult = ReleaseGroupSearchResult
   { releaseGroups :: Maybe [ReleaseGroup]
   }
   deriving (Show, Generic, Eq)
-  deriving newtype (FromJSON)
+
+instance FromJSON ReleaseGroupSearchResult where
+  parseJSON = genericParseJSON mbAesonOptions
 
 data ReleaseGroup = ReleaseGroup
   { id :: MusicBrainzId,
     title :: Text,
-    artistCredit :: Maybe [ArtistCredit]
+    artistCredit :: Maybe [ArtistCredit],
+    firstReleaseDate :: Maybe Text,
+    score :: Maybe Int
   }
   deriving (Show, Generic, Eq)
 
@@ -155,12 +167,17 @@ instance FromJSON ReleaseGroup where
 
 data RecordingSearch = RecordingSearch
   { title :: Maybe Text,
+    trackNumber :: Maybe Text,
     artist :: Maybe Text,
-    album :: Maybe Text
+    album :: Maybe Text,
+    releaseId :: Maybe Text,
+    releaseGroupId :: Maybe Text
   }
   deriving (Show, Generic, Eq)
 
 instance Hashable RecordingSearch
+
+instance Default RecordingSearch
 
 newtype RecordingSearchResult = RecordingSearchResult
   { recordings :: Maybe [Recording]
@@ -171,7 +188,7 @@ instance FromJSON RecordingSearchResult
 
 data Recording = Recording
   { id :: MusicBrainzId,
-    score :: Int,
+    score :: Maybe Int,
     title :: Text,
     artistCredit :: Maybe [ArtistCredit],
     releases :: [Release]
@@ -192,6 +209,7 @@ class Monad m => MusicBrainzService m where
   getArtistRecordings :: MusicBrainzId -> m [Recording]
   getRelease :: MusicBrainzId -> m (Maybe Release)
   getReleaseGroup :: MusicBrainzId -> m (Maybe ReleaseGroup)
+  getRecording :: MusicBrainzId -> m (Maybe Recording)
 
 instance
   {-# OVERLAPPABLE #-}
@@ -211,128 +229,121 @@ instance
   getArtistRecordings = lift . getArtistRecordings
   getRelease = lift . getRelease
   getReleaseGroup = lift . getReleaseGroup
+  getRecording = lift . getRecording
 
-getArtistFromMetadata ::
-  ( MusicBrainzService m,
-    Logging m
-  ) =>
-  Metadata ->
-  m [Artist]
-getArtistFromMetadata Metadata {tags, lens} =
-  getArtistByMusicBrainzId (V.toList $ tags ^. lens artistIdTag)
-    `orM` getArtistByAlbum (tags ^? lens M.album . _head) (tags ^? lens M.albumArtist . _head)
-    `orM` getArtistByTrackArtistName (tags ^? lens M.artist . _head)
-
-getArtistByMusicBrainzId ::
-  ( MusicBrainzService m,
-    Logging m
-  ) =>
-  [Text] ->
-  m [Artist]
-getArtistByMusicBrainzId [] = pure A.empty
-getArtistByMusicBrainzId artistIds = do
-  artists <- catMaybes <$> forM artistIds (getArtist . MusicBrainzId)
-  $(logDebugShow) artists
-  pure artists
-
-getArtistByAlbum ::
-  ( MusicBrainzService m,
-    Logging m
-  ) =>
-  Maybe Text ->
-  Maybe Text ->
-  m [Artist]
-getArtistByAlbum Nothing Nothing = pure A.empty
-getArtistByAlbum albumTitle albumArtist = do
-  release <- getReleaseByAlbum albumTitle albumArtist
-  let artists = release ^.. _Just . #artistCredit . traverse . traverse . #artist . #id . coerced
-  getArtistByMusicBrainzId artists
-
-getArtistByTrackArtistName ::
-  ( MusicBrainzService m,
-    Logging m
-  ) =>
-  Maybe Text ->
-  m [Artist]
-getArtistByTrackArtistName Nothing = pure A.empty
-getArtistByTrackArtistName (Just trackArtist) = do
-  artists <- searchArtists ArtistSearch {artist = trackArtist}
-  $(logDebugShow) artists
-  case artists of
-    [] -> pure A.empty
-    artists' -> pure artists'
-
-orM :: (Monad m, Alternative f, Eq (f a)) => m (f a) -> m (f a) -> m (f a)
-orM a b =
+(<<|>>) :: (Monad m, Alternative f, Eq (f a)) => m (f a) -> m (f a) -> m (f a)
+a <<|>> b =
   a >>= \case
     a'
       | a' == A.empty ->
-        b >>= \case
-          b' | b' == A.empty -> pure A.empty
-          b' -> pure b'
+          b >>= \case
+            b' | b' == A.empty -> pure A.empty
+            b' -> pure b'
     a' -> pure a'
 
-getReleaseFromMetadata ::
-  ( MusicBrainzService m,
-    Logging m
-  ) =>
-  Metadata ->
-  m (Maybe Release)
-getReleaseFromMetadata Metadata {tags, lens} =
-  getReleaseByMusicBrainzId (V.toList $ tags ^. lens releaseIdTag)
-    `orM` getReleaseByAlbum (tags ^? lens M.album . _head) (tags ^? lens M.albumArtist . _head)
+getReleaseGroupFromMetadata ::
+  MusicBrainzService m =>
+  F.Metadata ->
+  m (Maybe ReleaseGroup)
+getReleaseGroupFromMetadata m =
+  getReleaseGroupByMusicBrainzId m <<|>> getReleaseGroupByAlbum m
 
-getReleaseByMusicBrainzId ::
-  ( MusicBrainzService m,
-    Logging m
-  ) =>
-  [Text] ->
-  m (Maybe Release)
-getReleaseByMusicBrainzId [] = pure A.empty
-getReleaseByMusicBrainzId releaseIds = do
-  releases <- catMaybes <$> forM releaseIds (getRelease . MusicBrainzId)
-  $(logDebugShow) releases
-  case releases of
-    [release] -> pure $ Just release
-    _noMatchingRelease -> pure A.empty
+getReleaseGroupByMusicBrainzId ::
+  MusicBrainzService m =>
+  F.Metadata ->
+  m (Maybe ReleaseGroup)
+getReleaseGroupByMusicBrainzId F.Metadata {tags, lens} = do
+  let releaseGroupIds = tags ^. lens releaseGroupIdTag
+  V.find perfectScore . V.catMaybes <$>
+    V.forM releaseGroupIds (getReleaseGroup . MusicBrainzId)
 
-getReleaseByAlbum ::
-  ( MusicBrainzService m,
-    Logging m
-  ) =>
-  Maybe Text ->
-  Maybe Text ->
-  m (Maybe Release)
-getReleaseByAlbum Nothing Nothing = pure A.empty
-getReleaseByAlbum albumTitle albumArtist = do
-  releases <- searchReleases def {albumArtist = albumArtist, albumTitle = albumTitle}
-  $(logDebugShow) releases
-  let releases' = filter (\release -> release ^. #score == Just 100) releases
-  case releases' of
-    [release] -> pure $ Just release
-    _noMatchingRelease -> pure A.empty
+getReleaseGroupByAlbum ::
+  MusicBrainzService m =>
+  F.Metadata ->
+  m (Maybe ReleaseGroup)
+getReleaseGroupByAlbum F.Metadata {lens, tags} = do
+  let albumTitle = tags ^? lens M.album . _head
+  let albumArtist = tags ^? lens M.albumArtist . _head
+  if isJust albumTitle && isJust albumArtist then
+    find perfectScore <$>
+      searchReleaseGroups def {albumArtist, albumTitle}
+    else pure Nothing
+
+getRecordingFromMetadata ::
+  MusicBrainzService m =>
+  F.Metadata ->
+  m (Maybe Recording)
+getRecordingFromMetadata m =
+  getRecordingByMusicBrainzId m
+    <<|>> getRecordingByReleaseId m
+    <<|>> getRecordingByTrack m
+
+getRecordingByMusicBrainzId ::
+  MusicBrainzService m =>
+  F.Metadata ->
+  m (Maybe Recording)
+getRecordingByMusicBrainzId F.Metadata {tags, lens} = do
+  let recordingIds = tags ^. lens recordingIdTag
+  V.find perfectScore . V.catMaybes <$>
+    V.forM recordingIds (getRecording . MusicBrainzId)
+
+getRecordingByReleaseId ::
+  MusicBrainzService m =>
+  F.Metadata ->
+  m (Maybe Recording)
+getRecordingByReleaseId F.Metadata {tags, lens} = do
+  let title = tags ^? lens M.trackTitle . _head
+  let releaseId = tags ^? lens releaseIdTag . _head
+  let releaseGroupId = tags ^? lens releaseGroupIdTag . _head
+  if isJust releaseId || isJust releaseGroupId then
+    find perfectScore <$>
+      searchRecordings
+        def
+          { title,
+            releaseId,
+            releaseGroupId
+          }
+  else pure Nothing
+
+getRecordingByTrack ::
+  MusicBrainzService m =>
+  F.Metadata ->
+  m (Maybe Recording)
+getRecordingByTrack F.Metadata {tags, lens} = do
+  let title = tags ^? lens M.trackTitle . _head
+  let album = tags ^? lens M.album . _head
+  let trackNumber = tags ^? lens M.trackNumber . _head
+  let artist = tags ^? lens M.artist . _head
+  if isJust title && (isJust album || isJust artist) then
+    find perfectScore <$> searchRecordings def {title, album, trackNumber, artist}
+    else pure Nothing
+
+perfectScore :: (Integral i, HasField "score" r (Maybe i)) => r -> Bool
+perfectScore r = r.score == Just 100
 
 newtype MusicBrainzServiceIOT m a = MusicBrainzServiceIOT
-  { runMusicBrainzServiceIOT :: HttpSessionIOT (RateLimitIOT m) a
+  { runMusicBrainzServiceIOT :: HttpSessionIOT m a
   }
-  deriving newtype (
-    Applicative,
-    Functor,
-    Monad,
-    MonadBase b,
-    MonadBaseControl b,
-    MonadCatch,
-    MonadConc,
-    MonadIO,
-    MonadMask,
-    MonadThrow
-  )
+  deriving newtype
+    ( Applicative,
+      Functor,
+      Monad,
+      MonadBase b,
+      MonadBaseControl b,
+      MonadCatch,
+      MonadConc,
+      MonadIO,
+      MonadMask,
+      MonadThrow,
+      PrimMonad
+    )
 
 instance MonadTrans MusicBrainzServiceIOT where
-  lift m = MusicBrainzServiceIOT $ HttpSessionIOT $ ReaderT $ const $ RateLimitIOT $ ReaderT $ const m
+  lift m = MusicBrainzServiceIOT $ HttpSessionIOT $ ReaderT $ const m
 
 instance
   ( MonadIO m,
+    RateLimit m,
     Logging m
   ) =>
   MusicBrainzService (MusicBrainzServiceIOT m)
@@ -341,8 +352,8 @@ instance
     waitReady
     let qterms =
           catMaybes
-            [ fmap (\t -> "release:\"" <> t <> "\"") $ search ^. #albumTitle,
-              fmap (\a -> "artist:\"" <> a <> "\"") $ search ^. #albumArtist
+            [ fmap (\t -> "releaseaccent:\"" <> t <> "\"") search.albumTitle,
+              fmap (\a -> "artist:\"" <> a <> "\"") search.albumArtist
             ]
     case qterms of
       [] -> pure []
@@ -359,8 +370,8 @@ instance
     waitReady
     let qterms =
           catMaybes
-            [ fmap (\t -> "release:\"" <> t <> "\"") $ search ^. #albumTitle,
-              fmap (\a -> "artist:\"" <> a <> "\"") $ search ^. #albumArtist
+            [ fmap (\t -> "releasegroupaccent:\"" <> t <> "\"") search.albumTitle,
+              fmap (\a -> "artist:\"" <> a <> "\"") search.albumArtist
             ]
     case qterms of
       [] -> pure []
@@ -377,7 +388,7 @@ instance
     waitReady
     let opts =
           mbWreqDefaults
-            & Wr.param "query" .~ ["artist:\"" <> search ^. #artist <> "\""]
+            & Wr.param "query" .~ ["artist:\"" <> search.artist <> "\""]
     let url = baseUrl <> "/artist"
     getWithJson @_ @ArtistSearchResult opts url >>= \case
       Left e -> do
@@ -388,9 +399,12 @@ instance
     waitReady
     let qterms =
           catMaybes
-            [ fmap (\a -> "artist:\"" <> a <> "\"") $ search ^. #artist,
-              fmap (\a -> "release:\"" <> a <> "\"") $ search ^. #album,
-              fmap (\a -> "recording:\"" <> a <> "\"") $ search ^. #title
+            [ fmap (\a -> "recording:\"" <> a <> "\"") search.title,
+              fmap (\a -> "tnum:\"" <> a <> "\"") search.trackNumber,
+              fmap (\a -> "artist:\"" <> a <> "\"") search.artist,
+              fmap (\a -> "release:\"" <> a <> "\"") search.album,
+              fmap (\a -> "reid:\"" <> a <> "\"") search.releaseId,
+              fmap (\a -> "rgid:\"" <> a <> "\"") search.releaseGroupId
             ]
     case qterms of
       [] -> pure []
@@ -467,14 +481,15 @@ instance
         $(logError) $ "error getting release group " <> show releaseGroupId <> ": " <> show e
         pure Nothing
       Right r -> pure $ r ^. Wr.responseBody
-
---newtype CachedMusicBrainzServiceIOC m a = CachedMusicBrainzServiceIOC
---  { runCachedMusicBrainzServiceIOC :: HttpSessionIOC (RateLimitIOC m) a
---  }
---  deriving newtype (Applicative, Functor, Monad)
---
---instance Algebra (Cache :+: MusicBrainzService :+: sig) (CachedMusicBrainzServiceIOC m) where
---  alg hdl sig ctx = error "unimplemented"
+  getRecording recordingId = MusicBrainzServiceIOT $ do
+    waitReady
+    let opts = mbWreqDefaults
+    let url = baseUrl <> "/recording/" <> recordingId.mbid
+    getWithJson opts url >>= \case
+      Left e -> do
+        $(logError) $ "error getting recording " <> show recordingId <> ": " <> show e
+        pure Nothing
+      Right r -> pure $ r ^. Wr.responseBody
 
 mbWreqDefaults :: Wr.Options
 mbWreqDefaults =
@@ -484,13 +499,15 @@ mbWreqDefaults =
     & Wr.param "fmt" .~ ["json"]
 
 baseUrl :: IsString s => s
-baseUrl = "https://musicbrainz.org/ws/2"
+-- TODO configurable musicbrainz url
+-- baseUrl = "https://musicbrainz.org/ws/2"
+baseUrl = "http://192.168.1.170:5000/ws/2"
 
 runMusicBrainzServiceIO ::
   ( MonadIO m
   ) =>
   WrS.Session ->
-  MusicBrainzServiceIOT m a ->
+  MusicBrainzServiceIOT (RateLimitIOT m) a ->
   m a
 runMusicBrainzServiceIO sess =
   runRateLimitIO mbRateLimitConfig
@@ -504,6 +521,34 @@ mbRateLimitConfig =
       initialBucketTokens = 1,
       bucketRefillTokensPerSecond = 1
     }
+
+runMusicBrainzServiceUnlimitedIO ::
+  WrS.Session ->
+  MusicBrainzServiceIOT (UnlimitedT m) a ->
+  m a
+runMusicBrainzServiceUnlimitedIO sess =
+  runUnlimitedT
+    . runHttpSession sess
+    . runMusicBrainzServiceIOT
+
+newtype UnlimitedT m a = UnlimitedT {runUnlimitedT :: m a}
+  deriving (MonadTrans, MonadTransControl) via IdentityT
+  deriving newtype
+    ( Functor,
+      Applicative,
+      Monad,
+      MonadIO,
+      MonadBase b,
+      MonadBaseControl b,
+      MonadConc,
+      MonadCatch,
+      MonadMask,
+      MonadThrow,
+      PrimMonad
+    )
+
+instance Monad m => RateLimit (UnlimitedT m) where
+  waitReady = pure ()
 
 mbAesonOptions :: A.Options
 mbAesonOptions = defaultOptions {fieldLabelModifier = trainCase}
@@ -550,6 +595,16 @@ albumIdTag =
 
 trackIdTag :: TagMapping
 trackIdTag =
+  singletonTagMapping
+    def
+      { ape = caseInsensitiveMapping "MUSICBRAINZ_RELEASETRACKID",
+        vorbis = caseInsensitiveMapping "MUSICBRAINZ_RELEASETRACKID",
+        id3v2_3 = caseInsensitiveMapping "TXXX:MusicBrainz Release Track Id",
+        id3v2_4 = caseInsensitiveMapping "TXXX:MusicBrainz Release Track Id"
+      }
+
+recordingIdTag :: TagMapping
+recordingIdTag =
   singletonTagMapping
     def
       { ape = caseInsensitiveMapping "MUSICBRAINZ_TRACKID",

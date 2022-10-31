@@ -1,9 +1,11 @@
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UnboxedTuples #-}
 
 module Melo.Library.Source.MultiTrack where
 
 import Control.Concurrent.Classy
 import Control.Exception.Safe
+import Control.Foldl (PrimMonad)
 import Control.Monad
 import Control.Monad.Base
 import Control.Monad.Trans
@@ -60,7 +62,8 @@ newtype MultiTrackIOT m a = MultiTrackIOT
       MonadConc,
       MonadCatch,
       MonadMask,
-      MonadThrow
+      MonadThrow,
+      PrimMonad
     )
   deriving (MonadTrans, MonadTransControl) via IdentityT
 

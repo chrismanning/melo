@@ -76,18 +76,18 @@ instance From NewCollection (CollectionTable Expr) where
       rootUri NewFilesystemCollection {rootPath} = fileUri $ T.unpack rootPath
       kind NewFilesystemCollection {} = "filesystem"
 
-instance From NewCollection (CollectionTable Result) where
-  from c@NewFilesystemCollection {name, watch} =
-    CollectionTable
-      { id = CollectionRef $ unsafeDupablePerformIO nextRandom,
-        root_uri = T.pack $ show $ rootUri c,
-        name = name,
-        watch = watch,
-        kind = kind c
-      }
-    where
-      rootUri NewFilesystemCollection {rootPath} = fileUri $ T.unpack rootPath
-      kind NewFilesystemCollection {} = "filesystem"
+--instance From NewCollection (CollectionTable Result) where
+--  from c@NewFilesystemCollection {name, watch} =
+--    CollectionTable
+--      { id = CollectionRef $ unsafeDupablePerformIO nextRandom,
+--        root_uri = T.pack $ show $ rootUri c,
+--        name = name,
+--        watch = watch,
+--        kind = kind c
+--      }
+--    where
+--      rootUri NewFilesystemCollection {rootPath} = fileUri $ T.unpack rootPath
+--      kind NewFilesystemCollection {} = "filesystem"
 
 type UpdateCollection = CollectionTable Result
 

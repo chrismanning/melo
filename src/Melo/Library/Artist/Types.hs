@@ -2,9 +2,9 @@
 
 module Melo.Library.Artist.Types where
 
-import Control.Lens hiding (from, lens)
 import Country
 import Data.Hashable
+import Data.Maybe
 import Data.Morpheus.Types as M
 import Data.Morpheus.Kind
 import Data.Text (Text)
@@ -26,9 +26,15 @@ data ArtistTable f = ArtistTable
   }
   deriving (Generic, Rel8able)
 
-instance Entity (ArtistTable Result) where
-  type NewEntity (ArtistTable Result) = NewArtist
-  type PrimaryKey (ArtistTable Result) = ArtistRef
+type ArtistEntity = ArtistTable Result
+
+deriving instance Show ArtistEntity
+deriving instance Eq ArtistEntity
+deriving instance Ord ArtistEntity
+
+instance Entity ArtistEntity where
+  type NewEntity ArtistEntity = NewArtist
+  type PrimaryKey ArtistEntity = ArtistRef
   primaryKey e = e.id
 
 newtype ArtistRef = ArtistRef UUID
@@ -54,12 +60,26 @@ data Artist = Artist
   { key :: ArtistRef,
     artistIds :: [ArtistId],
     name :: Text,
+    aliases :: [Text],
     disambiguation :: Maybe Text,
     country :: Maybe Country,
     biography :: Maybe Text,
     shortBiography :: Maybe Text
   }
   deriving (Generic, Show)
+
+mkArtist :: ArtistEntity -> [Text] -> Artist
+mkArtist dbArtist names =
+  Artist
+    { key = dbArtist.id,
+      artistIds = catMaybes [MusicBrainzArtistId <$> MB.MusicBrainzId <$> dbArtist.musicbrainz_id],
+      name = dbArtist.name,
+      aliases = names,
+      disambiguation = dbArtist.disambiguation,
+      biography = dbArtist.bio,
+      shortBiography = dbArtist.short_bio,
+      country = dbArtist.country >>= decodeAlphaTwo
+    }
 
 data ArtistId
   = MusicBrainzArtistId
@@ -73,24 +93,13 @@ data ArtistId
       }
   deriving (Show, Eq)
 
-instance From (ArtistTable Result) Artist where
-  from dbArtist =
-    Artist
-      { key = dbArtist ^. #id,
-        artistIds = [],
-        name = dbArtist ^. #name,
-        disambiguation = dbArtist ^. #disambiguation,
-        biography = dbArtist ^. #bio,
-        shortBiography = dbArtist ^. #short_bio,
-        country = dbArtist ^. #country >>= decodeAlphaTwo
-      }
-
 data NewArtist = NewArtist
   { name :: Text,
     country :: Maybe Country,
     disambiguation :: Maybe Text,
     bio :: Maybe Text,
-    shortBio :: Maybe Text
+    shortBio :: Maybe Text,
+    musicBrainzId :: Maybe MB.MusicBrainzId
   }
   deriving (Generic, Eq, Ord, Show)
 
@@ -98,25 +107,21 @@ instance From NewArtist (ArtistTable Expr) where
   from a =
     ArtistTable
       { id = nullaryFunction "uuid_generate_v4",
-        name = lit (a ^. #name),
-        disambiguation = lit (a ^. #disambiguation),
-        country = lit (alphaThreeLower <$> a ^. #country),
-        bio = lit (a ^. #bio),
-        short_bio = lit (a ^. #shortBio),
-        musicbrainz_id = lit Nothing
+        name = lit a.name,
+        disambiguation = lit a.disambiguation,
+        country = lit (alphaThreeLower <$> a.country),
+        bio = lit a.bio,
+        short_bio = lit a.shortBio,
+        musicbrainz_id = lit (MB.mbid <$> a.musicBrainzId)
       }
 
 instance From MB.Artist NewArtist where
   from a =
     NewArtist
-      { name = a ^. #name,
-        disambiguation = a ^. #disambiguation,
-        country = a ^. #country >>= decodeAlphaTwo,
+      { name = a.name,
+        disambiguation = a.disambiguation,
+        country = a.country >>= decodeAlphaTwo,
         bio = Nothing,
-        shortBio = Nothing
+        shortBio = Nothing,
+        musicBrainzId = Just a.id
       }
-
-data Reviewed a
-  = CommitAsIs
-  | CommitAs a
-  | DoNotCommit

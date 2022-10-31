@@ -1,9 +1,11 @@
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UnboxedTuples #-}
 
 module Melo.Library.Source.Repo where
 
 import Control.Concurrent.Classy
 import Control.Exception.Safe
+import Control.Foldl (PrimMonad)
 import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
@@ -64,7 +66,8 @@ newtype SourceRepositoryIOT m a = SourceRepositoryIOT
       MonadReader (RepositoryHandle SourceTable),
       MonadThrow,
       MonadTrans,
-      MonadTransControl
+      MonadTransControl,
+      PrimMonad
     )
 
 instance MonadIO m => Repository SourceEntity (SourceRepositoryIOT m) where
@@ -122,11 +125,11 @@ instance
       srcs <- Rel8.each tbl
       Rel8.where_ (srcs.source_uri `startsWith` Rel8.lit (T.pack $ show prefix))
       pure (pk srcs)
-  getCollectionSources (CollectionRef collectionId) = do
+  getCollectionSources collectionRef = do
     RepositoryHandle {connSrc, tbl} <- ask
     runSelect connSrc do
       srcs <- orderByUri $ Rel8.each tbl
-      Rel8.where_ (srcs.collection_id ==. Rel8.lit collectionId)
+      Rel8.where_ (srcs.collection_id ==. Rel8.lit collectionRef)
       pure srcs
 
 sourceSchema :: TableSchema (SourceTable Name)

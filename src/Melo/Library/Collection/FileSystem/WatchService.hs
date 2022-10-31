@@ -1,4 +1,5 @@
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UnboxedTuples #-}
 
 module Melo.Library.Collection.FileSystem.WatchService where
 
@@ -6,6 +7,7 @@ import Control.Concurrent
 import Control.Concurrent.Classy (MonadConc)
 import Control.Concurrent.STM qualified as STM
 import Control.Exception.Safe
+import Control.Foldl (PrimMonad)
 import Control.Monad
 import Control.Monad.Base
 import Control.Monad.Par.IO
@@ -28,6 +30,7 @@ import Melo.Database.Transaction
 import Melo.Library.Collection.FileSystem.Service
 import Melo.Library.Collection.Types
 import Melo.Library.Source.Repo
+import Network.Wreq.Session as Wreq
 import System.FSNotify (ThreadingMode (..))
 import System.FSNotify qualified as FS
 import System.FilePath
@@ -60,7 +63,7 @@ emptyWatchState = STM.atomically $
   CollectionWatchState <$> STM.newTVar H.empty <*> STM.newTVar Seq.empty
 
 newtype FileSystemWatchServiceIOT m a = FileSystemWatchServiceIOT
-  { runFileSystemWatchServiceIOT :: ReaderT (Pool Connection, CollectionWatchState) m a
+  { runFileSystemWatchServiceIOT :: ReaderT (Pool Connection, CollectionWatchState, Wreq.Session) m a
   }
   deriving newtype
     ( Functor,
@@ -70,18 +73,19 @@ newtype FileSystemWatchServiceIOT m a = FileSystemWatchServiceIOT
       MonadConc,
       MonadCatch,
       MonadMask,
-      MonadReader (Pool Connection, CollectionWatchState),
+      MonadReader (Pool Connection, CollectionWatchState, Wreq.Session),
       MonadThrow,
       MonadTrans,
       MonadTransControl,
       MonadBase b,
-      MonadBaseControl b
+      MonadBaseControl b,
+      PrimMonad
     )
 
 runFileSystemWatchServiceIO ::
-  Pool Connection -> CollectionWatchState -> FileSystemWatchServiceIOT m a -> m a
-runFileSystemWatchServiceIO pool watchState =
-  flip runReaderT (pool, watchState) . runFileSystemWatchServiceIOT
+  Pool Connection -> CollectionWatchState -> Wreq.Session -> FileSystemWatchServiceIOT m a -> m a
+runFileSystemWatchServiceIO pool watchState sess =
+  flip runReaderT (pool, watchState, sess) . runFileSystemWatchServiceIOT
 
 instance
   ( MonadIO m,
@@ -92,7 +96,7 @@ instance
   FileSystemWatchService (FileSystemWatchServiceIOT m)
   where
   startWatching ref p = do
-    (pool, watchState) <- ask
+    (pool, watchState, sess) <- ask
     $(logInfo) $ "starting to watch path " <> p
     liftBaseWith
       ( \runInBase ->
@@ -102,19 +106,19 @@ instance
                 FS.withManagerConf (FS.defaultConfig {FS.confThreadingMode = ThreadPerWatch}) $ \watchManager -> do
                   let handler e = do
                         locks <- STM.atomically $ STM.readTVar watchState.locks
-                        void $ runInBase $ handleEvent pool ref locks e
+                        void $ runInBase $ handleEvent pool sess ref locks e
                   stop <- FS.watchTree watchManager p (\e -> takeExtension (FS.eventPath e) `notElem` [".tmp", ".part"]) handler
                   STM.atomically $ STM.modifyTVar' watchState.stoppers (H.insert ref stop)
                   forever $ threadDelay 1000000
       )
   stopWatching ref = do
-    (_pool, watchState) <- ask
+    (_pool, watchState, _sess) <- ask
     stoppers' <- liftIO $ STM.atomically $ STM.readTVar watchState.stoppers
     case H.lookup ref stoppers' of
       Just stop -> liftIO stop
       Nothing -> pure ()
   lockPathsDuring ps m = do
-    (_pool, watchState) <- ask
+    (_pool, watchState, _sess) <- ask
     let packedPaths = Seq.fromList $ NE.toList $ pack <$> ps
     bracket
       (liftIO $ do
@@ -137,23 +141,24 @@ handleEvent ::
     MonadIO m
   ) =>
   Pool Connection ->
+  Wreq.Session ->
   CollectionRef ->
   Seq ByteString ->
   FS.Event ->
   m ()
-handleEvent pool ref locks event = unless (isLocked (pack event.eventPath)) do
+handleEvent pool sess ref locks event = unless (isLocked (pack event.eventPath)) do
   case event of
     FS.Added p _ _ -> do
       $(logInfo) $ "file/directory added; scanning " <> p
-      liftIO $ runParIO (scanPathIO pool ScanAll ref p)
+      liftIO $ runParIO (scanPathIO pool sess ScanAll ref p)
       pure ()
     FS.Modified p _ _ -> do
       $(logInfo) $ "file/directory modified; scanning " <> p
-      liftIO $ runParIO (scanPathIO pool ScanNewOrModified ref p)
+      liftIO $ runParIO (scanPathIO pool sess ScanNewOrModified ref p)
       pure ()
     FS.ModifiedAttributes p _ _ -> do
       $(logInfo) $ "file/directory attributes modified; scanning " <> p
-      liftIO $ runParIO (scanPathIO pool ScanNewOrModified ref p)
+      liftIO $ runParIO (scanPathIO pool sess ScanNewOrModified ref p)
       pure ()
     FS.WatchedDirectoryRemoved p _ _ -> do
       $(logInfo) $ "watched directory removed " <> p

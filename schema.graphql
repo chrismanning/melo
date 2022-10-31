@@ -1,0 +1,267 @@
+type Collection {
+  id: CollectionRef!
+  rootUri: String!
+  name: String!
+  watch: Boolean!
+  kind: String!
+  sources(where: SourceWhere): [Source!]!
+  sourceGroups: [SourceGroup!]!
+}
+
+type CollectionMutation {
+  add(newCollection: NewCollection!): Collection!
+  delete(id: CollectionRef!): Unit!
+  deleteAll: Unit!
+}
+
+scalar CollectionRef
+
+input CollectionWhere {
+  id: Where
+  rootUri: Where
+}
+
+input ContainsExpr {
+  contains: String!
+}
+
+input EditMetadata {
+  metadataTransform: MetadataTransformation!
+}
+
+type EmbeddedImage {
+  imageType: PictureTypeWrapper!
+  downloadUri: String!
+}
+
+input EqExpr {
+  eq: String!
+}
+
+type ExternalImage {
+  fileName: String!
+  downloadUri: String!
+}
+
+type FailedSourceUpdate {
+  id: SourceRef!
+  msg: String!
+}
+
+type GroupTags {
+  albumArtist: [String!]
+  albumTitle: String
+  date: String
+  genre: [String!]
+  totalTracks: String
+  discNumber: String
+  totalDiscs: String
+  musicbrainzArtistId: [String!]
+  musicbrainzAlbumArtistId: [String!]
+  musicbrainzAlbumId: String
+}
+
+union Image = ExternalImage | EmbeddedImage
+
+input InExpr {
+  in: [String!]!
+}
+
+type LibraryMutation {
+  stageSources(uris: [String!]!): StagedSources!
+  transformSources(transformations: [Transform!]!, where: SourceWhere): [UpdateSourceResult!]!
+  updateSources(updates: [SourceUpdate!]!): [UpdateSourceResult!]!
+  collection: CollectionMutation!
+}
+
+type LibraryQuery {
+  sources(where: SourceWhere): [Source!]!
+  sourceGroups: [SourceGroup!]!
+  collections(where: CollectionWhere): [Collection!]!
+}
+
+type MappedTags {
+  artistName: [String!]
+  trackTitle: String
+  albumTitle: String
+  date: String
+  genre: [String!]
+  albumArtist: [String!]
+  trackNumber: String
+  totalTracks: String
+  discNumber: String
+  totalDiscs: String
+  comment: String
+  musicbrainzArtistId: [String!]
+  musicbrainzAlbumArtistId: [String!]
+  musicbrainzAlbumId: String
+  musicbrainzTrackId: String
+}
+
+input MappedTagsInput {
+  artistName: [String!]
+  trackTitle: String
+  albumTitle: String
+  date: String
+  genre: [String!]
+  albumArtist: [String!]
+  trackNumber: String
+  totalTracks: String
+  discNumber: String
+  totalDiscs: String
+  comment: String
+  musicbrainzArtistId: [String!]
+  musicbrainzAlbumArtistId: [String!]
+  musicbrainzAlbumId: String
+  musicbrainzTrackId: String
+}
+
+type Metadata {
+  tags: [TagPair!]!
+  mappedTags: MappedTags!
+  formatId: String!
+  format: String!
+}
+
+"""
+Note! This input is an exclusive object,
+i.e., the customer can provide a value for only one field.
+"""
+input MetadataTransformation {
+  SetMapping: SetMapping
+  RemoveMappings: RemoveMappings
+  Retain: Retain
+}
+
+input Move {
+  destPattern: String!
+  collectionRef: String
+}
+
+type Mutation {
+  library: LibraryMutation!
+}
+
+input NewCollection {
+  rootPath: String!
+  name: String!
+  watch: Boolean!
+}
+
+input NotEqExpr {
+  notEq: String!
+}
+
+scalar PictureTypeWrapper
+
+type Query {
+  library: LibraryQuery!
+}
+
+input RemoveMappings {
+  mappings: [String!]!
+}
+
+input Retain {
+  mappings: [String!]!
+}
+
+input SetMapping {
+  mapping: String!
+  values: [String!]!
+}
+
+type Source {
+  id: SourceRef!
+  format: String!
+  metadata: Metadata!
+  sourceName: String!
+  sourceUri: String!
+  filePath: String
+  downloadUri: String!
+  length: Float
+  coverImage: Image
+  previewTransform(transformations: [Transform!]!): UpdateSourceResult!
+}
+
+type SourceGroup {
+  groupTags: GroupTags!
+  groupParentUri: String!
+  sources: [Source!]!
+  coverImage: Image
+}
+
+scalar SourceRef
+
+input SourceUpdate {
+  id: SourceRef!
+  updateTags: TagUpdate!
+}
+
+input SourceWhere {
+  id: Where
+  sourceUri: Where
+}
+
+input SplitMultiTrackFile {
+  destPattern: String!
+  collectionRef: String
+}
+
+type StagedSources {
+  sources: [Source!]!
+  groups: [SourceGroup!]!
+  numberOfSourcesImported: Int!
+}
+
+input StartsWithExpr {
+  startsWith: String!
+}
+
+type TagPair {
+  key: String!
+  value: String!
+}
+
+input TagUpdate {
+  setMappedTags: MappedTagsInput
+  setTags: [UpdatePair!]
+}
+
+"""
+Note! This input is an exclusive object,
+i.e., the customer can provide a value for only one field.
+"""
+input Transform {
+  Move: Move
+  SplitMultiTrackFile: SplitMultiTrackFile
+  EditMetadata: EditMetadata
+}
+
+enum Unit {
+  Unit
+}
+
+type UpdatedSource {
+  _0: Source!
+}
+
+input UpdatePair {
+  key: String!
+  value: String!
+}
+
+union UpdateSourceResult = UpdatedSource | FailedSourceUpdate
+
+"""
+Note! This input is an exclusive object,
+i.e., the customer can provide a value for only one field.
+"""
+input Where {
+  EqExpr: EqExpr
+  NotEqExpr: NotEqExpr
+  ContainsExpr: ContainsExpr
+  InExpr: InExpr
+  StartsWithExpr: StartsWithExpr
+}
+

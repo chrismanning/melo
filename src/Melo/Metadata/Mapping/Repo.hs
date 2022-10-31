@@ -1,9 +1,11 @@
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UnboxedTuples #-}
 
 module Melo.Metadata.Mapping.Repo where
 
 import Control.Concurrent.Classy
 import Control.Exception.Safe
+import Control.Foldl (PrimMonad)
 import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
@@ -45,17 +47,10 @@ newtype TagMappingRepositoryIOT m a = TagMappingRepositoryIOT
       MonadReader (RepositoryHandle TagMappingTable),
       MonadThrow,
       MonadTrans,
-      MonadTransControl
+      MonadTransControl,
+      PrimMonad,
+      Repository TagMappingEntity
     )
-
-instance MonadIO m => Repository TagMappingEntity (TagMappingRepositoryIOT m) where
-  getAll = TagMappingRepositoryIOT getAll
-  getByKey = TagMappingRepositoryIOT . getByKey
-  insert = TagMappingRepositoryIOT . insert
-  insert' = TagMappingRepositoryIOT . insert'
-  delete = TagMappingRepositoryIOT . delete
-  update = TagMappingRepositoryIOT . update
-  update' = TagMappingRepositoryIOT . update'
 
 instance MonadIO m => TagMappingRepository (TagMappingRepositoryIOT m)
 

@@ -68,7 +68,7 @@ data SourceTable f = SourceTable
     idx :: Column f Int16,
     time_range :: Column f (Maybe IntervalRange),
     scanned :: Column f LocalTime,
-    collection_id :: Column f UUID,
+    collection_id :: Column f CollectionRef,
     cover :: Column f (Maybe PictureTypeWrapper)
   }
   deriving (Generic, Rel8able)
@@ -189,6 +189,7 @@ instance From NewSource (SourceTable Expr) where
         cover = lit $ coerce s.cover
       }
 
+-- instance used for preview transforms only
 instance From NewSource SourceEntity where
   from s =
     SourceTable
@@ -384,6 +385,7 @@ data Source = Source
     kind :: MetadataFileId,
     multiTrack :: Maybe MultiTrackDesc,
     collectionRef :: CollectionRef,
+    length :: Maybe NominalDiffTime,
     cover :: Maybe PictureType
   }
   deriving (Generic, Show, Eq)
@@ -404,8 +406,9 @@ instance TryFrom SourceEntity Source where
           multiTrack,
           source = uri,
           kind = MetadataFileId s.kind,
-          collectionRef = CollectionRef s.collection_id,
+          collectionRef = s.collection_id,
           cover = coerce s.cover,
+          length = s.time_range >>= rangeLength,
           metadata
         }
 
@@ -436,9 +439,10 @@ instance From Source SourceEntity where
         metadata = JSONBEncoded (from tags),
         source_uri = T.pack $ show source,
         idx = fromMaybe (-1) (multiTrack ^? _Just . #idx),
-        time_range = from <$> multiTrack ^? _Just . #range,
+        time_range = (from <$> multiTrack ^? _Just . #range)
+          <|> (IntervalRange . R.ubi . calendarTimeTime <$> length),
         scanned = unsafeDupablePerformIO getCurrentLocalTime,
-        collection_id = coerce collectionRef,
+        collection_id = collectionRef,
         cover = coerce cover
       }
 

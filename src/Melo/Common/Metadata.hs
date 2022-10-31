@@ -1,10 +1,12 @@
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UnboxedTuples #-}
 
 module Melo.Common.Metadata where
 
 import Control.Applicative
 import Control.Concurrent.Classy
 import Control.Exception.Safe
+import Control.Foldl (PrimMonad)
 import Control.Lens ((^.))
 import Control.Monad.Base
 import Control.Monad.Identity
@@ -60,7 +62,8 @@ newtype MetadataServiceIOT m a = MetadataServiceIOT
       MonadConc,
       MonadCatch,
       MonadMask,
-      MonadThrow
+      MonadThrow,
+      PrimMonad
     )
   deriving (MonadTrans, MonadTransControl) via IdentityT
 

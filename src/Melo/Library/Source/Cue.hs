@@ -55,7 +55,7 @@ openCueFile cueFilePath = do
             let tags =
                   catMaybes
                     [ Just ("TRACKNUMBER", T.pack $ show trackNum),
-                      Just ("TOTAL_TRACKS", T.pack $ show $ length cueTracks''),
+                      Just ("TOTAL_TRACKS", T.pack $ show $ Prelude.length cueTracks''),
                       ("PERFORMER",) . unCueText <$> (cueTrackPerformer <|> cuePerformer),
                       ("TITLE",) . unCueText <$> cueTrackTitle,
                       ("ALBUM_PERFORMER",) . unCueText <$> (cuePerformer <|> cueTrackPerformer),

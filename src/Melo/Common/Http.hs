@@ -1,4 +1,5 @@
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UnboxedTuples #-}
 
 module Melo.Common.Http
   ( Http (..),
@@ -13,6 +14,7 @@ where
 import Control.Applicative
 import Control.Concurrent.Classy (MonadConc)
 import Control.Exception.Safe
+import Control.Foldl (PrimMonad)
 import Control.Monad.Base
 import Control.Monad.Except
 import Control.Monad.Reader
@@ -74,7 +76,8 @@ newtype HttpSessionIOT m a = HttpSessionIOT
     MonadMask,
     MonadThrow,
     MonadTrans,
-    MonadTransControl
+    MonadTransControl,
+    PrimMonad
   )
 
 instance

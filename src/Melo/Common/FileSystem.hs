@@ -1,9 +1,11 @@
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UnboxedTuples #-}
 
 module Melo.Common.FileSystem where
 
 import Control.Concurrent.Classy
 import Control.Exception.Safe
+import Control.Foldl (PrimMonad)
 import Control.Monad.Base
 import Control.Monad.Identity
 import Control.Monad.Trans
@@ -61,7 +63,8 @@ newtype FileSystemIOT m a = FileSystemIOT
       MonadConc,
       MonadCatch,
       MonadThrow,
-      MonadMask
+      MonadMask,
+      PrimMonad
     )
   deriving (MonadTrans, MonadTransControl) via IdentityT
 
