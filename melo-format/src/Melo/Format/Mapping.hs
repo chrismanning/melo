@@ -37,13 +37,13 @@ data FieldMapping
 
 type FieldMappingSelector = (FieldMappings -> Maybe FieldMapping)
 
-data FieldMatchMode = CaseSensitiveMapping | CaseInsensitiveMapping | Synthetic
+data FieldMatchMode = CaseSensitiveMapping | CaseInsensitiveMapping | Virtual
   deriving (Show, Eq, Generic)
 
 fieldMatches :: FieldMapping -> Text -> Bool
 fieldMatches FieldMapping{canonicalForm=k, fieldMatcher=CaseSensitiveMapping} k' = k == k'
 fieldMatches FieldMapping{canonicalForm=k, fieldMatcher=CaseInsensitiveMapping} k' = toLower k == toLower k'
-fieldMatches FieldMapping{fieldMatcher=Synthetic} _ = False
+fieldMatches FieldMapping{fieldMatcher=Virtual} _ = False
 
 caseSensitiveMapping :: Text -> Maybe FieldMapping
 caseSensitiveMapping m = Just $ FieldMapping m CaseSensitiveMapping
@@ -51,7 +51,7 @@ caseSensitiveMapping m = Just $ FieldMapping m CaseSensitiveMapping
 caseInsensitiveMapping :: Text -> Maybe FieldMapping
 caseInsensitiveMapping m = Just $ FieldMapping m CaseInsensitiveMapping
 
-newtype TagMapping = TagMapping (NonEmpty FieldMappings)
+newtype TagMapping = TagMapping { unTagMapping :: NonEmpty FieldMappings }
   deriving (Show, Eq, Generic)
 
 singletonTagMapping :: FieldMappings -> TagMapping

@@ -16,7 +16,6 @@ import qualified Data.ByteString.Lazy as L
 import Data.Either (isRight)
 import qualified Data.Foldable as F
 import qualified Data.HashMap.Strict as H
-import Lens.Micro
 import Melo.Format.Internal.Binary (bdecodeOrThrowIO)
 import Melo.Format.Internal.BinaryUtil
 import Melo.Format.Internal.Info
@@ -61,11 +60,11 @@ readOggVorbisFile p = do
 oggVorbisMetadata :: OggVorbis -> H.HashMap MetadataId Metadata
 oggVorbisMetadata (OggVorbis _ (OggPage _ (FramedVorbisComments vc) _)) =
   let fmt = metadataFormat @VorbisComments
-   in H.singleton (fmt ^. #formatId) (extractMetadata vc)
+   in H.singleton fmt.formatId (extractMetadata vc)
 
 writeOggVorbisFile :: MetadataFile -> FilePath -> IO ()
 writeOggVorbisFile f newpath = do
-  oldpath <- canonicalizePath $ f ^. #filePath
+  oldpath <- canonicalizePath f.filePath
   newpath <- canonicalizePath newpath
   if oldpath == newpath
     then do
@@ -78,7 +77,7 @@ writeOggVorbisFile f newpath = do
   where
     writeOggVorbisFile' oldpath newpath = do
       !(ov :: OggVorbis) <-
-        updateOggVorbisWith (H.elems $ f ^. #metadata)
+        updateOggVorbisWith (H.elems f.metadata)
           <$> withBinaryFile oldpath ReadMode hReadOggVorbis
       !audioData <- withBinaryFile oldpath ReadMode $ \h -> do
         hSeek h SeekFromEnd 0

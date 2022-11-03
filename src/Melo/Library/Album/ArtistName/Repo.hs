@@ -21,7 +21,7 @@ import Melo.Library.Artist.Name.Types
   ( ArtistNameEntity,
     ArtistNameTable (..),
   )
-import Rel8 (lit, (&&.), (==.))
+import Rel8 (Query, Expr, lit, (==.))
 import Rel8 qualified
 import Witch
 
@@ -63,13 +63,7 @@ newtype AlbumArtistNameRepositoryIOT m a = AlbumArtistNameRepositoryIOT
 instance MonadIO m => AlbumArtistNameRepository (AlbumArtistNameRepositoryIOT m) where
   getAlbumArtistNames albumRef = do
     connSrc <- ask
-    runSelect connSrc do
-      albumArtistName <- Rel8.each albumArtistNameSchema
-      artistName <- Rel8.each artistNameSchema
-      Rel8.where_ $
-        albumArtistName.album_id ==. lit albumRef
-          &&. artistName.id ==. albumArtistName.artist_name_id
-      pure artistName
+    runSelect connSrc (artistNameForAlbumRef $ lit albumRef)
   insert' albumArtistNames | V.null albumArtistNames = pure 0
   insert' albumArtistNames = do
     connSrc <- ask
@@ -80,6 +74,15 @@ instance MonadIO m => AlbumArtistNameRepository (AlbumArtistNameRepositoryIOT m)
           onConflict = Rel8.DoNothing,
           returning = fromIntegral <$> Rel8.NumberOfRowsAffected
         }
+
+albumArtistForAlbumRef :: Expr AlbumRef -> Query (AlbumArtistNameTable Expr)
+albumArtistForAlbumRef albumRef =
+  Rel8.filter (\albumArtist -> albumArtist.album_id ==. albumRef) =<< Rel8.each albumArtistNameSchema
+
+artistNameForAlbumRef :: Expr AlbumRef -> Query (ArtistNameTable Expr)
+artistNameForAlbumRef albumRef = do
+  albumArtist <- albumArtistForAlbumRef albumRef
+  Rel8.filter (\artistName -> artistName.id ==. albumArtist.artist_name_id) =<< Rel8.each artistNameSchema
 
 albumArtistNameSchema :: Rel8.TableSchema (AlbumArtistNameTable Rel8.Name)
 albumArtistNameSchema =

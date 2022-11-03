@@ -44,7 +44,6 @@ import Data.Text as T
 import Data.Text.Encoding
 import Data.Vector qualified as V
 import GHC.Generics hiding (from)
-import Lens.Micro
 import Melo.Format.Error
 import Melo.Format.Internal.BinaryUtil
 import Melo.Format.Internal.Encoding
@@ -86,12 +85,12 @@ instance MetadataFormat ID3v2_3 where
       }
   metadataLens = id3v23Tag
   readTags = readId3v2Tags
-  replaceWithTags id3 tags = id3 & #frames .~ framesFromTags tags
+  replaceWithTags id3 tags = id3 { frames = framesFromTags tags }
   metadataSize = id3v2SizeWithHeader
 
 readId3v2Tags :: ID3v2 v -> Tags
 readId3v2Tags id3 =
-  let frames' = id3 ^. #frames
+  let frames' = id3.frames
       contents = foldlFrames accumFrames [] frames'
    in Tags $ V.fromList $ fmap (first toTagKey) contents >>= \(a, bs) -> fmap (a,) bs
   where
@@ -119,7 +118,7 @@ instance MetadataFormat ID3v2_4 where
       }
   metadataLens = id3v24Tag
   readTags = readId3v2Tags
-  replaceWithTags id3 tags = id3 & #frames .~ framesFromTags tags
+  replaceWithTags id3 tags = id3 { frames = framesFromTags tags }
   metadataSize = id3v2SizeWithHeader
 
 newId3v2 :: DefaultEncoding v => Tags -> ID3v2 v

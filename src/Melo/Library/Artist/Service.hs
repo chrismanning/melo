@@ -62,10 +62,5 @@ getArtistNamed ref = do
 setArtists :: Metadata -> [Artist] -> Metadata
 setArtists m a =
   let tag = lens m
-      tags :: Tags = m.tags & tag M.trackArtistTag .~ (fromList a <&> (^. #name))
-   in Metadata
-        { formatId = m.formatId,
-          formatDesc = m.formatDesc,
-          lens = tag,
-          tags
-        }
+      tags :: Tags = m.tags & tag M.trackArtistTag .~ (fromList a <&> (.name))
+   in m { tags }

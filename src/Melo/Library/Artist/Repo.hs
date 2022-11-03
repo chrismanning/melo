@@ -12,10 +12,18 @@ import Control.Monad.Reader
 import Control.Monad.Trans.Control
 import Data.Coerce
 import Data.Pool
+import Data.Vector (Vector)
 import Hasql.Connection
 import Melo.Database.Repo
 import Melo.Database.Repo.IO
+import Melo.Library.Album.Repo (albumForRef)
+import Melo.Library.Album.Types
+import Melo.Library.Album.ArtistName.Repo
+import Melo.Library.Artist.Name.Types
 import Melo.Library.Artist.Types
+import Melo.Library.Source.Types (SourceRef)
+import Melo.Library.Track.Repo (trackForSourceRef)
+import Melo.Library.Track.Types
 import Melo.Lookup.MusicBrainz qualified as MB
 import Rel8
 
@@ -24,6 +32,8 @@ class Repository ArtistEntity m => ArtistRepository m where
 --  getArtistTracks :: ArtistRef -> m [ArtistTable Result]
 --  searchArtists :: Text -> m [ArtistTable Result]
   getByMusicBrainzId :: MB.MusicBrainzId -> m (Maybe ArtistEntity)
+  getAlbumArtists :: AlbumRef -> m (Vector (ArtistEntity, ArtistNameEntity))
+  getSourceAlbumArtists :: SourceRef -> m (Vector (ArtistEntity, ArtistNameEntity))
 
 instance
   {-# OVERLAPPABLE #-}
@@ -37,6 +47,8 @@ instance
 --  getArtistTracks = lift . getArtistTracks
 --  searchArtists = lift . searchArtists
   getByMusicBrainzId = lift . getByMusicBrainzId
+  getAlbumArtists = lift . getAlbumArtists
+  getSourceAlbumArtists = lift . getSourceAlbumArtists
 
 newtype ArtistRepositoryIOT m a = ArtistRepositoryIOT
   { runArtistRepositoryIOT :: RepositoryIOT ArtistTable m a
@@ -70,6 +82,24 @@ instance
       artist <- Rel8.each tbl
       Rel8.where_ $ artist.musicbrainz_id ==. lit (Just $ coerce mbid)
       pure artist
+  getAlbumArtists albumRef = do
+    RepositoryHandle {connSrc} <- ask
+    runSelect connSrc do
+      artistName <- artistNameForAlbumRef (lit albumRef)
+      artist <- artistForRef artistName.artist_id
+      pure (artist, artistName)
+  getSourceAlbumArtists srcRef = do
+    RepositoryHandle {connSrc} <- ask
+    runSelect connSrc do
+      track <- trackForSourceRef (lit srcRef)
+      album <- albumForRef track.album_id
+      artistName <- artistNameForAlbumRef album.id
+      artist <- artistForRef artistName.artist_id
+      pure (artist, artistName)
+
+artistForRef :: Expr ArtistRef -> Query (ArtistTable Expr)
+artistForRef artistRef =
+  Rel8.filter (\artist -> artist.id ==. artistRef) =<< each artistSchema
 
 artistSchema :: TableSchema (ArtistTable Name)
 artistSchema =

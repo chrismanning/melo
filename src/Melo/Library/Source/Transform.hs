@@ -1,5 +1,5 @@
-{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnboxedTuples #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Library.Source.Transform where
 
@@ -7,6 +7,7 @@ import Control.Applicative hiding (many, some)
 import Control.Concurrent.Classy
 import Control.Exception.Safe as E hiding (try)
 import Control.Foldl (PrimMonad)
+import Control.Foldl qualified as Fold
 import Control.Lens hiding (from)
 import Control.Monad
 import Control.Monad.Base
@@ -14,6 +15,7 @@ import Control.Monad.Except
 import Control.Monad.Identity
 import Control.Monad.Trans.Control
 import Control.Monad.Trans.Except
+import Control.Monad.Trans.Maybe
 import Data.Char
 import Data.Either.Combinators
 import Data.Foldable
@@ -22,7 +24,6 @@ import Data.List.NonEmpty hiding (length)
 import Data.Maybe
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Text.Lens
 import Data.Vector (Vector)
 import Data.Vector qualified as V
 import Data.Void (Void)
@@ -34,8 +35,8 @@ import Melo.Database.Repo qualified as Repo
 import Melo.Format qualified as F
 import Melo.Format.Error qualified as F
 import Melo.Format.Internal.Metadata (Metadata (..))
-import Melo.Library.Album.Repo
 import Melo.Library.Album.ArtistName.Repo
+import Melo.Library.Album.Repo
 import Melo.Library.Artist.Name.Repo
 import Melo.Library.Artist.Repo
 import Melo.Library.Collection.FileSystem.WatchService
@@ -51,7 +52,7 @@ import Melo.Lookup.MusicBrainz
 import Melo.Metadata.Mapping.Repo
 import Melo.Metadata.Mapping.Service
 import Melo.Metadata.Mapping.Types
-import Rel8 qualified (fromJSONBEncoded)
+import Rel8 qualified (JSONBEncoded (..))
 import System.FilePath
 import System.IO (TextEncoding)
 import Text.Megaparsec
@@ -81,9 +82,10 @@ evalTransformActions :: MonadSourceTransform m => Vector TransformAction -> Sour
 evalTransformActions = foldl' (\b a -> b >=/> evalTransformAction a) (pure . Right)
 
 (>=/>) :: Monad m => Transform m -> Transform m -> Transform m
-f >=/> g = \x -> f x >>= \case
-  Left e -> pure $ Left e
-  Right s -> g s
+f >=/> g = \x ->
+  f x >>= \case
+    Left e -> pure $ Left e
+    Right s -> g s
 
 evalTransformAction :: MonadSourceTransform m => TransformAction -> Transform m
 evalTransformAction (Move ref patterns) src = mapLeft from <$> moveSourceWithPattern ref patterns src
@@ -92,8 +94,7 @@ evalTransformAction (EditMetadata metadataTransformation) src = mapLeft from <$>
 evalTransformAction t _ = pure $ Left (UnsupportedTransform (show t))
 
 type MonadSourceTransform m =
-  (
-    CollectionRepository m,
+  ( CollectionRepository m,
     FileSystem m,
     FileSystemWatchService m,
     Logging m,
@@ -175,13 +176,16 @@ instance MonadSourceTransform m => Repo.Repository SourceEntity (TransformPrevie
     pure ()
 
 instance MonadSourceTransform m => MultiTrack (TransformPreviewT m) where
-  extractTrackTo cuefile dest = pure $ Right F.MetadataFile {
-      filePath = dest,
-      metadata = H.empty,
-      audioInfo = cuefile.audioInfo,
-      fileId = cuefile.fileId,
-      pictures = []
-    }
+  extractTrackTo cuefile dest =
+    pure $
+      Right
+        F.MetadataFile
+          { filePath = dest,
+            metadata = H.empty,
+            audioInfo = cuefile.audioInfo,
+            fileId = cuefile.fileId,
+            pictures = []
+          }
 
 data TransformationError
   = MoveTransformError SourceMoveError
@@ -214,6 +218,7 @@ moveSourceWithPattern ::
     SourceRepository m,
     TagMappingRepository m,
     FileSystemWatchService m,
+    ArtistRepository m,
     Logging m
   ) =>
   Maybe CollectionRef ->
@@ -247,6 +252,7 @@ moveSourceAtRefWithPattern ::
     CollectionRepository m,
     TagMappingRepository m,
     FileSystemWatchService m,
+    ArtistRepository m,
     Logging m
   ) =>
   Maybe CollectionRef ->
@@ -261,7 +267,9 @@ moveSourceAtRefWithPattern collectionRef pats ref =
 previewSourceKeyMoveWithPattern ::
   ( SourceRepository m,
     CollectionRepository m,
-    TagMappingRepository m
+    TagMappingRepository m,
+    ArtistRepository m,
+    Logging m
   ) =>
   Maybe CollectionRef ->
   NonEmpty SourcePathPattern ->
@@ -275,36 +283,73 @@ previewSourceKeyMoveWithPattern collectionRef pats ref =
 
 previewSourceMoveWithPattern ::
   ( CollectionRepository m,
-    TagMappingRepository m
+    TagMappingRepository m,
+    ArtistRepository m,
+    Logging m
   ) =>
   CollectionRef ->
   NonEmpty SourcePathPattern ->
   Source ->
   m (Maybe FilePath)
-previewSourceMoveWithPattern collectionRef pats Source {metadata, source} =
+previewSourceMoveWithPattern collectionRef pats src@Source {source} =
   Repo.getByKey @Collection (V.singleton collectionRef) <&> firstOf traverse >>= \case
     Just CollectionTable {root_uri} -> case parseURI (T.unpack root_uri) >>= uriToFilePath of
       Just rootPath -> do
         mappings <- Repo.getAll
-        pure $ Just $ renderSourcePath mappings rootPath metadata pats <> takeExtension (show source)
+        srcPath <- renderSourcePath mappings rootPath src pats
+        pure $ Just $ srcPath <> takeExtension (show source)
       Nothing -> pure Nothing
     Nothing -> pure Nothing
 
-renderSourcePath :: Vector TagMappingEntity -> FilePath -> F.Metadata -> NonEmpty SourcePathPattern -> FilePath
-renderSourcePath mappings basepath metadata pats =
-  basepath
-    </> fromMaybe "" (foldMap (renderSourcePattern mappings metadata) pats)
+renderSourcePath ::
+  ( ArtistRepository m,
+    Logging m
+  ) =>
+  Vector TagMappingEntity ->
+  FilePath ->
+  Source ->
+  NonEmpty SourcePathPattern ->
+  m FilePath
+renderSourcePath mappings basepath src pats =
+  let (<</>>) = liftM2 (</>)
+   in pure basepath
+        <</>> fromMaybe ""
+        <$> Fold.foldM (Fold.sink (renderSourcePattern mappings src)) pats
 
-renderSourcePattern :: Vector TagMappingEntity -> F.Metadata -> SourcePathPattern -> Maybe FilePath
-renderSourcePattern mappings metadata@F.Metadata {..} = \case
-  LiteralPattern p -> Just p
-  GroupPattern pats -> Just $ fromMaybe "" (foldl' (\s pat -> liftA2 mappend s $ renderSourcePattern mappings metadata pat) (Just "") pats)
-  MappingPattern mappingName -> do
-    mapping <- findMappingNamed mappings mappingName
-    tags ^? lens mapping . _head . unpacked
-  DefaultPattern a b -> renderSourcePattern mappings metadata a <|> renderSourcePattern mappings metadata b
+renderSourcePattern ::
+  ( ArtistRepository m,
+    Logging m
+  ) =>
+  Vector TagMappingEntity ->
+  Source ->
+  SourcePathPattern ->
+  m (Maybe FilePath)
+renderSourcePattern mappings src = \case
+  LiteralPattern p -> pure $ Just p
+  GroupPattern pats -> do
+    $(logDebug) $ "GroupPattern " <> show pats
+    ts <- forM pats (renderSourcePattern mappings src)
+    $(logDebug) $ "ts: " <> show ts
+    let x = foldl' appendJust (Just "") ts
+    $(logDebug) $ "x: " <> show x
+    pure $ Just (fromMaybe "" x)
+  MappingPattern mappingName -> runMaybeT do
+    tagMapping <- MaybeT $ pure $ findMappingNamed mappings mappingName
+    let e = TagMappingTable {name = mappingName, field_mappings = Rel8.JSONBEncoded tagMapping}
+    rs <- resolveMapping e src
+    MaybeT $ pure $ T.unpack <$> formatList (V.toList rs)
+  DefaultPattern a b -> renderSourcePattern mappings src a <<|>> renderSourcePattern mappings src b
   PrintfPattern fmt pat ->
-    printf fmt <$> renderSourcePattern mappings metadata pat
+    fmap (printf fmt) <$> renderSourcePattern mappings src pat
+  where
+    formatList :: [Text] -> Maybe Text
+    formatList [] = Nothing
+    formatList [a] = Just a
+    formatList (a : [b]) = Just (a <> " & " <> b)
+    formatList (a : as) = (\b -> a <> ", " <> b) <$> formatList as
+    appendJust Nothing _ = Nothing
+    appendJust _ Nothing = Nothing
+    appendJust (Just a) (Just b) = Just (a <> b)
 
 parseMovePattern :: Text -> Either (Maybe (ParseErrorBundle Text Void)) (NonEmpty SourcePathPattern)
 parseMovePattern s = nonEmptyRight =<< mapLeft Just (parse terms "" s)
@@ -350,43 +395,44 @@ extractTrack ::
   Source ->
   m (Either TransformationError Source)
 extractTrack collectionRef' patterns s@Source {multiTrack = Just MultiTrackDesc {..}} =
-  let collectionRef = fromMaybe s.collectionRef collectionRef' in
-  uriToFilePath s.source & \case
-    Just filePath ->
-      Repo.getSingle @Collection collectionRef >>= \case
-        Nothing -> pure $ Left (CollectionNotFound collectionRef)
-        Just CollectionTable {root_uri} -> case uriToFilePath =<< parseURI (T.unpack root_uri) of
-          Nothing -> pure $ Left UnsupportedSourceKind
-          Just basePath -> do
-            mappings <- Repo.getAll
-            let dest = addExtension (renderSourcePath mappings basePath s.metadata patterns) (takeExtension filePath)
-            lockPathsDuring (dest :| []) $ runExceptT do
-              mf <- openMetadataFile filePath >>= mapE MetadataTransformError
-              let cuefile = CueFileSource {
-                              idx,
-                              range,
-                              filePath,
-                              metadata = s.metadata,
-                              audioInfo = mf.audioInfo,
-                              fileId = s.kind,
-                              cueFilePath = filePath,
-                              pictures = mf.pictures
-                            }
-              raw <- extractTrackTo cuefile dest >>= mapE MultiTrackError
-              let mappings' = mappings <&> \m -> Rel8.fromJSONBEncoded m.field_mappings
-              $(logDebug) $ "Mappings: " <> show mappings'
-              let vc = fromMaybe (F.metadataFactory @F.VorbisComments F.emptyTags) $ F.convert' F.vorbisCommentsId s.metadata mappings'
-              $(logDebug) $ "Original metadata: " <> show s.metadata
-              $(logDebug) $ "Converted metadata: " <> show vc
-              let m = H.fromList [(F.vorbisCommentsId, vc)]
-              let metadataFile = raw & #metadata .~ m
-              mf <- writeMetadataFile metadataFile dest >>= mapE MetadataTransformError
-              srcs <- importSources (V.singleton (FileSource collectionRef mf))
-              if V.null srcs then
-                throwE ImportFailed
-              else
-                pure $ srcs V.! 0
-    Nothing -> pure $ Right s
+  let collectionRef = fromMaybe s.collectionRef collectionRef'
+   in uriToFilePath s.source & \case
+        Just filePath ->
+          Repo.getSingle @Collection collectionRef >>= \case
+            Nothing -> pure $ Left (CollectionNotFound collectionRef)
+            Just CollectionTable {root_uri} -> case uriToFilePath =<< parseURI (T.unpack root_uri) of
+              Nothing -> pure $ Left UnsupportedSourceKind
+              Just basePath -> do
+                mappings <- Repo.getAll
+                srcPath <- renderSourcePath mappings basePath s patterns
+                let dest = addExtension srcPath (takeExtension filePath)
+                lockPathsDuring (dest :| []) $ runExceptT do
+                  mf <- openMetadataFile filePath >>= mapE MetadataTransformError
+                  let cuefile =
+                        CueFileSource
+                          { idx,
+                            range,
+                            filePath,
+                            metadata = s.metadata,
+                            audioInfo = mf.audioInfo,
+                            fileId = s.kind,
+                            cueFilePath = filePath,
+                            pictures = mf.pictures
+                          }
+                  raw <- extractTrackTo cuefile dest >>= mapE MultiTrackError
+                  let mappings' = mappings <&> \m -> Rel8.fromJSONBEncoded m.field_mappings
+                  $(logDebug) $ "Mappings: " <> show mappings'
+                  let vc = fromMaybe (F.metadataFactory @F.VorbisComments F.emptyTags) $ F.convert' F.vorbisCommentsId s.metadata mappings'
+                  $(logDebug) $ "Original metadata: " <> show s.metadata
+                  $(logDebug) $ "Converted metadata: " <> show vc
+                  let m = H.fromList [(F.vorbisCommentsId, vc)]
+                  let metadataFile = raw & #metadata .~ m
+                  mf <- writeMetadataFile metadataFile dest >>= mapE MetadataTransformError
+                  srcs <- importSources (V.singleton (FileSource collectionRef mf))
+                  if V.null srcs
+                    then throwE ImportFailed
+                    else pure $ srcs V.! 0
+        Nothing -> pure $ Right s
   where
     mapE e = except . mapLeft e
 extractTrack _ _ src = pure $ Right src

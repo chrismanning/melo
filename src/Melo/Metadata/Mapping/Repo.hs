@@ -73,11 +73,11 @@ runTagMappingRepositoryPooledIO pool =
     RepositoryHandle
       { connSrc = Pooled pool,
         tbl = tagMappingSchema,
-        pk = \e -> e.name,
+        pk = (.name),
         upsert =
           Just
             Upsert
-              { index = \e -> e.name,
+              { index = (.name),
                 set = const,
                 updateWhere = \new old -> new.name ==. old.name
               }
@@ -92,11 +92,11 @@ runTagMappingRepositoryIO conn =
     RepositoryHandle
       { connSrc = Single conn,
         tbl = tagMappingSchema,
-        pk = \e -> e.name,
+        pk = (.name),
         upsert =
           Just
             Upsert
-              { index = \e -> e.name,
+              { index = (.name),
                 set = const,
                 updateWhere = \new old -> new.name ==. old.name
               }

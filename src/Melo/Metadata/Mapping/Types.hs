@@ -7,15 +7,22 @@ import Data.Aeson as A
   ( FromJSON (..),
     Options (..),
     ToJSON (..),
+    Value (Array),
     defaultOptions,
     genericParseJSON,
     genericToJSON,
   )
 import Data.Aeson.Casing (snakeCase)
+import Data.Aeson.Types
+  ( prependFailure,
+    typeMismatch,
+  )
 import Data.List.NonEmpty
 import Data.Morpheus.Kind
 import Data.Morpheus.Types as M
 import Data.Text (Text)
+import Data.Traversable
+import Data.Vector qualified as V
 import GHC.Generics
 import GHC.Records
 import Melo.Database.Repo
@@ -37,10 +44,14 @@ deriving instance Show TagMappingEntity
 deriving newtype instance Show (JSONBEncoded FM.TagMapping)
 
 instance FromJSON FM.TagMapping where
-  parseJSON tm = FM.TagMapping <$> genericParseJSON jsonOptions tm
+  parseJSON (Array a) = FM.TagMapping . fromList . V.toList <$> for a (genericParseJSON jsonOptions)
+  parseJSON invalid =
+    prependFailure
+      "parsing TagMapping failed, "
+      (typeMismatch "Array" invalid)
 
 instance ToJSON FM.TagMapping where
-  toJSON (FM.TagMapping fms) = genericToJSON jsonOptions fms
+  toJSON (FM.TagMapping fms) = toJSON (toList fms)
 
 instance FromJSON FM.FieldMappings where
   parseJSON = genericParseJSON jsonOptions

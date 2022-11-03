@@ -13,6 +13,7 @@ import Control.Monad.Trans.Control
 import Data.Pool
 import Data.Text (Text)
 import Data.Vector qualified as V
+import Data.Vector (Vector)
 import Hasql.Connection
 import Melo.Database.Repo
 import Melo.Database.Repo.IO
@@ -20,16 +21,15 @@ import Melo.Library.Album.Types
 import Melo.Library.Artist.Types
 import Melo.Library.Genre.Types
 import Melo.Library.Track.Types
-import Melo.Lookup.MusicBrainz as MB
+import Melo.Lookup.MusicBrainz qualified as MB
 import Rel8 qualified
-import Rel8 (lit, (==.))
+import Rel8 (Query, Expr, lit, (==.), (&&.))
 import Witch
 
 class Repository AlbumEntity m => AlbumRepository m where
   getByMusicBrainzId :: MB.MusicBrainzId -> m (Maybe AlbumEntity)
 
 --  getAlbumGenres :: AlbumRef -> m [Genre]
---  getAlbumArtists :: AlbumRef -> m [Artist]
 --  getAlbumTracks :: AlbumRef -> m [Track]
 --  searchAlbums :: Text -> m [Album]
 
@@ -104,6 +104,9 @@ instance
       album <- Rel8.each tbl
       Rel8.where_ $ album.musicbrainz_id ==. lit (Just mbid.mbid)
       pure album
+
+albumForRef :: Expr AlbumRef -> Query (AlbumTable Expr)
+albumForRef albumRef = Rel8.filter (\album -> album.id ==. albumRef) =<< Rel8.each albumSchema
 
 albumSchema :: Rel8.TableSchema (AlbumTable Rel8.Name)
 albumSchema =

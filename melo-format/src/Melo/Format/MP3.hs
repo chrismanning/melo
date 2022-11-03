@@ -124,7 +124,7 @@ hReadMp3 h = do
 
 writeMp3File :: MetadataFile -> FilePath -> IO ()
 writeMp3File f newpath = do
-  oldpath <- canonicalizePath $ f ^. #filePath
+  oldpath <- canonicalizePath f.filePath
   newpath <- canonicalizePath newpath
   if oldpath == newpath
     then do

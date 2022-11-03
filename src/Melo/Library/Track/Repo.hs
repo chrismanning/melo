@@ -80,6 +80,14 @@ instance
       Rel8.where_ $ track.musicbrainz_id ==. lit (Just mbid.mbid)
       pure track
 
+trackForRef :: Expr TrackRef -> Query (TrackTable Expr)
+trackForRef trackRef =
+  Rel8.filter (\track -> track.id ==. trackRef) =<< each trackSchema
+
+trackForSourceRef :: Expr SourceRef -> Query (TrackTable Expr)
+trackForSourceRef srcRef =
+  Rel8.filter (\track -> track.source_id ==. srcRef) =<< each trackSchema
+
 trackSchema :: TableSchema (TrackTable Name)
 trackSchema =
   TableSchema

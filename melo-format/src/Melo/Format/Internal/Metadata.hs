@@ -1,10 +1,8 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE IncoherentInstances #-}
 
 module Melo.Format.Internal.Metadata where
 
 import Data.ByteString
-import Data.Generics.Labels ()
 import Data.HashMap.Strict
 import Data.Hashable
 import Data.Text

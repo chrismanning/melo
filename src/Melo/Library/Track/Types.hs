@@ -76,8 +76,8 @@ data Track = Track
     trackNumber :: Int16,
     discNumber :: Maybe Int16,
     comment :: Maybe Text,
-    sourceId :: SourceRef,
-    albumId :: AlbumRef,
+    sourceRef :: SourceRef,
+    albumRef :: AlbumRef,
     length :: NominalDiffTime,
     musicBrainzId :: Maybe MB.MusicBrainzId
   }
@@ -90,8 +90,8 @@ mkTrack artists t = Track {
     trackNumber = t.track_number,
     discNumber = t.disc_number,
     comment = t.comment,
-    sourceId = t.source_id,
-    albumId = t.album_id,
+    sourceRef = t.source_id,
+    albumRef = t.album_id,
     length = ctTime t.length,
     musicBrainzId = MB.MusicBrainzId <$> t.musicbrainz_id,
     artists

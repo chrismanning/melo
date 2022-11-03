@@ -21,7 +21,6 @@ import Data.Maybe
 import Data.Vector.Primitive
 import Data.Word
 import GHC.Records
-import Lens.Micro
 import qualified Melo.Format.Ape as Ape
 import qualified Melo.Format.ID3 as ID3
 import Melo.Format.Internal.BinaryUtil
@@ -64,14 +63,16 @@ readWavPackFile p = do
       }
 
 wavPackMetadata :: WavPack -> H.HashMap MetadataId Metadata
-wavPackMetadata wv = case wavPackTags wv of
+wavPackMetadata wv = let apeFormatId = (metadataFormat @Ape.APEv2).formatId
+                         id3v1FormatId = (metadataFormat @ID3.ID3v1).formatId in
+  case wavPackTags wv of
   NoTags -> H.empty
-  JustAPE ape -> H.singleton (metadataFormat @Ape.APEv2 ^. #formatId) (extractMetadata ape)
-  JustID3v1 id3v1 -> H.singleton (metadataFormat @ID3.ID3v1 ^. #formatId) (extractMetadata id3v1)
+  JustAPE ape -> H.singleton apeFormatId (extractMetadata ape)
+  JustID3v1 id3v1 -> H.singleton id3v1FormatId (extractMetadata id3v1)
   Both ape id3v1 ->
     H.fromList
-      [ (metadataFormat @Ape.APEv2 ^. #formatId, extractMetadata ape),
-        (metadataFormat @ID3.ID3v1 ^. #formatId, extractMetadata id3v1)
+      [ (apeFormatId, extractMetadata ape),
+        (id3v1FormatId, extractMetadata id3v1)
       ]
 
 writeWavPackFile :: MetadataFile -> FilePath -> IO ()

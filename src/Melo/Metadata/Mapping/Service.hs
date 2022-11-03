@@ -1,17 +1,37 @@
 module Melo.Metadata.Mapping.Service where
 
 import Control.Exception.Safe
+import Control.Lens ((^.))
 import Control.Monad
 import Data.Coerce
+import Country
+import Data.Functor
 import Data.Text (Text)
 import Data.Vector (Vector, find, fromList)
+import Data.Vector qualified as V
+import Melo.Common.Logging
 import Melo.Database.Repo as Repo
+import Melo.Format.Metadata qualified as F
 import Melo.Format.Mapping as M
+import Melo.Library.Artist.Repo
+import Melo.Library.Artist.Types
+import Melo.Library.Source.Types
 import Melo.Metadata.Mapping.Repo
 import Melo.Metadata.Mapping.Types
 
+getMappingNamed :: TagMappingRepository m => Text -> m (Maybe M.TagMapping)
+getMappingNamed name = fmap (.tagMapping) <$> getSingle name
+
 findMappingNamed :: Vector TagMappingEntity -> Text -> Maybe M.TagMapping
-findMappingNamed ms name = fmap (\m -> m.tagMapping) $ find (\mapping -> mapping.name == name) ms
+findMappingNamed ms name = fmap (.tagMapping) $ find (\mapping -> mapping.name == name) ms
+
+resolveMapping :: (ArtistRepository m, Logging m) =>
+  TagMappingEntity -> Source -> m (Vector Text)
+resolveMapping e src | e.name == "album_artist_origin" = do
+  artists <- getSourceAlbumArtists src.ref
+  pure $ V.take 1 $ V.catMaybes $ fmap ((\c -> c >>= decodeAlphaThree <&> alphaTwoUpper) . (.country) . fst) artists
+resolveMapping e src = let F.Metadata {tags, lens} = src.metadata in
+  pure $ tags ^. lens e.tagMapping
 
 insertDefaultMappings :: (MonadCatch m, TagMappingRepository m) => m ()
 insertDefaultMappings = void (insert' defaultMappings) `catchIO` (\_ -> pure ())
