@@ -40,6 +40,7 @@ instance Monad m => SourceRepository (FakeSourceRepositoryT m) where
   getKeysByUri = undefined
   getByUriPrefix = undefined
   getKeysByUriPrefix = undefined
+  getCollectionSources = undefined
 
 runFakeSourceRepository :: Monad m => FakeRepository (SourceTable Result) -> FakeSourceRepositoryT m a -> m a
 runFakeSourceRepository fake = runFakeRepository fake . runFakeSourceRepositoryT

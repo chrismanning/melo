@@ -9,12 +9,10 @@ import Data.Morpheus.Types as M
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.UUID
-import Data.UUID.V4
 import GHC.Generics
 import Melo.Common.Uri
 import Melo.Database.Repo
 import Rel8
-import System.IO.Unsafe
 import Witch
 
 data CollectionTable f = CollectionTable
@@ -26,8 +24,8 @@ data CollectionTable f = CollectionTable
   }
   deriving (Generic, Rel8able)
 
-type Collection = CollectionTable Result
-deriving instance Show Collection
+type CollectionEntity = CollectionTable Result
+deriving instance Show CollectionEntity
 
 newtype CollectionRef = CollectionRef { unCollectionRef :: UUID}
   deriving (Show, Eq, Ord, Generic)
@@ -76,25 +74,4 @@ instance From NewCollection (CollectionTable Expr) where
       rootUri NewFilesystemCollection {rootPath} = fileUri $ T.unpack rootPath
       kind NewFilesystemCollection {} = "filesystem"
 
---instance From NewCollection (CollectionTable Result) where
---  from c@NewFilesystemCollection {name, watch} =
---    CollectionTable
---      { id = CollectionRef $ unsafeDupablePerformIO nextRandom,
---        root_uri = T.pack $ show $ rootUri c,
---        name = name,
---        watch = watch,
---        kind = kind c
---      }
---    where
---      rootUri NewFilesystemCollection {rootPath} = fileUri $ T.unpack rootPath
---      kind NewFilesystemCollection {} = "filesystem"
-
-type UpdateCollection = CollectionTable Result
-
-data SourcePathPattern
-  = LiteralPattern FilePath
-  | GroupPattern (NonEmpty SourcePathPattern)
-  | MappingPattern Text
-  | DefaultPattern SourcePathPattern SourcePathPattern
-  | PrintfPattern String SourcePathPattern
-  deriving (Show, Eq)
+type UpdateCollection = CollectionEntity

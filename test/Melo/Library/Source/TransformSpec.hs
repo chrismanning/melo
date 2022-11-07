@@ -124,6 +124,25 @@ spec = do
                 }
         let expected = orig & #source .~ parseUriUnsafe "file:/music/Artist/Album%20Title/01%20-%20Track%20Title.flac"
         previewTransformationsFixture fixture (V.singleton orig) `shouldReturn` V.singleton expected
+      it "transforms with cover image" $ do
+        let tags =
+              [ ("ARTIST", "Artist"),
+                ("ALBUM", "Album Title"),
+                ("TRACKNUMBER", "01"),
+                ("TITLE", "Track Title")
+              ]
+        let orig = mkSource collectionRef tags
+        let fixture =
+              TransformFixture
+                { transforms = [moveByPatterns patterns],
+                  sourceRepo = mkSourceRepo [orig],
+                  collectionRepo,
+                  tagMappingRepo,
+                  metadataServiceActions = [],
+                  musicBrainzServiceActions = []
+                }
+        let expected = orig & #source .~ parseUriUnsafe "file:/music/Artist/Album%20Title/01%20-%20Track%20Title.flac"
+        previewTransformationsFixture fixture (V.singleton orig) `shouldReturn` V.singleton expected
     context "editing metadata" $ do
       let metadataFile =
             F.MetadataFile
@@ -267,6 +286,11 @@ instance (
   Show (ThreadId (MockT a m))
   ) => MonadConc (MockT a m) where
 
+data Fixture m f t =
+    MockFixture [WithResult m]
+  | FakeFixture f
+  | RealFixture t
+
 data TransformFixture = TransformFixture
   { collectionRepo :: FakeCollectionRepository,
     sourceRepo :: FakeSourceRepository,
@@ -310,6 +334,8 @@ mkSource collectionRef tags =
           kind = flacFileId,
           multiTrack = Nothing,
           collectionRef,
+          length = Nothing,
+          cover = Nothing,
           metadata
         }
 

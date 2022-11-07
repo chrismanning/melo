@@ -233,53 +233,28 @@ moveSourceWithPattern collectionRef pats src@Source {ref, source} =
         Just destPath -> lockPathsDuring (srcPath :| [destPath]) do
           let SourceRef id = ref
           $(logInfo) $ "moving source " <> show id <> " from " <> srcPath <> " to " <> destPath
-          r <- mapLeft from <$> movePath srcPath destPath
-          let newUri = fileUri destPath
-          case r of
+          movePath srcPath destPath >>= \case
+            Left e -> pure $ Left (from e)
             Right _ -> do
               $(logInfo) $ "successfully moved source " <> show id <> " from " <> srcPath <> " to " <> destPath
-              let movedSrc = src & #source .~ newUri
+              findCoverImage (takeDirectory srcPath) >>= \case
+                Nothing -> pure ()
+                Just imagePath -> do
+                  let destImagePath = replaceDirectory imagePath (takeDirectory destPath)
+                  movePath imagePath destImagePath >>= \case
+                    Left e ->
+                      $(logError) $ "failed to move cover image "
+                        <> takeFileName imagePath
+                        <> " for source " <> show id
+                        <> ": " <> displayException e
+                    Right _ ->
+                      $(logInfo) $ "successfully moved cover image " <> takeFileName imagePath <> " for source " <> show id
+              let movedSrc = src & #source .~ fileUri destPath
               Repo.update @SourceEntity (V.singleton (from movedSrc)) <&> firstOf traverse >>= \case
                 Just updatedSrc -> pure $ mapLeft ConversionError $ tryFrom updatedSrc
                 Nothing -> pure $ Left SourceUpdateError
-            Left e -> pure $ Left e
         Nothing -> pure $ Left PatternError
     Nothing -> pure $ Left SourcePathError
-
-moveSourceAtRefWithPattern ::
-  ( FileSystem m,
-    SourceRepository m,
-    CollectionRepository m,
-    TagMappingRepository m,
-    FileSystemWatchService m,
-    ArtistRepository m,
-    Logging m
-  ) =>
-  Maybe CollectionRef ->
-  NonEmpty SourcePathPattern ->
-  SourceRef ->
-  m (Either SourceMoveError Source)
-moveSourceAtRefWithPattern collectionRef pats ref =
-  getSource ref >>= \case
-    Just src -> moveSourceWithPattern collectionRef pats src
-    Nothing -> pure $ Left NoSuchSource
-
-previewSourceKeyMoveWithPattern ::
-  ( SourceRepository m,
-    CollectionRepository m,
-    TagMappingRepository m,
-    ArtistRepository m,
-    Logging m
-  ) =>
-  Maybe CollectionRef ->
-  NonEmpty SourcePathPattern ->
-  SourceRef ->
-  m (Maybe FilePath)
-previewSourceKeyMoveWithPattern collectionRef pats ref =
-  getSource ref >>= \case
-    Just src ->
-      previewSourceMoveWithPattern (fromMaybe src.collectionRef collectionRef) pats src
-    Nothing -> pure Nothing
 
 previewSourceMoveWithPattern ::
   ( CollectionRepository m,
@@ -292,7 +267,7 @@ previewSourceMoveWithPattern ::
   Source ->
   m (Maybe FilePath)
 previewSourceMoveWithPattern collectionRef pats src@Source {source} =
-  Repo.getByKey @Collection (V.singleton collectionRef) <&> firstOf traverse >>= \case
+  Repo.getSingle @CollectionEntity collectionRef >>= \case
     Just CollectionTable {root_uri} -> case parseURI (T.unpack root_uri) >>= uriToFilePath of
       Just rootPath -> do
         mappings <- Repo.getAll
@@ -398,7 +373,7 @@ extractTrack collectionRef' patterns s@Source {multiTrack = Just MultiTrackDesc 
   let collectionRef = fromMaybe s.collectionRef collectionRef'
    in uriToFilePath s.source & \case
         Just filePath ->
-          Repo.getSingle @Collection collectionRef >>= \case
+          Repo.getSingle @CollectionEntity collectionRef >>= \case
             Nothing -> pure $ Left (CollectionNotFound collectionRef)
             Just CollectionTable {root_uri} -> case uriToFilePath =<< parseURI (T.unpack root_uri) of
               Nothing -> pure $ Left UnsupportedSourceKind

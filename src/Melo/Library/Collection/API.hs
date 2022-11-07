@@ -40,10 +40,10 @@ resolveCollections (CollectionsArgs (Just CollectionWhere {..})) =
   case id of
     Just idExpr -> case idExpr of
       WhereEqExpr (EqExpr x) -> case fromText x of
-        Just uuid -> lift $ fmap from <$> getByKey @Ty.Collection (V.singleton (Ty.CollectionRef uuid))
+        Just uuid -> lift $ fmap from <$> getByKey @Ty.CollectionEntity (V.singleton (Ty.CollectionRef uuid))
         Nothing -> fail $ "invalid collection id " <> show x
       WhereInExpr (InExpr x) -> case allJust (fmap fromText x) of
-        Just uuids -> lift $ fmap from <$> getByKey @Ty.Collection (V.fromList $ Ty.CollectionRef <$> uuids)
+        Just uuids -> lift $ fmap from <$> getByKey @Ty.CollectionEntity (V.fromList $ Ty.CollectionRef <$> uuids)
         Nothing -> fail $ "invalid collection id in " <> show x
       _unknownWhere -> fail "invalid where clause for Collection.id"
     Nothing -> case rootUri of
@@ -55,7 +55,7 @@ resolveCollections (CollectionsArgs (Just CollectionWhere {..})) =
           Just uris -> lift $ fmap from <$> getByUri (V.fromList uris)
           Nothing -> fail $ "invalid collection id in " <> show x
         _unknownWhere -> fail "invalid where clause for Collection.rootUri"
-      Nothing -> lift $ fmap (fmap from) $ getAll @Ty.Collection
+      Nothing -> lift $ fmap (fmap from) $ getAll @Ty.CollectionEntity
   where
     allJust :: [Maybe a] -> Maybe [a]
     allJust [] = Just []
@@ -64,7 +64,7 @@ resolveCollections (CollectionsArgs (Just CollectionWhere {..})) =
 resolveCollections _ =
   lift $
     fmap (fmap from) $
-      getAll @Ty.Collection
+      getAll @Ty.CollectionEntity
 
 data Collection m = Collection
   { id :: Ty.CollectionRef,
@@ -98,17 +98,17 @@ instance
     MonadConc m,
     WithOperation o
   ) =>
-  From Ty.Collection (Collection (Resolver o e m))
+  From Ty.CollectionEntity (Collection (Resolver o e m))
   where
   from s =
     Collection
-      { id = s ^. #id,
-        name = s ^. #name,
-        rootUri = s ^. #root_uri,
-        watch = s ^. #watch,
-        kind = s ^. #kind,
-        sources = SrcApi.resolveCollectionSources (s ^. #id),
-        sourceGroups = SrcApi.resolveCollectionSourceGroups (s ^. #id)
+      { id = s.id,
+        name = s.name,
+        rootUri = s.root_uri,
+        watch = s.watch,
+        kind = s.kind,
+        sources = SrcApi.resolveCollectionSources s.id,
+        sourceGroups = SrcApi.resolveCollectionSourceGroups s.id
       }
 
 data LocalFileCollection m = LocalFileCollection
@@ -188,9 +188,7 @@ addCollectionImpl ::
   ResolverM e m (Collection (Resolver MUTATION e m))
 addCollectionImpl AddCollectionArgs {..} = do
   ref <- lift $ addCollection newCollection
-  cs <- lift $ getByKey @Ty.Collection (V.singleton ref)
-  let cs' = from <$> cs
-  case firstOf traverse cs' of
+  lift (fmap from <$> getSingle @Ty.CollectionEntity ref) >>= \case
     Just c -> pure c
     Nothing -> fail "failed to add collection"
 

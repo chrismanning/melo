@@ -18,6 +18,7 @@ import Data.Int
 import Data.Maybe
 import Data.Morpheus.Kind
 import Data.Morpheus.Types as M
+import Data.List.NonEmpty (NonEmpty)
 import Data.Range (Range (..))
 import Data.Range qualified as R
 import Data.Text (Text)
@@ -58,6 +59,8 @@ import Rel8
 import System.IO.Unsafe
 import Text.Read
 import Witch
+
+-- TODO source attributes/flags - no linked artist, album, track - missing certain tags
 
 data SourceTable f = SourceTable
   { id :: Column f SourceRef,
@@ -476,6 +479,14 @@ instance Monoid ImportStats where
         artistsImported = 0,
         genresImported = 0
       }
+
+data SourcePathPattern
+  = LiteralPattern FilePath
+  | GroupPattern (NonEmpty SourcePathPattern)
+  | MappingPattern Text
+  | DefaultPattern SourcePathPattern SourcePathPattern
+  | PrintfPattern String SourcePathPattern
+  deriving (Show, Eq)
 
 data SourceMoveError
   = FileSystemMoveError MoveError

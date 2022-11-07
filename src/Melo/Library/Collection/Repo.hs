@@ -84,7 +84,7 @@ instance MonadIO m => Repository (CollectionTable Result) (CollectionRepositoryI
 orderByUri :: Rel8.Query (CollectionTable Rel8.Expr) -> Rel8.Query (CollectionTable Rel8.Expr)
 orderByUri = Rel8.orderBy (root_uri >$< Rel8.asc)
 
-sortByUri :: Vector Collection -> Vector Collection
+sortByUri :: Vector CollectionEntity -> Vector CollectionEntity
 sortByUri = sortVectorNaturalBy (\e -> e.root_uri)
 
 instance MonadIO m => CollectionRepository (CollectionRepositoryIOT m) where

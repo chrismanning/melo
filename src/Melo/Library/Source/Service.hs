@@ -2,13 +2,15 @@
 
 module Melo.Library.Source.Service where
 
+import Control.Applicative hiding (empty)
 import Control.Foldl (PrimMonad)
 import Control.Lens hiding (from, lens)
+import Data.Char
 import Data.Foldable
 import qualified Data.Text as T
-import Data.Time
 import Data.Vector (Vector, empty, singleton)
 import Data.Vector qualified as V
+import Melo.Common.FileSystem
 import Melo.Common.Logging
 import Melo.Common.Uri
 import Melo.Common.Vector
@@ -23,7 +25,7 @@ import Melo.Library.Source.Types
 import Melo.Library.Track.ArtistName.Repo
 import Melo.Library.Track.Repo
 import Melo.Lookup.MusicBrainz qualified as MB
-import System.Directory
+import System.FilePath as P
 import Witch
 
 getAllSources :: SourceRepository m => m (Vector Source)
@@ -57,19 +59,6 @@ importSources ss = do
   _albums <- importAlbums srcs
   pure srcs
 
---importSources' ::
---  ( SourceRepository m,
---    Logging m
---  ) =>
---  Vector NewImportSource ->
---  m Int
---importSources' ss | null ss = pure 0
---importSources' ss = do
---  $(logDebug) $ "Importing " <> show (length ss) <> " sources"
---  let metadataSources = rights $ fmap tryFrom ss
---  $(logDebug) $ "Importing " <> show (length metadataSources) <> " metadata sources"
---  Repo.insert' (fmap (from @MetadataImportSource) metadataSources)
-
 getSourcesByUriPrefix ::
   SourceRepository m =>
   URI ->
@@ -81,11 +70,27 @@ getSourcesByUriPrefix prefix = do
 length' :: (Foldable f, Num a) => f b -> a
 length' = foldl' (const . (+ 1)) 0
 
-modificationTime :: NewImportSource -> IO LocalTime
-modificationTime (FileSource _ f) = utcToLocalTime utc <$> getModificationTime (f ^. #filePath)
-modificationTime (CueFileImportSource _ f) = utcToLocalTime utc <$> getModificationTime (f ^. #cueFilePath)
-
 getSourceFilePath :: (SourceRepository m) => SourceRef -> m (Maybe FilePath)
 getSourceFilePath key = do
-  s <- firstOf traverse <$> Repo.getByKey (singleton key)
-  pure (s >>= parseURI . T.unpack . (^. #source_uri) >>= uriToFilePath)
+  s <- Repo.getSingle key
+  pure (s >>= parseURI . T.unpack . (.source_uri) >>= uriToFilePath)
+
+findCoverImage :: FileSystem m => FilePath -> m (Maybe FilePath)
+findCoverImage p = do
+  isDir <- doesDirectoryExist p
+  if isDir
+    then do
+      entries <- listDirectory p
+      pure $
+        find (\e -> P.takeBaseName e =~= "cover" && isImage e) entries
+          <|> find (\e -> P.takeBaseName e =~= "front" && isImage e) entries
+          <|> find (\e -> P.takeBaseName e =~= "folder" && isImage e) entries
+    else pure Nothing
+  where
+    a =~= b = fmap toLower a == fmap toLower b
+    isImage :: FilePath -> Bool
+    isImage p =
+      let ext = toLower <$> takeExtension p
+       in ext == ".jpeg"
+            || ext == ".jpg"
+            || ext == ".png"

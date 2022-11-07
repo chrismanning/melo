@@ -63,6 +63,7 @@ import Melo.Library.Collection.Service
 import Melo.Library.Collection.Types qualified as Ty
 import Melo.Library.Source.MultiTrack
 import Melo.Library.Source.Repo
+import Melo.Library.Source.Service
 import Melo.Library.Source.Transform qualified as Tr
 import Melo.Library.Source.Types qualified as Ty
 import Melo.Library.Track.ArtistName.Repo
@@ -617,26 +618,6 @@ groupSources = V.fromList . toList . fmap trSrcGrp . foldl' acc S.empty
                         downloadUri = "/source/" <> toText (Ty.unSourceRef (src.id)) <> "/image"
                       }
       Nothing -> pure Nothing
-
-findCoverImage :: FileSystem m => FilePath -> m (Maybe FilePath)
-findCoverImage p = do
-  isDir <- doesDirectoryExist p
-  if isDir
-    then do
-      entries <- listDirectory p
-      pure $
-        find (\e -> P.takeBaseName e =~= "cover" && isImage e) entries
-          <|> find (\e -> P.takeBaseName e =~= "front" && isImage e) entries
-          <|> find (\e -> P.takeBaseName e =~= "folder" && isImage e) entries
-    else pure Nothing
-  where
-    a =~= b = fmap toLower a == fmap toLower b
-    isImage :: FilePath -> Bool
-    isImage p =
-      let ext = toLower <$> takeExtension p
-       in ext == ".jpeg"
-            || ext == ".jpg"
-            || ext == ".png"
 
 data SourceGroup' m = SourceGroup'
   { groupTags :: GroupTags,

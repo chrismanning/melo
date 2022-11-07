@@ -67,7 +67,6 @@ runCollectionServiceIO pool sess = flip runReaderT (pool, sess) . runCollectionS
 
 instance
   ( CollectionRepository m,
---    FileSystemService m,
     FileSystemWatchService m,
     MonadBaseControl IO m,
     MonadIO m,
@@ -88,7 +87,7 @@ instance
         pure id
       Nothing -> error "unexpected insertCollections result"
   rescanCollection ref@(CollectionRef id) = do
-    firstOf traverse <$> getCollectionsByKey (singleton ref) >>= \case
+    getSingle ref >>= \case
       Just CollectionTable {id, root_uri} ->
         case parseURI (T.unpack root_uri) >>= uriToFilePath of
           Just rootPath -> do
@@ -103,5 +102,5 @@ instance
     delete (singleton ref)
     pure ()
 
-getCollectionsByKey :: (CollectionRepository m) => Vector CollectionRef -> m (Vector Collection)
+getCollectionsByKey :: (CollectionRepository m) => Vector CollectionRef -> m (Vector CollectionEntity)
 getCollectionsByKey = getByKey

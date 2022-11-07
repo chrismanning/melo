@@ -52,7 +52,7 @@ instance (
     pure $ V.mapMaybe id $ fmap (`H.lookup` sources) ks
   insert es = let vs = fmap from es in state $ \(FakeRepository repo) ->
     (vs, FakeRepository $ foldl' (\r v -> H.insert (primaryKey v) v r) repo vs)
-  insert' = void . insert
+  insert' = fmap length . insert
   delete ks = modify $ \(FakeRepository repo) -> FakeRepository $ foldl' (flip H.delete) repo ks
   update vs = state $ \(FakeRepository repo) ->
                (vs, FakeRepository $ foldl' (\r v -> H.insert (primaryKey v) v r) repo vs)
