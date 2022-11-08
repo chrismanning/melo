@@ -7,7 +7,6 @@ import Control.Applicative
 import Control.Concurrent.Classy
 import Control.Exception.Safe
 import Control.Foldl (PrimMonad)
-import Control.Lens ((^.))
 import Control.Monad.Base
 import Control.Monad.Identity
 import Control.Monad.Trans
@@ -30,7 +29,7 @@ chooseMetadata ms =
     <|> find (\Metadata {..} -> formatId == F.id3v23Id) ms
     <|> find (\Metadata {..} -> formatId == F.id3v1Id) ms
 
-class Monad m => MetadataService m where
+class Monad m => MetadataAggregate m where
   openMetadataFile :: FilePath -> m (Either F.MetadataException F.MetadataFile)
   openMetadataFileByExt :: FilePath -> m (Either F.MetadataException F.MetadataFile)
   readMetadataFile :: F.MetadataFileId -> FilePath -> m (Either F.MetadataException F.MetadataFile)
@@ -40,17 +39,17 @@ instance
   {-# OVERLAPPABLE #-}
   ( Monad (t m),
     MonadTrans t,
-    MetadataService m
+    MetadataAggregate m
   ) =>
-  MetadataService (t m)
+  MetadataAggregate (t m)
   where
   openMetadataFile = lift . openMetadataFile
   openMetadataFileByExt = lift . openMetadataFileByExt
   readMetadataFile fid = lift . readMetadataFile fid
   writeMetadataFile f = lift . writeMetadataFile f
 
-newtype MetadataServiceIOT m a = MetadataServiceIOT
-  { runMetadataServiceIOT :: m a
+newtype MetadataAggregateIOT m a = MetadataAggregateIOT
+  { runMetadataAggregateIOT :: m a
   }
   deriving newtype
     ( Functor,
@@ -67,13 +66,13 @@ newtype MetadataServiceIOT m a = MetadataServiceIOT
     )
   deriving (MonadTrans, MonadTransControl) via IdentityT
 
-runMetadataServiceIO :: MetadataServiceIOT m a -> m a
-runMetadataServiceIO = runMetadataServiceIOT
+runMetadataAggregateIO :: MetadataAggregateIOT m a -> m a
+runMetadataAggregateIO = runMetadataAggregateIOT
 
 instance
   ( MonadIO m
   ) =>
-  MetadataService (MetadataServiceIOT m)
+  MetadataAggregate (MetadataAggregateIOT m)
   where
   openMetadataFile path = liftIO $
     try $ do
@@ -88,7 +87,7 @@ instance
     F.MetadataFileFactory {readMetadataFile} <- getFactoryIO mfid
     readMetadataFile path
   writeMetadataFile mf path = liftIO $ try do
-    F.MetadataFileFactory {writeMetadataFile, readMetadataFile} <- getFactoryIO (mf ^. #fileId)
+    F.MetadataFileFactory {writeMetadataFile, readMetadataFile} <- getFactoryIO mf.fileId
     writeMetadataFile mf path
     readMetadataFile path
 

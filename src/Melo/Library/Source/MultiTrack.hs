@@ -22,7 +22,7 @@ import Data.Time
 import Melo.Common.Metadata
 import Melo.Format.Error
 import Melo.Format.Metadata (MetadataFile)
-import Melo.Library.Collection.FileSystem.WatchService
+import Melo.Library.Collection.FileSystem.Watcher
 import Melo.Library.Source.Types
 import Sound.File.Sndfile qualified as Sndfile
 import System.Directory qualified as Dir
@@ -71,8 +71,8 @@ runMultiTrackIO :: MultiTrackIOT m a -> m a
 runMultiTrackIO = runMultiTrackIOT
 
 instance
-  ( FileSystemWatchService m,
-    MetadataService m,
+  ( FileSystemWatcher m,
+    MetadataAggregate m,
     MonadIO m
   ) =>
   MultiTrack (MultiTrackIOT m)

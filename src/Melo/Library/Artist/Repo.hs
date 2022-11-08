@@ -5,7 +5,7 @@ module Melo.Library.Artist.Repo where
 
 import Control.Exception.Safe
 import Control.Foldl (PrimMonad)
-import Control.Lens ((^.), firstOf)
+import Control.Lens (firstOf)
 import Control.Concurrent.Classy
 import Control.Monad.Base
 import Control.Monad.Reader
@@ -125,13 +125,13 @@ runArtistRepositoryPooledIO pool =
     RepositoryHandle
       { connSrc = Pooled pool,
         tbl = artistSchema,
-        pk = (^. #id),
+        pk = (.id),
         upsert =
           Just
             Upsert
-              { index = \c -> (c ^. #name, c ^. #disambiguation),
+              { index = \c -> (c.name, c.disambiguation),
                 set = const,
-                updateWhere = \new old -> new ^. #id ==. old ^. #id
+                updateWhere = \new old -> new.id ==. old.id
               }
       }
     . runRepositoryIOT
@@ -144,13 +144,13 @@ runArtistRepositoryIO conn =
     RepositoryHandle
       { connSrc = Single conn,
         tbl = artistSchema,
-        pk = (^. #id),
+        pk = (.id),
         upsert =
           Just
             Upsert
-              { index = \c -> (c ^. #name, c ^. #disambiguation),
+              { index = \c -> (c.name, c.disambiguation),
                 set = const,
-                updateWhere = \new old -> new ^. #id ==. old ^. #id
+                updateWhere = \new old -> new.id ==. old.id
               }
       }
     . runRepositoryIOT

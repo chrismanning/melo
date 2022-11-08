@@ -1,32 +1,80 @@
+{-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Melo.Library.Source.Service where
+module Melo.Library.Source.Aggregate where
 
 import Control.Applicative hiding (empty)
+import Control.Exception.Safe
 import Control.Foldl (PrimMonad)
-import Control.Lens hiding (from, lens)
+import Control.Lens (firstOf)
+import Control.Monad.Base
+import Control.Monad.Conc.Class
+import Control.Monad.Trans
+import Control.Monad.Trans.Control
+import Control.Monad.Trans.Identity
 import Data.Char
 import Data.Foldable
-import qualified Data.Text as T
+import Data.Text qualified as T
 import Data.Vector (Vector, empty, singleton)
 import Data.Vector qualified as V
 import Melo.Common.FileSystem
 import Melo.Common.Logging
 import Melo.Common.Uri
 import Melo.Common.Vector
-import Melo.Library.Album.ArtistName.Repo
-import Melo.Library.Album.Repo
-import Melo.Library.Album.Service
-import Melo.Library.Artist.Repo
-import Melo.Library.Artist.Name.Repo
-import qualified Melo.Database.Repo as Repo
+import Melo.Database.Repo as Repo
+import Melo.Library.Album.Aggregate
 import Melo.Library.Source.Repo
 import Melo.Library.Source.Types
-import Melo.Library.Track.ArtistName.Repo
-import Melo.Library.Track.Repo
-import Melo.Lookup.MusicBrainz qualified as MB
 import System.FilePath as P
 import Witch
+
+class Monad m => SourceAggregate m where
+  importSources :: Vector NewImportSource -> m (Vector Source)
+
+instance
+  {-# OVERLAPPABLE #-}
+  ( Monad (t m),
+    MonadTrans t,
+    SourceAggregate m
+  ) =>
+  SourceAggregate (t m)
+  where
+  importSources = lift . importSources
+
+newtype SourceAggregateIOT m a = SourceAggregateIOT
+  { runSourceAggregateIOT :: m a
+  }
+  deriving newtype
+    ( Functor,
+      Applicative,
+      Monad,
+      MonadIO,
+      MonadBase b,
+      MonadBaseControl b,
+      MonadConc,
+      MonadCatch,
+      MonadMask,
+      MonadThrow,
+      PrimMonad
+    )
+  deriving (MonadTrans, MonadTransControl) via IdentityT
+
+instance
+  ( SourceRepository m,
+    AlbumAggregate m,
+    Logging m
+  ) =>
+  SourceAggregate (SourceAggregateIOT m)
+  where
+  importSources ss | null ss = pure empty
+  importSources ss = do
+    $(logDebug) $ "Importing " <> show (V.length ss) <> " sources"
+    let metadataSources = rights $ fmap tryFrom ss
+    $(logDebug) $ "Importing " <> show (V.length metadataSources) <> " metadata sources"
+    srcs <- rights . fmap tryFrom <$> insert (fmap (from @MetadataImportSource) metadataSources)
+    -- TODO publish sources imported event
+    _albums <- importAlbums srcs
+    pure srcs
 
 getAllSources :: SourceRepository m => m (Vector Source)
 getAllSources = rights <$> fmap tryFrom <$> Repo.getAll
@@ -35,29 +83,6 @@ getSource :: SourceRepository m => SourceRef -> m (Maybe Source)
 getSource key = do
   srcs <- Repo.getByKey (singleton key)
   pure $ firstOf traverse $ rights $ tryFrom <$> srcs
-
-importSources ::
-  ( SourceRepository m,
-    MB.MusicBrainzService m,
-    AlbumRepository m,
-    ArtistRepository m,
-    ArtistNameRepository m,
-    AlbumArtistNameRepository m,
-    TrackRepository m,
-    TrackArtistNameRepository m,
-    PrimMonad m,
-    Logging m
-  ) =>
-  Vector NewImportSource ->
-  m (Vector Source)
-importSources ss | null ss = pure empty
-importSources ss = do
-  $(logDebug) $ "Importing " <> show (V.length ss) <> " sources"
-  let metadataSources = rights $ fmap tryFrom ss
-  $(logDebug) $ "Importing " <> show (V.length metadataSources) <> " metadata sources"
-  srcs <- rights . fmap tryFrom <$> Repo.insert @SourceEntity (fmap (from @MetadataImportSource) metadataSources)
-  _albums <- importAlbums srcs
-  pure srcs
 
 getSourcesByUriPrefix ::
   SourceRepository m =>

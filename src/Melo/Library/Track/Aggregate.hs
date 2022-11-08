@@ -1,10 +1,18 @@
+{-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Melo.Library.Track.Service where
+module Melo.Library.Track.Aggregate where
 
 import Control.Applicative
+import Control.Exception.Safe
+import Control.Foldl (PrimMonad)
 import Control.Lens hiding (from, lens)
 import Control.Monad
+import Control.Monad.Base
+import Control.Monad.Conc.Class
+import Control.Monad.Trans
+import Control.Monad.Trans.Control
+import Control.Monad.Trans.Identity
 import Data.Attoparsec.Text
 import Data.Int (Int16)
 import Data.Maybe
@@ -19,10 +27,8 @@ import Melo.Database.Repo
 import Melo.Format.Internal.Metadata
 import Melo.Format.Mapping qualified as M
 import Melo.Library.Album.Types
-import Melo.Library.Artist.Name.Repo
+import Melo.Library.Artist.Aggregate
 import Melo.Library.Artist.Name.Types
-import Melo.Library.Artist.Repo
-import Melo.Library.Artist.Service (importArtistCredit)
 import Melo.Library.Source.Types
 import Melo.Library.Track.ArtistName.Repo as TrackArtist
 import Melo.Library.Track.ArtistName.Types
@@ -30,45 +36,72 @@ import Melo.Library.Track.Repo as Track
 import Melo.Library.Track.Types
 import Melo.Lookup.MusicBrainz as MB
 
-importAlbumTracks ::
+class Monad m => TrackAggregate m where
+  importAlbumTracks :: Vector Source -> Album -> m (Vector Track)
+
+instance
+  {-# OVERLAPPABLE #-}
+  ( Monad (t m),
+    MonadTrans t,
+    TrackAggregate m
+  ) =>
+  TrackAggregate (t m)
+  where
+  importAlbumTracks ss a = lift (importAlbumTracks ss a)
+
+newtype TrackAggregateIOT m a = TrackAggregateIOT
+  { runTrackAggregateIOT :: m a
+  }
+  deriving newtype
+    ( Functor,
+      Applicative,
+      Monad,
+      MonadIO,
+      MonadBase b,
+      MonadBaseControl b,
+      MonadConc,
+      MonadCatch,
+      MonadMask,
+      MonadThrow,
+      PrimMonad
+    )
+  deriving (MonadTrans, MonadTransControl) via IdentityT
+
+instance
   ( TrackRepository m,
     TrackArtistNameRepository m,
     MB.MusicBrainzService m,
-    ArtistRepository m,
-    ArtistNameRepository m,
+    ArtistAggregate m,
     Logging m
   ) =>
-  Vector Source ->
-  Album ->
-  m (Vector Track)
-importAlbumTracks srcs album = do
-  tracks <- forM srcs $ \src -> do
-    $(logDebug) $ "Importing track from source " <> show src.ref
-    MB.getRecordingFromMetadata src.metadata >>= \case
-      Just recording -> do
-        let newTrack = firstOf traverse <$> insert (V.singleton $ mkNewTrack album.dbId (Just recording.id) src)
-        Track.getByMusicBrainzId recording.id <<|>> newTrack >>= \case
-          Just track -> do
-            artistNames <- case recording.artistCredit of
-              Just as -> V.catMaybes . V.fromList <$> mapM importArtistCredit as
-              Nothing -> pure V.empty
-            let mk a = TrackArtistNameTable {track_id = track.id, artist_name_id = a.id}
-            _ <- TrackArtist.insert' (mk <$> artistNames)
-            pure (Just (mkTrack (V.toList artistNames) track))
-          Nothing -> pure Nothing
-      Nothing -> do
-        -- TODO get track artists from tags
-        --        let Metadata{lens, tags} = src.metadata
-        --        let artists = tags ^. lens M.trackArtistTag
-        --        album
-        fmap (mkTrack []) . firstOf traverse
-          <$> insert (V.singleton $ mkNewTrack album.dbId Nothing src)
-  pure (V.catMaybes tracks)
-  where
-    a <<|>> b =
-      a >>= \case
-        Just a' -> pure (Just a')
-        Nothing -> b
+  TrackAggregate (TrackAggregateIOT m) where
+  importAlbumTracks srcs album = do
+    tracks <- forM srcs $ \src -> do
+      $(logDebug) $ "Importing track from source " <> show src.ref
+      MB.getRecordingFromMetadata src.metadata >>= \case
+        Just recording -> do
+          let newTrack = insertSingle (mkNewTrack album.dbId (Just recording.id) src)
+          Track.getByMusicBrainzId recording.id <<|>> newTrack >>= \case
+            Just track -> do
+              artistNames <- case recording.artistCredit of
+                Just as -> V.catMaybes . V.fromList <$> mapM importArtistCredit as
+                Nothing -> pure V.empty
+              let mk a = TrackArtistNameTable {track_id = track.id, artist_name_id = a.id}
+              _ <- TrackArtist.insert' (mk <$> artistNames)
+              pure (Just (mkTrack (V.toList artistNames) track))
+            Nothing -> pure Nothing
+        Nothing -> do
+          -- TODO get track artists from tags
+          --        let Metadata{lens, tags} = src.metadata
+          --        let artists = tags ^. lens M.trackArtistTag
+          --        album
+          fmap (mkTrack []) <$> insertSingle (mkNewTrack album.dbId Nothing src)
+    pure (V.catMaybes tracks)
+    where
+      a <<|>> b =
+        a >>= \case
+          Just a' -> pure (Just a')
+          Nothing -> b
 
 mkNewTrack :: AlbumRef -> Maybe MB.MusicBrainzId -> Source -> NewTrack
 mkNewTrack albumRef mbid src =

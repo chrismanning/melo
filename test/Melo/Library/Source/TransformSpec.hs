@@ -181,12 +181,12 @@ spec = do
                   collectionRepo,
                   tagMappingRepo,
                   metadataServiceActions =
-                    [ ReadMetadataFile flacFileId (metadataFile ^. #filePath) :-> Right metadataFile
+                    [ ReadMetadataFile flacFileId metadataFile.filePath :-> Right metadataFile
                     --            WriteMetadataFile metadataFile (metadataFile ^. #filePath) :-> Right metadataFile
                     ],
                   musicBrainzServiceActions = []
                 }
-        previewTransformationsFixture fixture (V.singleton orig) >>= (`shouldSatisfy` \actual -> (actual V.! 0 & #ref .~ (orig ^. #ref)) == expected)
+        previewTransformationsFixture fixture (V.singleton orig) >>= (`shouldSatisfy` \actual -> (actual V.! 0 & #ref .~ orig.ref) == expected)
       it "retains mappings" $ do
         let origTags =
               [ ("ARTIST", "Artist"),
@@ -204,7 +204,7 @@ spec = do
                   collectionRepo,
                   tagMappingRepo,
                   metadataServiceActions =
-                    [ ReadMetadataFile flacFileId (metadataFile ^. #filePath) :-> Right metadataFile
+                    [ ReadMetadataFile flacFileId metadataFile.filePath :-> Right metadataFile
                     ],
                   musicBrainzServiceActions = []
                 }
@@ -264,8 +264,8 @@ type TestTransformT =
                 ( MockT
                     MusicBrainzServiceAction
                     ( MockT
-                        MetadataServiceAction
-                        ( FileSystemWatchServiceIOT
+                        MetadataAggregateAction
+                        ( FileSystemWatcherIOT
                             (FileSystemIOT
                                 (LoggingIOT IO)
                             )
@@ -295,7 +295,7 @@ data TransformFixture = TransformFixture
   { collectionRepo :: FakeCollectionRepository,
     sourceRepo :: FakeSourceRepository,
     tagMappingRepo :: FakeTagMappingRepository,
-    metadataServiceActions :: [WithResult MetadataServiceAction],
+    metadataServiceActions :: [WithResult MetadataAggregateAction],
     musicBrainzServiceActions :: [WithResult MusicBrainzServiceAction],
     transforms :: [TestTransformer]
   }
@@ -306,7 +306,7 @@ previewTransformationsFixture TransformFixture {..} ss = runSourceTransform $ SU
     runSourceTransform =
       runStdoutLogging
         . runFileSystemIO
-        . runFileSystemWatchServiceIO _ _
+        . runFileSystemWatcherIO _ _
         . runMockT metadataServiceActions
         . runMockT musicBrainzServiceActions
         . runFakeCollectionRepository collectionRepo
@@ -342,7 +342,7 @@ mkSource collectionRef tags =
 mkSourceRepo :: [Ty.Source] -> FakeSourceRepository
 mkSourceRepo ss =
   FakeRepository $
-    H.fromList (fmap (\s -> (s ^. #ref, from s)) ss)
+    H.fromList (fmap (\s -> s.ref, from s)) ss)
 
 mkTagMappingRepo :: [(Text, TagMapping)] -> FakeTagMappingRepository
 mkTagMappingRepo tm =

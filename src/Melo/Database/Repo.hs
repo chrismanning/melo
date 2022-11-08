@@ -28,6 +28,12 @@ class (Monad m, Entity e) => Repository e m | m -> e where
 getSingle :: forall e m. Repository e m => PrimaryKey e -> m (Maybe e)
 getSingle k = firstOf traverse <$> getByKey (singleton k)
 
+insertSingle :: forall e m. Repository e m => NewEntity e -> m (Maybe e)
+insertSingle e = firstOf traverse <$> insert (singleton e)
+
+updateSingle :: forall e m. Repository e m => e -> m (Maybe e)
+updateSingle e = firstOf traverse <$> update (singleton e)
+
 instance
   {-# OVERLAPPABLE #-}
   ( Monad (t m),

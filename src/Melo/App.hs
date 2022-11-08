@@ -16,14 +16,14 @@ import Melo.Database.Repo
 import Melo.Library.Album.Repo
 import Melo.Library.Artist.Name.Repo
 import Melo.Library.Artist.Repo
-import Melo.Library.Collection.FileSystem.WatchService
+import Melo.Library.Collection.Aggregate
+import Melo.Library.Collection.FileSystem.Watcher
 import Melo.Library.Collection.Repo
-import Melo.Library.Collection.Service
 import Melo.Library.Collection.Types
 import Melo.Library.Source.Repo
 import Melo.Lookup.MusicBrainz qualified as MB
+import Melo.Metadata.Mapping.Aggregate
 import Melo.Metadata.Mapping.Repo
-import Melo.Metadata.Mapping.Service
 import Network.Wai.Handler.Warp
 import Network.Wreq.Session qualified as Wreq
 import System.Exit
@@ -63,7 +63,7 @@ initApp :: CollectionWatchState -> Pool Hasql.Connection -> Wreq.Session -> IO (
 initApp collectionWatchState pool sess =
   runStdoutLogging $
     runFileSystemIO $
-      runMetadataServiceIO $
+      runMetadataAggregateIO $
         runSourceRepositoryPooledIO pool $
           runTagMappingRepositoryPooledIO pool $
             runAlbumRepositoryPooledIO pool $
@@ -71,15 +71,15 @@ initApp collectionWatchState pool sess =
             runArtistRepositoryPooledIO pool $
             MB.runMusicBrainzServiceUnlimitedIO sess $
               runCollectionRepositoryPooledIO pool $
-                runFileSystemWatchServiceIO pool collectionWatchState sess $
-                  runCollectionServiceIO pool sess $ do
+                runFileSystemWatcherIO pool collectionWatchState sess $
+                  runCollectionAggregateIO pool sess $ do
                     insertDefaultMappings
                     initCollections
 
 initCollections ::
-  ( FileSystemWatchService m,
+  ( FileSystemWatcher m,
     CollectionRepository m,
-    CollectionService m,
+    CollectionAggregate m,
     Logging m
   ) =>
   m ()

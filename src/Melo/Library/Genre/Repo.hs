@@ -4,7 +4,6 @@ module Melo.Library.Genre.Repo where
 
 import Control.Concurrent.Classy
 import Control.Exception.Safe
-import Control.Lens ((^.))
 import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control

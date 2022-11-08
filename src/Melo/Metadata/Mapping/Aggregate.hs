@@ -1,4 +1,4 @@
-module Melo.Metadata.Mapping.Service where
+module Melo.Metadata.Mapping.Aggregate where
 
 import Control.Exception.Safe
 import Control.Lens ((^.))

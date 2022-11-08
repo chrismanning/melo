@@ -6,24 +6,19 @@ module Melo.Library.Album.Repo where
 import Control.Concurrent.Classy
 import Control.Exception.Safe
 import Control.Foldl (PrimMonad)
-import Control.Lens hiding (from)
+import Control.Lens (firstOf)
 import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
 import Data.Pool
-import Data.Text (Text)
 import Data.Vector qualified as V
-import Data.Vector (Vector)
 import Hasql.Connection
 import Melo.Database.Repo
 import Melo.Database.Repo.IO
 import Melo.Library.Album.Types
-import Melo.Library.Artist.Types
-import Melo.Library.Genre.Types
-import Melo.Library.Track.Types
 import Melo.Lookup.MusicBrainz qualified as MB
 import Rel8 qualified
-import Rel8 (Query, Expr, lit, (==.), (&&.))
+import Rel8 (Query, Expr, lit, (==.))
 import Witch
 
 class Repository AlbumEntity m => AlbumRepository m where
@@ -131,7 +126,7 @@ runAlbumRepositoryPooledIO pool =
     RepositoryHandle
       { connSrc = Pooled pool,
         tbl = albumSchema,
-        pk = (^. #id),
+        pk = (.id),
         upsert = Nothing
       }
     . runRepositoryIOT
@@ -144,7 +139,7 @@ runAlbumRepositoryIO conn =
     RepositoryHandle
       { connSrc = Single conn,
         tbl = albumSchema,
-        pk = (^. #id),
+        pk = (.id),
         upsert = Nothing
       }
     . runRepositoryIOT

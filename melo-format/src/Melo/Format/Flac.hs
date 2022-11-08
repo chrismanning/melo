@@ -120,7 +120,7 @@ readFlacFile p = do
 
 writeFlacFile :: MetadataFile -> FilePath -> IO ()
 writeFlacFile f newpath = do
-  oldpath <- canonicalizePath $ f ^. #filePath
+  oldpath <- canonicalizePath f.filePath
   newpath <- canonicalizePath newpath
   if oldpath == newpath
     then do
@@ -140,7 +140,7 @@ writeFlacFile f newpath = do
         hSeek h AbsoluteSeek (flacSize oldflac)
         BS.hGet h $ fromInteger (end - flacSize oldflac)
       withBinaryFile newpath WriteMode $ \h -> do
-        let !newflac = updateFlacWith (H.elems $ f ^. #metadata) oldflac
+        let !newflac = updateFlacWith (H.elems f.metadata) oldflac
         hWriteFlac h newflac
         BS.hPut h audioData
 
@@ -234,7 +234,7 @@ collectFlacMetadata (FlacWithID3v2_3 id3v2 f) =
       vc = vorbisComment f
    in H.fromList $
         catMaybes
-          [ Just (id3v2fmt ^. #formatId, extractMetadata id3v2),
+          [ Just (id3v2fmt.formatId, extractMetadata id3v2),
             vc <&> (vorbisCommentsId,) . extractMetadata
           ]
 collectFlacMetadata (FlacWithID3v2_4 id3v2 f) =
@@ -242,7 +242,7 @@ collectFlacMetadata (FlacWithID3v2_4 id3v2 f) =
       vc = vorbisComment f
    in H.fromList $
         catMaybes
-          [ Just (id3v2fmt ^. #formatId, extractMetadata id3v2),
+          [ Just (id3v2fmt.formatId, extractMetadata id3v2),
             vc <&> (vorbisCommentsId,) . extractMetadata
           ]
 collectFlacMetadata (Flac f) =

@@ -1,7 +1,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnboxedTuples #-}
 
-module Melo.Library.Collection.FileSystem.WatchService where
+module Melo.Library.Collection.FileSystem.Watcher where
 
 import Control.Concurrent
 import Control.Concurrent.Classy (MonadConc)
@@ -27,7 +27,7 @@ import Melo.Common.Logging
 import Melo.Common.Uri
 import Melo.Database.Repo as Repo
 import Melo.Database.Transaction
-import Melo.Library.Collection.FileSystem.Service
+import Melo.Library.Collection.FileSystem.Scan
 import Melo.Library.Collection.Types
 import Melo.Library.Source.Repo
 import Network.Wreq.Session as Wreq
@@ -35,7 +35,7 @@ import System.FSNotify (ThreadingMode (..))
 import System.FSNotify qualified as FS
 import System.FilePath
 
-class Monad m => FileSystemWatchService m where
+class Monad m => FileSystemWatcher m where
   startWatching :: CollectionRef -> FilePath -> m ()
   stopWatching :: CollectionRef -> m ()
   lockPathsDuring :: NonEmpty FilePath -> m a -> m a
@@ -45,9 +45,9 @@ instance
   ( Monad (t m),
     MonadTrans t,
     MonadTransControl t,
-    FileSystemWatchService m
+    FileSystemWatcher m
   ) =>
-  FileSystemWatchService (t m)
+  FileSystemWatcher (t m)
   where
   startWatching ref p = lift (startWatching ref p)
   stopWatching = lift . stopWatching
@@ -62,8 +62,8 @@ emptyWatchState :: IO CollectionWatchState
 emptyWatchState = STM.atomically $
   CollectionWatchState <$> STM.newTVar H.empty <*> STM.newTVar Seq.empty
 
-newtype FileSystemWatchServiceIOT m a = FileSystemWatchServiceIOT
-  { runFileSystemWatchServiceIOT :: ReaderT (Pool Connection, CollectionWatchState, Wreq.Session) m a
+newtype FileSystemWatcherIOT m a = FileSystemWatcherIOT
+  { runFileSystemWatcherIOT :: ReaderT (Pool Connection, CollectionWatchState, Wreq.Session) m a
   }
   deriving newtype
     ( Functor,
@@ -82,10 +82,10 @@ newtype FileSystemWatchServiceIOT m a = FileSystemWatchServiceIOT
       PrimMonad
     )
 
-runFileSystemWatchServiceIO ::
-  Pool Connection -> CollectionWatchState -> Wreq.Session -> FileSystemWatchServiceIOT m a -> m a
-runFileSystemWatchServiceIO pool watchState sess =
-  flip runReaderT (pool, watchState, sess) . runFileSystemWatchServiceIOT
+runFileSystemWatcherIO ::
+  Pool Connection -> CollectionWatchState -> Wreq.Session -> FileSystemWatcherIOT m a -> m a
+runFileSystemWatcherIO pool watchState sess =
+  flip runReaderT (pool, watchState, sess) . runFileSystemWatcherIOT
 
 instance
   ( MonadIO m,
@@ -93,7 +93,7 @@ instance
     MonadBaseControl IO m,
     Logging m
   ) =>
-  FileSystemWatchService (FileSystemWatchServiceIOT m)
+  FileSystemWatcher (FileSystemWatcherIOT m)
   where
   startWatching ref p = do
     (pool, watchState, sess) <- ask

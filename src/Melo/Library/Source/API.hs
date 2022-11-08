@@ -13,7 +13,6 @@ import Control.Monad.IO.Class
 import Data.Binary.Builder (append, fromByteString, putStringUtf8)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as L
-import Data.Char (toLower)
 import Data.Coerce
 import Data.Default
 import Data.Either.Combinators
@@ -52,20 +51,22 @@ import Melo.Format ()
 import Melo.Format qualified as F
 import Melo.Format.Mapping qualified as M
 import Melo.GraphQL.Where
+import Melo.Library.Album.Aggregate
 import Melo.Library.Album.ArtistName.Repo
 import Melo.Library.Album.Repo
+import Melo.Library.Artist.Aggregate
 import Melo.Library.Artist.Name.Repo
 import Melo.Library.Artist.Repo
-import Melo.Library.Collection.FileSystem.Service
-import Melo.Library.Collection.FileSystem.WatchService
+import Melo.Library.Collection.Aggregate
+import Melo.Library.Collection.FileSystem.Watcher
 import Melo.Library.Collection.Repo (runCollectionRepositoryPooledIO)
-import Melo.Library.Collection.Service
 import Melo.Library.Collection.Types qualified as Ty
+import Melo.Library.Source.Aggregate
 import Melo.Library.Source.MultiTrack
 import Melo.Library.Source.Repo
-import Melo.Library.Source.Service
 import Melo.Library.Source.Transform qualified as Tr
 import Melo.Library.Source.Types qualified as Ty
+import Melo.Library.Track.Aggregate
 import Melo.Library.Track.ArtistName.Repo
 import Melo.Library.Track.Repo
 import Melo.Lookup.MusicBrainz as MB
@@ -505,7 +506,7 @@ enrichSourceEntityIO collectionWatchState pool s =
       pure $
         realToFrac . (* 1000) . nominalDiffTimeToSeconds <$> Ty.rangeLength intervalRange
     sourceLengthImpl _ (Just p) =
-      runMetadataServiceIO (openMetadataFile p) >>= \case
+      runMetadataAggregateIO (openMetadataFile p) >>= \case
         Left e -> do
           $(logWarnIO) $ "failed to open file " <> p <> ": " <> E.displayException e
           pure Nothing
@@ -553,7 +554,7 @@ previewTransformSourceIO collectionWatchState pool s ts = do
       sess <- liftIO newAPISession
       run' sess m
     run' sess = runFileSystemIO
-        . runMetadataServiceIO
+        . runMetadataAggregateIO
         . runSourceRepositoryPooledIO pool
         . runTagMappingRepositoryPooledIO pool
         . runAlbumRepositoryPooledIO pool
@@ -563,10 +564,14 @@ previewTransformSourceIO collectionWatchState pool s ts = do
         . runTrackArtistNameRepositoryPooledIO pool
         . runTrackRepositoryPooledIO pool
         . runMusicBrainzServiceUnlimitedIO sess
-        . runFileSystemWatchServiceIO pool collectionWatchState sess
+        . runFileSystemWatcherIO pool collectionWatchState sess
         . runMultiTrackIO
         . runCollectionRepositoryPooledIO pool
-        . runCollectionServiceIO pool sess
+        . runCollectionAggregateIO pool sess
+        . runArtistAggregateIOT
+        . runTrackAggregateIOT
+        . runAlbumAggregateIOT
+        . runSourceAggregateIOT
 
 sameGroup :: Source m -> Source m -> Bool
 sameGroup a b =
@@ -581,7 +586,7 @@ groupSources = V.fromList . toList . fmap trSrcGrp . foldl' acc S.empty
           newGroup =
             SourceGroup'
               { groupTags = groupedTags,
-                groupParentUri = getParentUri (src ^. #sourceUri),
+                groupParentUri = getParentUri src.sourceUri,
                 sources = S.singleton src
               }
        in case gs' of
@@ -652,16 +657,16 @@ instance GQLType GroupTags
 groupMappedTags :: MappedTags -> GroupTags
 groupMappedTags m =
   GroupTags
-    { albumArtist = m ^. #albumArtist <|> m ^. #artistName,
-      albumTitle = m ^. #albumTitle,
-      date = m ^. #date,
-      genre = m ^. #genre,
-      totalTracks = m ^. #totalTracks,
-      discNumber = m ^. #discNumber,
-      totalDiscs = m ^. #totalDiscs,
-      musicbrainzArtistId = m ^. #musicbrainzArtistId,
-      musicbrainzAlbumArtistId = m ^. #musicbrainzAlbumArtistId,
-      musicbrainzAlbumId = m ^. #musicbrainzAlbumId
+    { albumArtist = m.albumArtist <|> m.artistName,
+      albumTitle = m.albumTitle,
+      date = m.date,
+      genre = m.genre,
+      totalTracks = m.totalTracks,
+      discNumber = m.discNumber,
+      totalDiscs = m.totalDiscs,
+      musicbrainzArtistId = m.musicbrainzArtistId,
+      musicbrainzAlbumArtistId = m.musicbrainzAlbumArtistId,
+      musicbrainzAlbumId = m.musicbrainzAlbumId
     }
 
 data SourceUpdate = SourceUpdate
@@ -759,7 +764,7 @@ updateSourcesImpl (UpdateSourcesArgs updates) = lift do
           pure $ FailedSourceUpdate {id, msg}
     enrich :: Vector SourceUpdate -> m (Vector SourceUpdate')
     enrich us = do
-      let srcIds = fmap (^. #id) us
+      let srcIds = fmap (.id) us
       srcs <- getByKey @Ty.SourceEntity srcIds
       let srcs' = H.fromList $ fmap (\src -> (src.id, src)) $ V.toList srcs
       pure $

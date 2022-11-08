@@ -27,7 +27,6 @@ import Data.Generics.Labels ()
 import Data.Kind (Type)
 import Data.List (find, sortOn)
 import Data.Ord
-import Lens.Micro
 import Melo.Format.Ape
 import Melo.Format.Error
 import Melo.Format.Flac (Flac, flac)
@@ -46,24 +45,24 @@ metadataFileFactoriesIO :: [MetadataFileFactory IO]
 metadataFileFactoriesIO = [flac, mp3, oggVorbis, wavPack]
 
 metadataFileFactoryIO :: MetadataFileId -> Maybe (MetadataFileFactory IO)
-metadataFileFactoryIO mfid = find (\f -> f ^. #fileId == mfid) metadataFileFactoriesIO
+metadataFileFactoryIO mfid = find (\f -> f.fileId == mfid) metadataFileFactoriesIO
 
 openMetadataFile :: FilePath -> IO MetadataFile
 openMetadataFile p = do
-  let fmts = sortOn (Down . (^. #priority)) metadataFileFactoriesIO
-  fs <- filterM (\factory -> factory ^. #detectFile $ p) fmts
+  let fmts = sortOn (Down . (.priority)) metadataFileFactoriesIO
+  fs <- filterM (\factory -> factory.detectFile p) fmts
   case fs of
     [] -> throwIO UnknownFormat
-    (factory : _) -> factory ^. #readMetadataFile $ p
+    (factory : _) -> factory.readMetadataFile p
 
 openMetadataFileByExt :: FilePath -> IO MetadataFile
 openMetadataFileByExt p =
   case takeExtension p of
-    ".flac" -> flac ^. #readMetadataFile $ p
-    ".mp3" -> mp3 ^. #readMetadataFile $ p
-    ".ogg" -> oggVorbis ^. #readMetadataFile $ p
-    ".wv" -> wavPack ^. #readMetadataFile $ p
-    ".wvpk" -> wavPack ^. #readMetadataFile $ p
+    ".flac" -> flac.readMetadataFile p
+    ".mp3" -> mp3.readMetadataFile p
+    ".ogg" -> oggVorbis.readMetadataFile p
+    ".wv" -> wavPack.readMetadataFile p
+    ".wvpk" -> wavPack.readMetadataFile p
     _unknownExtension -> throwIO UnknownFormat
 
 fileFactoryByExt :: FilePath -> Maybe (MetadataFileFactory IO)
@@ -86,7 +85,7 @@ class MetadataFactory (a :: [Type]) where
 
 instance (MetadataFactory fs, MetadataFormat f) => MetadataFactory (f ': fs) where
   mk' mid tags =
-    if metadataFormat @f ^. #formatId == mid
+    if (metadataFormat @f).formatId == mid
       then Just $ metadataFactory @f tags
       else mk' @fs mid tags
 

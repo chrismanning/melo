@@ -4,7 +4,6 @@
 module Melo.Library.Collection.API where
 
 import Control.Concurrent.Classy
-import Control.Lens hiding (from, lens, (|>))
 import Data.Generics.Labels ()
 import Data.Kind
 import Data.Morpheus.Kind
@@ -17,13 +16,12 @@ import Data.Vector (Vector)
 import Data.Vector qualified as V
 import GHC.Generics hiding (from)
 import Melo.Common.FileSystem
-import Melo.Common.Logging
 import Melo.Database.Repo as Repo
 import Melo.Format ()
 import Melo.Format.Metadata ()
 import Melo.GraphQL.Where
+import Melo.Library.Collection.Aggregate
 import Melo.Library.Collection.Repo
-import Melo.Library.Collection.Service
 import Melo.Library.Collection.Types qualified as Ty
 import Melo.Library.Source.API as SrcApi
 import Melo.Library.Source.Transform qualified as Tr
@@ -78,20 +76,6 @@ data Collection m = Collection
   deriving (Generic)
 
 instance Typeable m => GQLType (Collection m)
-
---  type KIND (Collection m) = INTERFACE
-
--- instance Applicative m => From Ty.Collection (Collection m) where
---  from s =
---    Collection
---      { id = toText $ s ^. #ref . coerced,
---        format = "",
---        metadata = from $ s ^. #metadata,
---        sourceName = getCollectionName (T.pack $ show $ s ^. #source),
---        sourceUri = T.pack $ show $ s ^. #source,
---        downloadUri = "/source/" <> toText (s ^. #ref . coerced),
---        length = pure 100
---      }
 
 instance
   ( Tr.MonadSourceTransform m,
@@ -157,7 +141,7 @@ collectionMutation ::
   forall m e.
   ( Tr.MonadSourceTransform m,
     MonadConc m,
-    CollectionService m
+    CollectionAggregate m
   ) =>
   ResolverM e (m :: Type -> Type) CollectionMutation
 collectionMutation =
@@ -181,7 +165,7 @@ addCollectionImpl ::
   forall m e.
   ( Tr.MonadSourceTransform m,
     MonadConc m,
-    CollectionService m,
+    CollectionAggregate m,
     FileSystem m
   ) =>
   AddCollectionArgs ->
@@ -201,15 +185,15 @@ instance GQLType DeleteCollectionArgs where
   type KIND DeleteCollectionArgs = INPUT
 
 deleteCollectionImpl ::
-  (CollectionRepository m, Logging m) =>
+  CollectionAggregate m =>
   DeleteCollectionArgs ->
   ResolverM e m Unit
-deleteCollectionImpl args = lift $ Repo.delete (V.singleton args.id) >> pure Unit
+deleteCollectionImpl args = lift $ deleteCollection args.id >> pure Unit
 
 deleteAllCollectionsImpl ::
-  (CollectionRepository m) =>
+  (CollectionRepository m, CollectionAggregate m) =>
   ResolverM e m Unit
 deleteAllCollectionsImpl = lift do
   collections <- getAll
-  Repo.delete (fmap (^. #id) collections)
+  mapM_ (deleteCollection . (.id)) collections
   pure Unit

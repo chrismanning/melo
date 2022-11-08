@@ -5,7 +5,6 @@ module Melo.Database.Repo.IO where
 
 import Control.Exception.Safe
 import Control.Foldl (PrimMonad)
-import Control.Lens hiding (from)
 import Control.Monad.Base
 import Control.Monad.Conc.Class
 import Control.Monad.Reader
@@ -130,7 +129,7 @@ doUpdate :: (
   Rel8.Serializable (t' Rel8.Expr) (t' Rel8.Result),
   Entity (t' Rel8.Result),
   Rel8.DBEq (PrimaryKey (t' Rel8.Result))
-  ) => t' Identity -> Rel8.Returning (t' Rel8.Name) b -> m b
+  ) => t' Rel8.Result -> Rel8.Returning (t' Rel8.Name) b -> m b
 doUpdate e ret = do
   RepositoryHandle {connSrc, tbl, pk} <- ask
   let u = Rel8.Update {

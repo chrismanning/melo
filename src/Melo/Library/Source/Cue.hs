@@ -48,7 +48,7 @@ openCueFile cueFilePath = do
       let cueTracks' = zip trackNums (NE.toList cueTracks)
       let cueTracks'' = filter (\(_, (_, CueTrack {..})) -> cueTrackType == CueTrackAudio) cueTracks'
       processedTracks <- forM cueTracks'' $ \(trackNum, (filePath, CueTrack {..})) ->
-        runMetadataServiceIO (openMetadataFile (takeDirectory cueFilePath </> filePath)) >>= \case
+        runMetadataAggregateIO (openMetadataFile (takeDirectory cueFilePath </> filePath)) >>= \case
           Left e -> throwIO e
           Right mf -> do
             let rem = M.fromList $ bimap unCueText unCueText <$> cueRem

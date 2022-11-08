@@ -42,20 +42,20 @@ printTags f = do
   putLine
   psl "Info"
   putLine
-  psl $ "File Path: " <> T.pack (f ^. #filePath)
-  psl $ "File Type: " <> coerce (f ^. #fileId)
-  let info = f ^. #audioInfo
-  let channels = T.pack . show $ info ^. #channels
+  psl $ "File Path: " <> T.pack f.filePath
+  psl $ "File Type: " <> coerce f.fileId
+  let info = f.audioInfo
+  let channels = T.pack . show $ info.channels
   psl $ "Channels: " <> channels
-  let sampleRate = T.pack . show . samplesPerSecond $ info ^. #sampleRate
+  let sampleRate = T.pack $ show $ samplesPerSecond info.sampleRate
   psl $ "Sample Rate: " <> sampleRate <> "Hz"
-  whenJust (info ^. #quality) $ \quality ->
+  whenJust info.quality $ \quality ->
     psl $ "Quality: " <> quality
-  whenJust (info ^. #bitsPerSample) $ \bps ->
+  whenJust info.bitsPerSample $ \bps ->
     psl $ "Sample Size: " <> T.pack (show bps) <> " bits"
   whenJust (audioLength info) $ \len ->
     psl $ "Length: " <> T.pack (formatTime defaultTimeLocale "%-3Ess" len)
-  forM_ (toList (f ^. #metadata)) $ \metadata -> do
+  forM_ (toList f.metadata) $ \metadata -> do
     putLine
     psl $ "Tags - " <> formatDesc metadata
     putLine

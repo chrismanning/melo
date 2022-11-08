@@ -35,22 +35,20 @@ import Melo.Database.Repo qualified as Repo
 import Melo.Format qualified as F
 import Melo.Format.Error qualified as F
 import Melo.Format.Internal.Metadata (Metadata (..))
-import Melo.Library.Album.ArtistName.Repo
-import Melo.Library.Album.Repo
-import Melo.Library.Artist.Name.Repo
+import Melo.Library.Album.Aggregate
+import Melo.Library.Artist.Aggregate
 import Melo.Library.Artist.Repo
-import Melo.Library.Collection.FileSystem.WatchService
+import Melo.Library.Collection.FileSystem.Watcher
 import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Types
+import Melo.Library.Source.Aggregate
 import Melo.Library.Source.MultiTrack
 import Melo.Library.Source.Repo as Src
-import Melo.Library.Source.Service
 import Melo.Library.Source.Types
-import Melo.Library.Track.ArtistName.Repo
-import Melo.Library.Track.Repo
+import Melo.Library.Track.Aggregate
 import Melo.Lookup.MusicBrainz
+import Melo.Metadata.Mapping.Aggregate
 import Melo.Metadata.Mapping.Repo
-import Melo.Metadata.Mapping.Service
 import Melo.Metadata.Mapping.Types
 import Rel8 qualified (JSONBEncoded (..))
 import System.FilePath
@@ -96,23 +94,22 @@ evalTransformAction t _ = pure $ Left (UnsupportedTransform (show t))
 type MonadSourceTransform m =
   ( CollectionRepository m,
     FileSystem m,
-    FileSystemWatchService m,
+    FileSystemWatcher m,
     Logging m,
-    MetadataService m,
+    MetadataAggregate m,
     Monad m,
     MonadCatch m,
     MonadConc m,
     PrimMonad m,
     MultiTrack m,
     MusicBrainzService m,
+    SourceAggregate m,
+    AlbumAggregate m,
+    ArtistAggregate m,
+    TrackAggregate m,
     SourceRepository m,
     TagMappingRepository m,
-    AlbumRepository m,
-    AlbumArtistNameRepository m,
-    ArtistNameRepository m,
-    ArtistRepository m,
-    TrackRepository m,
-    TrackArtistNameRepository m
+    ArtistRepository m
   )
 
 previewTransformation ::
@@ -152,7 +149,7 @@ instance MonadSourceTransform m => FileSystem (TransformPreviewT m) where
     $(logDebug) ("Preview movePath called" :: String)
     pure $ Right ()
 
-instance MonadSourceTransform m => MetadataService (TransformPreviewT m) where
+instance MonadSourceTransform m => MetadataAggregate (TransformPreviewT m) where
   openMetadataFile _p = do
     $(logDebug) ("Preview openMetadataFile called" :: String)
     lift $ openMetadataFile _p
@@ -217,7 +214,7 @@ moveSourceWithPattern ::
     CollectionRepository m,
     SourceRepository m,
     TagMappingRepository m,
-    FileSystemWatchService m,
+    FileSystemWatcher m,
     ArtistRepository m,
     Logging m
   ) =>
@@ -250,7 +247,7 @@ moveSourceWithPattern collectionRef pats src@Source {ref, source} =
                     Right _ ->
                       $(logInfo) $ "successfully moved cover image " <> takeFileName imagePath <> " for source " <> show id
               let movedSrc = src & #source .~ fileUri destPath
-              Repo.update @SourceEntity (V.singleton (from movedSrc)) <&> firstOf traverse >>= \case
+              Repo.updateSingle @SourceEntity (from movedSrc) >>= \case
                 Just updatedSrc -> pure $ mapLeft ConversionError $ tryFrom updatedSrc
                 Nothing -> pure $ Left SourceUpdateError
         Nothing -> pure $ Left PatternError

@@ -1,7 +1,7 @@
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Melo.Library.Collection.FileSystem.Service
+module Melo.Library.Collection.FileSystem.Scan
   ( scanPathIO,
     ScanType (..),
   )
@@ -26,19 +26,22 @@ import Melo.Common.Metadata
 import Melo.Common.Uri
 import Melo.Format.Error qualified as F
 import Melo.Format.Metadata (MetadataFile (..), fileFactoryByExt)
+import Melo.Library.Album.Aggregate
 import Melo.Library.Album.ArtistName.Repo
 import Melo.Library.Album.Repo
+import Melo.Library.Artist.Aggregate
 import Melo.Library.Artist.Name.Repo
 import Melo.Library.Artist.Repo
 import Melo.Library.Collection.Types
+import Melo.Library.Source.Aggregate
 import Melo.Library.Source.Cue
 import Melo.Library.Source.Repo
-import Melo.Library.Source.Service
 import Melo.Library.Source.Types
   ( NewImportSource (..),
     SourceEntity,
     SourceTable (..),
   )
+import Melo.Library.Track.Aggregate
 import Melo.Library.Track.ArtistName.Repo
 import Melo.Library.Track.Repo
 import Melo.Lookup.MusicBrainz qualified as MB
@@ -130,8 +133,12 @@ scanPathIO pool sess scanType ref p' =
         . runTrackRepositoryPooledIO pool
         . runTrackArtistNameRepositoryPooledIO pool
         . MB.runMusicBrainzServiceUnlimitedIO sess
+        . runArtistAggregateIOT
+        . runTrackAggregateIOT
+        . runAlbumAggregateIOT
+        . runSourceAggregateIOT
     openMetadataFile'' p =
-      runMetadataServiceIO $
+      runMetadataAggregateIO $
         openMetadataFileByExt p >>= \case
           Right mf -> pure $ Just mf
           Left e@F.UnknownFormat -> do

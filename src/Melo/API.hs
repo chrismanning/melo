@@ -23,19 +23,22 @@ import Melo.Common.Metadata
 import Melo.Common.Uri
 import Melo.Format.Metadata (EmbeddedPicture (..), MetadataFile (..), PictureType (..))
 import Melo.Library.API
-import Melo.Library.Album.Repo
+import Melo.Library.Album.Aggregate
 import Melo.Library.Album.ArtistName.Repo
+import Melo.Library.Album.Repo
+import Melo.Library.Artist.Aggregate
 import Melo.Library.Artist.Name.Repo
 import Melo.Library.Artist.Repo
-import Melo.Library.Collection.FileSystem.WatchService
+import Melo.Library.Collection.Aggregate
+import Melo.Library.Collection.FileSystem.Watcher
 import Melo.Library.Collection.Repo
-import Melo.Library.Collection.Service
 import Melo.Library.Collection.Types (CollectionRef (..))
+import Melo.Library.Source.Aggregate
 import Melo.Library.Source.API qualified as API
 import Melo.Library.Source.MultiTrack
 import Melo.Library.Source.Repo as Source
-import Melo.Library.Source.Service
 import Melo.Library.Source.Types (Source (..), SourceRef (..))
+import Melo.Library.Track.Aggregate
 import Melo.Library.Track.ArtistName.Repo
 import Melo.Library.Track.Repo
 import Melo.Lookup.MusicBrainz
@@ -74,23 +77,27 @@ gqlApiIO :: CollectionWatchState -> Pool Connection -> Wreq.Session -> ByteStrin
 gqlApiIO collectionWatchState pool sess rq = runStdoutLogging do
   $(logInfo) ("handling graphql request" :: T.Text)
   $(logDebug) $ "graphql request: " <> rq
-  !rs <-
-    runFileSystemIO $
-      runMetadataServiceIO $
-        runSourceRepositoryPooledIO pool $
-          runTagMappingRepositoryPooledIO pool $
-            runAlbumRepositoryPooledIO pool $
-            runAlbumArtistNameRepositoryPooledIO pool $
-              runArtistNameRepositoryPooledIO pool $
-                runArtistRepositoryPooledIO pool $
-                runTrackArtistNameRepositoryPooledIO pool $
-                runTrackRepositoryPooledIO pool $
-                  runMusicBrainzServiceUnlimitedIO sess $
-                    runFileSystemWatchServiceIO pool collectionWatchState sess $
-                      runMultiTrackIO $
-                        runCollectionRepositoryPooledIO pool $
-                          runCollectionServiceIO pool sess $
-                            gqlApi rq
+  let run =
+        runFileSystemIO
+          . runMetadataAggregateIO
+          . runSourceRepositoryPooledIO pool
+          . runTagMappingRepositoryPooledIO pool
+          . runAlbumRepositoryPooledIO pool
+          . runAlbumArtistNameRepositoryPooledIO pool
+          . runArtistNameRepositoryPooledIO pool
+          . runArtistRepositoryPooledIO pool
+          . runTrackArtistNameRepositoryPooledIO pool
+          . runTrackRepositoryPooledIO pool
+          . runMusicBrainzServiceUnlimitedIO sess
+          . runFileSystemWatcherIO pool collectionWatchState sess
+          . runMultiTrackIO
+          . runCollectionRepositoryPooledIO pool
+          . runCollectionAggregateIO pool sess
+          . runArtistAggregateIOT
+          . runTrackAggregateIOT
+          . runAlbumAggregateIOT
+          . runSourceAggregateIOT
+  !rs <- run (gqlApi rq)
   $(logInfo) ("finished handling graphql request" :: T.Text)
   pure rs
 
@@ -102,18 +109,22 @@ type ResolverE m =
     FileSystem m,
     TagMappingRepository m,
     SourceRepository m,
-    MetadataService m,
+    SourceAggregate m,
+    AlbumAggregate m,
+    ArtistAggregate m,
+    TrackAggregate m,
+    MetadataAggregate m,
     MultiTrack m,
     MusicBrainzService m,
     CollectionRepository m,
-    CollectionService m,
+    CollectionAggregate m,
     AlbumRepository m,
     AlbumArtistNameRepository m,
     ArtistNameRepository m,
     ArtistRepository m,
     TrackRepository m,
     TrackArtistNameRepository m,
-    FileSystemWatchService m
+    FileSystemWatcher m
   )
 
 api ::
@@ -185,7 +196,7 @@ findCoverImageIO pool k = withResource pool $ \conn ->
     runStdoutLogging $
       runFileSystemIO $
         runSourceRepositoryIO conn $
-          runMetadataServiceIO do
+          runMetadataAggregateIO do
             getSource k >>= \case
               Nothing -> do
                 $(logWarn) $ "No source found for ref " <> show k
