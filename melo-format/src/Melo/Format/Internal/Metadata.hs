@@ -2,11 +2,14 @@
 
 module Melo.Format.Internal.Metadata where
 
-import Data.ByteString
-import Data.HashMap.Strict
+import Data.ByteString (ByteString)
+import Data.HashMap.Strict (HashMap)
 import Data.Hashable
 import Data.Text
 import GHC.Generics hiding (to)
+import Data.Vector (Vector, (!?))
+import GHC.Records
+import Lens.Micro
 import Melo.Format.Internal.Info
 import Melo.Format.Internal.Tag
 import Melo.Format.Mapping
@@ -43,7 +46,7 @@ data Metadata = Metadata
   { formatId :: !MetadataId,
     formatDesc :: !Text,
     tags :: !Tags,
-    lens :: !(TagMapping -> TagLens)
+    mappingSelector :: !FieldMappingSelector
   }
 
 instance Show Metadata where
@@ -62,9 +65,21 @@ instance Eq Metadata where
       && a.formatDesc == b.formatDesc
       && a.tags == b.tags
 
+type MetadataTagLens = Lens' Metadata (Vector Text)
+
+tagLens :: TagMapping -> MetadataTagLens
+tagLens mapping f metadata = let Metadata {tags, mappingSelector=sel} = metadata in
+  mappedTag sel mapping f tags <&> \tags' -> metadata { tags = tags' }
+
+instance HasField "tag" Metadata (TagMapping -> Vector Text) where
+  getField metadata mapping = metadata ^. tagLens mapping
+
+instance HasField "tagHead" Metadata (TagMapping -> Maybe Text) where
+  getField metadata mapping = metadata ^. tagLens mapping . to (!? 0)
+
 class MetadataFormat a where
   metadataFormat :: MetadataFormatDesc
-  metadataLens :: TagMapping -> TagLens
+  fieldMappingSelector :: FieldMappingSelector
   readTags :: a -> Tags
   replaceWithTags :: a -> Tags -> a
   metadataSize :: a -> Integer
@@ -76,7 +91,7 @@ metadataFactory tags =
         { formatId,
           formatDesc,
           tags,
-          lens = metadataLens @a
+          mappingSelector = fieldMappingSelector @a
         }
 
 data MetadataFormatDesc = MetadataFormat
@@ -120,9 +135,10 @@ data EmbeddedPicture = EmbeddedPicture
 extractMetadata :: forall a. MetadataFormat a => a -> Metadata
 extractMetadata a =
   let fmt = metadataFormat @a
+      tags = readTags a
    in Metadata
         { formatId = fmt.formatId,
           formatDesc = fmt.formatDesc,
-          tags = readTags a,
-          lens = metadataLens @a
+          mappingSelector = fieldMappingSelector @a,
+          tags
         }

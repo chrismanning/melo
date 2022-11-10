@@ -83,7 +83,7 @@ instance MetadataFormat ID3v2_3 where
       { formatId = id3v23Id,
         formatDesc = "ID3v2.3"
       }
-  metadataLens = id3v23Tag
+  fieldMappingSelector = id3v2_3
   readTags = readId3v2Tags
   replaceWithTags id3 tags = id3 { frames = framesFromTags tags }
   metadataSize = id3v2SizeWithHeader
@@ -116,7 +116,7 @@ instance MetadataFormat ID3v2_4 where
       { formatId = id3v24Id,
         formatDesc = "ID3v2.4"
       }
-  metadataLens = id3v24Tag
+  fieldMappingSelector = id3v2_4
   readTags = readId3v2Tags
   replaceWithTags id3 tags = id3 { frames = framesFromTags tags }
   metadataSize = id3v2SizeWithHeader

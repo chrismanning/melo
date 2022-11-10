@@ -15,6 +15,7 @@ import Data.Pool
 import Data.Text qualified as T
 import Data.Text.Lazy qualified as LT
 import Data.UUID (fromASCIIBytes)
+import Data.Vector qualified as V
 import GHC.Generics hiding (from)
 import Hasql.Connection
 import Melo.Common.FileSystem
@@ -42,6 +43,7 @@ import Melo.Library.Track.Aggregate
 import Melo.Library.Track.ArtistName.Repo
 import Melo.Library.Track.Repo
 import Melo.Lookup.MusicBrainz
+import Melo.Metadata.Mapping.Aggregate
 import Melo.Metadata.Mapping.Repo
 import Network.HTTP.Types.Status
 import Network.Wai.Middleware.Cors
@@ -97,6 +99,7 @@ gqlApiIO collectionWatchState pool sess rq = runStdoutLogging do
           . runTrackAggregateIOT
           . runAlbumAggregateIOT
           . runSourceAggregateIOT
+          . runTagMappingAggregate
   !rs <- run (gqlApi rq)
   $(logInfo) ("finished handling graphql request" :: T.Text)
   pure rs
@@ -108,6 +111,7 @@ type ResolverE m =
     Logging m,
     FileSystem m,
     TagMappingRepository m,
+    TagMappingAggregate m,
     SourceRepository m,
     SourceAggregate m,
     AlbumAggregate m,
@@ -128,7 +132,7 @@ type ResolverE m =
   )
 
 api ::
-  (MonadIO m, MonadBaseControl IO m) =>
+  (MonadIO m, MonadBaseControl IO m, Logging m) =>
   CollectionWatchState ->
   Pool Connection ->
   Wreq.Session ->
@@ -175,10 +179,16 @@ api collectionWatchState pool sess = do
             raw (fromStrict pic.pictureData)
   post "/collection/:id/source_groups" do
     collectionId <- param "id"
+    mappingNames <- V.fromList <$> param "groupByMappings"
+    groupByMappings <-
+      runArtistRepositoryPooledIO pool $
+      runTagMappingRepositoryPooledIO pool $
+      runTagMappingAggregate (getMappingsNamed mappingNames)
     rq <- body
     case fromASCIIBytes collectionId of
       Nothing -> status badRequest400
-      Just uuid -> stream $ API.streamSourceGroups collectionWatchState pool (CollectionRef uuid) rq
+      Just uuid -> stream $
+        API.streamSourceGroupsQuery collectionWatchState pool (CollectionRef uuid) groupByMappings rq
 
 getSourceFilePathIO :: (MonadIO m, MonadBaseControl IO m) => Pool Connection -> SourceRef -> m (Maybe FilePath)
 getSourceFilePathIO pool k = withResource pool $ \conn ->

@@ -71,7 +71,7 @@ data Collection m = Collection
     watch :: Bool,
     kind :: Text,
     sources :: CollectionSourcesArgs -> m (Vector (SrcApi.Source m)),
-    sourceGroups :: m (Vector (SrcApi.SourceGroup m))
+    sourceGroups :: CollectionSourceGroupsArgs -> m (Vector (SrcApi.SourceGroup m))
   }
   deriving (Generic)
 
@@ -84,15 +84,15 @@ instance
   ) =>
   From Ty.CollectionEntity (Collection (Resolver o e m))
   where
-  from s =
+  from e =
     Collection
-      { id = s.id,
-        name = s.name,
-        rootUri = s.root_uri,
-        watch = s.watch,
-        kind = s.kind,
-        sources = SrcApi.resolveCollectionSources s.id,
-        sourceGroups = SrcApi.resolveCollectionSourceGroups s.id
+      { id = e.id,
+        name = e.name,
+        rootUri = e.root_uri,
+        watch = e.watch,
+        kind = e.kind,
+        sources = SrcApi.resolveCollectionSources e.id,
+        sourceGroups = \args -> SrcApi.resolveCollectionSourceGroups e.id args.groupByMappings
       }
 
 data LocalFileCollection m = LocalFileCollection

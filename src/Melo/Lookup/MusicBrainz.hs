@@ -252,8 +252,8 @@ getReleaseGroupByMusicBrainzId ::
   MusicBrainzService m =>
   F.Metadata ->
   m (Maybe ReleaseGroup)
-getReleaseGroupByMusicBrainzId F.Metadata {tags, lens} = do
-  let releaseGroupIds = tags ^. lens releaseGroupIdTag
+getReleaseGroupByMusicBrainzId m = do
+  let releaseGroupIds = m.tag releaseGroupIdTag
   V.find perfectScore . V.catMaybes <$>
     V.forM releaseGroupIds (getReleaseGroup . MusicBrainzId)
 
@@ -261,9 +261,9 @@ getReleaseGroupByAlbum ::
   MusicBrainzService m =>
   F.Metadata ->
   m (Maybe ReleaseGroup)
-getReleaseGroupByAlbum F.Metadata {lens, tags} = do
-  let albumTitle = tags ^? lens M.album . _head
-  let albumArtist = tags ^? lens M.albumArtist . _head
+getReleaseGroupByAlbum m = do
+  let albumTitle = m.tagHead M.album
+  let albumArtist = m.tagHead M.albumArtist
   if isJust albumTitle && isJust albumArtist then
     find perfectScore <$>
       searchReleaseGroups def {albumArtist, albumTitle}
@@ -282,8 +282,8 @@ getRecordingByMusicBrainzId ::
   MusicBrainzService m =>
   F.Metadata ->
   m (Maybe Recording)
-getRecordingByMusicBrainzId F.Metadata {tags, lens} = do
-  let recordingIds = tags ^. lens recordingIdTag
+getRecordingByMusicBrainzId m = do
+  let recordingIds = m.tag recordingIdTag
   V.find perfectScore . V.catMaybes <$>
     V.forM recordingIds (getRecording . MusicBrainzId)
 
@@ -291,10 +291,10 @@ getRecordingByReleaseId ::
   MusicBrainzService m =>
   F.Metadata ->
   m (Maybe Recording)
-getRecordingByReleaseId F.Metadata {tags, lens} = do
-  let title = tags ^? lens M.trackTitle . _head
-  let releaseId = tags ^? lens releaseIdTag . _head
-  let releaseGroupId = tags ^? lens releaseGroupIdTag . _head
+getRecordingByReleaseId m = do
+  let title = m.tagHead M.trackTitle
+  let releaseId = m.tagHead releaseIdTag
+  let releaseGroupId = m.tagHead releaseGroupIdTag
   if isJust releaseId || isJust releaseGroupId then
     find perfectScore <$>
       searchRecordings
@@ -309,11 +309,11 @@ getRecordingByTrack ::
   MusicBrainzService m =>
   F.Metadata ->
   m (Maybe Recording)
-getRecordingByTrack F.Metadata {tags, lens} = do
-  let title = tags ^? lens M.trackTitle . _head
-  let album = tags ^? lens M.album . _head
-  let trackNumber = tags ^? lens M.trackNumber . _head
-  let artist = tags ^? lens M.artist . _head
+getRecordingByTrack m = do
+  let title = m.tagHead M.trackTitle
+  let album = m.tagHead M.album
+  let trackNumber = m.tagHead M.trackNumber
+  let artist = m.tagHead M.artist
   if isJust title && (isJust album || isJust artist) then
     find perfectScore <$> searchRecordings def {title, album, trackNumber, artist}
     else pure Nothing

@@ -15,12 +15,12 @@ import Control.Monad.Except
 import Control.Monad.Identity
 import Control.Monad.Trans.Control
 import Control.Monad.Trans.Except
-import Control.Monad.Trans.Maybe
 import Data.Char
 import Data.Either.Combinators
 import Data.Foldable
 import Data.HashMap.Strict qualified as H
 import Data.List.NonEmpty hiding (length)
+import Data.Map.Strict qualified as Map
 import Data.Maybe
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -49,8 +49,6 @@ import Melo.Library.Track.Aggregate
 import Melo.Lookup.MusicBrainz
 import Melo.Metadata.Mapping.Aggregate
 import Melo.Metadata.Mapping.Repo
-import Melo.Metadata.Mapping.Types
-import Rel8 qualified (JSONBEncoded (..))
 import System.FilePath
 import System.IO (TextEncoding)
 import Text.Megaparsec
@@ -109,6 +107,7 @@ type MonadSourceTransform m =
     TrackAggregate m,
     SourceRepository m,
     TagMappingRepository m,
+    TagMappingAggregate m,
     ArtistRepository m
   )
 
@@ -213,7 +212,7 @@ moveSourceWithPattern ::
   ( FileSystem m,
     CollectionRepository m,
     SourceRepository m,
-    TagMappingRepository m,
+    TagMappingAggregate m,
     FileSystemWatcher m,
     ArtistRepository m,
     Logging m
@@ -255,7 +254,7 @@ moveSourceWithPattern collectionRef pats src@Source {ref, source} =
 
 previewSourceMoveWithPattern ::
   ( CollectionRepository m,
-    TagMappingRepository m,
+    TagMappingAggregate m,
     ArtistRepository m,
     Logging m
   ) =>
@@ -267,52 +266,46 @@ previewSourceMoveWithPattern collectionRef pats src@Source {source} =
   Repo.getSingle @CollectionEntity collectionRef >>= \case
     Just CollectionTable {root_uri} -> case parseURI (T.unpack root_uri) >>= uriToFilePath of
       Just rootPath -> do
-        mappings <- Repo.getAll
-        srcPath <- renderSourcePath mappings rootPath src pats
+        srcPath <- renderSourcePath rootPath src pats
         pure $ Just $ srcPath <> takeExtension (show source)
       Nothing -> pure Nothing
     Nothing -> pure Nothing
 
 renderSourcePath ::
   ( ArtistRepository m,
+    TagMappingAggregate m,
     Logging m
   ) =>
-  Vector TagMappingEntity ->
   FilePath ->
   Source ->
   NonEmpty SourcePathPattern ->
   m FilePath
-renderSourcePath mappings basepath src pats =
+renderSourcePath basepath src pats =
   let (<</>>) = liftM2 (</>)
    in pure basepath
         <</>> fromMaybe ""
-        <$> Fold.foldM (Fold.sink (renderSourcePattern mappings src)) pats
+        <$> Fold.foldM (Fold.sink (renderSourcePattern src)) pats
 
 renderSourcePattern ::
   ( ArtistRepository m,
+    TagMappingAggregate m,
     Logging m
   ) =>
-  Vector TagMappingEntity ->
   Source ->
   SourcePathPattern ->
   m (Maybe FilePath)
-renderSourcePattern mappings src = \case
+renderSourcePattern src = \case
   LiteralPattern p -> pure $ Just p
   GroupPattern pats -> do
-    $(logDebug) $ "GroupPattern " <> show pats
-    ts <- forM pats (renderSourcePattern mappings src)
-    $(logDebug) $ "ts: " <> show ts
+    ts <- forM pats (renderSourcePattern src)
     let x = foldl' appendJust (Just "") ts
-    $(logDebug) $ "x: " <> show x
     pure $ Just (fromMaybe "" x)
-  MappingPattern mappingName -> runMaybeT do
-    tagMapping <- MaybeT $ pure $ findMappingNamed mappings mappingName
-    let e = TagMappingTable {name = mappingName, field_mappings = Rel8.JSONBEncoded tagMapping}
-    rs <- resolveMapping e src
-    MaybeT $ pure $ T.unpack <$> formatList (V.toList rs)
-  DefaultPattern a b -> renderSourcePattern mappings src a <<|>> renderSourcePattern mappings src b
+  MappingPattern mappingName -> do
+    rs <- resolveMappingNamed mappingName src
+    pure $ T.unpack <$> formatList (V.toList rs)
+  DefaultPattern a b -> renderSourcePattern src a <<|>> renderSourcePattern src b
   PrintfPattern fmt pat ->
-    fmap (printf fmt) <$> renderSourcePattern mappings src pat
+    fmap (printf fmt) <$> renderSourcePattern src pat
   where
     formatList :: [Text] -> Maybe Text
     formatList [] = Nothing
@@ -375,8 +368,8 @@ extractTrack collectionRef' patterns s@Source {multiTrack = Just MultiTrackDesc 
             Just CollectionTable {root_uri} -> case uriToFilePath =<< parseURI (T.unpack root_uri) of
               Nothing -> pure $ Left UnsupportedSourceKind
               Just basePath -> do
-                mappings <- Repo.getAll
-                srcPath <- renderSourcePath mappings basePath s patterns
+                mappings <- V.fromList . Map.elems <$> getAllMappings
+                srcPath <- renderSourcePath basePath s patterns
                 let dest = addExtension srcPath (takeExtension filePath)
                 lockPathsDuring (dest :| []) $ runExceptT do
                   mf <- openMetadataFile filePath >>= mapE MetadataTransformError
@@ -392,9 +385,9 @@ extractTrack collectionRef' patterns s@Source {multiTrack = Just MultiTrackDesc 
                             pictures = mf.pictures
                           }
                   raw <- extractTrackTo cuefile dest >>= mapE MultiTrackError
-                  let mappings' = mappings <&> \m -> Rel8.fromJSONBEncoded m.field_mappings
-                  $(logDebug) $ "Mappings: " <> show mappings'
-                  let vc = fromMaybe (F.metadataFactory @F.VorbisComments F.emptyTags) $ F.convert' F.vorbisCommentsId s.metadata mappings'
+                  $(logDebug) $ "Mappings: " <> show mappings
+                  let vc = fromMaybe (F.metadataFactory @F.VorbisComments F.emptyTags) $
+                        F.convert' F.vorbisCommentsId s.metadata mappings
                   $(logDebug) $ "Original metadata: " <> show s.metadata
                   $(logDebug) $ "Converted metadata: " <> show vc
                   let m = H.fromList [(F.vorbisCommentsId, vc)]
@@ -410,38 +403,34 @@ extractTrack collectionRef' patterns s@Source {multiTrack = Just MultiTrackDesc 
 extractTrack _ _ src = pure $ Right src
 
 data MetadataTransformation
-  = SetMapping Text [Text]
-  | RemoveMappings [Text]
-  | Retain [Text]
+  = SetMapping Text (Vector Text)
+  | RemoveMappings (Vector Text)
+  | Retain (Vector Text)
   deriving (Show)
 
 editMetadata :: MonadSourceTransform m => MetadataTransformation -> Source -> m (Either TransformationError Source)
-editMetadata (SetMapping mappingName vs) Source {metadata = m@Metadata {tags, lens = tag}, ..} =
+editMetadata (SetMapping mappingName vs) Source {..} =
   case uriToFilePath source of
     Nothing -> pure $ Left UnsupportedSourceKind
     Just path -> runExceptT @TransformationError do
-      mappings <- Repo.getAll
-      mapping <- eitherToError $ maybeToRight (UnknownTagMapping mappingName) $ findMappingNamed mappings mappingName
-      let newMetadata@Metadata {formatId} :: Metadata = m {F.tags = tags & tag mapping .~ V.fromList vs}
+      mapping <- eitherToError . maybeToRight (UnknownTagMapping mappingName) =<< getMappingNamed mappingName
+      let newMetadata@Metadata {formatId} :: Metadata = metadata & F.tagLens mapping .~ vs
       raw <- eitherToError . mapLeft from =<< readMetadataFile kind path
       let metadataFile = raw & #metadata . at formatId .~ Just newMetadata
       metadataFile' <- eitherToError . mapLeft from =<< writeMetadataFile metadataFile path
       importSources (V.singleton (FileSource collectionRef metadataFile')) >>= headOrException ImportFailed
-editMetadata (RemoveMappings mappings) src = flatten <$> (forM mappings $ \mapping -> editMetadata (SetMapping mapping []) src)
+editMetadata (RemoveMappings mappings) src = flatten <$> (forM mappings $ \mapping -> editMetadata (SetMapping mapping V.empty) src)
   where
-    flatten :: [Either TransformationError Source] -> Either TransformationError Source
     flatten es = foldl' (\_a b -> b) (Left ImportFailed) es
-editMetadata (Retain retained) Source {metadata = m@Metadata {tags, lens = tag}, ..} =
+editMetadata (Retain retained) Source {..} = let tag = F.mappedTag metadata.mappingSelector in
   case uriToFilePath source of
     Nothing -> pure $ Left UnsupportedSourceKind
     Just path -> runExceptT @TransformationError do
-      mappings <- Repo.getAll
-      retainedMappings <- forM retained $ \mappingName ->
-        eitherToError $
-          maybeToRight (UnknownTagMapping mappingName) $
-            findMappingNamed mappings mappingName
-      let newTags = foldl' (\ts mapping -> ts & tag mapping .~ (tags ^. tag mapping)) F.emptyTags retainedMappings
-      let newMetadata@Metadata {formatId} :: Metadata = m {F.tags = newTags}
+      retainedMappings <- forM retained $ \mappingName -> do
+        getMappingNamed mappingName >>=
+          eitherToError . maybeToRight (UnknownTagMapping mappingName)
+      let newTags = foldl' (\ts mapping -> ts & tag mapping .~ (metadata.tag mapping)) F.emptyTags retainedMappings
+      let newMetadata@Metadata {formatId} :: Metadata = metadata {F.tags = newTags}
       raw <- eitherToError . mapLeft from =<< readMetadataFile kind path
       let metadataFile = raw & #metadata . at formatId .~ Just newMetadata
       metadataFile' <- eitherToError . mapLeft from =<< writeMetadataFile metadataFile path

@@ -12,11 +12,8 @@ import Control.Monad.Trans
 import Control.Monad.Trans.Identity
 import Control.Monad.Trans.Control
 import Data.Maybe
-import Data.Vector (fromList)
 import Melo.Common.Logging
 import Melo.Database.Repo
-import Melo.Format.Mapping qualified as M
-import Melo.Format.Metadata
 import Melo.Library.Artist.Name.Repo
 import Melo.Library.Artist.Name.Types
 import Melo.Library.Artist.Repo
@@ -93,9 +90,3 @@ getArtistNamed ::
 getArtistNamed ref = do
   -- TODO getArtistNamed
   undefined
-
-setArtists :: Metadata -> [Artist] -> Metadata
-setArtists m a =
-  let tag = lens m
-      tags :: Tags = m.tags & tag M.trackArtistTag .~ (fromList a <&> (.name))
-   in m {tags}

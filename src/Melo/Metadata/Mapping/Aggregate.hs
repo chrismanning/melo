@@ -1,17 +1,24 @@
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UnboxedTuples #-}
+
 module Melo.Metadata.Mapping.Aggregate where
 
 import Control.Exception.Safe
-import Control.Lens ((^.))
+import Control.Foldl (PrimMonad)
+import Control.Lens
 import Control.Monad
-import Data.Coerce
+import Control.Monad.Base
+import Control.Monad.Conc.Class
+import Control.Monad.Reader
+import Control.Monad.Trans.Control
 import Country
-import Data.Functor
+import Data.Coerce
+import Data.Map.Strict as Map
 import Data.Text (Text)
-import Data.Vector (Vector, find, fromList)
+import Data.Vector (Vector)
 import Data.Vector qualified as V
 import Melo.Common.Logging
 import Melo.Database.Repo as Repo
-import Melo.Format.Metadata qualified as F
 import Melo.Format.Mapping as M
 import Melo.Library.Artist.Repo
 import Melo.Library.Artist.Types
@@ -19,26 +26,82 @@ import Melo.Library.Source.Types
 import Melo.Metadata.Mapping.Repo
 import Melo.Metadata.Mapping.Types
 
-getMappingNamed :: TagMappingRepository m => Text -> m (Maybe M.TagMapping)
-getMappingNamed name = fmap (.tagMapping) <$> getSingle name
+class Monad m => TagMappingAggregate m where
+  resolveMappingNamed :: Text -> Source -> m (Vector Text)
+  getMappingNamed :: Text -> m (Maybe M.TagMapping)
+  getMappingsNamed :: Vector Text -> m TagMappingIndex
+  getAllMappings :: m TagMappingIndex
 
-findMappingNamed :: Vector TagMappingEntity -> Text -> Maybe M.TagMapping
-findMappingNamed ms name = fmap (.tagMapping) $ find (\mapping -> mapping.name == name) ms
+instance
+  {-# OVERLAPPABLE #-}
+  ( Monad (t m),
+    MonadTrans t,
+    TagMappingAggregate m
+  ) =>
+  TagMappingAggregate (t m)
+  where
+  resolveMappingNamed n s = lift (resolveMappingNamed n s)
+  getMappingNamed = lift . getMappingNamed
+  getMappingsNamed = lift . getMappingsNamed
+  getAllMappings = lift getAllMappings
 
-resolveMapping :: (ArtistRepository m, Logging m) =>
-  TagMappingEntity -> Source -> m (Vector Text)
-resolveMapping e src | e.name == "album_artist_origin" = do
-  artists <- getSourceAlbumArtists src.ref
-  pure $ V.take 1 $ V.catMaybes $ fmap ((\c -> c >>= decodeAlphaThree <&> alphaTwoUpper) . (.country) . fst) artists
-resolveMapping e src = let F.Metadata {tags, lens} = src.metadata in
-  pure $ tags ^. lens e.tagMapping
+type TagMappingIndex = Map Text M.TagMapping
+
+newtype TagMappingAggregateT m a = TagMappingAggregateT
+  { runTagMappingAggregateT :: ReaderT TagMappingIndex m a
+  }
+  deriving newtype
+    ( Functor,
+      Applicative,
+      Monad,
+      MonadIO,
+      MonadBase b,
+      MonadBaseControl b,
+      MonadConc,
+      MonadCatch,
+      MonadMask,
+      MonadReader TagMappingIndex,
+      MonadThrow,
+      MonadTrans,
+      MonadTransControl,
+      PrimMonad
+    )
+
+instance
+  ( ArtistRepository m,
+    TagMappingRepository m,
+    Logging m
+  ) =>
+  TagMappingAggregate (TagMappingAggregateT m)
+  where
+  resolveMappingNamed m src | m == "album_artist_origin" = do
+    artists <- getSourceAlbumArtists src.ref
+    pure $ V.take 1 $ V.catMaybes $ fmap ((\c -> c >>= decodeAlphaThree <&> alphaTwoUpper) . (.country) . fst) artists
+  resolveMappingNamed mappingName src =
+    getMappingNamed mappingName >>= \case
+      Just mapping -> pure $ src.metadata.tag mapping
+      Nothing -> pure V.empty
+  getMappingNamed name = asks lookup
+    where
+      lookup :: TagMappingIndex -> Maybe M.TagMapping
+      lookup mappings = mappings ^. at name
+  getMappingsNamed names =
+    Map.fromList . V.toList . V.catMaybes <$> forM names \mappingName ->
+      fmap (mappingName,) <$> getMappingNamed mappingName
+  getAllMappings = ask
+
+runTagMappingAggregate :: TagMappingRepository m => TagMappingAggregateT m a -> m a
+runTagMappingAggregate (TagMappingAggregateT m) = do
+  all <- getAll
+  let mappings = Map.fromList $ fmap (\e -> (e.name, e.tagMapping)) $ V.toList all
+  runReaderT m mappings
 
 insertDefaultMappings :: (MonadCatch m, TagMappingRepository m) => m ()
 insertDefaultMappings = void (insert' defaultMappings) `catchIO` (\_ -> pure ())
 
 defaultMappings :: Vector NewTagMapping
 defaultMappings =
-  fromList
+  V.fromList
     [ NewTagMapping "album_artist" $ coerce M.albumArtist,
       NewTagMapping "track_artist" $ coerce M.artist,
       NewTagMapping "artist" $ coerce M.artist,

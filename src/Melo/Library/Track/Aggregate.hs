@@ -116,16 +116,15 @@ mkNewTrack albumRef mbid src =
       musicBrainzId = mbid
     }
   where
-    tags = src.metadata.tags
-    Metadata {lens} = src.metadata
-    trackTitle = fromMaybe "" (tags ^? lens M.trackTitle . _head)
+    m = src.metadata
+    trackTitle = m.tagHead M.trackTitle & fromMaybe ""
     trackNumber =
-      (tags ^? lens M.trackNumber . _head >>= parseTrackNumber)
+      (m.tagHead M.trackNumber >>= parseTrackNumber)
         <|> (uriToFilePath src.source >>= parseTrackNumberFromFileName)
-    trackComment = tags ^? lens M.commentTag . _head
-    discNumber = case tags ^? lens M.discNumberTag . _head of
+    trackComment = m.tagHead M.commentTag
+    discNumber = case m.tagHead M.discNumberTag of
       Just dnum -> parseDiscNumber dnum
-      _noDiscNum -> case tags ^? lens M.trackNumber . _head of
+      _noDiscNum -> case m.tagHead M.trackNumber of
         Just tnum -> parseDiscNumberFromTrackNumber tnum
         _noTrackNum -> Nothing
 

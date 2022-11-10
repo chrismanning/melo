@@ -394,7 +394,7 @@ data Source = Source
   deriving (Generic, Show, Eq)
 
 instance TryFrom SourceEntity Source where
-  tryFrom s = maybeToRight (TryFromException s Nothing) $ do
+  tryFrom s = maybeToRight (TryFromException s Nothing) do
     uri <- parseURI $ T.unpack s.source_uri
     let mid = MetadataId s.metadata_format
     let JSONBEncoded (SourceMetadata tags) = s.metadata
@@ -415,6 +415,13 @@ instance TryFrom SourceEntity Source where
           metadata
         }
 
+instance TryFrom SourceEntity Metadata where
+  tryFrom e = maybeToRight (TryFromException e Nothing) do
+    let mid = MetadataId e.metadata_format
+    let JSONBEncoded (SourceMetadata tags) = e.metadata
+    let tags' = Tags $ tags <&> (\p -> (p.key, p.value))
+    mkCueMetadata mid tags' <|> mkMetadata mid tags'
+
 mkCueMetadata :: MetadataId -> Tags -> Maybe Metadata
 mkCueMetadata (MetadataId mid) tags
   | mid == "CUE" =
@@ -423,7 +430,7 @@ mkCueMetadata (MetadataId mid) tags
           { tags,
             formatId = MetadataId mid,
             formatDesc = "CUE file",
-            lens = mappedTag Mapping.cue
+            mappingSelector = Mapping.cue
           }
 mkCueMetadata _ _ = Nothing
 

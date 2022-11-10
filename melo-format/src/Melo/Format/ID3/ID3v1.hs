@@ -64,7 +64,7 @@ instance MetadataFormat ID3v1 where
       { formatId = id3v1Id,
         formatDesc = let (MetadataId k) = id3v1Id in k
       }
-  metadataLens = mappedTag id3v1
+  fieldMappingSelector = id3v1
   readTags id3 =
     Tags $
       V.fromList $

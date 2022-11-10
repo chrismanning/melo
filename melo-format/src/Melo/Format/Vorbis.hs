@@ -173,7 +173,7 @@ instance MetadataFormat VorbisComments where
       { formatId = vorbisCommentsId,
         formatDesc = "Vorbis Comments"
       }
-  metadataLens = vorbisTag
+  fieldMappingSelector = vorbis
   readTags = getVorbisTags
   replaceWithTags vc tags = replaceUserComments vc (toUserComments tags)
   metadataSize = toInteger . L.length . runPut . put

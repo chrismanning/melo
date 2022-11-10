@@ -23,7 +23,6 @@ import Melo.Format.Metadata
     MetadataId (..),
     MetadataFile (..),
     Tags (..),
-    mappedTag,
   )
 import Melo.Library.Source.Types
 import System.FilePath
@@ -72,7 +71,7 @@ openCueFile cueFilePath = do
                     { tags = Tags (V.fromList tags),
                       formatId = cueId,
                       formatDesc = "CUE file",
-                      lens = mappedTag Mapping.cue
+                      mappingSelector = Mapping.cue
                     }
             case audioLength mf.audioInfo of
               Just totalFileLength ->

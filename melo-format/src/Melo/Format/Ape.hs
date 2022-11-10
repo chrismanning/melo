@@ -52,7 +52,7 @@ instance MetadataFormat APEv1 where
       { formatId = apeV1Id,
         formatDesc = "APEv1"
       }
-  metadataLens = apeTag
+  fieldMappingSelector = ape
   readTags a = Tags (coerce a >>= getTextItem)
   metadataSize = toInteger . L.length . runPut . put
   replaceWithTags _ = APEv1 . createApeTags
@@ -113,7 +113,7 @@ instance MetadataFormat APEv2 where
       { formatId = apeV2Id,
         formatDesc = "APEv2"
       }
-  metadataLens = apeTag
+  fieldMappingSelector = ape
   readTags a = Tags (coerce a >>= getTextItem)
   metadataSize = toInteger . L.length . runPut . put
   replaceWithTags _ = APEv2 . createApeTags
