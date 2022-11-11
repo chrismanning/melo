@@ -27,6 +27,7 @@ module Melo.Lookup.MusicBrainz
     releaseIdTag,
     getReleaseGroupFromMetadata,
     getRecordingFromMetadata,
+    truncateDate,
     (<<|>>)
   )
 where
@@ -44,6 +45,7 @@ import Control.Monad.Trans.Control
 import Control.Monad.Trans.Identity
 import Data.Aeson as A
 import Data.Aeson.Casing (trainCase)
+import Data.Char
 import Data.Default
 import Data.Generics.Labels ()
 import Data.Hashable
@@ -109,7 +111,8 @@ instance FromJSON Artist where
 
 data ReleaseSearch = ReleaseSearch
   { albumArtist :: Maybe Text,
-    albumTitle :: Maybe Text
+    albumTitle :: Maybe Text,
+    date :: Maybe Text
   }
   deriving (Show, Generic, Eq)
 
@@ -264,9 +267,10 @@ getReleaseGroupByAlbum ::
 getReleaseGroupByAlbum m = do
   let albumTitle = m.tagHead M.album
   let albumArtist = m.tagHead M.albumArtist
+  let date = m.tagHead M.originalReleaseYear <&> truncateDate
   if isJust albumTitle && isJust albumArtist then
     find perfectScore <$>
-      searchReleaseGroups def {albumArtist, albumTitle}
+      searchReleaseGroups def {albumArtist, albumTitle, date}
     else pure Nothing
 
 getRecordingFromMetadata ::
@@ -321,6 +325,9 @@ getRecordingByTrack m = do
 perfectScore :: (Integral i, HasField "score" r (Maybe i)) => r -> Bool
 perfectScore r = r.score == Just 100
 
+truncateDate :: Text -> Text
+truncateDate = T.takeWhile isDigit
+
 newtype MusicBrainzServiceIOT m a = MusicBrainzServiceIOT
   { runMusicBrainzServiceIOT :: HttpSessionIOT m a
   }
@@ -370,8 +377,9 @@ instance
     waitReady
     let qterms =
           catMaybes
-            [ fmap (\t -> "releasegroupaccent:\"" <> t <> "\"") search.albumTitle,
-              fmap (\a -> "artist:\"" <> a <> "\"") search.albumArtist
+            [ fmap (\t -> "(releasegroupaccent:\"" <> t <> "\" OR title:\"" <> t <> "\")") search.albumTitle,
+              fmap (\a -> "artist:\"" <> a <> "\"") search.albumArtist,
+              fmap (\a -> "firstreleasedate:\"" <> a <> "\"") search.date
             ]
     case qterms of
       [] -> pure []

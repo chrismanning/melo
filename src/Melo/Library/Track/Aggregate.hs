@@ -24,7 +24,6 @@ import GHC.Generics hiding (from)
 import Melo.Common.Logging
 import Melo.Common.Uri
 import Melo.Database.Repo
-import Melo.Format.Internal.Metadata
 import Melo.Format.Mapping qualified as M
 import Melo.Library.Album.Types
 import Melo.Library.Artist.Aggregate

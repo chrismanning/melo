@@ -2,12 +2,10 @@
 
 module Melo.Library.Album.Types where
 
-import Data.Char
 import Data.Morpheus.Kind
 import Data.Morpheus.Types as M
 import Data.Hashable
 import Data.Text (Text)
-import Data.Text qualified as T
 import Data.Time
 import Data.UUID
 import GHC.Generics
@@ -83,7 +81,7 @@ instance From MB.Release NewAlbum where
   from mbRelease =
     NewAlbum
       { title = mbRelease.title,
-        yearReleased = truncateMusicBrainzDate <$> mbRelease.date,
+        yearReleased = MB.truncateDate <$> mbRelease.date,
         musicbrainzId = Just mbRelease.id,
         comment = Nothing
       }
@@ -92,13 +90,10 @@ instance From MB.ReleaseGroup NewAlbum where
   from mbRelease =
     NewAlbum
       { title = mbRelease.title,
-        yearReleased = truncateMusicBrainzDate <$> mbRelease.firstReleaseDate,
+        yearReleased = MB.truncateDate <$> mbRelease.firstReleaseDate,
         musicbrainzId = Just mbRelease.id,
         comment = Nothing
       }
-
-truncateMusicBrainzDate :: Text -> Text
-truncateMusicBrainzDate = T.takeWhile isDigit
 
 instance From NewAlbum (AlbumTable Expr) where
   from a =

@@ -83,15 +83,14 @@ scanPathIO pool sess scanType ref p' =
             [] -> handleScanErrors $ importTransaction files
             [cuefile] -> do
               $(logDebugIO) $ "Cue file found " <> show cuefile
-              srcs <-
-                liftIO $
-                  handle (logShow >=> \_ -> pure V.empty) $
+              liftIO $
+                handle (logShow >=> \_ -> handleScanErrors $ importTransaction files) $
+                  V.length <$>
                     runImport
                       pool
                       sess
                       ( openCueFile cuefile <&> (CueFileImportSource ref <$>) >>= importSources
                       )
-              pure (V.length srcs)
             _ -> do
               $(logWarnIO) $ "Multiple cue file found in " <> show p <> "; skipping..."
               pure 0

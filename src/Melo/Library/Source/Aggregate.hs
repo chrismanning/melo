@@ -7,6 +7,7 @@ import Control.Applicative hiding (empty)
 import Control.Exception.Safe
 import Control.Foldl (PrimMonad)
 import Control.Lens (firstOf)
+import Control.Monad
 import Control.Monad.Base
 import Control.Monad.Conc.Class
 import Control.Monad.Trans
@@ -62,6 +63,7 @@ newtype SourceAggregateIOT m a = SourceAggregateIOT
 instance
   ( SourceRepository m,
     AlbumAggregate m,
+    MonadConc m,
     Logging m
   ) =>
   SourceAggregate (SourceAggregateIOT m)
@@ -73,7 +75,7 @@ instance
     $(logDebug) $ "Importing " <> show (V.length metadataSources) <> " metadata sources"
     srcs <- rights . fmap tryFrom <$> insert (fmap (from @MetadataImportSource) metadataSources)
     -- TODO publish sources imported event
-    _albums <- importAlbums srcs
+    fork $ void $ importAlbums srcs
     pure srcs
 
 getAllSources :: SourceRepository m => m (Vector Source)
