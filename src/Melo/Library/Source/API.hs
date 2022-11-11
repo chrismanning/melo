@@ -1,5 +1,4 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Library.Source.API where
@@ -78,11 +77,37 @@ data SourceEvent
   | SourceRemoved (Ty.SourceRef)
   deriving (Show, Eq)
 
+resolveSources ::
+  ( Tr.MonadSourceTransform m,
+    MonadConc m,
+    WithOperation o
+  ) =>
+  SourcesArgs ->
+  Resolver o e m (Vector (Source (Resolver o e m)))
+resolveSources args = do
+  ss <- resolveSourceEntities args.where'
+  pure $ fmap enrichSourceEntity ss
+
+resolveSourceGroups ::
+  forall m o e.
+  ( Tr.MonadSourceTransform m,
+    MonadConc m,
+    WithOperation o
+  ) =>
+  SourceGroupsArgs ->
+  Resolver o e m (V.Vector (SourceGroup (Resolver o e m)))
+resolveSourceGroups args = do
+  groupByMappings <- lift $ getMappingsNamed args.groupByMappings
+  srcs <- resolveSourceEntities args.where'
+  lift $ S.each srcs
+    & groupSources' groupByMappings
+    & Fold.impurely S.foldM_ Fold.vectorM
+
 resolveSourceEntities ::
   (Tr.MonadSourceTransform m, WithOperation o) =>
-  SourcesArgs ->
+  Maybe SourceWhere ->
   Resolver o e m (Vector Ty.SourceEntity)
-resolveSourceEntities (SourceArgs (Just SourceWhere {..})) =
+resolveSourceEntities (Just SourceWhere {..}) =
   case id of
     Just idExpr -> case idExpr of
       WhereEqExpr (EqExpr x) -> case fromText x of
@@ -210,6 +235,14 @@ data SourceWhere = SourceWhere
 
 instance GQLType SourceWhere where
   type KIND SourceWhere = INPUT
+
+data SourceGroupsArgs = SourceGroupsArgs
+  { groupByMappings :: Vector Text,
+    where' :: Maybe SourceWhere
+  }
+  deriving (Generic)
+
+instance GQLType SourceGroupsArgs
 
 newtype CollectionSourceGroupsArgs = CollectionSourceGroupsArgs
   { groupByMappings :: Vector Text
@@ -346,7 +379,7 @@ extractMappedTags :: TagMappingIndex -> Ty.SourceEntity -> MappedTags
 extractMappedTags mappings e = case tryFrom @_ @F.Metadata e of
   Left _ -> V.empty
   Right metadata ->
-    V.fromList $ Map.assocs mappings <&> \(name, mapping) -> MappedTag {
+    V.fromList $ filter (not . null . (.values)) $ Map.assocs mappings <&> \(name, mapping) -> MappedTag {
       mappingName = name,
       values = metadata.tag mapping
     }
@@ -401,7 +434,7 @@ streamSourceGroupsQuery collectionWatchState pool collectionRef groupByMappings 
               { sourceGroup
               }
         }
-    query = do
+    sourcesForCollection collectionRef = do
       srcs <- orderByUri $ Rel8.each sourceSchema
       Rel8.where_ (srcs.collection_id ==. Rel8.lit collectionRef)
       pure srcs
@@ -410,7 +443,7 @@ streamSourceGroupsQuery collectionWatchState pool collectionRef groupByMappings 
       run $
         transactionIO ReadCommitted ReadOnly NotDeferrable $
           cursorTransactionIO $
-            processStream (selectStream query)
+            processStream (selectStream (sourcesForCollection collectionRef))
     processStream :: MonadIO m => S.Stream (S.Of Ty.SourceEntity) m () -> m ()
     processStream s = do
       $(logInfoIO) $ "Starting streaming sources from collection " <> show collectionRef
@@ -541,7 +574,7 @@ transformSourcesImpl ::
   TransformSourcesArgs ->
   ResolverM e m (UpdatedSources (Resolver MUTATION e m))
 transformSourcesImpl (TransformSourcesArgs ts where') = do
-  es <- resolveSourceEntities (SourceArgs where')
+  es <- resolveSourceEntities where'
   $(logDebug) $ "Transforming sources " <> show (es <&> \e -> e.id) <> " with " <> show ts
   forM es $ \s ->
     lift $

@@ -17,7 +17,9 @@ import Melo.Library.Source.API
 import Melo.Library.Source.Transform qualified as Tr
 
 data LibraryQuery m = LibraryQuery
-  { collections :: CollectionsArgs -> m (Vector (Collection m))
+  { sources :: SourcesArgs -> m (Vector (Source m)),
+    sourceGroups :: SourceGroupsArgs -> m (Vector (SourceGroup m)),
+    collections :: CollectionsArgs -> m (Vector (Collection m))
   }
   deriving (Generic)
 
@@ -32,7 +34,9 @@ resolveLibrary =
   lift $
     pure
       LibraryQuery
-        { collections = resolveCollections
+        { sources = resolveSources,
+          sourceGroups = resolveSourceGroups,
+          collections = resolveCollections
         }
 
 data LibraryMutation (m :: Type -> Type) = LibraryMutation

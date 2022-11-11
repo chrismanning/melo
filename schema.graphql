@@ -5,7 +5,7 @@ type Collection {
   watch: Boolean!
   kind: String!
   sources(where: SourceWhere): [Source!]!
-  sourceGroups: [SourceGroup!]!
+  sourceGroups(groupByMappings: [String!]!): [SourceGroup!]!
 }
 
 type CollectionMutation {
@@ -48,19 +48,6 @@ type FailedSourceUpdate {
   msg: String!
 }
 
-type GroupTags {
-  albumArtist: [String!]
-  albumTitle: String
-  date: String
-  genre: [String!]
-  totalTracks: String
-  discNumber: String
-  totalDiscs: String
-  musicbrainzArtistId: [String!]
-  musicbrainzAlbumArtistId: [String!]
-  musicbrainzAlbumId: String
-}
-
 union Image = ExternalImage | EmbeddedImage
 
 input InExpr {
@@ -68,57 +55,24 @@ input InExpr {
 }
 
 type LibraryMutation {
-  stageSources(uris: [String!]!): StagedSources!
   transformSources(transformations: [Transform!]!, where: SourceWhere): [UpdateSourceResult!]!
-  updateSources(updates: [SourceUpdate!]!): [UpdateSourceResult!]!
   collection: CollectionMutation!
 }
 
 type LibraryQuery {
   sources(where: SourceWhere): [Source!]!
-  sourceGroups: [SourceGroup!]!
+  sourceGroups(groupByMappings: [String!]!, where: SourceWhere): [SourceGroup!]!
   collections(where: CollectionWhere): [Collection!]!
 }
 
-type MappedTags {
-  artistName: [String!]
-  trackTitle: String
-  albumTitle: String
-  date: String
-  genre: [String!]
-  albumArtist: [String!]
-  trackNumber: String
-  totalTracks: String
-  discNumber: String
-  totalDiscs: String
-  comment: String
-  musicbrainzArtistId: [String!]
-  musicbrainzAlbumArtistId: [String!]
-  musicbrainzAlbumId: String
-  musicbrainzTrackId: String
-}
-
-input MappedTagsInput {
-  artistName: [String!]
-  trackTitle: String
-  albumTitle: String
-  date: String
-  genre: [String!]
-  albumArtist: [String!]
-  trackNumber: String
-  totalTracks: String
-  discNumber: String
-  totalDiscs: String
-  comment: String
-  musicbrainzArtistId: [String!]
-  musicbrainzAlbumArtistId: [String!]
-  musicbrainzAlbumId: String
-  musicbrainzTrackId: String
+type MappedTag {
+  mappingName: String!
+  values: [String!]!
 }
 
 type Metadata {
   tags: [TagPair!]!
-  mappedTags: MappedTags!
+  mappedTags(mappings: [String!]!): [MappedTag!]!
   formatId: String!
   format: String!
 }
@@ -185,18 +139,13 @@ type Source {
 }
 
 type SourceGroup {
-  groupTags: GroupTags!
+  groupTags: [MappedTag!]!
   groupParentUri: String!
   sources: [Source!]!
   coverImage: Image
 }
 
 scalar SourceRef
-
-input SourceUpdate {
-  id: SourceRef!
-  updateTags: TagUpdate!
-}
 
 input SourceWhere {
   id: Where
@@ -208,12 +157,6 @@ input SplitMultiTrackFile {
   collectionRef: String
 }
 
-type StagedSources {
-  sources: [Source!]!
-  groups: [SourceGroup!]!
-  numberOfSourcesImported: Int!
-}
-
 input StartsWithExpr {
   startsWith: String!
 }
@@ -221,11 +164,6 @@ input StartsWithExpr {
 type TagPair {
   key: String!
   value: String!
-}
-
-input TagUpdate {
-  setMappedTags: MappedTagsInput
-  setTags: [UpdatePair!]
 }
 
 """
@@ -244,11 +182,6 @@ enum Unit {
 
 type UpdatedSource {
   _0: Source!
-}
-
-input UpdatePair {
-  key: String!
-  value: String!
 }
 
 union UpdateSourceResult = UpdatedSource | FailedSourceUpdate
