@@ -1,11 +1,12 @@
-{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnboxedTuples #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Library.Track.ArtistName.Repo where
 
 import Control.Concurrent.Classy
 import Control.Exception.Safe
 import Control.Foldl (PrimMonad)
+import Control.Lens (firstOf)
 import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
@@ -28,6 +29,10 @@ import Witch
 class Monad m => TrackArtistNameRepository m where
   getTrackArtistNames :: TrackRef -> m (Vector ArtistNameEntity)
   insert' :: Vector TrackArtistNameEntity -> m Int
+  insert :: Vector TrackArtistNameEntity -> m (Vector TrackArtistNameEntity)
+
+insertSingle :: TrackArtistNameRepository m => TrackArtistNameEntity -> m (Maybe TrackArtistNameEntity)
+insertSingle e = firstOf traverse <$> insert (V.singleton e)
 
 instance
   {-# OVERLAPPABLE #-}
@@ -39,6 +44,7 @@ instance
   where
   getTrackArtistNames = lift . getTrackArtistNames
   insert' = lift . insert'
+  insert = lift . insert
 
 newtype TrackArtistNameRepositoryIOT m a = TrackArtistNameRepositoryIOT
   { runTrackArtistNameRepositoryIOT :: ReaderT DbConnection m a
@@ -73,13 +79,26 @@ instance MonadIO m => TrackArtistNameRepository (TrackArtistNameRepositoryIOT m)
   insert' trackArtistNames | V.null trackArtistNames = pure 0
   insert' trackArtistNames = do
     connSrc <- ask
-    runInsert connSrc
+    runInsert
+      connSrc
       Rel8.Insert
         { into = trackArtistNameSchema,
           rows = Rel8.values (from <$> trackArtistNames),
           onConflict = Rel8.DoNothing,
           returning = fromIntegral <$> Rel8.NumberOfRowsAffected
         }
+  insert trackArtistNames | V.null trackArtistNames = pure V.empty
+  insert trackArtistNames = do
+    connSrc <- ask
+    V.fromList
+      <$> runInsert
+        connSrc
+        Rel8.Insert
+          { into = trackArtistNameSchema,
+            rows = Rel8.values (from <$> trackArtistNames),
+            onConflict = Rel8.DoNothing,
+            returning = Rel8.Projection (\x -> x)
+          }
 
 trackArtistNameSchema :: Rel8.TableSchema (TrackArtistNameTable Rel8.Name)
 trackArtistNameSchema =

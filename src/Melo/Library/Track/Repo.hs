@@ -1,22 +1,16 @@
-{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnboxedTuples #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Library.Track.Repo where
 
 import Control.Concurrent.Classy
 import Control.Exception.Safe
-import Control.Foldl (PrimMonad)
-import Control.Lens ((^.), firstOf)
-import Control.Monad.Base
+import Control.Lens (firstOf, (^.))
 import Control.Monad.Reader
-import Control.Monad.Trans.Control
 import Data.Hashable
-import Data.Int (Int16)
 import Data.Pool
-import Data.Text (Text)
-import Data.Time (NominalDiffTime)
-import Data.UUID
 import Hasql.Connection
+import Melo.Common.Monad
 import Melo.Database.Repo
 import Melo.Database.Repo.IO
 import Melo.Library.Album.Types
@@ -120,9 +114,10 @@ runTrackRepositoryPooledIO pool =
             Upsert
               { index = \e -> (e.track_number, e.disc_number, e.album_id),
                 set = const,
-                updateWhere = \new old -> new.track_number ==. old.track_number
-                  &&. new.disc_number ==. old.disc_number
-                  &&. new.album_id ==. old.album_id
+                updateWhere = \new old ->
+                  new.track_number ==. old.track_number
+                    &&. new.disc_number ==. old.disc_number
+                    &&. new.album_id ==. old.album_id
               }
       }
     . runRepositoryIOT
@@ -141,9 +136,10 @@ runTrackRepositoryIO conn =
             Upsert
               { index = \e -> (e.track_number, e.disc_number, e.album_id),
                 set = const,
-                updateWhere = \new old -> new.track_number ==. old.track_number
-                  &&. new.disc_number ==. old.disc_number
-                  &&. new.album_id ==. old.album_id
+                updateWhere = \new old ->
+                  new.track_number ==. old.track_number
+                    &&. new.disc_number ==. old.disc_number
+                    &&. new.album_id ==. old.album_id
               }
       }
     . runRepositoryIOT

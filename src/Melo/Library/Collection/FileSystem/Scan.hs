@@ -45,6 +45,8 @@ import Melo.Library.Track.Aggregate
 import Melo.Library.Track.ArtistName.Repo
 import Melo.Library.Track.Repo
 import Melo.Lookup.MusicBrainz qualified as MB
+import Melo.Metadata.Mapping.Aggregate
+import Melo.Metadata.Mapping.Repo
 import Network.Wreq.Session qualified as Wreq
 import System.FilePath
 import UnliftIO.Directory qualified as Dir
@@ -85,8 +87,8 @@ scanPathIO pool sess scanType ref p' =
               $(logDebugIO) $ "Cue file found " <> show cuefile
               liftIO $
                 handle (logShow >=> \_ -> handleScanErrors $ importTransaction files) $
-                  V.length <$>
-                    runImport
+                  V.length
+                    <$> runImport
                       pool
                       sess
                       ( openCueFile cuefile <&> (CueFileImportSource ref <$>) >>= importSources
@@ -132,6 +134,8 @@ scanPathIO pool sess scanType ref p' =
         . runTrackRepositoryPooledIO pool
         . runTrackArtistNameRepositoryPooledIO pool
         . MB.runMusicBrainzServiceUnlimitedIO sess
+        . runTagMappingRepositoryPooledIO pool
+        . runTagMappingAggregate
         . runArtistAggregateIOT
         . runTrackAggregateIOT
         . runAlbumAggregateIOT

@@ -4,7 +4,6 @@ module Melo.API where
 
 import Control.Concurrent.Classy
 import Control.Exception.Safe
-import Control.Foldl (PrimMonad)
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Control
 import Data.ByteString.Lazy.Char8
@@ -21,6 +20,7 @@ import Hasql.Connection
 import Melo.Common.FileSystem
 import Melo.Common.Logging
 import Melo.Common.Metadata
+import Melo.Common.Monad
 import Melo.Common.Uri
 import Melo.Format.Metadata (EmbeddedPicture (..), MetadataFile (..), PictureType (..))
 import Melo.Library.API
@@ -34,8 +34,8 @@ import Melo.Library.Collection.Aggregate
 import Melo.Library.Collection.FileSystem.Watcher
 import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Types (CollectionRef (..))
-import Melo.Library.Source.Aggregate
 import Melo.Library.Source.API qualified as API
+import Melo.Library.Source.Aggregate
 import Melo.Library.Source.MultiTrack
 import Melo.Library.Source.Repo as Source
 import Melo.Library.Source.Types (Source (..), SourceRef (..))
@@ -94,12 +94,12 @@ gqlApiIO collectionWatchState pool sess rq = runStdoutLogging do
           . runFileSystemWatcherIO pool collectionWatchState sess
           . runMultiTrackIO
           . runCollectionRepositoryPooledIO pool
+          . runTagMappingAggregate
           . runCollectionAggregateIO pool sess
           . runArtistAggregateIOT
           . runTrackAggregateIOT
           . runAlbumAggregateIOT
           . runSourceAggregateIOT
-          . runTagMappingAggregate
   !rs <- run (gqlApi rq)
   $(logInfo) ("finished handling graphql request" :: T.Text)
   pure rs
@@ -132,7 +132,7 @@ type ResolverE m =
   )
 
 api ::
-  (MonadIO m, MonadBaseControl IO m, Logging m) =>
+  (MonadIO m, MonadBaseControl IO m, Logging m, PrimMonad m) =>
   CollectionWatchState ->
   Pool Connection ->
   Wreq.Session ->
@@ -182,13 +182,18 @@ api collectionWatchState pool sess = do
     mappingNames <- V.fromList <$> param "groupByMappings"
     groupByMappings <-
       runArtistRepositoryPooledIO pool $
-      runTagMappingRepositoryPooledIO pool $
-      runTagMappingAggregate (getMappingsNamed mappingNames)
+        runTagMappingRepositoryPooledIO pool $
+          runTagMappingAggregate (getMappingsNamed mappingNames)
     rq <- body
     case fromASCIIBytes collectionId of
       Nothing -> status badRequest400
-      Just uuid -> stream $
-        API.streamSourceGroupsQuery collectionWatchState pool (CollectionRef uuid) groupByMappings rq
+      Just uuid ->
+        stream $
+          API.streamSourceGroupsQuery collectionWatchState pool (CollectionRef uuid) groupByMappings rq
+
+instance (PrimMonad m, ScottyError a) => PrimMonad (ActionT a m) where
+  type PrimState (ActionT a m) = PrimState m
+  primitive = lift . primitive
 
 getSourceFilePathIO :: (MonadIO m, MonadBaseControl IO m) => Pool Connection -> SourceRef -> m (Maybe FilePath)
 getSourceFilePathIO pool k = withResource pool $ \conn ->

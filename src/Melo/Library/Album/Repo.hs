@@ -1,12 +1,12 @@
-{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnboxedTuples #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Library.Album.Repo where
 
 import Control.Concurrent.Classy
 import Control.Exception.Safe
 import Control.Foldl (PrimMonad)
-import Control.Lens (firstOf)
+import Control.Lens hiding (from)
 import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
@@ -17,8 +17,8 @@ import Melo.Database.Repo
 import Melo.Database.Repo.IO
 import Melo.Library.Album.Types
 import Melo.Lookup.MusicBrainz qualified as MB
+import Rel8 (Expr, Query, lit, (==.))
 import Rel8 qualified
-import Rel8 (Query, Expr, lit, (==.))
 import Witch
 
 class Repository AlbumEntity m => AlbumRepository m where
@@ -127,7 +127,13 @@ runAlbumRepositoryPooledIO pool =
       { connSrc = Pooled pool,
         tbl = albumSchema,
         pk = (.id),
-        upsert = Nothing
+        upsert =
+          Just
+            Rel8.Upsert
+              { index = (.musicbrainz_id),
+                set = \new old -> new & #id .~ old.id,
+                updateWhere = \new old -> new.musicbrainz_id ==. old.musicbrainz_id
+              }
       }
     . runRepositoryIOT
     . runAlbumRepositoryIOT
@@ -140,7 +146,13 @@ runAlbumRepositoryIO conn =
       { connSrc = Single conn,
         tbl = albumSchema,
         pk = (.id),
-        upsert = Nothing
+        upsert =
+          Just
+            Rel8.Upsert
+              { index = (.musicbrainz_id),
+                set = \new old -> new & #id .~ old.id,
+                updateWhere = \new old -> new.musicbrainz_id ==. old.musicbrainz_id
+              }
       }
     . runRepositoryIOT
     . runAlbumRepositoryIOT

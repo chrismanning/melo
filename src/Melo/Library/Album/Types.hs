@@ -2,16 +2,17 @@
 
 module Melo.Library.Album.Types where
 
+import Data.Foldable
+import Data.Hashable
 import Data.Morpheus.Kind
 import Data.Morpheus.Types as M
-import Data.Hashable
 import Data.Text (Text)
 import Data.Time
 import Data.UUID
 import GHC.Generics
 import Melo.Database.Repo
 import Melo.Library.Artist.Name.Types
-import qualified Melo.Lookup.MusicBrainz as MB
+import Melo.Lookup.MusicBrainz qualified as MB
 import Rel8
 import Witch
 
@@ -28,6 +29,7 @@ data AlbumTable f = AlbumTable
 type AlbumEntity = AlbumTable Result
 
 deriving instance Show AlbumEntity
+
 deriving instance Eq AlbumEntity
 
 instance Entity AlbumEntity where
@@ -57,17 +59,19 @@ instance From AlbumRef UUID where
 data Album = Album
   { dbId :: AlbumRef,
     title :: Text,
+    yearReleased :: Maybe Text,
     artists :: [ArtistNameEntity]
   }
-  deriving (Generic)
+  deriving (Show, Eq, Generic)
 
-mkAlbum :: [ArtistNameEntity] -> AlbumEntity -> Album
+mkAlbum :: Foldable f => f ArtistNameEntity -> AlbumEntity -> Album
 mkAlbum albumArtists e =
-  Album {
-    dbId = e.id,
-    title = e.title,
-    artists = albumArtists
-  }
+  Album
+    { dbId = e.id,
+      title = e.title,
+      yearReleased = e.year_released,
+      artists = toList albumArtists
+    }
 
 data NewAlbum = NewAlbum
   { title :: Text,

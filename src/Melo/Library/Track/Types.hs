@@ -2,6 +2,7 @@
 
 module Melo.Library.Track.Types where
 
+import Data.Foldable
 import Data.Hashable
 import Data.Int
 import Data.Text
@@ -32,6 +33,7 @@ data TrackTable f = TrackTable
 type TrackEntity = TrackTable Result
 
 deriving instance Show TrackEntity
+
 deriving instance Eq TrackEntity
 
 instance Entity TrackEntity where
@@ -83,16 +85,17 @@ data Track = Track
   }
   deriving (Generic, Eq, Ord, Show)
 
-mkTrack :: [ArtistNameEntity] -> TrackEntity ->  Track
-mkTrack artists t = Track {
-    ref = t.id,
-    title = t.title,
-    trackNumber = t.track_number,
-    discNumber = t.disc_number,
-    comment = t.comment,
-    sourceRef = t.source_id,
-    albumRef = t.album_id,
-    length = ctTime t.length,
-    musicBrainzId = MB.MusicBrainzId <$> t.musicbrainz_id,
-    artists
-  }
+mkTrack :: Foldable f => f ArtistNameEntity -> TrackEntity -> Track
+mkTrack artists t =
+  Track
+    { ref = t.id,
+      title = t.title,
+      trackNumber = t.track_number,
+      discNumber = t.disc_number,
+      comment = t.comment,
+      sourceRef = t.source_id,
+      albumRef = t.album_id,
+      length = ctTime t.length,
+      musicBrainzId = MB.MusicBrainzId <$> t.musicbrainz_id,
+      artists = toList artists
+    }

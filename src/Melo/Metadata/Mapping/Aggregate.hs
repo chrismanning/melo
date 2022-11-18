@@ -1,5 +1,5 @@
-{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnboxedTuples #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Metadata.Mapping.Aggregate where
 
@@ -31,6 +31,9 @@ class Monad m => TagMappingAggregate m where
   getMappingNamed :: Text -> m (Maybe M.TagMapping)
   getMappingsNamed :: Vector Text -> m TagMappingIndex
   getAllMappings :: m TagMappingIndex
+
+singleMapping :: TagMappingAggregate m => Text -> Source -> m (Maybe Text)
+singleMapping m src = firstOf traverse <$> resolveMappingNamed m src
 
 instance
   {-# OVERLAPPABLE #-}

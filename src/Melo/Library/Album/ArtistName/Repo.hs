@@ -1,11 +1,12 @@
-{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnboxedTuples #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Library.Album.ArtistName.Repo where
 
 import Control.Concurrent.Classy
 import Control.Exception.Safe
 import Control.Foldl (PrimMonad)
+import Control.Lens (firstOf)
 import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
@@ -21,13 +22,17 @@ import Melo.Library.Artist.Name.Types
   ( ArtistNameEntity,
     ArtistNameTable (..),
   )
-import Rel8 (Query, Expr, lit, (==.))
+import Rel8 (Expr, Query, lit, (==.))
 import Rel8 qualified
 import Witch
 
 class Monad m => AlbumArtistNameRepository m where
   getAlbumArtistNames :: AlbumRef -> m (Vector ArtistNameEntity)
   insert' :: Vector AlbumArtistNameEntity -> m Int
+  insert :: Vector AlbumArtistNameEntity -> m (Vector AlbumArtistNameEntity)
+
+insertSingle :: AlbumArtistNameRepository m => AlbumArtistNameEntity -> m (Maybe AlbumArtistNameEntity)
+insertSingle e = firstOf traverse <$> insert (V.singleton e)
 
 instance
   {-# OVERLAPPABLE #-}
@@ -39,6 +44,7 @@ instance
   where
   getAlbumArtistNames = lift . getAlbumArtistNames
   insert' = lift . insert'
+  insert = lift . insert
 
 newtype AlbumArtistNameRepositoryIOT m a = AlbumArtistNameRepositoryIOT
   { runAlbumArtistNameRepositoryIOT :: ReaderT DbConnection m a
@@ -67,13 +73,26 @@ instance MonadIO m => AlbumArtistNameRepository (AlbumArtistNameRepositoryIOT m)
   insert' albumArtistNames | V.null albumArtistNames = pure 0
   insert' albumArtistNames = do
     connSrc <- ask
-    runInsert connSrc
+    runInsert
+      connSrc
       Rel8.Insert
         { into = albumArtistNameSchema,
           rows = Rel8.values (from <$> albumArtistNames),
           onConflict = Rel8.DoNothing,
           returning = fromIntegral <$> Rel8.NumberOfRowsAffected
         }
+  insert albumArtistNames | V.null albumArtistNames = pure V.empty
+  insert albumArtistNames = do
+    connSrc <- ask
+    V.fromList
+      <$> runInsert
+        connSrc
+        Rel8.Insert
+          { into = albumArtistNameSchema,
+            rows = Rel8.values (from <$> albumArtistNames),
+            onConflict = Rel8.DoNothing,
+            returning = Rel8.Projection (\x -> x)
+          }
 
 albumArtistForAlbumRef :: Expr AlbumRef -> Query (AlbumArtistNameTable Expr)
 albumArtistForAlbumRef albumRef =

@@ -1,24 +1,23 @@
-{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnboxedTuples #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Library.Artist.Repo where
 
 import Control.Exception.Safe
-import Control.Foldl (PrimMonad)
-import Control.Lens (firstOf)
-import Control.Concurrent.Classy
-import Control.Monad.Base
-import Control.Monad.Reader
-import Control.Monad.Trans.Control
+import Control.Foldl (impurely, vectorM)
+import Control.Lens hiding (each, from)
 import Data.Coerce
+import Data.Maybe
 import Data.Pool
-import Data.Vector (Vector)
+import Data.Vector (Vector ())
+import Data.Vector qualified as V
 import Hasql.Connection
-import Melo.Database.Repo
+import Melo.Common.Monad
+import Melo.Database.Repo as Repo
 import Melo.Database.Repo.IO
+import Melo.Library.Album.ArtistName.Repo
 import Melo.Library.Album.Repo (albumForRef)
 import Melo.Library.Album.Types
-import Melo.Library.Album.ArtistName.Repo
 import Melo.Library.Artist.Name.Types
 import Melo.Library.Artist.Types
 import Melo.Library.Source.Types (SourceRef)
@@ -26,11 +25,13 @@ import Melo.Library.Track.Repo (trackForSourceRef)
 import Melo.Library.Track.Types
 import Melo.Lookup.MusicBrainz qualified as MB
 import Rel8
+import Streaming.Prelude qualified as S
+import Witch
 
 class Repository ArtistEntity m => ArtistRepository m where
---  getArtistAlbums :: ArtistRef -> m [ArtistTable Result]
---  getArtistTracks :: ArtistRef -> m [ArtistTable Result]
---  searchArtists :: Text -> m [ArtistTable Result]
+  --  getArtistAlbums :: ArtistRef -> m [ArtistTable Result]
+  --  getArtistTracks :: ArtistRef -> m [ArtistTable Result]
+  --  searchArtists :: Text -> m [ArtistTable Result]
   getByMusicBrainzId :: MB.MusicBrainzId -> m (Maybe ArtistEntity)
   getAlbumArtists :: AlbumRef -> m (Vector (ArtistEntity, ArtistNameEntity))
   getSourceAlbumArtists :: SourceRef -> m (Vector (ArtistEntity, ArtistNameEntity))
@@ -43,9 +44,9 @@ instance
   ) =>
   ArtistRepository (t m)
   where
---  getArtistAlbums = lift . getArtistAlbums
---  getArtistTracks = lift . getArtistTracks
---  searchArtists = lift . searchArtists
+  --  getArtistAlbums = lift . getArtistAlbums
+  --  getArtistTracks = lift . getArtistTracks
+  --  searchArtists = lift . searchArtists
   getByMusicBrainzId = lift . getByMusicBrainzId
   getAlbumArtists = lift . getAlbumArtists
   getSourceAlbumArtists = lift . getSourceAlbumArtists
@@ -67,12 +68,62 @@ newtype ArtistRepositoryIOT m a = ArtistRepositoryIOT
       MonadThrow,
       MonadTrans,
       MonadTransControl,
-      PrimMonad,
-      Repository ArtistEntity
+      PrimMonad
     )
 
+instance (MonadIO m, PrimMonad m) => Repository ArtistEntity (ArtistRepositoryIOT m) where
+  getAll = ArtistRepositoryIOT Repo.getAll
+  getByKey = ArtistRepositoryIOT . Repo.getByKey
+  insert es | V.null es = pure V.empty
+  insert es = do
+    RepositoryHandle {connSrc, tbl} <- ask
+    S.each (insertArtists es tbl (Rel8.Projection (\x -> x)))
+      & S.catMaybes
+      & S.mapM (runInsert connSrc)
+      & S.concat
+      & impurely S.foldM_ vectorM
+  insert' es | V.null es = pure 0
+  insert' es = do
+    RepositoryHandle {connSrc, tbl} <- ask
+    S.each (insertArtists es tbl (fromIntegral <$> Rel8.NumberOfRowsAffected))
+      & S.catMaybes
+      & S.mapM (runInsert connSrc)
+      & S.sum_
+  delete = ArtistRepositoryIOT . Repo.delete
+  update = ArtistRepositoryIOT . Repo.update
+  update' = ArtistRepositoryIOT . Repo.update'
+
+insertArtists :: forall a. Vector (NewEntity ArtistEntity) -> TableSchema (ArtistTable Name) -> Returning (ArtistTable Name) a -> [Maybe (Insert a)]
+insertArtists as tbl returning =
+  [ genIns True,
+    genIns False
+  ]
+  where
+    (a, b) = V.unstablePartition (isJust . (.musicBrainzId)) as
+    genIns :: Bool -> Maybe (Insert a)
+    genIns True | V.null a = Nothing
+    genIns False | V.null b = Nothing
+    genIns incl =
+      Just
+        Insert
+          { into = tbl,
+            rows = Rel8.values (Witch.from <$> (if incl then a else b)),
+            onConflict =
+              DoUpdate
+                PartialUpsert
+                  { index = (.name),
+                    indexWhere = indexPredicate incl,
+                    set = \new old -> new & #id .~ old.id,
+                    updateWhere = \_new _old -> lit True
+                  },
+            returning
+          }
+    indexPredicate True a = isNull a.musicbrainz_id
+    indexPredicate False a = isNonNull a.musicbrainz_id
+
 instance
-  ( MonadIO m
+  ( MonadIO m,
+    PrimMonad m
   ) =>
   ArtistRepository (ArtistRepositoryIOT m)
   where
@@ -126,13 +177,7 @@ runArtistRepositoryPooledIO pool =
       { connSrc = Pooled pool,
         tbl = artistSchema,
         pk = (.id),
-        upsert =
-          Just
-            Upsert
-              { index = \c -> (c.name, c.disambiguation),
-                set = const,
-                updateWhere = \new old -> new.id ==. old.id
-              }
+        upsert = Nothing
       }
     . runRepositoryIOT
     . runArtistRepositoryIOT
@@ -145,13 +190,7 @@ runArtistRepositoryIO conn =
       { connSrc = Single conn,
         tbl = artistSchema,
         pk = (.id),
-        upsert =
-          Just
-            Upsert
-              { index = \c -> (c.name, c.disambiguation),
-                set = const,
-                updateWhere = \new old -> new.id ==. old.id
-              }
+        upsert = Nothing
       }
     . runRepositoryIOT
     . runArtistRepositoryIOT

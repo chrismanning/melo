@@ -28,7 +28,7 @@ module Melo.Lookup.MusicBrainz
     getReleaseGroupFromMetadata,
     getRecordingFromMetadata,
     truncateDate,
-    (<<|>>)
+    (<<|>>),
   )
 where
 
@@ -36,29 +36,25 @@ import Control.Applicative as A
 import Control.Concurrent.Classy
 import Control.Concurrent.TokenLimiter
 import Control.Exception.Safe
-import Control.Foldl (PrimMonad)
 import Control.Lens hiding (from, lens)
-import Control.Monad
-import Control.Monad.Base
 import Control.Monad.Reader
-import Control.Monad.Trans.Control
-import Control.Monad.Trans.Identity
 import Data.Aeson as A
 import Data.Aeson.Casing (trainCase)
 import Data.Char
 import Data.Default
 import Data.Generics.Labels ()
-import Data.Hashable
 import Data.List (find)
 import Data.Maybe
 import Data.String (IsString)
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.Vector (Vector ())
 import Data.Vector qualified as V
 import GHC.Generics (Generic)
 import GHC.Records
 import Melo.Common.Http
 import Melo.Common.Logging
+import Melo.Common.Monad
 import Melo.Common.RateLimit
 import Melo.Format.Mapping
   ( FieldMappings (..),
@@ -76,21 +72,17 @@ newtype MusicBrainzId = MusicBrainzId
   { mbid :: Text
   }
   deriving (Show, Eq, Ord)
-  deriving newtype (FromJSON, ToJSON, Hashable)
+  deriving newtype (FromJSON, ToJSON)
 
 newtype ArtistSearch = ArtistSearch
   { artist :: Text
   }
   deriving stock (Show, Generic, Eq)
 
-instance Hashable ArtistSearch
-
 newtype ArtistSearchResult = ArtistSearchResult
-  { artists :: Maybe [Artist]
+  { artists :: Maybe (Vector Artist)
   }
   deriving (Show, Generic, Eq)
-
-instance Hashable ArtistSearchResult
 
 instance FromJSON ArtistSearchResult
 
@@ -104,8 +96,6 @@ data Artist = Artist
   }
   deriving (Show, Generic, Eq)
 
-instance Hashable Artist
-
 instance FromJSON Artist where
   parseJSON = genericParseJSON mbAesonOptions
 
@@ -116,12 +106,10 @@ data ReleaseSearch = ReleaseSearch
   }
   deriving (Show, Generic, Eq)
 
-instance Hashable ReleaseSearch
-
 instance Default ReleaseSearch
 
 newtype ReleaseSearchResult = ReleaseSearchResult
-  { releases :: Maybe [Release]
+  { releases :: Maybe (Vector Release)
   }
   deriving (Show, Generic, Eq)
 
@@ -130,7 +118,7 @@ instance FromJSON ReleaseSearchResult
 data Release = Release
   { id :: MusicBrainzId,
     title :: Text,
-    artistCredit :: Maybe [ArtistCredit],
+    artistCredit :: Maybe (Vector ArtistCredit),
     date :: Maybe Text,
     score :: Maybe Int
   }
@@ -149,7 +137,7 @@ instance FromJSON ArtistCredit where
   parseJSON = genericParseJSON mbAesonOptions
 
 newtype ReleaseGroupSearchResult = ReleaseGroupSearchResult
-  { releaseGroups :: Maybe [ReleaseGroup]
+  { releaseGroups :: Maybe (Vector ReleaseGroup)
   }
   deriving (Show, Generic, Eq)
 
@@ -159,7 +147,7 @@ instance FromJSON ReleaseGroupSearchResult where
 data ReleaseGroup = ReleaseGroup
   { id :: MusicBrainzId,
     title :: Text,
-    artistCredit :: Maybe [ArtistCredit],
+    artistCredit :: Maybe (Vector ArtistCredit),
     firstReleaseDate :: Maybe Text,
     score :: Maybe Int
   }
@@ -178,12 +166,10 @@ data RecordingSearch = RecordingSearch
   }
   deriving (Show, Generic, Eq)
 
-instance Hashable RecordingSearch
-
 instance Default RecordingSearch
 
 newtype RecordingSearchResult = RecordingSearchResult
-  { recordings :: Maybe [Recording]
+  { recordings :: Maybe (Vector Recording)
   }
   deriving (Show, Generic, Eq)
 
@@ -193,8 +179,8 @@ data Recording = Recording
   { id :: MusicBrainzId,
     score :: Maybe Int,
     title :: Text,
-    artistCredit :: Maybe [ArtistCredit],
-    releases :: [Release]
+    artistCredit :: Maybe (Vector ArtistCredit),
+    releases :: Vector Release
   }
   deriving (Show, Generic, Eq)
 
@@ -202,14 +188,14 @@ instance FromJSON Recording where
   parseJSON = genericParseJSON mbAesonOptions
 
 class Monad m => MusicBrainzService m where
-  searchReleases :: ReleaseSearch -> m [Release]
-  searchReleaseGroups :: ReleaseSearch -> m [ReleaseGroup]
-  searchArtists :: ArtistSearch -> m [Artist]
-  searchRecordings :: RecordingSearch -> m [Recording]
+  searchReleases :: ReleaseSearch -> m (Vector Release)
+  searchReleaseGroups :: ReleaseSearch -> m (Vector ReleaseGroup)
+  searchArtists :: ArtistSearch -> m (Vector Artist)
+  searchRecordings :: RecordingSearch -> m (Vector Recording)
   getArtist :: MusicBrainzId -> m (Maybe Artist)
-  getArtistReleaseGroups :: MusicBrainzId -> m [ReleaseGroup]
-  getArtistReleases :: MusicBrainzId -> m [Release]
-  getArtistRecordings :: MusicBrainzId -> m [Recording]
+  getArtistReleaseGroups :: MusicBrainzId -> m (Vector ReleaseGroup)
+  getArtistReleases :: MusicBrainzId -> m (Vector Release)
+  getArtistRecordings :: MusicBrainzId -> m (Vector Recording)
   getRelease :: MusicBrainzId -> m (Maybe Release)
   getReleaseGroup :: MusicBrainzId -> m (Maybe ReleaseGroup)
   getRecording :: MusicBrainzId -> m (Maybe Recording)
@@ -234,16 +220,6 @@ instance
   getReleaseGroup = lift . getReleaseGroup
   getRecording = lift . getRecording
 
-(<<|>>) :: (Monad m, Alternative f, Eq (f a)) => m (f a) -> m (f a) -> m (f a)
-a <<|>> b =
-  a >>= \case
-    a'
-      | a' == A.empty ->
-          b >>= \case
-            b' | b' == A.empty -> pure A.empty
-            b' -> pure b'
-    a' -> pure a'
-
 getReleaseGroupFromMetadata ::
   MusicBrainzService m =>
   F.Metadata ->
@@ -257,8 +233,8 @@ getReleaseGroupByMusicBrainzId ::
   m (Maybe ReleaseGroup)
 getReleaseGroupByMusicBrainzId m = do
   let releaseGroupIds = m.tag releaseGroupIdTag
-  V.find perfectScore . V.catMaybes <$>
-    V.forM releaseGroupIds (getReleaseGroup . MusicBrainzId)
+  V.find perfectScore . V.catMaybes
+    <$> V.forM releaseGroupIds (getReleaseGroup . MusicBrainzId)
 
 getReleaseGroupByAlbum ::
   MusicBrainzService m =>
@@ -268,9 +244,10 @@ getReleaseGroupByAlbum m = do
   let albumTitle = m.tagHead M.album
   let albumArtist = m.tagHead M.albumArtist
   let date = m.tagHead M.originalReleaseYear <&> truncateDate
-  if isJust albumTitle && isJust albumArtist then
-    find perfectScore <$>
-      searchReleaseGroups def {albumArtist, albumTitle, date}
+  if isJust albumTitle && isJust albumArtist
+    then
+      find perfectScore
+        <$> searchReleaseGroups def {albumArtist, albumTitle, date}
     else pure Nothing
 
 getRecordingFromMetadata ::
@@ -288,8 +265,8 @@ getRecordingByMusicBrainzId ::
   m (Maybe Recording)
 getRecordingByMusicBrainzId m = do
   let recordingIds = m.tag recordingIdTag
-  V.find perfectScore . V.catMaybes <$>
-    V.forM recordingIds (getRecording . MusicBrainzId)
+  V.find perfectScore . V.catMaybes
+    <$> V.forM recordingIds (getRecording . MusicBrainzId)
 
 getRecordingByReleaseId ::
   MusicBrainzService m =>
@@ -299,15 +276,16 @@ getRecordingByReleaseId m = do
   let title = m.tagHead M.trackTitle
   let releaseId = m.tagHead releaseIdTag
   let releaseGroupId = m.tagHead releaseGroupIdTag
-  if isJust releaseId || isJust releaseGroupId then
-    find perfectScore <$>
-      searchRecordings
-        def
-          { title,
-            releaseId,
-            releaseGroupId
-          }
-  else pure Nothing
+  if isJust releaseId || isJust releaseGroupId
+    then
+      find perfectScore
+        <$> searchRecordings
+          def
+            { title,
+              releaseId,
+              releaseGroupId
+            }
+    else pure Nothing
 
 getRecordingByTrack ::
   MusicBrainzService m =>
@@ -318,8 +296,8 @@ getRecordingByTrack m = do
   let album = m.tagHead M.album
   let trackNumber = m.tagHead M.trackNumber
   let artist = m.tagHead M.artist
-  if isJust title && (isJust album || isJust artist) then
-    find perfectScore <$> searchRecordings def {title, album, trackNumber, artist}
+  if isJust title && (isJust album || isJust artist)
+    then find perfectScore <$> searchRecordings def {title, album, trackNumber, artist}
     else pure Nothing
 
 perfectScore :: (Integral i, HasField "score" r (Maybe i)) => r -> Bool
@@ -363,7 +341,7 @@ instance
               fmap (\a -> "artist:\"" <> a <> "\"") search.albumArtist
             ]
     case qterms of
-      [] -> pure []
+      [] -> pure V.empty
       ts -> do
         let q = T.intercalate " AND " ts
         let opts = mbWreqDefaults & Wr.param "query" .~ [q]
@@ -371,8 +349,8 @@ instance
         getWithJson @_ @ReleaseSearchResult opts url >>= \case
           Left e -> do
             $(logError) $ "error searching for matching releases: " <> show e
-            pure []
-          Right r -> pure $ fromMaybe [] $ r ^. Wr.responseBody . #releases
+            pure V.empty
+          Right r -> pure $ fromMaybe V.empty $ r ^. Wr.responseBody . #releases
   searchReleaseGroups search = MusicBrainzServiceIOT $ do
     waitReady
     let qterms =
@@ -382,7 +360,7 @@ instance
               fmap (\a -> "firstreleasedate:\"" <> a <> "\"") search.date
             ]
     case qterms of
-      [] -> pure []
+      [] -> pure V.empty
       ts -> do
         let q = T.intercalate " AND " ts
         let opts = mbWreqDefaults & Wr.param "query" .~ [q]
@@ -390,8 +368,8 @@ instance
         getWithJson @_ @ReleaseGroupSearchResult opts url >>= \case
           Left e -> do
             $(logError) $ "error searching for matching release groups: " <> show e
-            pure []
-          Right r -> pure $ fromMaybe [] $ r ^. Wr.responseBody . #releaseGroups
+            pure V.empty
+          Right r -> pure $ fromMaybe V.empty $ r ^. Wr.responseBody . #releaseGroups
   searchArtists search = MusicBrainzServiceIOT $ do
     waitReady
     let opts =
@@ -401,8 +379,8 @@ instance
     getWithJson @_ @ArtistSearchResult opts url >>= \case
       Left e -> do
         $(logError) $ "error searching for matching artists: " <> show e
-        pure []
-      Right r -> pure $ fromMaybe [] $ r ^. Wr.responseBody . #artists
+        pure V.empty
+      Right r -> pure $ fromMaybe V.empty $ r ^. Wr.responseBody . #artists
   searchRecordings search = MusicBrainzServiceIOT $ do
     waitReady
     let qterms =
@@ -415,7 +393,7 @@ instance
               fmap (\a -> "rgid:\"" <> a <> "\"") search.releaseGroupId
             ]
     case qterms of
-      [] -> pure []
+      [] -> pure V.empty
       ts -> do
         let q = T.intercalate " AND " ts
         let opts =
@@ -424,8 +402,8 @@ instance
         getWithJson @_ @RecordingSearchResult opts url >>= \case
           Left e -> do
             $(logError) $ "error searching for matching recordings: " <> show e
-            pure []
-          Right r -> pure $ fromMaybe [] $ r ^. Wr.responseBody . #recordings
+            pure V.empty
+          Right r -> pure $ fromMaybe V.empty $ r ^. Wr.responseBody . #recordings
   getArtist artistId = MusicBrainzServiceIOT $ do
     waitReady
     let opts = mbWreqDefaults
@@ -445,7 +423,7 @@ instance
     getWithJson opts url >>= \case
       Left e -> do
         $(logError) $ "error getting release groups for artist " <> show artistId <> ": " <> show e
-        pure []
+        pure V.empty
       Right r -> pure $ r ^. Wr.responseBody
   getArtistReleases artistId = MusicBrainzServiceIOT $ do
     waitReady
@@ -457,7 +435,7 @@ instance
     getWithJson opts url >>= \case
       Left e -> do
         $(logError) $ "error getting releases for artist " <> show artistId <> ": " <> show e
-        pure []
+        pure V.empty
       Right r -> pure $ r ^. Wr.responseBody
   getArtistRecordings artistId = MusicBrainzServiceIOT $ do
     waitReady
@@ -469,7 +447,7 @@ instance
     getWithJson opts url >>= \case
       Left e -> do
         $(logError) $ "error getting recordings for artist " <> show artistId <> ": " <> show e
-        pure []
+        pure V.empty
       Right r -> pure $ r ^. Wr.responseBody
   getRelease releaseId = MusicBrainzServiceIOT $ do
     waitReady

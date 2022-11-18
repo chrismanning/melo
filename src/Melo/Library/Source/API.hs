@@ -99,9 +99,10 @@ resolveSourceGroups ::
 resolveSourceGroups args = do
   groupByMappings <- lift $ getMappingsNamed args.groupByMappings
   srcs <- resolveSourceEntities args.where'
-  lift $ S.each srcs
-    & groupSources' groupByMappings
-    & Fold.impurely S.foldM_ Fold.vectorM
+  lift $
+    S.each srcs
+      & groupSources' groupByMappings
+      & Fold.impurely S.foldM_ Fold.vectorM
 
 resolveSourceEntities ::
   (Tr.MonadSourceTransform m, WithOperation o) =>
@@ -370,57 +371,65 @@ groupSources' ::
   TagMappingIndex ->
   S.Stream (S.Of Ty.SourceEntity) n () ->
   S.Stream (S.Of (SourceGroup (Resolver o e m))) n ()
-groupSources' groupByMappings s = s
-  & S.map (\e -> (e, extractMappedTags groupByMappings e))
-  & S.groupBy (\(_,a) (_,b) -> a == b)
-  & S.mapped mkSrcGroup
+groupSources' groupByMappings s =
+  s
+    & S.map (\e -> (e, extractMappedTags groupByMappings e))
+    & S.groupBy (\(_, a) (_, b) -> a == b)
+    & S.mapped mkSrcGroup
 
 extractMappedTags :: TagMappingIndex -> Ty.SourceEntity -> MappedTags
 extractMappedTags mappings e = case tryFrom @_ @F.Metadata e of
   Left _ -> V.empty
   Right metadata ->
-    V.fromList $ filter (not . null . (.values)) $ Map.assocs mappings <&> \(name, mapping) -> MappedTag {
-      mappingName = name,
-      values = metadata.tag mapping
-    }
+    V.fromList $
+      filter (not . null . (.values)) $
+        Map.assocs mappings <&> \(name, mapping) ->
+          MappedTag
+            { mappingName = name,
+              values = metadata.tag mapping
+            }
 
-mkSrcGroup :: forall m o e x n. (Tr.MonadSourceTransform m, WithOperation o, Monad n) =>
-  S.Stream (S.Of (Ty.SourceEntity, MappedTags)) n x -> n (S.Of (SourceGroup (Resolver o e m)) x)
-mkSrcGroup s = s
-  & S.map (_1 %~ enrichSourceEntity)
-  & toSourceGroup
+mkSrcGroup ::
+  forall m o e x n.
+  (Tr.MonadSourceTransform m, WithOperation o, Monad n) =>
+  S.Stream (S.Of (Ty.SourceEntity, MappedTags)) n x ->
+  n (S.Of (SourceGroup (Resolver o e m)) x)
+mkSrcGroup s =
+  s
+    & S.map (_1 %~ enrichSourceEntity)
+    & toSourceGroup
   where
-  toSourceGroup ::
-    S.Stream (S.Of (Source (Resolver o e m), MappedTags)) n x ->
-    n (S.Of (SourceGroup (Resolver o e m)) x)
-  toSourceGroup ss = do
-    ofSources <- S.toList ss
-    pure $ S.mapOf toSourceGroup' ofSources
-    where
-      toSourceGroup' :: [(Source (Resolver o e m), MappedTags)] -> SourceGroup (Resolver o e m)
-      toSourceGroup' ss =
-        SourceGroup
-          { groupParentUri,
-            coverImage,
-            groupTags = ss ^? traverse . _2 & fromMaybe V.empty,
-            sources
-          }
-        where
-          sources = fst <$> ss
-          src = head sources
-          groupParentUri = getParentUri src.sourceUri
-          coverImage = case parseURI (T.unpack groupParentUri) >>= uriToFilePath of
-            Just dir ->
-              lift (findCoverImage dir) >>= \case
-                Nothing -> src.coverImage
-                Just imgPath ->
-                  pure $
-                    Just
-                      ExternalImage
-                        { fileName = T.pack $ takeFileName imgPath,
-                          downloadUri = "/source/" <> toText (coerce (src.id)) <> "/image"
-                        }
-            Nothing -> pure Nothing
+    toSourceGroup ::
+      S.Stream (S.Of (Source (Resolver o e m), MappedTags)) n x ->
+      n (S.Of (SourceGroup (Resolver o e m)) x)
+    toSourceGroup ss = do
+      ofSources <- S.toList ss
+      pure $ S.mapOf toSourceGroup' ofSources
+      where
+        toSourceGroup' :: [(Source (Resolver o e m), MappedTags)] -> SourceGroup (Resolver o e m)
+        toSourceGroup' ss =
+          SourceGroup
+            { groupParentUri,
+              coverImage,
+              groupTags = ss ^? traverse . _2 & fromMaybe V.empty,
+              sources
+            }
+          where
+            sources = fst <$> ss
+            src = head sources
+            groupParentUri = getParentUri src.sourceUri
+            coverImage = case parseURI (T.unpack groupParentUri) >>= uriToFilePath of
+              Just dir ->
+                lift (findCoverImage dir) >>= \case
+                  Nothing -> src.coverImage
+                  Just imgPath ->
+                    pure $
+                      Just
+                        ExternalImage
+                          { fileName = T.pack $ takeFileName imgPath,
+                            downloadUri = "/source/" <> toText (coerce (src.id)) <> "/image"
+                          }
+              Nothing -> pure Nothing
 
 streamSourceGroupsQuery :: CollectionWatchState -> Pool Connection -> Ty.CollectionRef -> TagMappingIndex -> L.ByteString -> StreamingBody
 streamSourceGroupsQuery collectionWatchState pool collectionRef groupByMappings rq sendChunk flush =
@@ -473,11 +482,11 @@ runSourceIO collectionWatchState sess pool =
     . runMultiTrackIO
     . runCollectionRepositoryPooledIO pool
     . runCollectionAggregateIO pool sess
+    . runTagMappingAggregate
     . runArtistAggregateIOT
     . runTrackAggregateIOT
     . runAlbumAggregateIOT
     . runSourceAggregateIOT
-    . runTagMappingAggregate
 
 getParentUri :: Text -> Text
 getParentUri srcUri = case parseURI (T.unpack srcUri) of

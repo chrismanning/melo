@@ -403,10 +403,17 @@ CREATE UNIQUE INDEX artist_musicbrainz_id_uindex ON melo.artist USING btree (mus
 
 
 --
--- Name: artist_name_disambiguation_uindex; Type: INDEX; Schema: melo; Owner: -
+-- Name: artist_name_musicbrainz_id_uindex; Type: INDEX; Schema: melo; Owner: -
 --
 
-CREATE UNIQUE INDEX artist_name_disambiguation_uindex ON melo.artist USING btree (name, disambiguation);
+CREATE UNIQUE INDEX artist_name_musicbrainz_id_uindex ON melo.artist USING btree (name) WHERE (musicbrainz_id IS NOT NULL);
+
+
+--
+-- Name: artist_name_uindex; Type: INDEX; Schema: melo; Owner: -
+--
+
+CREATE UNIQUE INDEX artist_name_uindex ON melo.artist USING btree (name) WHERE (musicbrainz_id IS NULL);
 
 
 --
@@ -659,4 +666,5 @@ INSERT INTO melo.schema_migrations (version) VALUES
     ('20221004171024'),
     ('20221027210121'),
     ('20221028182923'),
-    ('20221030214943');
+    ('20221030214943'),
+    ('20221116005520');

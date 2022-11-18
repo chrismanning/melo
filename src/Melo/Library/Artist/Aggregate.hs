@@ -4,21 +4,20 @@
 module Melo.Library.Artist.Aggregate where
 
 import Control.Exception.Safe
-import Control.Foldl (PrimMonad)
 import Control.Lens hiding (from, lens)
-import Control.Monad.Base
-import Control.Monad.Conc.Class
-import Control.Monad.Trans
-import Control.Monad.Trans.Identity
-import Control.Monad.Trans.Control
 import Data.Maybe
+import Data.Text (Text)
+import Data.Vector (Vector)
+import Data.Vector qualified as V
 import Melo.Common.Logging
+import Melo.Common.Monad
 import Melo.Database.Repo
 import Melo.Library.Artist.Name.Repo
 import Melo.Library.Artist.Name.Types
 import Melo.Library.Artist.Repo
 import Melo.Library.Artist.Types
-import Melo.Lookup.MusicBrainz ((<<|>>))
+import Melo.Library.Source.Types
+import Melo.Library.Track.Types
 import Melo.Lookup.MusicBrainz qualified as MB
 import Witch
 
@@ -53,11 +52,14 @@ newtype ArtistAggregateIOT m a = ArtistAggregateIOT
     )
   deriving (MonadTrans, MonadTransControl) via IdentityT
 
-instance ( MB.MusicBrainzService m,
+instance
+  ( MB.MusicBrainzService m,
     ArtistRepository m,
     ArtistNameRepository m,
     Logging m
-  ) => ArtistAggregate (ArtistAggregateIOT m) where
+  ) =>
+  ArtistAggregate (ArtistAggregateIOT m)
+  where
   importArtistCredit artistCredit = do
     getByMusicBrainzId artistCredit.artist.id <<|>> newArtist >>= \case
       Just artist ->

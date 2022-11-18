@@ -6,14 +6,9 @@ module Melo.Library.Source.Transform where
 import Control.Applicative hiding (many, some)
 import Control.Concurrent.Classy
 import Control.Exception.Safe as E hiding (try)
-import Control.Foldl (PrimMonad)
 import Control.Foldl qualified as Fold
 import Control.Lens hiding (from)
-import Control.Monad
-import Control.Monad.Base
 import Control.Monad.Except
-import Control.Monad.Identity
-import Control.Monad.Trans.Control
 import Control.Monad.Trans.Except
 import Data.Char
 import Data.Either.Combinators
@@ -30,6 +25,7 @@ import Data.Void (Void)
 import Melo.Common.FileSystem as FS
 import Melo.Common.Logging
 import Melo.Common.Metadata
+import Melo.Common.Monad
 import Melo.Common.Uri
 import Melo.Database.Repo qualified as Repo
 import Melo.Format qualified as F
@@ -239,10 +235,13 @@ moveSourceWithPattern collectionRef pats src@Source {ref, source} =
                   let destImagePath = replaceDirectory imagePath (takeDirectory destPath)
                   movePath imagePath destImagePath >>= \case
                     Left e ->
-                      $(logError) $ "failed to move cover image "
-                        <> takeFileName imagePath
-                        <> " for source " <> show id
-                        <> ": " <> displayException e
+                      $(logError) $
+                        "failed to move cover image "
+                          <> takeFileName imagePath
+                          <> " for source "
+                          <> show id
+                          <> ": "
+                          <> displayException e
                     Right _ ->
                       $(logInfo) $ "successfully moved cover image " <> takeFileName imagePath <> " for source " <> show id
               let movedSrc = src & #source .~ fileUri destPath
@@ -386,8 +385,9 @@ extractTrack collectionRef' patterns s@Source {multiTrack = Just MultiTrackDesc 
                           }
                   raw <- extractTrackTo cuefile dest >>= mapE MultiTrackError
                   $(logDebug) $ "Mappings: " <> show mappings
-                  let vc = fromMaybe (F.metadataFactory @F.VorbisComments F.emptyTags) $
-                        F.convert' F.vorbisCommentsId s.metadata mappings
+                  let vc =
+                        fromMaybe (F.metadataFactory @F.VorbisComments F.emptyTags) $
+                          F.convert' F.vorbisCommentsId s.metadata mappings
                   $(logDebug) $ "Original metadata: " <> show s.metadata
                   $(logDebug) $ "Converted metadata: " <> show vc
                   let m = H.fromList [(F.vorbisCommentsId, vc)]
@@ -422,19 +422,20 @@ editMetadata (SetMapping mappingName vs) Source {..} =
 editMetadata (RemoveMappings mappings) src = flatten <$> (forM mappings $ \mapping -> editMetadata (SetMapping mapping V.empty) src)
   where
     flatten es = foldl' (\_a b -> b) (Left ImportFailed) es
-editMetadata (Retain retained) Source {..} = let tag = F.mappedTag metadata.mappingSelector in
-  case uriToFilePath source of
-    Nothing -> pure $ Left UnsupportedSourceKind
-    Just path -> runExceptT @TransformationError do
-      retainedMappings <- forM retained $ \mappingName -> do
-        getMappingNamed mappingName >>=
-          eitherToError . maybeToRight (UnknownTagMapping mappingName)
-      let newTags = foldl' (\ts mapping -> ts & tag mapping .~ (metadata.tag mapping)) F.emptyTags retainedMappings
-      let newMetadata@Metadata {formatId} :: Metadata = metadata {F.tags = newTags}
-      raw <- eitherToError . mapLeft from =<< readMetadataFile kind path
-      let metadataFile = raw & #metadata . at formatId .~ Just newMetadata
-      metadataFile' <- eitherToError . mapLeft from =<< writeMetadataFile metadataFile path
-      importSources (V.singleton (FileSource collectionRef metadataFile')) >>= headOrException ImportFailed
+editMetadata (Retain retained) Source {..} =
+  let tag = F.mappedTag metadata.mappingSelector
+   in case uriToFilePath source of
+        Nothing -> pure $ Left UnsupportedSourceKind
+        Just path -> runExceptT @TransformationError do
+          retainedMappings <- forM retained $ \mappingName -> do
+            getMappingNamed mappingName
+              >>= eitherToError . maybeToRight (UnknownTagMapping mappingName)
+          let newTags = foldl' (\ts mapping -> ts & tag mapping .~ (metadata.tag mapping)) F.emptyTags retainedMappings
+          let newMetadata@Metadata {formatId} :: Metadata = metadata {F.tags = newTags}
+          raw <- eitherToError . mapLeft from =<< readMetadataFile kind path
+          let metadataFile = raw & #metadata . at formatId .~ Just newMetadata
+          metadataFile' <- eitherToError . mapLeft from =<< writeMetadataFile metadataFile path
+          importSources (V.singleton (FileSource collectionRef metadataFile')) >>= headOrException ImportFailed
 
 headOrException :: (Traversable f, MonadError e m) => e -> f a -> m a
 headOrException e xs = case firstOf traverse xs of

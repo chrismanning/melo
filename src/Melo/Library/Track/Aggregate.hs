@@ -5,38 +5,42 @@ module Melo.Library.Track.Aggregate where
 
 import Control.Applicative
 import Control.Exception.Safe
-import Control.Foldl (PrimMonad)
 import Control.Lens hiding (from, lens)
-import Control.Monad
-import Control.Monad.Base
-import Control.Monad.Conc.Class
-import Control.Monad.Trans
-import Control.Monad.Trans.Control
-import Control.Monad.Trans.Identity
 import Data.Attoparsec.Text
+import Data.Foldable.Extra
 import Data.Int (Int16)
 import Data.Maybe
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.Tuple.Extra
 import Data.Vector (Vector)
 import Data.Vector qualified as V
 import GHC.Generics hiding (from)
 import Melo.Common.Logging
+import Melo.Common.Monad
 import Melo.Common.Uri
 import Melo.Database.Repo
 import Melo.Format.Mapping qualified as M
 import Melo.Library.Album.Types
 import Melo.Library.Artist.Aggregate
+import Melo.Library.Artist.Name.Repo
 import Melo.Library.Artist.Name.Types
+import Melo.Library.Artist.Repo as Artist
+import Melo.Library.Artist.Types
 import Melo.Library.Source.Types
-import Melo.Library.Track.ArtistName.Repo as TrackArtist
+import Melo.Library.Track.ArtistName.Repo (TrackArtistNameRepository)
+import Melo.Library.Track.ArtistName.Repo qualified as TrackArtist
 import Melo.Library.Track.ArtistName.Types
 import Melo.Library.Track.Repo as Track
 import Melo.Library.Track.Types
 import Melo.Lookup.MusicBrainz as MB
+import Melo.Metadata.Mapping.Aggregate
+import Streaming qualified as S
+import Streaming.Prelude qualified as S
+import Witch
 
 class Monad m => TrackAggregate m where
-  importAlbumTracks :: Vector Source -> Album -> m (Vector Track)
+  importAlbumTracks :: Vector Source -> Album -> m ()
 
 instance
   {-# OVERLAPPABLE #-}
@@ -71,36 +75,85 @@ instance
     TrackArtistNameRepository m,
     MB.MusicBrainzService m,
     ArtistAggregate m,
+    ArtistRepository m,
+    ArtistNameRepository m,
+    TagMappingAggregate m,
     Logging m
   ) =>
-  TrackAggregate (TrackAggregateIOT m) where
-  importAlbumTracks srcs album = do
-    tracks <- forM srcs $ \src -> do
-      $(logDebug) $ "Importing track from source " <> show src.ref
-      MB.getRecordingFromMetadata src.metadata >>= \case
-        Just recording -> do
-          let newTrack = insertSingle (mkNewTrack album.dbId (Just recording.id) src)
-          Track.getByMusicBrainzId recording.id <<|>> newTrack >>= \case
-            Just track -> do
-              artistNames <- case recording.artistCredit of
-                Just as -> V.catMaybes . V.fromList <$> mapM importArtistCredit as
-                Nothing -> pure V.empty
-              let mk a = TrackArtistNameTable {track_id = track.id, artist_name_id = a.id}
-              _ <- TrackArtist.insert' (mk <$> artistNames)
-              pure (Just (mkTrack (V.toList artistNames) track))
-            Nothing -> pure Nothing
-        Nothing -> do
-          -- TODO get track artists from tags
-          --        let Metadata{lens, tags} = src.metadata
-          --        let artists = tags ^. lens M.trackArtistTag
-          --        album
-          fmap (mkTrack []) <$> insertSingle (mkNewTrack album.dbId Nothing src)
-    pure (V.catMaybes tracks)
+  TrackAggregate (TrackAggregateIOT m)
+  where
+  importAlbumTracks srcs album =
+    lift $
+      S.zip (S.each srcs) (S.each srcs & S.mapM importSourceTrack)
+        & S.mapMaybe (\(src, track) -> (src,) <$> track)
+        & S.mapM (\(src, track) -> fmap (src,track,) <$> newTrackArtists src)
+        & (\s -> S.for s S.each)
+        & S.groupBy (\a b -> (thd3 a).name == (thd3 b).name)
+        & S.mapsM_ importTrackArtistGroup
     where
-      a <<|>> b =
-        a >>= \case
-          Just a' -> pure (Just a')
-          Nothing -> b
+      importSourceTrack :: Source -> m (Maybe TrackEntity)
+      importSourceTrack src = do
+        $(logDebug) $ "Importing track from source " <> show src.ref
+        recording <- MB.getRecordingFromMetadata src.metadata
+        firstJustM (Track.getByMusicBrainzId . (.id)) recording >>= \case
+          Just existing -> do
+            $(logWarn) $ "Found track " <> show existing.id <> " for MusicBrainz recording " <> show existing.musicbrainz_id <> " from source " <> show src.ref
+            -- TODO allow multiple editions of same track despite musicbrainz lookup
+            pure Nothing
+          Nothing -> insertSingle (mkNewTrack album.dbId ((.id) <$> recording) src)
+      newTrackArtists :: Source -> m (Vector NewArtist)
+      newTrackArtists src = do
+        albumArtists <- resolveMappingNamed "album_artist" src
+        trackArtists <- resolveMappingNamed "track_artist" src
+        if albumArtists == trackArtists
+          then do
+            $(logDebug) $ "Track artists same as album artists for source " <> show src.ref
+            pure V.empty
+          else do
+            let mbArtistIds = MB.MusicBrainzId <$> src.metadata.tag MB.artistIdTag
+            existingArtists <- V.mapMaybeM (Artist.getByMusicBrainzId) mbArtistIds
+
+            if V.null existingArtists
+              then do
+                mbArtists <- V.mapMaybeM MB.getArtist mbArtistIds
+                if V.length mbArtists < V.length trackArtists
+                  then do
+                    $(logWarn) $ "Invalid track artist MusicBrainz info found for source " <> show src
+                    pure $ mkNewArtist <$> trackArtists
+                  else pure $ from <$> mbArtists
+              else pure V.empty
+      importTrackArtistGroup :: S.Stream (S.Of (Source, TrackEntity, NewArtist)) m x -> m x
+      importTrackArtistGroup s =
+        S.next s >>= \case
+          Right ((src, track, newArtist), s) -> do
+            artist <- insertSingle @ArtistEntity newArtist
+            artistNames <-
+              MB.getRecordingFromMetadata src.metadata >>= \case
+                Just recording -> do
+                  $(logInfo) $ "Using MusicBrainz recording credits as track artists for source " <> show src
+                  case recording.artistCredit of
+                    Just as -> V.mapMaybeM importArtistCredit as
+                    Nothing -> do
+                      $(logWarn) $ "MusicBrainz recording " <> show recording.id <> " found but no artist credits for source " <> show src.ref
+                      insertNewArtistName artist
+                Nothing -> insertNewArtistName artist
+            s
+              & S.map snd3
+              & S.cons track
+              & S.mapM_ \track -> TrackArtist.insert (TrackArtistNameTable track.id . (.id) <$> artistNames)
+          Left x -> pure x
+      insertNewArtistName artist = case artist of
+        Just artist -> insert @ArtistNameEntity (V.singleton $ NewArtistName artist.id artist.name)
+        Nothing -> pure V.empty
+      mkNewArtist name =
+        NewArtist
+          { name,
+            country = Nothing,
+            disambiguation = Nothing,
+            bio = Nothing,
+            shortBio = Nothing,
+            musicBrainzId = Nothing
+          }
 
 mkNewTrack :: AlbumRef -> Maybe MB.MusicBrainzId -> Source -> NewTrack
 mkNewTrack albumRef mbid src =

@@ -69,7 +69,7 @@ extra-deps:
   - github: chrismanning/cue-sheet
     commit: 01f2829b7a269c03dd62e39f332ee21899173c2f
   - github: chrismanning/rel8
-    commit: 4b4447afec35ab0712a307d51e205a6b61b56072
+    commit: 3f98c7116b62d1fd9b7cd4c7254b2d4e0bd8e831
   - github: chrismanning/kqueue
     commit: 70f401e065c2cf5143446f6486c996647bccc747
   - github: nikita-volkov/postgresql-binary

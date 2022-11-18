@@ -94,6 +94,7 @@ library:
   - path
   - path-io
   - postgresql-binary
+  - primitive
   - product-profunctors
   - profunctors
   - random
