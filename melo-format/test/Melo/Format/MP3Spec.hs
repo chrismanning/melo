@@ -40,14 +40,14 @@ spec =
                   copyrighted = False,
                   original = True,
                   emphasis = 0b00,
-                  crc = Just 0
+                  crc = Nothing
                 },
             id3v1 = Nothing,
             id3v2_3 = Nothing,
             id3v2_4 = Nothing,
             apev1 = Nothing,
             apev2 = Nothing,
-            samples = Just 47232
+            samples = Just 46080
           }
     it "reads mp3 file" $ do
       MetadataFile {..} <- readMp3File "test/Melo/silence-1s.mp3"
@@ -57,7 +57,7 @@ spec =
         `shouldBe` I.Info
           { sampleRate = I.SampleRate 44100,
             channels = I.Mono,
-            totalSamples = Just 47232,
+            totalSamples = Just 46080,
             bitsPerSample = Nothing,
             quality = Just "64 kbps"
           }
@@ -103,7 +103,7 @@ spec =
     it "reads mp3 file with id3v1" $ do
       MetadataFile {..} <- readMp3File "test/Melo/id3v1/id3v1_001_basic.mp3"
       fileId `shouldBe` MetadataFileId "MP3"
-      let tag = metadataLens @ID3v1
+      let tag = mappedTag (fieldMappingSelector @ID3v1)
       metadata
         `shouldBe` H.singleton
           id3v1Id
@@ -151,7 +151,7 @@ spec =
         `shouldBe` I.Info
           { sampleRate = I.SampleRate 44100,
             channels = I.Mono,
-            totalSamples = Just 47232,
+            totalSamples = Just 46080,
             bitsPerSample = Nothing,
             quality = Just "64 kbps"
           }
@@ -181,7 +181,7 @@ spec =
         `shouldBe` I.Info
           { sampleRate = I.SampleRate 44100,
             channels = I.Mono,
-            totalSamples = Just 47232,
+            totalSamples = Just 46080,
             bitsPerSample = Nothing,
             quality = Just "64 kbps"
           }
@@ -211,7 +211,7 @@ spec =
         `shouldBe` I.Info
           { sampleRate = I.SampleRate 44100,
             channels = I.Mono,
-            totalSamples = Just 47232,
+            totalSamples = Just 46080,
             bitsPerSample = Nothing,
             quality = Just "64 kbps"
           }
@@ -242,7 +242,7 @@ spec =
         `shouldBe` I.Info
           { sampleRate = I.SampleRate 44100,
             channels = I.Mono,
-            totalSamples = Just 47232,
+            totalSamples = Just 46080,
             bitsPerSample = Nothing,
             quality = Just "64 kbps"
           }

@@ -18,7 +18,7 @@ import Data.Coerce
 import Data.HashMap.Strict ((!))
 import Data.HashMap.Strict qualified as H
 import Data.Hashable
-import Data.Maybe (catMaybes, fromMaybe, isJust)
+import Data.Maybe (catMaybes, fromMaybe, isJust, isNothing)
 import Data.Text qualified as T (pack)
 import Data.Vector ((!?))
 import Data.Vector qualified as V
@@ -276,7 +276,7 @@ instance Binary FrameHeader where
     putBits 11 frameSync
     putMpegVersion mpegAudioVersion
     putLayer layer
-    BP.putBool (isJust crc)
+    BP.putBool (isNothing crc)
     putBitRate bitRate mpegAudioVersion layer
     putSampleRate sampleRate mpegAudioVersion
     BP.putBool padding
