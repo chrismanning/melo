@@ -10,6 +10,7 @@ import Control.Foldl qualified as Fold
 import Control.Lens hiding (from)
 import Control.Monad.Except
 import Control.Monad.Trans.Except
+import Control.Monad.State.Strict
 import Data.Char
 import Data.Either.Combinators
 import Data.Foldable
@@ -31,6 +32,7 @@ import Melo.Database.Repo qualified as Repo
 import Melo.Format qualified as F
 import Melo.Format.Error qualified as F
 import Melo.Format.Internal.Metadata (Metadata (..))
+import Melo.Format.Mapping qualified as M
 import Melo.Library.Album.Aggregate
 import Melo.Library.Artist.Aggregate
 import Melo.Library.Artist.Repo
@@ -42,7 +44,7 @@ import Melo.Library.Source.MultiTrack
 import Melo.Library.Source.Repo as Src
 import Melo.Library.Source.Types
 import Melo.Library.Track.Aggregate
-import Melo.Lookup.MusicBrainz
+import Melo.Lookup.MusicBrainz as MB
 import Melo.Metadata.Mapping.Aggregate
 import Melo.Metadata.Mapping.Repo
 import System.FilePath
@@ -83,6 +85,7 @@ evalTransformAction :: MonadSourceTransform m => TransformAction -> Transform m
 evalTransformAction (Move ref patterns) src = mapLeft from <$> moveSourceWithPattern ref patterns src
 evalTransformAction (SplitMultiTrackFile ref patterns) src = mapLeft from <$> extractTrack ref patterns src
 evalTransformAction (EditMetadata metadataTransformation) src = mapLeft from <$> editMetadata metadataTransformation src
+evalTransformAction MusicBrainzLookup src = musicBrainzLookup src
 evalTransformAction t _ = pure $ Left (UnsupportedTransform (show t))
 
 type MonadSourceTransform m =
@@ -159,7 +162,7 @@ instance MonadSourceTransform m => Repo.Repository SourceEntity (TransformPrevie
   getByKey = lift . Repo.getByKey @SourceEntity
   insert = pure . fmap from
   insert' = pure . V.length
-  delete _ = pure ()
+  delete _ = pure V.empty
   update e = lift $ do
     $(logDebug) ("Preview update @SourceEntity called" :: String)
     pure e
@@ -441,3 +444,26 @@ headOrException :: (Traversable f, MonadError e m) => e -> f a -> m a
 headOrException e xs = case firstOf traverse xs of
   Just x -> pure x
   Nothing -> throwError e
+
+musicBrainzLookup :: MonadSourceTransform m => Source -> m (Either TransformationError Source)
+musicBrainzLookup src = (flip evalStateT) src.metadata do
+  get >>= MB.getReleaseOrGroup >>= \case
+    Nothing -> pure ()
+    Just (Left release) -> do
+      F.tagLens MB.releaseIdTag .= V.singleton release.id.mbid
+      F.tagLens MB.releaseGroupIdTag .= V.singleton release.releaseGroup.id.mbid
+      let albumArtists = release.artistCredit ^.. _Just . traverse . (to (.artist.id.mbid))
+      F.tagLens MB.albumArtistIdTag .= V.fromList albumArtists
+      case release.labelInfo ^? _Just . traverse . to (.catalogNumber) . _Just of
+        Just catNum -> F.tagLens M.catalogNumber .= V.singleton catNum
+        _ -> pure ()
+    Just (Right releaseGroup) ->
+      F.tagLens MB.releaseGroupIdTag .= V.singleton releaseGroup.id.mbid
+  get >>= MB.getRecordingFromMetadata >>= \case
+    Just recording -> do
+      F.tagLens MB.recordingIdTag .= V.singleton recording.id.mbid
+      let trackArtists = recording.artistCredit ^.. _Just . traverse . (to (.artist.id.mbid))
+      F.tagLens MB.artistIdTag .= V.fromList trackArtists
+    _ -> pure ()
+  metadata <- get
+  pure $ Right (src & #metadata .~ metadata)

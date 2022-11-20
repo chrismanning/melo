@@ -6,6 +6,7 @@ module Melo.Library.Collection.Aggregate where
 import Control.Concurrent.Classy
 import Control.Exception.Safe
 import Control.Foldl (PrimMonad)
+import Control.Lens (firstOf)
 import Control.Monad
 import Control.Monad.Base
 import Control.Monad.Par.IO
@@ -26,7 +27,7 @@ import Network.Wreq.Session qualified as Wreq
 
 class Monad m => CollectionAggregate m where
   addCollection :: NewCollection -> m CollectionRef
-  deleteCollection :: CollectionRef -> m ()
+  deleteCollection :: CollectionRef -> m (Maybe CollectionRef)
   rescanCollection :: CollectionRef -> m ()
 
 instance
@@ -97,8 +98,7 @@ instance
     pure ()
   deleteCollection ref = do
     stopWatching ref
-    delete (singleton ref)
-    pure ()
+    firstOf traverse <$> delete (singleton ref)
 
 getCollectionsByKey :: (CollectionRepository m) => Vector CollectionRef -> m (Vector CollectionEntity)
 getCollectionsByKey = getByKey

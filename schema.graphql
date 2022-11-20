@@ -10,8 +10,8 @@ type Collection {
 
 type CollectionMutation {
   add(newCollection: NewCollection!): Collection!
-  delete(id: CollectionRef!): Unit!
-  deleteAll: Unit!
+  delete(id: CollectionRef!): CollectionRef
+  deleteAll: [CollectionRef!]!
 }
 
 scalar CollectionRef
@@ -90,6 +90,10 @@ input MetadataTransformation {
 input Move {
   destPattern: String!
   collectionRef: String
+}
+
+input MusicBrainzLookup {
+  options: Int
 }
 
 type Mutation {
@@ -174,10 +178,7 @@ input Transform {
   Move: Move
   SplitMultiTrackFile: SplitMultiTrackFile
   EditMetadata: EditMetadata
-}
-
-enum Unit {
-  Unit
+  MusicBrainzLookup: MusicBrainzLookup
 }
 
 type UpdatedSource {

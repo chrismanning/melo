@@ -4,13 +4,8 @@
 module Melo.Metadata.Mapping.Aggregate where
 
 import Control.Exception.Safe
-import Control.Foldl (PrimMonad)
+import Control.Foldl qualified as F
 import Control.Lens
-import Control.Monad
-import Control.Monad.Base
-import Control.Monad.Conc.Class
-import Control.Monad.Reader
-import Control.Monad.Trans.Control
 import Country
 import Data.Coerce
 import Data.Map.Strict as Map
@@ -18,6 +13,7 @@ import Data.Text (Text)
 import Data.Vector (Vector)
 import Data.Vector qualified as V
 import Melo.Common.Logging
+import Melo.Common.Monad
 import Melo.Database.Repo as Repo
 import Melo.Format.Mapping as M
 import Melo.Library.Artist.Repo
@@ -25,6 +21,7 @@ import Melo.Library.Artist.Types
 import Melo.Library.Source.Types
 import Melo.Metadata.Mapping.Repo
 import Melo.Metadata.Mapping.Types
+import Streaming.Prelude qualified as S
 
 class Monad m => TagMappingAggregate m where
   resolveMappingNamed :: Text -> Source -> m (Vector Text)
@@ -79,7 +76,7 @@ instance
   where
   resolveMappingNamed m src | m == "album_artist_origin" = do
     artists <- getSourceAlbumArtists src.ref
-    pure $ V.take 1 $ V.catMaybes $ fmap ((\c -> c >>= decodeAlphaThree <&> alphaTwoUpper) . (.country) . fst) artists
+    pure $ V.take 1 $ V.mapMaybe ((\c -> c >>= decodeAlphaThree <&> alphaTwoUpper) . (.country) . fst) artists
   resolveMappingNamed mappingName src =
     getMappingNamed mappingName >>= \case
       Just mapping -> pure $ src.metadata.tag mapping
@@ -88,9 +85,9 @@ instance
     where
       lookup :: TagMappingIndex -> Maybe M.TagMapping
       lookup mappings = mappings ^. at name
-  getMappingsNamed names =
-    Map.fromList . V.toList . V.catMaybes <$> forM names \mappingName ->
-      fmap (mappingName,) <$> getMappingNamed mappingName
+  getMappingsNamed names = S.each names
+    & S.mapMaybeM (\m -> fmap (m,) <$> getMappingNamed m)
+    & F.impurely S.foldM_ (F.generalize F.map)
   getAllMappings = ask
 
 runTagMappingAggregate :: TagMappingRepository m => TagMappingAggregateT m a -> m a

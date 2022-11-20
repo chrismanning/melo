@@ -320,3 +320,23 @@ language =
         riff = caseSensitiveMapping "ILNG",
         vorbis = caseInsensitiveMapping "LANGUAGE"
       }
+
+catalogNumber :: TagMapping
+catalogNumber =
+  singletonTagMapping
+    def
+      { ape = caseInsensitiveMapping "CatalogNumber",
+        id3v2_3 = caseSensitiveMapping "TXXX;CATALOGNUMBER",
+        id3v2_4 = caseSensitiveMapping "TXXX;CATALOGNUMBER",
+        vorbis = caseInsensitiveMapping "CATALOGNUMBER"
+      }
+
+asin :: TagMapping
+asin =
+  singletonTagMapping
+    def
+      { ape = caseInsensitiveMapping "ASIN",
+        id3v2_3 = caseSensitiveMapping "TXXX;ASIN",
+        id3v2_4 = caseSensitiveMapping "TXXX;ASIN",
+        vorbis = caseInsensitiveMapping "ASIN"
+      }

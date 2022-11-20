@@ -16,6 +16,8 @@ module Melo.Lookup.MusicBrainz
     Release (..),
     ReleaseSearch (..),
     ReleaseGroup (..),
+    LabelInfo (..),
+    Label (..),
     artistIdTag,
     originalArtistIdTag,
     albumArtistIdTag,
@@ -25,6 +27,8 @@ module Melo.Lookup.MusicBrainz
     releaseTrackIdTag,
     releaseGroupIdTag,
     releaseIdTag,
+    getReleaseOrGroup,
+    getReleaseFromMetadata,
     getReleaseGroupFromMetadata,
     getRecordingFromMetadata,
     truncateDate,
@@ -36,6 +40,7 @@ import Control.Applicative as A
 import Control.Concurrent.Classy
 import Control.Concurrent.TokenLimiter
 import Control.Exception.Safe
+import Control.Foldl qualified as F
 import Control.Lens hiding (from, lens)
 import Control.Monad.Reader
 import Data.Aeson as A
@@ -67,6 +72,7 @@ import Melo.Format.Metadata qualified as F
 import Network.Wreq qualified as Wr
 import Network.Wreq.Session qualified as WrS
 import Prelude as P
+import Streaming.Prelude qualified as S
 
 newtype MusicBrainzId = MusicBrainzId
   { mbid :: Text
@@ -120,7 +126,9 @@ data Release = Release
     title :: Text,
     artistCredit :: Maybe (Vector ArtistCredit),
     date :: Maybe Text,
-    score :: Maybe Int
+    score :: Maybe Int,
+    releaseGroup :: ReleaseGroup,
+    labelInfo :: Maybe (Vector LabelInfo)
   }
   deriving (Show, Generic, Eq)
 
@@ -134,6 +142,24 @@ data ArtistCredit = ArtistCredit
   deriving (Show, Generic, Eq)
 
 instance FromJSON ArtistCredit where
+  parseJSON = genericParseJSON mbAesonOptions
+
+data LabelInfo = LabelInfo
+  { catalogNumber :: Maybe Text,
+    label :: Label
+  }
+  deriving (Show, Generic, Eq)
+
+instance FromJSON LabelInfo where
+  parseJSON = genericParseJSON mbAesonOptions
+
+data Label = Label
+  { id :: MusicBrainzId,
+    name :: Text
+  }
+  deriving (Show, Generic, Eq)
+
+instance FromJSON Label where
   parseJSON = genericParseJSON mbAesonOptions
 
 newtype ReleaseGroupSearchResult = ReleaseGroupSearchResult
@@ -220,6 +246,47 @@ instance
   getReleaseGroup = lift . getReleaseGroup
   getRecording = lift . getRecording
 
+getReleaseOrGroup ::
+  MusicBrainzService m =>
+  F.Metadata ->
+  m (Maybe (Either Release ReleaseGroup))
+getReleaseOrGroup m =
+  getReleaseFromMetadata m >>= \case
+    Just release -> pure $ Just $ Left release
+    Nothing -> fmap Right <$> getReleaseGroupFromMetadata m
+
+getReleaseFromMetadata ::
+  MusicBrainzService m =>
+  F.Metadata ->
+  m (Maybe Release)
+getReleaseFromMetadata m =
+  getReleaseByMusicBrainzId m <<|>> getReleaseByAlbum m
+
+getReleaseByMusicBrainzId ::
+  MusicBrainzService m =>
+  F.Metadata ->
+  m (Maybe Release)
+getReleaseByMusicBrainzId m = do
+  let releaseIds = MusicBrainzId <$> m.tag releaseIdTag
+  S.each releaseIds
+    & S.mapMaybeM getRelease
+    & F.impurely S.foldM_ (F.generalize $ F.find perfectScore)
+
+getReleaseByAlbum ::
+  MusicBrainzService m =>
+  F.Metadata ->
+  m (Maybe Release)
+getReleaseByAlbum m = do
+  let albumTitle = m.tagHead M.album
+  let albumArtist = m.tagHead M.albumArtist
+  let date = m.tagHead M.originalReleaseYear <&> truncateDate
+  let catalogNum = m.tagHead M.catalogNumber
+  if isJust albumTitle && isJust albumArtist && isJust catalogNum
+    then
+      find perfectScore
+        <$> searchReleases def {albumArtist, albumTitle, date}
+    else pure Nothing
+
 getReleaseGroupFromMetadata ::
   MusicBrainzService m =>
   F.Metadata ->
@@ -232,9 +299,10 @@ getReleaseGroupByMusicBrainzId ::
   F.Metadata ->
   m (Maybe ReleaseGroup)
 getReleaseGroupByMusicBrainzId m = do
-  let releaseGroupIds = m.tag releaseGroupIdTag
-  V.find perfectScore . V.catMaybes
-    <$> V.forM releaseGroupIds (getReleaseGroup . MusicBrainzId)
+  let releaseGroupIds = MusicBrainzId <$> m.tag releaseGroupIdTag
+  S.each releaseGroupIds
+    & S.mapMaybeM getReleaseGroup
+    & F.impurely S.foldM_ (F.generalize $ F.find perfectScore)
 
 getReleaseGroupByAlbum ::
   MusicBrainzService m =>
@@ -256,7 +324,7 @@ getRecordingFromMetadata ::
   m (Maybe Recording)
 getRecordingFromMetadata m =
   getRecordingByMusicBrainzId m
-    <<|>> getRecordingByReleaseId m
+    <<|>> getRecordingByReleaseIdTags m
     <<|>> getRecordingByTrack m
 
 getRecordingByMusicBrainzId ::
@@ -268,11 +336,11 @@ getRecordingByMusicBrainzId m = do
   V.find perfectScore . V.catMaybes
     <$> V.forM recordingIds (getRecording . MusicBrainzId)
 
-getRecordingByReleaseId ::
+getRecordingByReleaseIdTags ::
   MusicBrainzService m =>
   F.Metadata ->
   m (Maybe Recording)
-getRecordingByReleaseId m = do
+getRecordingByReleaseIdTags m = do
   let title = m.tagHead M.trackTitle
   let releaseId = m.tagHead releaseIdTag
   let releaseGroupId = m.tagHead releaseGroupIdTag
@@ -545,8 +613,8 @@ artistIdTag =
     def
       { ape = caseInsensitiveMapping "MUSICBRAINZ_ARTISTID",
         vorbis = caseInsensitiveMapping "MUSICBRAINZ_ARTISTID",
-        id3v2_3 = caseInsensitiveMapping "TXXX:MusicBrainz Artist Id",
-        id3v2_4 = caseInsensitiveMapping "TXXX:MusicBrainz Artist Id"
+        id3v2_3 = caseInsensitiveMapping "TXXX;MusicBrainz Artist Id",
+        id3v2_4 = caseInsensitiveMapping "TXXX;MusicBrainz Artist Id"
       }
 
 originalArtistIdTag :: TagMapping
@@ -555,8 +623,8 @@ originalArtistIdTag =
     def
       { ape = caseInsensitiveMapping "MUSICBRAINZ_ORIGINALARTISTID",
         vorbis = caseInsensitiveMapping "MUSICBRAINZ_ORIGINALARTISTID",
-        id3v2_3 = caseInsensitiveMapping "TXXX:MusicBrainz Original Artist Id",
-        id3v2_4 = caseInsensitiveMapping "TXXX:MusicBrainz Original Artist Id"
+        id3v2_3 = caseInsensitiveMapping "TXXX;MusicBrainz Original Artist Id",
+        id3v2_4 = caseInsensitiveMapping "TXXX;MusicBrainz Original Artist Id"
       }
 
 albumArtistIdTag :: TagMapping
@@ -565,8 +633,8 @@ albumArtistIdTag =
     def
       { ape = caseInsensitiveMapping "MUSICBRAINZ_ALBUMARTISTID",
         vorbis = caseInsensitiveMapping "MUSICBRAINZ_ALBUMARTISTID",
-        id3v2_3 = caseInsensitiveMapping "TXXX:MusicBrainz Album Artist Id",
-        id3v2_4 = caseInsensitiveMapping "TXXX:MusicBrainz Album Artist Id"
+        id3v2_3 = caseInsensitiveMapping "TXXX;MusicBrainz Album Artist Id",
+        id3v2_4 = caseInsensitiveMapping "TXXX;MusicBrainz Album Artist Id"
       }
 
 albumIdTag :: TagMapping
@@ -575,8 +643,8 @@ albumIdTag =
     def
       { ape = caseInsensitiveMapping "MUSICBRAINZ_ALBUMID",
         vorbis = caseInsensitiveMapping "MUSICBRAINZ_ALBUMID",
-        id3v2_3 = caseInsensitiveMapping "TXXX:MusicBrainz Album Id",
-        id3v2_4 = caseInsensitiveMapping "TXXX:MusicBrainz Album Id"
+        id3v2_3 = caseInsensitiveMapping "TXXX;MusicBrainz Album Id",
+        id3v2_4 = caseInsensitiveMapping "TXXX;MusicBrainz Album Id"
       }
 
 trackIdTag :: TagMapping
@@ -585,8 +653,8 @@ trackIdTag =
     def
       { ape = caseInsensitiveMapping "MUSICBRAINZ_RELEASETRACKID",
         vorbis = caseInsensitiveMapping "MUSICBRAINZ_RELEASETRACKID",
-        id3v2_3 = caseInsensitiveMapping "TXXX:MusicBrainz Release Track Id",
-        id3v2_4 = caseInsensitiveMapping "TXXX:MusicBrainz Release Track Id"
+        id3v2_3 = caseInsensitiveMapping "TXXX;MusicBrainz Release Track Id",
+        id3v2_4 = caseInsensitiveMapping "TXXX;MusicBrainz Release Track Id"
       }
 
 recordingIdTag :: TagMapping
@@ -605,8 +673,8 @@ releaseTrackIdTag =
     def
       { ape = caseInsensitiveMapping "MUSICBRAINZ_RELEASETRACKID",
         vorbis = caseInsensitiveMapping "MUSICBRAINZ_RELEASETRACKID",
-        id3v2_3 = caseInsensitiveMapping "TXXX:MusicBrainz Release Track Id",
-        id3v2_4 = caseInsensitiveMapping "TXXX:MusicBrainz Release Track Id"
+        id3v2_3 = caseInsensitiveMapping "TXXX;MusicBrainz Release Track Id",
+        id3v2_4 = caseInsensitiveMapping "TXXX;MusicBrainz Release Track Id"
       }
 
 releaseGroupIdTag :: TagMapping
@@ -615,8 +683,8 @@ releaseGroupIdTag =
     def
       { ape = caseInsensitiveMapping "MUSICBRAINZ_RELEASEGROUPID",
         vorbis = caseInsensitiveMapping "MUSICBRAINZ_RELEASEGROUPID",
-        id3v2_3 = caseInsensitiveMapping "TXXX:MusicBrainz Release Group Id",
-        id3v2_4 = caseInsensitiveMapping "TXXX:MusicBrainz Release Group Id"
+        id3v2_3 = caseInsensitiveMapping "TXXX;MusicBrainz Release Group Id",
+        id3v2_4 = caseInsensitiveMapping "TXXX;MusicBrainz Release Group Id"
       }
 
 releaseIdTag :: TagMapping
@@ -625,6 +693,6 @@ releaseIdTag =
     def
       { ape = caseInsensitiveMapping "MUSICBRAINZ_ALBUMID",
         vorbis = caseInsensitiveMapping "MUSICBRAINZ_ALBUMID",
-        id3v2_3 = caseInsensitiveMapping "TXXX:MusicBrainz Album Id",
-        id3v2_4 = caseInsensitiveMapping "TXXX:MusicBrainz Album Id"
+        id3v2_3 = caseInsensitiveMapping "TXXX;MusicBrainz Album Id",
+        id3v2_4 = caseInsensitiveMapping "TXXX;MusicBrainz Album Id"
       }

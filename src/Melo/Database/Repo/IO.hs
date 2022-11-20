@@ -99,7 +99,7 @@ instance
           onConflict = fromMaybe Rel8.Abort (Rel8.DoUpdate <$> upsert),
           returning = fromIntegral <$> Rel8.NumberOfRowsAffected
         }
-  delete ks | null ks = pure ()
+  delete ks | null ks = pure empty
   delete ks = do
     RepositoryHandle {connSrc, tbl, pk} <- ask
     let keys = Rel8.lit <$> ks
@@ -107,11 +107,11 @@ instance
       from = tbl,
       using = pure (),
       deleteWhere = \_ row -> pk row `Rel8.in_` keys,
-      returning = pure ()
+      returning = Rel8.Projection pk
     }
     $(logDebugIO) $ Rel8.showDelete d
     let session = statement () $ Rel8.delete d
-    case connSrc of
+    fromList <$> case connSrc of
       Single conn' -> liftIO $ run session conn' >>= either throwIO pure
       Pooled pool -> liftIO $ withResource pool $ \conn -> run session conn >>= either throwIO pure
   update es | null es = pure empty

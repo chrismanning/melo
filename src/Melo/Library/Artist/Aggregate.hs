@@ -6,9 +6,6 @@ module Melo.Library.Artist.Aggregate where
 import Control.Exception.Safe
 import Control.Lens hiding (from, lens)
 import Data.Maybe
-import Data.Text (Text)
-import Data.Vector (Vector)
-import Data.Vector qualified as V
 import Melo.Common.Logging
 import Melo.Common.Monad
 import Melo.Database.Repo
@@ -16,8 +13,6 @@ import Melo.Library.Artist.Name.Repo
 import Melo.Library.Artist.Name.Types
 import Melo.Library.Artist.Repo
 import Melo.Library.Artist.Types
-import Melo.Library.Source.Types
-import Melo.Library.Track.Types
 import Melo.Lookup.MusicBrainz qualified as MB
 import Witch
 

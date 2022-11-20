@@ -535,6 +535,7 @@ data Transform
         collectionRef :: Maybe Text
       }
   | EditMetadata {metadataTransform :: MetadataTransformation}
+  | MusicBrainzLookup {options :: Maybe Int}
   deriving (Show, Generic)
 
 instance GQLType Transform where
@@ -608,6 +609,7 @@ instance TryFrom Transform Tr.TransformAction where
     Move {} -> Tr.Move <$> parseRef t.collectionRef <*> parseMovePattern' t.destPattern
     SplitMultiTrackFile {} -> Tr.SplitMultiTrackFile <$> parseRef t.collectionRef <*> parseMovePattern' t.destPattern
     EditMetadata mt -> Right $ Tr.EditMetadata (from mt)
+    MusicBrainzLookup _ -> Right Tr.MusicBrainzLookup
     where
       parseMovePattern' pat = mapLeft (TryFromException t <$> fmap toException) $ Tr.parseMovePattern pat
       parseRef Nothing = Right Nothing

@@ -165,7 +165,7 @@ handleEvent pool sess ref locks event = unless (isLocked (pack event.eventPath))
       let uri = fileUri p
       withTransaction pool runSourceRepositoryIO do
         refs <- getKeysByUriPrefix uri
-        Repo.delete refs
+        void $ Repo.delete refs
     FS.Removed p _ isDir -> do
       let uri = fileUri p
       if isDir == FS.IsDirectory
@@ -173,12 +173,12 @@ handleEvent pool sess ref locks event = unless (isLocked (pack event.eventPath))
           $(logInfo) $ "directory removed " <> p
           withTransaction pool runSourceRepositoryIO do
             refs <- getKeysByUriPrefix uri
-            Repo.delete refs
+            void $ Repo.delete refs
         else do
           $(logInfo) $ "file removed " <> p
           withTransaction pool runSourceRepositoryIO do
             refs <- getKeysByUri (V.singleton uri)
-            Repo.delete refs
+            void $ Repo.delete refs
     FS.Unknown p _ _ s ->
       $(logWarn) $ "unknown file system event on path " <> p <> ": " <> s
   where

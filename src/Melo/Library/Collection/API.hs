@@ -4,6 +4,9 @@
 module Melo.Library.Collection.API where
 
 import Control.Concurrent.Classy
+import Control.Foldl qualified as F
+import Control.Foldl (PrimMonad)
+import Data.Function
 import Data.Generics.Labels ()
 import Data.Kind
 import Data.Morpheus.Kind
@@ -26,6 +29,7 @@ import Melo.Library.Collection.Types qualified as Ty
 import Melo.Library.Source.API as SrcApi
 import Melo.Library.Source.Transform qualified as Tr
 import Network.URI
+import Streaming.Prelude qualified as S
 import Witch
 
 resolveCollections ::
@@ -123,15 +127,10 @@ data CollectionWhere = CollectionWhere
 instance GQLType CollectionWhere where
   type KIND CollectionWhere = INPUT
 
-data Unit = Unit
-  deriving (Generic)
-
-instance GQLType Unit
-
 data CollectionMutation (m :: Type -> Type) = CollectionMutation
   { add :: AddCollectionArgs -> m (Collection m),
-    delete :: DeleteCollectionArgs -> m Unit,
-    deleteAll :: m Unit
+    delete :: DeleteCollectionArgs -> m (Maybe Ty.CollectionRef),
+    deleteAll :: m (Vector Ty.CollectionRef)
   }
   deriving (Generic)
 
@@ -187,13 +186,15 @@ instance GQLType DeleteCollectionArgs where
 deleteCollectionImpl ::
   CollectionAggregate m =>
   DeleteCollectionArgs ->
-  ResolverM e m Unit
-deleteCollectionImpl args = lift $ deleteCollection args.id >> pure Unit
+  ResolverM e m (Maybe Ty.CollectionRef)
+deleteCollectionImpl args = lift $ deleteCollection args.id
 
 deleteAllCollectionsImpl ::
-  (CollectionRepository m, CollectionAggregate m) =>
-  ResolverM e m Unit
+  (CollectionRepository m, CollectionAggregate m, PrimMonad m) =>
+  ResolverM e m (Vector Ty.CollectionRef)
 deleteAllCollectionsImpl = lift do
   collections <- getAll
-  mapM_ (deleteCollection . (.id)) collections
-  pure Unit
+  S.each collections
+    & S.map (.id)
+    & S.mapMaybeM deleteCollection
+    & F.impurely S.foldM_ F.vectorM
