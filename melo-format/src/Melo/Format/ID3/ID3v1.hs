@@ -1,6 +1,7 @@
 module Melo.Format.ID3.ID3v1
   ( ID3v1 (..),
     iD3v1Id,
+    hGetId3v1,
     hReplaceID3v1,
     hRemoveID3v1,
     id3v1Id,
@@ -26,7 +27,6 @@ import GHC.Generics
 import Melo.Format.ID3.ID3v1Genre
 import Melo.Format.Internal.BinaryUtil
 import Melo.Format.Internal.Encoding
-import Melo.Format.Internal.Locate
 import Melo.Format.Internal.Metadata
 import Melo.Format.Internal.Tag
 import Melo.Format.Mapping
@@ -44,6 +44,8 @@ import Melo.Format.Mapping
     trackTitleTag,
     yearTag,
   )
+import Streaming.Binary qualified as S
+import Streaming.ByteString qualified as S
 import System.IO
 import Text.Read
 
@@ -113,15 +115,6 @@ id3v1Tag = mappedTag id3v1
 id3v1Size :: Integer
 id3v1Size = 128
 
-instance MetadataLocator ID3v1 where
-  hLocate h = do
-    hSeek h SeekFromEnd (- id3v1Size)
-    pos <- fromIntegral <$> hTell h
-    tag <- BS.hGet h 3
-    return $ case tag of
-      "TAG" -> Just pos
-      _ -> Nothing
-
 instance Binary ID3v1 where
   get = isolate (fromInteger id3v1Size) getID3v1
 
@@ -188,11 +181,19 @@ putTag n t =
   putLazyByteString $
     L.take (fromIntegral n) (L.fromStrict (encodeLatin1 t) <> L.repeat 0)
 
+hGetId3v1 :: Handle -> IO (Maybe ID3v1)
+hGetId3v1 h = do
+  hSeek h SeekFromEnd (- id3v1Size)
+  (_, _, e) <- S.decode (S.hGetContents h)
+  case e of
+    Left _ -> pure Nothing
+    Right id3 -> pure (Just id3)
+
 hReplaceID3v1 :: Handle -> ID3v1 -> IO ()
 hReplaceID3v1 h id3 = do
-  l <- hLocate @ID3v1 h
-  case fromIntegral <$> l of
-    Just l' -> hSeek h AbsoluteSeek l'
+  hGetId3v1 h >>= \case
+    Just _old -> do
+      hSeek h SeekFromEnd (- id3v1Size)
     Nothing -> do
       hSeek h SeekFromEnd 0
       hFileSize h <&> (+ id3v1Size) >>= hSetFileSize h
@@ -200,8 +201,9 @@ hReplaceID3v1 h id3 = do
   L.hPut h tagBuf
 
 hRemoveID3v1 :: Handle -> IO ()
-hRemoveID3v1 h = do
-  l <- hLocate @ID3v1 h
-  case fromIntegral <$> l of
-    Just l' -> hSetFileSize h l'
+hRemoveID3v1 h =
+  hGetId3v1 h >>= \case
+    Just _old -> do
+      n <- hFileSize h
+      hSetFileSize h (max (n - id3v1Size) 0)
     Nothing -> pure ()

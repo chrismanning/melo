@@ -24,13 +24,14 @@ import Data.Vector ((!?))
 import Data.Vector qualified as V
 import GHC.Generics hiding (from)
 import Lens.Micro
-import Melo.Format.Ape (APEv1 (..), APEv2 (..))
+import Melo.Format.Ape (APEv1 (..), APEv2 (..), hGetApe)
 import Melo.Format.Ape qualified as Ape
 import Melo.Format.Error
 import Melo.Format.ID3 qualified as ID3
 import Melo.Format.Internal.Info qualified as I
 import Melo.Format.Internal.Locate
 import Melo.Format.Internal.Metadata
+import Streaming.ByteString qualified as S
 import System.Directory
 import System.FilePath
 import System.IO
@@ -100,12 +101,14 @@ hReadMp3 h = do
   seekable <- hIsSeekable h
   if seekable
     then do
-      id3v2_3 <- hLocateGet' @ID3.ID3v2_3 h
-      id3v2_4 <- hLocateGet' @ID3.ID3v2_4 h
-      apev2 <- hLocateGet' @APEv2 h
-      apev1 <- hLocateGet' @APEv1 h
-      id3v1 <- hLocateGet' @ID3.ID3v1 h
-      hLocateGet' @FrameHeader h >>= \case
+      id3v2_3 <- ID3.hGetId3v2 @'ID3.ID3v23 h
+      id3v2_4 <- ID3.hGetId3v2 @'ID3.ID3v24 h
+      apev2 <- hGetApe @'Ape.V2 h
+      apev1 <- hGetApe @'Ape.V1 h
+      id3v1 <- ID3.hGetId3v1 h
+      hSeek h AbsoluteSeek 0
+      ID3.hSkip h
+      findBinary (get @FrameHeader) (S.hGetContents h) <&> snd >>= \case
         Just frameHeader -> do
           hSeek h AbsoluteSeek 0
           samples <- mp3Samples h
@@ -318,24 +321,6 @@ tryGetHeader =
 
 frameSync :: Word16
 frameSync = 0b11111111111
-
-instance MetadataLocator FrameHeader where
-  hLocate h =
-    hLocateGet' @ID3.ID3v2_3 h >>= \case
-      Just id3v2 ->
-        findHeader (metadataSize id3v2)
-      Nothing ->
-        hLocateGet' @ID3.ID3v2_4 h >>= \case
-          Just id3v2 -> findHeader (metadataSize id3v2)
-          Nothing ->
-            findHeader 0
-    where
-      findHeader pos = do
-        hSeek h AbsoluteSeek pos
-        bs <- L.hGet h (4 * 1024)
-        case locateBinaryLazy @FrameHeader bs of
-          Just n -> pure $ Just (fromIntegral (n + fromInteger pos))
-          Nothing -> pure Nothing
 
 data MpegVersion = V2_5 | V2 | V1
   deriving (Show, Eq, Ord, Generic)

@@ -6,9 +6,7 @@ where
 
 import Control.Exception.Safe
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as L
 import Data.Vector
-import Melo.Format.Internal.Binary
 import Melo.Format.Ogg
 import Melo.Format.OggVorbis
 import Melo.Format.Vorbis
@@ -20,7 +18,7 @@ main :: IO ()
 main = hspec spec
 
 spec :: Spec
-spec = do
+spec =
   describe "Ogg Vorbis" $ do
     it "reads ogg vorbis file" $ do
       OggVorbis (OggPage _ ident _) (OggPage _ (FramedVorbisComments vc) _) <-

@@ -8,8 +8,6 @@ module Melo.Format.Internal.BinaryUtil
     expectGet,
     expectGet_,
     expectGetEq,
-    hGetFileContents,
-    findSubstring,
   )
 where
 
@@ -20,15 +18,10 @@ import Data.Binary
 import qualified Data.Binary.Bits.Get as BG
 import Data.Binary.Get
 import Data.Binary.Put
-import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as L
-import qualified Data.ByteString.Lazy.Internal as L
-import Data.Int
 import Data.Text as T
 import Data.Text.Encoding
-import GHC.IO.Unsafe (unsafeInterleaveIO)
 import Melo.Format.Internal.Encoding
-import System.IO
 import Text.Printf
 
 getUtf8Text :: Int -> Get Text
@@ -66,31 +59,3 @@ expectGetEq g t s = do
 getLazyByteStringUpTo :: Int -> Get L.ByteString
 getLazyByteStringUpTo n =
   getLazyByteString (fromIntegral n) <|> getRemainingLazyByteString
-
-hGetFileContents :: Handle -> IO L.ByteString
-hGetFileContents = hGetFileContentsN L.smallChunkSize
-
-hGetFileContentsN :: Int -> Handle -> IO L.ByteString
-hGetFileContentsN k h = lazyRead
-  where
-    lazyRead = unsafeInterleaveIO loop
-
-    loop = do
-      c <- BS.hGetSome h k -- only blocks if there is no data available
-      if BS.null c
-        then -- do not close
-          return L.Empty
-        else L.Chunk c <$> lazyRead
-
-findSubstring :: BS.ByteString -> L.ByteString -> Maybe Int64
-findSubstring n h
-  | n == BS.empty = Just 0
-  | h == L.empty = Nothing
-  | otherwise = case BS.uncons n of
-    Nothing -> Nothing
-    Just (head, tail) -> case L.findIndex (== head) h of
-      Just i ->
-        if L.take (fromIntegral $ BS.length tail) (L.drop (i + 1) h) == L.fromStrict tail
-          then Just i
-          else (+ i) <$> findSubstring n (L.drop (i + 1) h)
-      Nothing -> Nothing

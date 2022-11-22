@@ -2,50 +2,33 @@
 
 module Melo.Format.Internal.Locate where
 
-import Control.Monad.Fail as F
-import Data.Binary.Get (runGetOrFail)
+import Control.Foldl qualified as F
+import Data.Binary.Get
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as L
-import Data.Either
-import qualified Data.List as List
-import Melo.Format.Internal.Binary
-import Melo.Format.Internal.BinaryUtil
+import Data.Foldable
+import Data.Function
 import Numeric.Natural
-import System.IO
+import Streaming.ByteString qualified as S
+import Streaming.Binary qualified as S
+import Streaming.Prelude qualified as S (slidingWindow, foldM_)
 
-class BinaryGet a => MetadataLocator a where
-  locate :: L.ByteString -> Maybe Int
-  locate = locateBinaryLazy @a
+findSubstring :: Monad m => BS.ByteString -> S.ByteStream m r -> m (Maybe Natural)
+findSubstring n _ | n == BS.empty = pure $ Just 0
+findSubstring n h = let !n' = BS.unpack n in
+  S.slidingWindow (BS.length n) (S.unpack h)
+    & F.impurely S.foldM_ (F.generalize $ F.findIndex (\s -> toList s == n'))
+    & fmap (fmap fromIntegral)
 
-  hLocate :: Handle -> IO (Maybe Natural)
-  hLocate h = fmap fromIntegral . locate @a <$> hGetFileContents h
-
-locateBinaryLazy :: forall a. BinaryGet a => L.ByteString -> Maybe Int
-locateBinaryLazy bs = List.findIndex canGet (L.tails bs)
+findBinary :: forall a m r. Monad m => Get a -> S.ByteStream m r -> m (S.ByteStream m r, Maybe a)
+findBinary getter stream = loop 0 stream
   where
-    canGet :: L.ByteString -> Bool
-    canGet bs' = isRight $ runGetOrFail (bget @a) bs'
-
-locateBinary :: forall a. BinaryGet a => BS.ByteString -> Maybe Int
-locateBinary bs = locateBinaryLazy @a $ L.fromStrict bs
-
-hLocateGet :: forall a. (MetadataLocator a) => Handle -> IO a
-hLocateGet h = do
-  bs <-
-    hLocate @a h >>= \case
-      Nothing -> F.fail "Could not locate metadata"
-      Just i -> do
-        hSeek h AbsoluteSeek (fromIntegral i)
-        hGetFileContents h
-  bdecodeOrThrowIO bs
-
-hLocateGet' :: forall a. (MetadataLocator a) => Handle -> IO (Maybe a)
-hLocateGet' h =
-  hLocate @a h >>= \case
-    Nothing -> pure Nothing
-    Just !i -> do
-      hSeek h AbsoluteSeek (fromIntegral i)
-      bs <- hGetFileContents h
-      case bdecodeOrFail bs of
-        Left _ -> pure Nothing
-        Right (_, _, a) -> pure (Just a)
+    loop :: Natural -> S.ByteStream m r -> m (S.ByteStream m r, Maybe a)
+    loop i stream = do
+      (rest, _n, r) <- S.decodeWith (lookAhead getter) stream
+      case r of
+        Right a -> pure (rest, Just a)
+        Left e -> do
+          S.uncons rest >>= \case
+            Left r -> pure (pure r, Nothing)
+            Right (_b, rest) -> do
+              loop (i + 1) rest

@@ -35,6 +35,7 @@ library:
     - directory
     - extra
     - filepath
+    - foldl
     - generic-lens
     - hashable
     - microlens
@@ -43,6 +44,9 @@ library:
     - range
     - safe-exceptions
     - split
+    - streaming
+    - streaming-binary
+    - streaming-bytestring
     - text
     - time
     - unordered-containers
@@ -83,6 +87,8 @@ tests:
     - hspec-expectations-lifted
     - microlens
     - safe-exceptions
+    - streaming
+    - streaming-bytestring
     - temporary
     - text
     - unordered-containers
@@ -105,6 +111,7 @@ ghc-options:
 default-extensions:
   - GHC2021
   - ApplicativeDo
+  - BlockArguments
   - DataKinds
   - DefaultSignatures
   - DerivingStrategies

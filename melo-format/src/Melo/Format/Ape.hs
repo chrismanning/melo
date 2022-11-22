@@ -1,3 +1,5 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+
 module Melo.Format.Ape
   ( APEv1 (..),
     APEv2 (..),
@@ -13,6 +15,7 @@ module Melo.Format.Ape
     apeV2Id,
     apeTag,
     hSkip,
+    hGetApe,
   )
 where
 
@@ -26,6 +29,7 @@ import Data.Binary.Put
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as L
 import Data.Coerce
+import Data.Functor
 import Data.Text (Text)
 import Data.Text.Encoding
 import Data.Vector (Vector)
@@ -37,6 +41,9 @@ import Melo.Format.Internal.Locate
 import Melo.Format.Internal.Metadata
 import Melo.Format.Internal.Tag
 import Melo.Format.Mapping
+import Lens.Micro
+import qualified Streaming.Binary as S
+import qualified Streaming.ByteString as S
 import Numeric.Natural (Natural)
 import System.IO
 
@@ -63,6 +70,8 @@ apeV1Id = MetadataId "APEv1"
 instance Binary APEv1 where
   get = do
     ape <- get @APE
+    when (version ape /= V1) $
+      fail "Expected APEv1 got APEv2"
     pure $ APEv1 (items ape)
   put a =
     put $
@@ -71,38 +80,33 @@ instance Binary APEv1 where
           items = coerce a
         }
 
-instance MetadataLocator APEv1 where
-  locate bs = locateApe bs V1
-  hLocate h = hLocateApe h V1
+type family ApeVersion (v :: Version) = t | t -> v where
+  ApeVersion 'V1 = APEv1
+  ApeVersion 'V2 = APEv2
 
-locateApe :: L.ByteString -> Version -> Maybe Int
-locateApe bs v =
-  case locateBinaryLazy @Header bs of
-    Nothing -> Nothing
-    Just i ->
-      case runGetOrFail (lookAhead $ skip (fromIntegral i) >> getHeader) bs of
-        Left _ -> Nothing
-        Right (_, _, header) ->
-          if headerVersion header /= v
-            then Nothing
-            else
-              Just $
-                if isHeader (flags header)
-                  then i
-                  else i - (fromIntegral (numBytes header) - headerSize)
-
-hLocateApe :: Num a => Handle -> Version -> IO (Maybe a)
-hLocateApe h v = do
-  hs <-
-    do
-      hSeek h SeekFromEnd (fromIntegral ID3.headerSize + headerSize)
-      hTell h
-  let n = hs - fromIntegral (min (headerSize * 10) hs)
-  hSeek h AbsoluteSeek n
-  buf <- BS.hGet h (fromIntegral $ hs - n)
-  case fromIntegral <$> locateApe (L.fromStrict buf) v of
-    Just loc -> pure $ Just (fromIntegral (loc + n))
+hGetApe :: Binary (ApeVersion v) => Handle -> IO (Maybe (ApeVersion v))
+hGetApe h = do
+  total <- hFileSize h
+  ID3.hGetId3v1 h >>= \case
+    Just _ ->
+      hSeek h AbsoluteSeek (total - min total (fromIntegral ID3.id3v1Size + (headerSize * 10)))
+    Nothing -> hSeek h AbsoluteSeek (total - min total (headerSize * 10))
+  i <- hTell h
+  findSubstring preamble (S.hGetContents h) <&> fmap fromIntegral >>= \case
     Nothing -> pure Nothing
+    Just headerLoc -> do
+      hSeek h AbsoluteSeek (i + headerLoc)
+      (_, _, r) <- S.decodeWith getHeader (S.hGetContents h)
+      case r of
+        Left _ -> pure Nothing
+        Right header ->
+          if isHeader (flags header) then do
+            hSeek h AbsoluteSeek (i + headerLoc)
+            S.decode (S.hGetContents h) <&> (^? _3 . _Right)
+          else do
+            let pos = i + headerLoc - fromIntegral (numBytes header) + headerSize
+            hSeek h AbsoluteSeek pos
+            S.decode (S.hGetContents h) <&> (^? _3 . _Right)
 
 newtype APEv2 = APEv2 (Vector TagItem)
   deriving (Show, Eq)
@@ -129,6 +133,8 @@ getTextItem t = case t of
 instance Binary APEv2 where
   get = do
     ape <- get @APE
+    when (version ape /= V2) $
+      fail "Expected APEv2 got APEv1"
     pure $ APEv2 (items ape)
   put a =
     put $
@@ -136,10 +142,6 @@ instance Binary APEv2 where
         { version = V2,
           items = coerce a
         }
-
-instance MetadataLocator APEv2 where
-  locate bs = locateApe bs V2
-  hLocate h = hLocateApe h V2
 
 data APE = APE
   { version :: !Version,
@@ -205,12 +207,12 @@ instance Binary Header where
 findHeader :: Get (Maybe Natural)
 findHeader = lookAhead $ findByChunk 1024 0
   where
-    findByChunk :: Int -> Int -> Get (Maybe Natural)
+    findByChunk :: Int -> Natural -> Get (Maybe Natural)
     findByChunk c i = do
       bs <- mfilter (not . L.null) $ getLazyByteStringUpTo c
-      case locateBinaryLazy @Header bs of
-        Nothing -> findByChunk c (i + (c `div` 2))
-        Just x -> return $ Just $ fromIntegral (x + i)
+      findSubstring preamble (S.fromLazy bs) >>= \case
+        Nothing -> findByChunk c (i + fromIntegral (c `div` 2))
+        Just x -> return $ Just (x + i)
 
 mkHeader :: APE -> Word32 -> Header
 mkHeader a n = mkHeader_ a n $ Flags True False True TextItemType False

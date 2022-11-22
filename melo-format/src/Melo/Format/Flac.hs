@@ -49,14 +49,15 @@ import GHC.Generics hiding (from)
 import GHC.Records
 import Lens.Micro
 import Melo.Format.Error
+import Melo.Format.ID3 qualified as ID3
 import Melo.Format.ID3.ID3v2 as ID3v2 hiding (Picture)
 import Melo.Format.Internal.Binary
 import Melo.Format.Internal.BinaryUtil
 import Melo.Format.Internal.Info
-import Melo.Format.Internal.Locate
 import Melo.Format.Internal.Metadata
 import Melo.Format.Internal.Tag
 import Melo.Format.Vorbis
+import Streaming.ByteString qualified as S
 import System.Directory
 import System.FilePath
 import System.IO
@@ -194,30 +195,20 @@ flacMetadataSize m =
 hReadFlac :: Handle -> IO Flac
 hReadFlac h = do
   hSeek h AbsoluteSeek 0
-  hFindFlac h >>= \case
-    Nothing -> throwIO UnknownFormat
-    Just flacLoc -> do
+  let buf = S.hGetContents h
+  hGetId3v2 @'ID3v23 h >>= \case
+    Just id3v23 -> do
+      hSeek h AbsoluteSeek (metadataSize id3v23)
+      MkFlacWithID3v2_3 id3v23 <$> bdecodeOrThrowIO buf
+    Nothing -> do
       hSeek h AbsoluteSeek 0
-      buf <- hGetFileContents h
-      case flacLoc of
-        0 -> MkFlac <$> bdecodeOrThrowIO buf
-        _ -> do
-          let (id3buf, flacbuf) = L.splitAt (fromIntegral flacLoc) buf
-          id3v23loc <- hLocate @ID3v2_3 h
+      hGetId3v2 @'ID3v24 h >>= \case
+        Just id3v24 -> do
+          hSeek h AbsoluteSeek (metadataSize id3v24)
+          MkFlacWithID3v2_4 id3v24 <$> bdecodeOrThrowIO buf
+        Nothing -> do
           hSeek h AbsoluteSeek 0
-          id3v24loc <- hLocate @ID3v2_4 h
-          hSeek h AbsoluteSeek 0
-          metadata <- bdecodeOrThrowIO flacbuf
-          if isJust id3v23loc
-            then do
-              id3 <- bdecodeOrThrowIO id3buf
-              pure $ MkFlacWithID3v2_3 id3 metadata
-            else
-              if isJust id3v24loc
-                then do
-                  id3 <- bdecodeOrThrowIO id3buf
-                  pure $ MkFlacWithID3v2_4 id3 metadata
-                else throwIO $ MetadataReadError "ID3v2 detected but couldn't be read"
+          MkFlac <$> bdecodeOrThrowIO buf
 
 hWriteFlac :: Handle -> Flac -> IO ()
 hWriteFlac h flac' = do
@@ -277,32 +268,14 @@ marker = "fLaC"
 
 hFindFlac :: Handle -> IO (Maybe Integer)
 hFindFlac h = do
-  skipId3
-  flacLoc <- hTell h
-  findFlac flacLoc
+  ID3.hSkip h
+  findFlac
   where
-    skipId3 = do
-      pos <- hTell h
-      hLocate @ID3v2_4 h >>= \case
-        Just id3v24loc -> findId3End id3v24loc >>= hSeek h AbsoluteSeek
-        Nothing -> do
-          hSeek h AbsoluteSeek pos
-          hLocate @ID3v2_3 h >>= \case
-            Just id3v23loc -> findId3End id3v23loc >>= hSeek h AbsoluteSeek
-            Nothing -> do
-              hSeek h AbsoluteSeek pos
-              pure ()
-    findId3End loc = do
-      hSeek h AbsoluteSeek (fromIntegral loc)
-      id3Size <- runGet ID3v2.getId3v2Size <$!> (L.fromStrict <$> BS.hGet h ID3v2.headerSize)
-      pure $ fromIntegral loc + id3Size + fromIntegral ID3v2.headerSize
-    findFlac flacLoc = do
-      hSeek h AbsoluteSeek flacLoc
+    findFlac = do
       buf <- BS.hGet h 4
-      pure $
-        if buf == marker
-          then Just flacLoc
-          else Nothing
+      if buf == marker
+        then Just <$> hTell h
+        else pure Nothing
 
 data FlacMetadata = FlacMetadata
   { streamInfo :: !StreamInfo,

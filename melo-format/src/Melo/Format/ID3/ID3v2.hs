@@ -10,6 +10,7 @@ module Melo.Format.ID3.ID3v2
     ID3v2_4,
     id3v24Tag,
     id3v24Id,
+    ID3v2Version(..),
     headerSize,
     SyncSafe,
     fromSyncSafe,
@@ -17,8 +18,9 @@ module Melo.Format.ID3.ID3v2
     changeVersion,
     getId3v2Size,
     hSkip,
-    Picture(..),
+    Picture (..),
     id3v2Pictures,
+    hGetId3v2,
   )
 where
 
@@ -47,10 +49,11 @@ import GHC.Generics hiding (from)
 import Melo.Format.Error
 import Melo.Format.Internal.BinaryUtil
 import Melo.Format.Internal.Encoding
-import Melo.Format.Internal.Locate
 import Melo.Format.Internal.Metadata
 import Melo.Format.Internal.Tag
 import Melo.Format.Mapping
+import Streaming.Binary qualified as S
+import Streaming.ByteString qualified as S
 import System.IO
   ( Handle,
     SeekMode (..),
@@ -85,7 +88,7 @@ instance MetadataFormat ID3v2_3 where
       }
   fieldMappingSelector = id3v2_3
   readTags = readId3v2Tags
-  replaceWithTags id3 tags = id3 { frames = framesFromTags tags }
+  replaceWithTags id3 tags = id3 {frames = framesFromTags tags}
   metadataSize = id3v2SizeWithHeader
 
 readId3v2Tags :: ID3v2 v -> Tags
@@ -118,7 +121,7 @@ instance MetadataFormat ID3v2_4 where
       }
   fieldMappingSelector = id3v2_4
   readTags = readId3v2Tags
-  replaceWithTags id3 tags = id3 { frames = framesFromTags tags }
+  replaceWithTags id3 tags = id3 {frames = framesFromTags tags}
   metadataSize = id3v2SizeWithHeader
 
 newId3v2 :: DefaultEncoding v => Tags -> ID3v2 v
@@ -153,23 +156,20 @@ changeVersion ID3v2 {..} =
       frames = Frames $ fmap changeFrameVersion (coerce frames)
     }
 
-instance (GetFrame v, PutFrame v) => MetadataLocator (ID3v2 v) where
-  locate bs =
-    case runGetOrFail get bs of
-      Left _ -> Nothing
-      Right (_, _, header) -> case version header of
-        version | version == id3v2Version @v -> pure 0
-        _unknownVersion -> Nothing
-
-  hLocate h = do
-    -- TODO ID3v2 can also appear at the end of a file
-    hSeek h AbsoluteSeek 0
-    bs <- BS.hGet h headerSize
-    pure $ fromIntegral <$> locate @(ID3v2 v) (L.fromStrict bs)
+hGetId3v2 :: (GetFrame v, PutFrame v) => Handle -> IO (Maybe (ID3v2 v))
+hGetId3v2 h = do
+  -- TODO ID3v2 can also appear at the end of a file
+  hSeek h AbsoluteSeek 0
+  (_, _, e) <- S.decode (S.hGetContents h)
+  case e of
+    Left _ -> pure Nothing
+    Right id3 -> pure (Just id3)
 
 instance (GetFrame v, PutFrame v) => Binary (ID3v2 v) where
   get = do
     header@Header {..} <- get
+    when (version /= id3v2Version @v) $
+      fail ("expected ID3v2 version " <> show (id3v2Version @v) <> " got " <> show version)
     extendedHeader <-
       if hasExtendedHeader flags
         then getExtendedHeader
@@ -296,9 +296,12 @@ foldlFrames :: (b -> Frame v -> b) -> b -> Frames v -> b
 foldlFrames f z (Frames frms) = F.foldl' f z frms
 
 pictureFrames :: Frames v -> [Picture]
-pictureFrames (Frames frames) = catMaybes $ NE.toList $ frames <&> \frame -> case frame.frameContent of
-  PictureFrame _ picture -> Just picture
-  _ -> Nothing
+pictureFrames (Frames frames) =
+  catMaybes $
+    NE.toList $
+      frames <&> \frame -> case frame.frameContent of
+        PictureFrame _ picture -> Just picture
+        _ -> Nothing
 
 id3v2Pictures :: ID3v2 v -> [Picture]
 id3v2Pictures id3 = pictureFrames id3.frames
@@ -411,11 +414,11 @@ fromTagKey :: forall (v :: ID3v2Version). DefaultEncoding v => Text -> FrameId
 fromTagKey k = case T.split (== ';') k of
   [fid, desc] -> UserDefinedId fid (defaultEncoding @v) desc
   [fid] -> PreDefinedId fid
-  _invalidFrameId -> error "invlid id3v2 key"
+  _invalidFrameId -> impureThrow $ MetadataWriteError "invalid id3v2 key"
 
 getFrameId :: forall (v :: ID3v2Version). FrameHeader v -> TextEncoding -> Get FrameId
 getFrameId header@FrameHeader {frameId} enc =
-  if T.isSuffixOf "XXX" frameId
+  if "XXX" `T.isSuffixOf` frameId
     then UserDefinedId frameId enc <$> getUserDefinedFrameId header enc
     else pure $ PreDefinedId frameId
 
@@ -432,10 +435,7 @@ data FrameHeader (v :: ID3v2Version) = FrameHeader
     frameSize :: !Word32,
     frameFlags :: !FrameHeaderFlags
   }
-
-deriving instance Eq (FrameHeader v)
-
-deriving instance Show (FrameHeader v)
+  deriving (Show, Eq)
 
 instance (GetFrameHeader v, PutFrameHeader v) => Binary (FrameHeader v) where
   get = getFrameHeader
@@ -630,10 +630,11 @@ data Picture = Picture
   deriving (Show, Eq)
 
 instance From Picture EmbeddedPicture where
-  from Picture {..} = EmbeddedPicture {
-    mimeType,
-    pictureData
-  }
+  from Picture {..} =
+    EmbeddedPicture
+      { mimeType,
+        pictureData
+      }
 
 getPicture :: forall (v :: ID3v2Version). FrameHeader v -> TextEncoding -> Get Picture
 getPicture header enc = do

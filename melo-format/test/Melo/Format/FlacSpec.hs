@@ -7,7 +7,7 @@ where
 import Control.Exception
 import qualified Data.ByteString as BS
 import Data.ByteString.Base16 as Hex
-import Data.Tuple
+import Data.Function
 import Data.Vector
 import Melo.Format.Error
 import Melo.Format.Flac
@@ -16,7 +16,6 @@ import Melo.Format.Internal.Metadata
 import Melo.Format.Internal.Tag
 import Melo.Format.Vorbis
 import System.Directory
-import System.FilePath
 import System.IO
 import Test.Hspec
 
@@ -27,14 +26,12 @@ spec :: Spec
 spec = do
   describe "Flac" $ do
     it "parses flac" $ do
-      h <- openBinaryFile "test/Melo/silence-1s.flac" ReadMode
-      flac <- hReadFlac h
+      flac <- withBinaryFile "test/Melo/silence-1s.flac" ReadMode hReadFlac
       flac
         `shouldSatisfy` ( \case
                             Flac _ -> True
                             _ -> False
                         )
-      hClose h
     it "parses STREAMINFO" $ do
       h <- openBinaryFile "test/Melo/silence-1s.flac" ReadMode
       Flac flac <- hReadFlac h
@@ -81,8 +78,7 @@ spec = do
         writtenContents `shouldBe` origContents
   describe "Flac with ID3v2" $ do
     it "reads flac file with ID3" $ do
-      h <- openBinaryFile "test/Melo/silence-1s-id3v2.flac" ReadMode
-      (FlacWithID3v2_4 id3 fs) <- hReadFlac h
+      (FlacWithID3v2_4 id3 fs) <- withBinaryFile "test/Melo/silence-1s-id3v2.flac" ReadMode hReadFlac
       let Just v = vorbisComment fs
       readTags id3
         `shouldBe` Tags
@@ -112,7 +108,6 @@ spec = do
                 ("TRACKNUMBER", "04")
               ]
           )
-      hClose h
     it "writes flac file with ID3v2" $ do
       let origFile = "test/Melo/silence-1s-id3v2.flac"
       orig <- readFlacFile origFile
@@ -128,7 +123,9 @@ spec = do
         writtenContents `shouldBe` origContents
   it "rejects non-flac files" $ do
     h <- openBinaryFile "test/Melo/silence-1s.ogg" ReadMode
-    hReadFlac h `shouldThrow` (== UnknownFormat)
+    hReadFlac h & shouldThrowMetadataExcception
   it "rejects non-flac files with ID3v2" $ do
     h <- openBinaryFile "test/Melo/silence-1s-id3v24.mp3" ReadMode
-    hReadFlac h `shouldThrow` (== UnknownFormat)
+    hReadFlac h & shouldThrowMetadataExcception
+
+shouldThrowMetadataExcception x = shouldThrow @MetadataException x (const True)

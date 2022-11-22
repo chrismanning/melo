@@ -9,7 +9,6 @@ module Melo.Format.OggVorbis
 where
 
 import Data.Binary
-import Data.Binary.Get
 import Data.Binary.Put
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as L
@@ -17,12 +16,12 @@ import Data.Either (isRight)
 import qualified Data.Foldable as F
 import qualified Data.HashMap.Strict as H
 import Melo.Format.Internal.Binary (bdecodeOrThrowIO)
-import Melo.Format.Internal.BinaryUtil
 import Melo.Format.Internal.Info
-import Melo.Format.Internal.Locate
 import Melo.Format.Internal.Metadata
 import Melo.Format.Ogg
 import Melo.Format.Vorbis as V
+import Streaming.Binary qualified as S
+import Streaming.ByteString qualified as S
 import System.Directory
 import System.FilePath
 import System.IO
@@ -37,10 +36,9 @@ oggVorbis =
       fileId = oggVorbisFileId,
       detectFile = \p -> withBinaryFile p ReadMode $ \h -> do
         hSeek h AbsoluteSeek 0
-        buf <- hGetFileContents h
-        let !r = isRight $ runGetOrFail @(OggPage Header) get buf
+        (_, _i, e) <- S.decode @(OggPage Header) (S.hGetContents h)
         hSeek h AbsoluteSeek 0
-        pure r,
+        pure (isRight e),
       readMetadataFile = readOggVorbisFile,
       writeMetadataFile = writeOggVorbisFile
     }
@@ -115,8 +113,6 @@ instance Binary OggVorbis where
   put (OggVorbis ident fvc) =
     put (IdentificationHeader <$> ident) >> put (CommentsHeader <$> fvc)
 
-instance MetadataLocator OggVorbis
-
 instance InfoReader OggVorbis where
   info (OggVorbis (OggPage _ ident _) _) =
     Info
@@ -133,7 +129,7 @@ instance InfoReader OggVorbis where
 hReadOggVorbis :: Handle -> IO OggVorbis
 hReadOggVorbis h = do
   hSeek h AbsoluteSeek 0
-  bdecodeOrThrowIO =<< hGetFileContents h
+  bdecodeOrThrowIO $ S.hGetContents h
 
 hWriteOggVorbis :: Handle -> OggVorbis -> IO ()
 hWriteOggVorbis h ogg = do

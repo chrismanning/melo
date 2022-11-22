@@ -4,15 +4,9 @@ module Melo.Format.ID3.ID3v1Spec
   )
 where
 
-import Control.Exception
-import Data.Binary.Get
-import qualified Data.ByteString.Lazy as L
-import Data.Maybe
 import Data.Text ()
 import Data.Vector (fromList)
 import Melo.Format.ID3.ID3v1
-import Melo.Format.Internal.Binary
-import Melo.Format.Internal.Locate
 import Melo.Format.Internal.Metadata
 import Melo.Format.Internal.Tag
 import qualified Melo.Format.Mapping as M
@@ -27,10 +21,6 @@ spec :: Spec
 spec =
   describe "ID3v1" $ do
     context "with valid input" $ do
-      it "finds ID3v1" $ do
-        h <- openBinaryFile "test/Melo/id3v1/id3v1_001_basic.mp3" ReadMode
-        id3pos <- hLocate @ID3v1 h
-        id3pos `shouldSatisfy` isJust
       it "parses basic ID3v1 #001" $
         readID3v1Tags "test/Melo/id3v1/id3v1_001_basic.mp3"
           `shouldReturn` ID3v1
@@ -178,19 +168,16 @@ spec =
     context "with invalid input" $ do
       it "cannot find id3v1" $ do
         h <- openBinaryFile "test/Melo/id3v1/id3v1_003_basic_F.mp3" ReadMode
-        hLocate @ID3v1 h `shouldReturn` Nothing
-      it "fails to parse missing year" $ do
-        id3v1 <- readID3v1Tags "test/Melo/id3v1/id3v1_014_year_F.mp3"
-        evaluate id3v1 `shouldThrow` anyErrorCall
+        hGetId3v1 h `shouldReturn` Nothing
+      it "fails to parse missing year" $
+        readID3v1Tags "test/Melo/id3v1/id3v1_014_year_F.mp3" `shouldThrow` anyErrorCall
     context "remove ID3v1" $ do
       it "does nothing to untagged file" $
         withTempCopyOf "test/Melo/id3v1/no_tag.mp3" $
           \h -> do
-            x <- hLocate @ID3v1 h
-            x `shouldSatisfy` isNothing
+            hGetId3v1 h `shouldReturn` Nothing
             hRemoveID3v1 h
-            x' <- hLocate @ID3v1 h
-            x' `shouldSatisfy` isNothing
+            hGetId3v1 h `shouldReturn` Nothing
       it "removes existing ID3v1 tag" $
         withTempCopyOf "test/Melo/id3v1/id3v1_006_basic.mp3" $
           \h -> do
@@ -218,8 +205,7 @@ spec =
       it "adds ID3v1 tag to tagless file" $
         withTempCopyOf "test/Melo/id3v1/no_tag.mp3" $
           \h -> do
-            x <- hLocate @ID3v1 h
-            x `shouldSatisfy` isNothing
+            hGetId3v1 h `shouldReturn` Nothing
             let tag =
                   ID3v1
                     { title = "title",
@@ -234,8 +220,7 @@ spec =
       it "adds ID3v1.1 tag to tagless file" $
         withTempCopyOf "test/Melo/id3v1/no_tag.mp3" $
           \h -> do
-            x <- hLocate @ID3v1 h
-            x `shouldSatisfy` isNothing
+            hGetId3v1 h `shouldReturn` Nothing
             let tag =
                   ID3v1
                     { title = "title",
@@ -282,7 +267,7 @@ readID3v1Tags p = do
   hReadID3v1Tags h
 
 hReadID3v1Tags :: Handle -> IO ID3v1
-hReadID3v1Tags h = do
-  Just id3loc <- hLocate @ID3v1 h
-  hSeek h AbsoluteSeek (fromIntegral id3loc)
-  runGet bget <$> L.hGetContents h
+hReadID3v1Tags h =
+  hGetId3v1 h >>= \case
+    Just id3 -> pure id3
+    Nothing -> error "ID3v1 not found"

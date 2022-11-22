@@ -65,6 +65,14 @@ data Mutation m = Mutation
 
 instance Typeable m => GQLType (Mutation m)
 
+-- data Subscription m = Subscription
+--  {
+--  library :: m (LibrarySubscription m)
+--  }
+--  deriving (Generic)
+--
+-- instance Typeable m => GQLType (Subscription m)
+
 rootResolver :: ResolverE m => RootResolver m () Query Mutation Undefined
 rootResolver =
   defaultRootResolver

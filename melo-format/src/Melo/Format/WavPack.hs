@@ -10,6 +10,7 @@ module Melo.Format.WavPack
   )
 where
 
+import Control.Exception.Safe
 import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put
@@ -20,8 +21,8 @@ import qualified Data.HashMap.Strict as H
 import Data.Maybe
 import Data.Vector.Primitive
 import Data.Word
-import GHC.Records
 import qualified Melo.Format.Ape as Ape
+import Melo.Format.Error
 import qualified Melo.Format.ID3 as ID3
 import Melo.Format.Internal.BinaryUtil
 import Melo.Format.Internal.Info
@@ -29,9 +30,7 @@ import Melo.Format.Internal.Info
     InfoReader (..),
   )
 import qualified Melo.Format.Internal.Info as I
-import Melo.Format.Internal.Locate
 import Melo.Format.Internal.Metadata
-import Numeric.Natural (Natural)
 import System.IO
 
 wavPack :: MetadataFileFactory IO
@@ -66,14 +65,14 @@ wavPackMetadata :: WavPack -> H.HashMap MetadataId Metadata
 wavPackMetadata wv = let apeFormatId = (metadataFormat @Ape.APEv2).formatId
                          id3v1FormatId = (metadataFormat @ID3.ID3v1).formatId in
   case wavPackTags wv of
-  NoTags -> H.empty
-  JustAPE ape -> H.singleton apeFormatId (extractMetadata ape)
-  JustID3v1 id3v1 -> H.singleton id3v1FormatId (extractMetadata id3v1)
-  Both ape id3v1 ->
-    H.fromList
-      [ (apeFormatId, extractMetadata ape),
-        (id3v1FormatId, extractMetadata id3v1)
-      ]
+    NoTags -> H.empty
+    JustAPE ape -> H.singleton apeFormatId (extractMetadata ape)
+    JustID3v1 id3v1 -> H.singleton id3v1FormatId (extractMetadata id3v1)
+    Both ape id3v1 ->
+      H.fromList
+        [ (apeFormatId, extractMetadata ape),
+          (id3v1FormatId, extractMetadata id3v1)
+        ]
 
 writeWavPackFile :: MetadataFile -> FilePath -> IO ()
 writeWavPackFile f p = do
@@ -109,13 +108,13 @@ data WavPackInfo = WavPackInfo
   }
   deriving (Show, Eq)
 
-instance MetadataLocator WavPackInfo where
-  hLocate h = do
-    hSeek h AbsoluteSeek 0
-    buf <- BS.hGet h 32
-    return $ case runGetOrFail get (L.fromStrict buf) of
-      Right (_, _, _ :: WavPackInfo) -> Just 0
-      Left _ -> Nothing
+hGetWavPackInfo :: Handle -> IO (Maybe WavPackInfo)
+hGetWavPackInfo h = do
+  hSeek h AbsoluteSeek 0
+  buf <- BS.hGet h 32
+  pure $ case runGetOrFail get (L.fromStrict buf) of
+    Right (_, _, w) -> Just w
+    Left _ -> Nothing
 
 instance Binary WavPackInfo where
   get = do
@@ -234,56 +233,21 @@ instance Binary WavPackTags where
   put wv = do
     error "unimplemented"
 
-instance MetadataLocator WavPackTags where
-  hLocate h = do
-    hSeek h SeekFromEnd 0
-    findApe h >>= \case
-      Just n -> return $ Just n
-      Nothing -> do
-        hSeek h SeekFromEnd 0
-        findID3 h >>= \case
-          Nothing -> do
-            hSeek h AbsoluteSeek Ape.headerSize
-            findApe h
-          Just id3pos -> do
-            hSeek h AbsoluteSeek $ fromIntegral id3pos
-            findApe h >>= \case
-              Nothing -> return $ Just id3pos
-              Just apepos -> return $ Just apepos
-
-findApe :: Handle -> IO (Maybe Natural)
-findApe h = do
-  footerpos <- findAt h (- Ape.headerSize) Ape.preamble
-  case footerpos of
-    Just n -> do
-      hSeek h AbsoluteSeek $ fromIntegral n
-      bs <- BS.hGet h Ape.headerSize
-      let footer = runGet Ape.getHeader (L.fromStrict bs)
-      return $
-        Just $
-          if Ape.isHeader (Ape.flags footer)
-            then fromIntegral n
-            else fromIntegral n - fromIntegral (Ape.numBytes footer)
-    Nothing -> return Nothing
-
-findID3 :: Handle -> IO (Maybe Natural)
-findID3 h = findAt h (-128) ID3.iD3v1Id
-
-findAt :: Handle -> Integer -> BS.ByteString -> IO (Maybe Natural)
-findAt h p s = do
-  hSeek h RelativeSeek p
-  pos <- hTell h
-  s' <- BS.hGet h (BS.length s)
-  if s' == s then return $ fromIntegral <$> Just pos else return Nothing
+hGetWavPackTags :: Handle -> IO WavPackTags
+hGetWavPackTags h = do
+  hSeek h SeekFromEnd 0
+  ape <- Ape.hGetApe h
+  id3 <- ID3.hGetId3v1 h
+  case (ape, id3) of
+    (Just ape, Just id3) -> pure (Both ape id3)
+    (Just ape, _) -> pure (JustAPE ape)
+    (_, Just id3) -> pure (JustID3v1 id3)
+    _ -> pure NoTags
 
 hReadWavPack :: Handle -> IO WavPack
-hReadWavPack h = do
-  wvInfo <- hLocateGet h
-  wvTags <- do
-    seekable <- hIsSeekable h
-    if seekable
-      then do
-        hSeek h AbsoluteSeek 0
-        hLocateGet h
-      else return NoTags
-  return $ WavPack wvInfo wvTags
+hReadWavPack h =
+  hGetWavPackInfo h >>= \case
+    Nothing -> throwIO (MetadataReadError "Not WavPack")
+    Just wvInfo -> do
+      wvTags <- hGetWavPackTags h
+      pure $ WavPack wvInfo wvTags
