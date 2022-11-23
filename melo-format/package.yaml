@@ -51,6 +51,7 @@ library:
     - time
     - unordered-containers
     - vector
+    - wave
     - witch
 
 #executables:

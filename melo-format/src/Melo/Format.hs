@@ -6,7 +6,7 @@ module Melo.Format
     module Melo.Format.Mapping,
     module Melo.Format.Metadata,
     module Melo.Format.OggVorbis,
-    module Melo.Format.RIFF,
+    module Melo.Format.Riff,
     module Melo.Format.Vorbis,
     module Melo.Format.WavPack,
     convert,
@@ -51,7 +51,7 @@ import Melo.Format.Vorbis
     vorbisCommentsId,
     vorbisTag,
   )
-import Melo.Format.RIFF
+import Melo.Format.Riff
   ( riffId,
   )
 import Melo.Format.WavPack

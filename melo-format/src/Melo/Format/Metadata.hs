@@ -37,13 +37,14 @@ import Melo.Format.Internal.Tag
 import Melo.Format.MP3 (MP3, mp3)
 import Melo.Format.OggVorbis (OggVorbis, oggVorbis)
 import Melo.Format.Vorbis
+import Melo.Format.Wav (wav)
 import Melo.Format.WavPack (WavPack, wavPack)
 import System.FilePath
 
 type SupportedFormats = '[Flac, MP3, OggVorbis, WavPack]
 
 metadataFileFactoriesIO :: [MetadataFileFactory IO]
-metadataFileFactoriesIO = [flac, mp3, oggVorbis, wavPack]
+metadataFileFactoriesIO = [flac, mp3, oggVorbis, wavPack, wav]
 
 metadataFileFactoryIO :: MetadataFileId -> Maybe (MetadataFileFactory IO)
 metadataFileFactoryIO mfid = find (\f -> f.fileId == mfid) metadataFileFactoriesIO
@@ -62,6 +63,7 @@ openMetadataFileByExt p =
     ".flac" -> flac.readMetadataFile p
     ".mp3" -> mp3.readMetadataFile p
     ".ogg" -> oggVorbis.readMetadataFile p
+    ".wav" -> wav.readMetadataFile p
     ".wv" -> wavPack.readMetadataFile p
     ".wvpk" -> wavPack.readMetadataFile p
     _unknownExtension -> throwIO UnknownFormat
@@ -72,6 +74,7 @@ fileFactoryByExt p =
     ".flac" -> Just flac
     ".mp3" -> Just mp3
     ".ogg" -> Just oggVorbis
+    ".wav" -> Just wav
     ".wv" -> Just wavPack
     ".wvpk" -> Just wavPack
     _ -> Nothing

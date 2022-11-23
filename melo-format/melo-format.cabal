@@ -107,6 +107,7 @@ library
     , time
     , unordered-containers
     , vector
+    , wave
     , witch
   default-language: Haskell2010
 
