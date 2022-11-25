@@ -310,6 +310,16 @@ encodedBy =
         vorbis = caseInsensitiveMapping "ENCODEDBY"
       }
 
+encoder :: TagMapping
+encoder =
+  singletonTagMapping
+    def
+      { id3v2_3 = caseSensitiveMapping "TSSE",
+        id3v2_4 = caseSensitiveMapping "TSSE",
+        riff = caseSensitiveMapping "ISFT",
+        vorbis = caseInsensitiveMapping "ENCODER"
+      }
+
 language :: TagMapping
 language =
   singletonTagMapping

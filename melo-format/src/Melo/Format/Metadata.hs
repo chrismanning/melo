@@ -36,6 +36,7 @@ import Melo.Format.Internal.Metadata
 import Melo.Format.Internal.Tag
 import Melo.Format.MP3 (MP3, mp3)
 import Melo.Format.OggVorbis (OggVorbis, oggVorbis)
+import Melo.Format.Riff
 import Melo.Format.Vorbis
 import Melo.Format.Wav (wav)
 import Melo.Format.WavPack (WavPack, wavPack)
@@ -82,7 +83,7 @@ fileFactoryByExt p =
 mkMetadata :: MetadataId -> Tags -> Maybe Metadata
 mkMetadata = mk' @SupportedMetadataFormats
 
-type SupportedMetadataFormats = '[APEv1, APEv2, ID3v1, ID3v2_3, ID3v2_4, VorbisComments]
+type SupportedMetadataFormats = '[VorbisComments, ID3v2_3, ID3v2_4, APEv2, RiffInfo, ID3v1, APEv1]
 
 class MetadataFactory (a :: [Type]) where
   mk' :: MetadataId -> Tags -> Maybe Metadata

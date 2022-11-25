@@ -27,6 +27,7 @@ chooseMetadata ms =
     <|> find (\Metadata {..} -> formatId == F.apeV1Id) ms
     <|> find (\Metadata {..} -> formatId == F.id3v24Id) ms
     <|> find (\Metadata {..} -> formatId == F.id3v23Id) ms
+    <|> find (\Metadata {..} -> formatId == F.riffId) ms
     <|> find (\Metadata {..} -> formatId == F.id3v1Id) ms
 
 class Monad m => MetadataAggregate m where
