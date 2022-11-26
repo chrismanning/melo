@@ -1,12 +1,14 @@
 module Melo.Format.Wav where
 
 import Codec.Audio.Wave
+import Control.Applicative
 import Control.Exception.Safe
 import Data.HashMap.Strict qualified as H
+import Data.Maybe
 import Melo.Format.Error
 import Melo.Format.Internal.Info
 import Melo.Format.Internal.Metadata
-import Melo.Format.Internal.Tag
+import Melo.Format.ID3
 import Melo.Format.Riff
 import Streaming.Binary qualified as S
 import Streaming.ByteString qualified as S
@@ -28,16 +30,28 @@ readWavMetadataFile :: FilePath -> IO MetadataFile
 readWavMetadataFile filePath = do
   wav <- readWaveFile filePath
 
-  riffTags <- case lookup "LIST" (waveOtherChunks wav) of
+  let otherChunks = waveOtherChunks wav
+  riff <- case lookup "LIST" otherChunks of
     Just chunk -> do
-      (_, _, r) <- S.decodeWith (getRiffInfo) (S.fromStrict chunk)
+      (_, _, r) <- S.decodeWith getRiffInfo (S.fromStrict chunk)
       case r of
-        Right (RiffInfo riffTags) -> pure riffTags
-        Left _e -> pure emptyTags
-    Nothing -> pure emptyTags
+        Right (RiffInfo riffTags) -> pure $ Just $ metadataFactory @RiffInfo riffTags
+        Left _e -> pure Nothing
+    Nothing -> pure Nothing
 
-  -- TODO read id3v2 from wav files
-  let metadata = H.singleton riffId $ metadataFactory @RiffInfo riffTags
+  id3 <- case lookup "ID3 " otherChunks <|> lookup "id3 " otherChunks of
+    Nothing -> pure Nothing
+    Just chunk -> do
+      (_, _, r) <- S.decode (S.fromStrict chunk)
+      case r of
+        Right id3v23 -> pure $ Just $ metadataFactory @ID3v2_3 (readTags @ID3v2_3 id3v23)
+        Left _e -> do
+          (_, _, r) <- S.decode (S.fromStrict chunk)
+          case r of
+            Right id3v24 -> pure $ Just $ metadataFactory @ID3v2_4 (readTags @ID3v2_4 id3v24)
+            Left _e -> pure Nothing
+  
+  let metadata = H.fromList $ (\m -> (m.formatId, m)) <$> catMaybes [riff, id3]
 
   pure MetadataFile {
     audioInfo = Info {
