@@ -20,6 +20,7 @@ import Melo.Common.Logging
 import Melo.Common.Monad
 import Melo.Common.Uri
 import Melo.Database.Repo
+import Melo.Format (tagLens)
 import Melo.Format.Mapping qualified as M
 import Melo.Library.Album.Types
 import Melo.Library.Artist.Aggregate
@@ -94,7 +95,7 @@ instance
       importSourceTrack :: Source -> m (Maybe TrackEntity)
       importSourceTrack src = do
         $(logDebug) $ "Importing track from source " <> show src.ref
-        recording <- MB.getRecordingFromMetadata src.metadata
+        recording <- join <$> traverse MB.getRecordingFromMetadata src.metadata
         firstJustM (Track.getByMusicBrainzId . (.id)) recording >>= \case
           Just existing -> do
             $(logWarn) $ "Found track " <> show existing.id <> " for MusicBrainz recording " <> show existing.musicbrainz_id <> " from source " <> show src.ref
@@ -110,7 +111,7 @@ instance
             $(logDebug) $ "Track artists same as album artists for source " <> show src.ref
             pure V.empty
           else do
-            let mbArtistIds = MB.MusicBrainzId <$> src.metadata.tag MB.artistIdTag
+            let mbArtistIds = MB.MusicBrainzId <$> fromMaybe V.empty (src.metadata ^? _Just . tagLens MB.artistIdTag)
             existingArtists <- V.mapMaybeM (Artist.getByMusicBrainzId) mbArtistIds
 
             if V.null existingArtists
@@ -128,7 +129,7 @@ instance
           Right ((src, track, newArtist), s) -> do
             artist <- insertSingle @ArtistEntity newArtist
             artistNames <-
-              MB.getRecordingFromMetadata src.metadata >>= \case
+              join <$> traverse MB.getRecordingFromMetadata src.metadata >>= \case
                 Just recording -> do
                   $(logInfo) $ "Using MusicBrainz recording credits as track artists for source " <> show src
                   case recording.artistCredit of
@@ -156,7 +157,18 @@ instance
           }
 
 mkNewTrack :: AlbumRef -> Maybe MB.MusicBrainzId -> Source -> NewTrack
-mkNewTrack albumRef mbid src =
+mkNewTrack albumRef mbid src@Source {metadata = Nothing} =
+  NewTrack
+    { title = "",
+      trackNumber = fromMaybe 0 $ uriToFilePath src.source >>= parseTrackNumberFromFileName,
+      discNumber = Nothing,
+      comment = Nothing,
+      length = fromMaybe 0 $ src.length,
+      sourceId = src.ref,
+      albumId = albumRef,
+      musicBrainzId = mbid
+    }
+mkNewTrack albumRef mbid src@Source{metadata = Just m} =
   NewTrack
     { title = trackTitle,
       trackNumber = fromMaybe 0 trackNumber,
@@ -168,7 +180,6 @@ mkNewTrack albumRef mbid src =
       musicBrainzId = mbid
     }
   where
-    m = src.metadata
     trackTitle = m.tagHead M.trackTitle & fromMaybe ""
     trackNumber =
       (m.tagHead M.trackNumber >>= parseTrackNumber)

@@ -6,11 +6,13 @@ module Melo.Library.Album.Aggregate where
 import Control.Exception.Safe
 import Control.Foldl (impurely, vectorM)
 import Control.Lens hiding (from, lens)
+import Data.Maybe
 import Data.Vector (Vector (), (!))
 import Data.Vector qualified as V
 import Melo.Common.Logging
 import Melo.Common.Monad
 import Melo.Database.Repo as Repo
+import Melo.Format (tagLens)
 import Melo.Library.Album.ArtistName.Repo (AlbumArtistNameRepository)
 import Melo.Library.Album.ArtistName.Repo qualified as AlbumArtist
 import Melo.Library.Album.ArtistName.Types
@@ -76,7 +78,7 @@ instance
   importAlbums srcs =
     lift $
       S.each srcs
-        & S.mapM (\src -> (src,) <$> MB.getReleaseGroupFromMetadata src.metadata)
+        & S.mapM (\src -> (src,) . join <$> traverse MB.getReleaseGroupFromMetadata src.metadata)
         & S.groupBy (\(_, releaseA) (_, releaseB) -> releaseA == releaseB)
         & S.mapped (impurely S.foldM vectorM)
         & S.map (\srcs -> (snd (srcs ! 0), fst <$> srcs))
@@ -136,7 +138,7 @@ instance
       importAlbumArtists :: Source -> Maybe AlbumEntity -> m (Vector ArtistNameEntity)
       importAlbumArtists _ Nothing = pure V.empty
       importAlbumArtists src (Just album) = do
-        let mbArtistIds = MB.MusicBrainzId <$> src.metadata.tag MB.albumArtistIdTag
+        let mbArtistIds = MB.MusicBrainzId <$> fromMaybe V.empty (src.metadata ^? _Just . tagLens MB.albumArtistIdTag)
         newArtists <- V.mapMaybeM MB.getArtist mbArtistIds
         artists <- forMaybeM newArtists \newArtist -> runMaybeT do
           artist <- MaybeT $ insertSingle @ArtistEntity (from newArtist)

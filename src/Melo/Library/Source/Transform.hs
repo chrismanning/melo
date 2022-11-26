@@ -361,7 +361,7 @@ extractTrack ::
   NonEmpty SourcePathPattern ->
   Source ->
   m (Either TransformationError Source)
-extractTrack collectionRef' patterns s@Source {multiTrack = Just MultiTrackDesc {..}} =
+extractTrack collectionRef' patterns s@Source {multiTrack = Just MultiTrackDesc {..}, metadata = Just metadata} =
   let collectionRef = fromMaybe s.collectionRef collectionRef'
    in uriToFilePath s.source & \case
         Just filePath ->
@@ -380,7 +380,7 @@ extractTrack collectionRef' patterns s@Source {multiTrack = Just MultiTrackDesc 
                           { idx,
                             range,
                             filePath,
-                            metadata = s.metadata,
+                            metadata,
                             audioInfo = mf.audioInfo,
                             fileId = s.kind,
                             cueFilePath = filePath,
@@ -390,8 +390,8 @@ extractTrack collectionRef' patterns s@Source {multiTrack = Just MultiTrackDesc 
                   $(logDebug) $ "Mappings: " <> show mappings
                   let vc =
                         fromMaybe (F.metadataFactory @F.VorbisComments F.emptyTags) $
-                          F.convert' F.vorbisCommentsId s.metadata mappings
-                  $(logDebug) $ "Original metadata: " <> show s.metadata
+                          F.convert' F.vorbisCommentsId metadata mappings
+                  $(logDebug) $ "Original metadata: " <> show metadata
                   $(logDebug) $ "Converted metadata: " <> show vc
                   let m = H.fromList [(F.vorbisCommentsId, vc)]
                   let metadataFile = raw & #metadata .~ m
@@ -412,7 +412,8 @@ data MetadataTransformation
   deriving (Show)
 
 editMetadata :: MonadSourceTransform m => MetadataTransformation -> Source -> m (Either TransformationError Source)
-editMetadata (SetMapping mappingName vs) Source {..} =
+editMetadata _ src@Source {metadata = Nothing} = pure $ Right src
+editMetadata (SetMapping mappingName vs) Source {metadata = Just metadata, ..} =
   case uriToFilePath source of
     Nothing -> pure $ Left UnsupportedSourceKind
     Just path -> runExceptT @TransformationError do
@@ -425,7 +426,7 @@ editMetadata (SetMapping mappingName vs) Source {..} =
 editMetadata (RemoveMappings mappings) src = flatten <$> (forM mappings $ \mapping -> editMetadata (SetMapping mapping V.empty) src)
   where
     flatten es = foldl' (\_a b -> b) (Left ImportFailed) es
-editMetadata (Retain retained) Source {..} =
+editMetadata (Retain retained) Source {metadata = Just metadata, ..} =
   let tag = F.mappedTag metadata.mappingSelector
    in case uriToFilePath source of
         Nothing -> pure $ Left UnsupportedSourceKind
@@ -446,7 +447,8 @@ headOrException e xs = case firstOf traverse xs of
   Nothing -> throwError e
 
 musicBrainzLookup :: MonadSourceTransform m => Source -> m (Either TransformationError Source)
-musicBrainzLookup src = (flip evalStateT) src.metadata do
+musicBrainzLookup src@Source {metadata = Nothing} = pure $ Right src
+musicBrainzLookup src@Source {metadata = Just metadata} = (flip evalStateT) metadata do
   get >>= MB.getReleaseOrGroup >>= \case
     Nothing -> pure ()
     Just (Left release) -> do
@@ -466,4 +468,4 @@ musicBrainzLookup src = (flip evalStateT) src.metadata do
       F.tagLens MB.artistIdTag .= V.fromList trackArtists
     _ -> pure ()
   metadata <- get
-  pure $ Right (src & #metadata .~ metadata)
+  pure $ Right (src & #metadata .~ Just metadata)

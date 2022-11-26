@@ -284,7 +284,7 @@ instance (TagMappingAggregate m, WithOperation o) => From Ty.SourceEntity (Metad
     let s' = tryFrom @_ @Ty.Source s
         m = fmap (.metadata) s'
         JSONBEncoded (Ty.SourceMetadata tags) = s.metadata
-        format = either (const "") (\m' -> m'.formatDesc) m
+        format = fromMaybe "" $ either (const $ Just "") (fmap (.formatDesc)) m
      in Metadata
           { tags,
             format,

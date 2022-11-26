@@ -5,6 +5,7 @@ module Melo.Library.Source.Types where
 import BinaryParser as BP
 import Control.Applicative
 import Control.Lens hiding (from, (.=))
+import Control.Monad
 import Data.Aeson hiding (Result)
 import Data.Bits
 import Data.ByteString (ByteString)
@@ -30,7 +31,7 @@ import Data.UUID
 import Data.UUID.V4
 import Data.Vector (Vector ())
 import Data.Vector qualified as V
-import GHC.Generics hiding (from)
+import GHC.Generics hiding (from, to)
 import Hasql.Decoders qualified as Hasql
 import Melo.Common.FileSystem
 import Melo.Common.Metadata
@@ -259,7 +260,7 @@ data CueFileSource = CueFileSource
   deriving (Eq, Show, Generic)
 
 data MetadataImportSource = MetadataImportSource
-  { metadata :: Metadata,
+  { metadata :: Maybe Metadata,
     audioInfo :: Info,
     src :: URI,
     metadataFileId :: MetadataFileId,
@@ -272,7 +273,7 @@ data MetadataImportSource = MetadataImportSource
 
 instance TryFrom NewImportSource MetadataImportSource where
   tryFrom s = maybeToRight (TryFromException s Nothing) $ do
-    metadata <- chooseMetadata (getAllMetadata s)
+    let metadata = chooseMetadata (getAllMetadata s)
     src <- parseURI (show $ getSourceUri s)
     let pictures = getPictures s
     pure
@@ -349,12 +350,15 @@ instance From AudioRange IntervalRange where
 instance From IntervalRange AudioRange where
   from (IntervalRange r) = TimeRange r
 
+nullMetadata :: MetadataId
+nullMetadata = MetadataId "null"
+
 instance From MetadataImportSource NewSource where
   from ms =
     NewSource
       { kind = coerce ms.metadataFileId,
-        metadataFormat = coerce ms.metadata.formatId,
-        tags = ms.metadata.tags,
+        metadataFormat = coerce $ fromMaybe nullMetadata (ms.metadata <&> (.formatId)),
+        tags = fromMaybe emptyTags (ms.metadata <&> (.tags)),
         source = T.pack $ show $ ms.src,
         idx = ms.idx,
         range = ms.range,
@@ -383,7 +387,7 @@ instance From SourceRef UUID where
 
 data Source = Source
   { ref :: SourceRef,
-    metadata :: Metadata,
+    metadata :: Maybe Metadata,
     source :: URI,
     kind :: MetadataFileId,
     multiTrack :: Maybe MultiTrackDesc,
@@ -396,10 +400,6 @@ data Source = Source
 instance TryFrom SourceEntity Source where
   tryFrom s = maybeToRight (TryFromException s Nothing) do
     uri <- parseURI $ T.unpack s.source_uri
-    let mid = MetadataId s.metadata_format
-    let JSONBEncoded (SourceMetadata tags) = s.metadata
-    let tags' = Tags $ tags <&> (\p -> (p.key, p.value))
-    metadata <- mkCueMetadata mid tags' <|> mkMetadata mid tags'
     let multiTrack = case (s.idx, s.time_range) of
           (idx, Just timeRange) | idx > -1 -> Just MultiTrackDesc {idx, range = from timeRange}
           _ -> Nothing
@@ -412,15 +412,17 @@ instance TryFrom SourceEntity Source where
           collectionRef = s.collection_id,
           cover = coerce s.cover,
           length = s.time_range >>= rangeLength,
-          metadata
+          metadata = metadataFromEntity s
         }
 
+metadataFromEntity :: SourceEntity -> Maybe Metadata
+metadataFromEntity s = let JSONBEncoded (SourceMetadata tags) = s.metadata
+                           tags' = Tags $ tags <&> (\p -> (p.key, p.value))
+                           mid = MetadataId s.metadata_format in
+  mfilter (\m -> m.formatId /= nullMetadata) $ mkCueMetadata mid tags' <|> mkMetadata mid tags'
+
 instance TryFrom SourceEntity Metadata where
-  tryFrom e = maybeToRight (TryFromException e Nothing) do
-    let mid = MetadataId e.metadata_format
-    let JSONBEncoded (SourceMetadata tags) = e.metadata
-    let tags' = Tags $ tags <&> (\p -> (p.key, p.value))
-    mkCueMetadata mid tags' <|> mkMetadata mid tags'
+  tryFrom e = maybeToRight (TryFromException e Nothing) (metadataFromEntity e)
 
 mkCueMetadata :: MetadataId -> Tags -> Maybe Metadata
 mkCueMetadata (MetadataId mid) tags
@@ -441,12 +443,12 @@ data MultiTrackDesc = MultiTrackDesc
   deriving (Generic, Show, Eq)
 
 instance From Source SourceEntity where
-  from Source {metadata = Metadata {..}, ..} =
+  from Source {..} =
     SourceTable
       { id = ref,
         kind = coerce kind,
-        metadata_format = coerce formatId,
-        metadata = JSONBEncoded (from tags),
+        metadata_format = coerce $ fromMaybe nullMetadata (metadata ^? _Just . (to (.formatId))),
+        metadata = JSONBEncoded $ from $ fromMaybe emptyTags (metadata ^? _Just . (to (.tags))),
         source_uri = T.pack $ show source,
         idx = fromMaybe (-1) (multiTrack ^? _Just . #idx),
         time_range = (from <$> multiTrack ^? _Just . #range)
