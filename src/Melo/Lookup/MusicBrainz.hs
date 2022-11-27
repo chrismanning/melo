@@ -108,7 +108,8 @@ instance FromJSON Artist where
 data ReleaseSearch = ReleaseSearch
   { albumArtist :: Maybe Text,
     albumTitle :: Maybe Text,
-    date :: Maybe Text
+    date :: Maybe Text,
+    catNum :: Maybe Text
   }
   deriving (Show, Generic, Eq)
 
@@ -280,11 +281,11 @@ getReleaseByAlbum m = do
   let albumTitle = m.tagHead M.album
   let albumArtist = m.tagHead M.albumArtist
   let date = m.tagHead M.originalReleaseYear <&> truncateDate
-  let catalogNum = m.tagHead M.catalogNumber
-  if isJust albumTitle && isJust albumArtist && isJust catalogNum
+  let catNum = m.tagHead M.catalogNumber
+  if isJust albumTitle && isJust albumArtist && isJust catNum
     then
       find perfectScore
-        <$> searchReleases def {albumArtist, albumTitle, date}
+        <$> searchReleases def {albumArtist, albumTitle, date, catNum}
     else pure Nothing
 
 getReleaseGroupFromMetadata ::
@@ -406,7 +407,8 @@ instance
     let qterms =
           catMaybes
             [ fmap (\t -> "releaseaccent:\"" <> t <> "\"") search.albumTitle,
-              fmap (\a -> "artist:\"" <> a <> "\"") search.albumArtist
+              fmap (\a -> "artist:\"" <> a <> "\"") search.albumArtist,
+              fmap (\c -> "catno:\"" <> c <> "\"") search.catNum
             ]
     case qterms of
       [] -> pure V.empty

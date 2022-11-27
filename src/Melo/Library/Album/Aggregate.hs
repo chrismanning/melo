@@ -78,7 +78,7 @@ instance
   importAlbums srcs =
     lift $
       S.each srcs
-        & S.mapM (\src -> (src,) . join <$> traverse MB.getReleaseGroupFromMetadata src.metadata)
+        & S.mapM (\src -> (src,) . join <$> traverse MB.getReleaseOrGroup src.metadata)
         & S.groupBy (\(_, releaseA) (_, releaseB) -> releaseA == releaseB)
         & S.mapped (impurely S.foldM vectorM)
         & S.map (\srcs -> (snd (srcs ! 0), fst <$> srcs))
@@ -86,12 +86,12 @@ instance
           S.for
             s
             ( \(mbRelease, srcs) -> case mbRelease of
-                Just mbRelease -> importMusicBrainzRelease mbRelease srcs
+                Just (Right mbRelease) -> importMusicBrainzRelease mbRelease srcs
+                Just (Left mbRelease) -> importMusicBrainzRelease mbRelease srcs
                 Nothing -> importAlbumsFromMetadata srcs
             )
             & impurely S.foldM_ vectorM
     where
-      importMusicBrainzRelease :: MB.ReleaseGroup -> Vector Source -> S.Stream (S.Of Album) m ()
       importMusicBrainzRelease mbRelease srcs = do
         let newAlbum = insertSingle @AlbumEntity (from mbRelease)
         album <- Album.getByMusicBrainzId mbRelease.id <<|>> newAlbum
