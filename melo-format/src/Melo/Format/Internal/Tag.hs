@@ -4,6 +4,7 @@ import Data.Foldable
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe
 import Data.Text (Text)
+import Data.Text qualified as T
 import Data.Vector (Vector)
 import qualified Data.Vector as V
 import GHC.Generics
@@ -30,7 +31,7 @@ getMappedTag' s (TagMapping ms) t =
    in find (\(_m, vs) -> not $ V.null vs) $ fmap (\m -> (m, getTagByField t m)) ms'
 
 getTagByField :: Tags -> FieldMapping -> Vector Text
-getTagByField (Tags ts) m = fmap snd . V.filter (fieldMatches m . fst) $ ts
+getTagByField (Tags ts) m = V.filter (not . T.null) $ fmap snd . V.filter (fieldMatches m . fst) $ ts
 
 getMappedTagIndices :: FieldMappingSelector -> TagMapping -> Tags -> Vector Int
 getMappedTagIndices s (TagMapping ms) t =
