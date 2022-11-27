@@ -332,7 +332,10 @@ language =
       }
 
 catalogNumber :: TagMapping
-catalogNumber =
+catalogNumber = catalogueNumber
+
+catalogueNumber :: TagMapping
+catalogueNumber =
   singletonTagMapping
     def
       { ape = caseInsensitiveMapping "CatalogNumber",

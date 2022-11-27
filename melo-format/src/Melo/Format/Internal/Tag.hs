@@ -42,6 +42,7 @@ getMappedTagIndices s (TagMapping ms) t =
     getTagIndices (Tags tags) (Just fm) = let f = (fieldMatches fm . fst) in V.findIndices f tags
 
 setMappedTag :: (Functor f, Foldable f) => FieldMappingSelector -> TagMapping -> f Text -> Tags -> Tags
+setMappedTag s tm vs t | toList (getMappedTag s tm t) == toList vs = t
 setMappedTag s tm@(TagMapping ms) vs t@(Tags tags) =
   let is = getMappedTagIndices s tm t
       ft = V.ifilter (\i _ -> not (V.elem i is)) tags

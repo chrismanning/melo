@@ -121,5 +121,7 @@ defaultMappings =
       NewTagMapping "disc_number" $ coerce M.discNumberTag,
       NewTagMapping "disc" $ coerce M.discNumberTag,
       NewTagMapping "total_discs" $ coerce M.totalDiscs,
-      NewTagMapping "totaldiscs" $ coerce M.totalDiscs
+      NewTagMapping "totaldiscs" $ coerce M.totalDiscs,
+      NewTagMapping "catalogue_number" $ coerce M.catalogueNumber,
+      NewTagMapping "catalog_number" $ coerce M.catalogNumber
     ]
