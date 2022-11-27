@@ -9,6 +9,8 @@ module Melo.Lookup.MusicBrainz
     MusicBrainzService (..),
     MusicBrainzServiceIOT (..),
     Artist (..),
+    Area (..),
+    CountrySubdivision (..),
     ArtistCredit (..),
     ArtistSearch (..),
     Recording (..),
@@ -44,6 +46,7 @@ import Control.Foldl qualified as F
 import Control.Lens hiding (from, lens)
 import Control.Monad.Reader
 import Data.Aeson as A
+import Data.Aeson.Types
 import Data.Aeson.Casing (trainCase)
 import Data.Char
 import Data.Default
@@ -98,12 +101,40 @@ data Artist = Artist
     disambiguation :: Maybe Text,
     sortName :: Maybe Text,
     country :: Maybe Text,
-    score :: Maybe Int
+    score :: Maybe Int,
+    area :: Maybe Area,
+    beginArea :: Maybe Area
   }
   deriving (Show, Generic, Eq)
 
 instance FromJSON Artist where
   parseJSON = genericParseJSON mbAesonOptions
+
+newtype Area = Area
+  { iso3166_2codes :: Maybe (Vector CountrySubdivision)
+  }
+  deriving (Show, Generic, Eq)
+
+instance FromJSON Area where
+  parseJSON = withObject "Area" $ \v -> Area
+                      <$> v .:? "iso-3166-2-codes"
+
+data CountrySubdivision = CountrySubdivision
+  { country :: Text,
+    subdivision :: Text
+  }
+  deriving (Show, Eq)
+
+instance FromJSON CountrySubdivision where
+  parseJSON (String s) = case T.split (== '-') s of
+   [c, s] | T.length c == 2 -> pure $ CountrySubdivision c s
+   _ -> prependFailure
+                    "parsing CountrySubdivision failed, "
+                    (fail "expected ISO-3166-2 format")
+  parseJSON invalid =
+    prependFailure
+      "parsing CountrySubdivision failed, "
+      (typeMismatch "String" invalid)
 
 data ReleaseSearch = ReleaseSearch
   { albumArtist :: Maybe Text,

@@ -2,6 +2,8 @@
 
 module Melo.Library.Artist.Types where
 
+import Control.Applicative
+import Control.Lens
 import Country
 import Data.Hashable
 import Data.Maybe
@@ -9,7 +11,7 @@ import Data.Morpheus.Types as M
 import Data.Morpheus.Kind
 import Data.Text (Text)
 import Data.UUID
-import GHC.Generics
+import GHC.Generics hiding (from, to)
 import Melo.Database.Repo
 import qualified Melo.Lookup.MusicBrainz as MB
 import Rel8
@@ -120,7 +122,9 @@ instance From MB.Artist NewArtist where
     NewArtist
       { name = a.name,
         disambiguation = a.disambiguation,
-        country = a.country >>= decodeAlphaTwo,
+        country = (a.country >>= decodeAlphaTwo)
+          <|> (a.area ^? _Just . (to (.iso3166_2codes)) . _Just . _head . (to (.country)) >>= decodeAlphaTwo)
+          <|> (a.beginArea ^? _Just . (to (.iso3166_2codes)) . _Just . _head . (to (.country)) >>= decodeAlphaTwo),
         bio = Nothing,
         shortBio = Nothing,
         musicBrainzId = Just a.id
