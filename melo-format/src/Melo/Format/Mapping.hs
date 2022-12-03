@@ -353,3 +353,13 @@ asin =
         id3v2_4 = caseSensitiveMapping "TXXX;ASIN",
         vorbis = caseInsensitiveMapping "ASIN"
       }
+
+isrc :: TagMapping
+isrc =
+  singletonTagMapping
+    def
+      { ape = caseInsensitiveMapping "ISRC",
+        id3v2_3 = caseSensitiveMapping "TSRC",
+        id3v2_4 = caseSensitiveMapping "TSRC",
+        vorbis = caseInsensitiveMapping "ISRC"
+      }

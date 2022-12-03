@@ -9,8 +9,8 @@ import Control.Exception.Safe as E hiding (try)
 import Control.Foldl qualified as Fold
 import Control.Lens hiding (from)
 import Control.Monad.Except
-import Control.Monad.Trans.Except
 import Control.Monad.State.Strict
+import Control.Monad.Trans.Except
 import Data.Char
 import Data.Either.Combinators
 import Data.Foldable
@@ -182,6 +182,14 @@ instance MonadSourceTransform m => MultiTrack (TransformPreviewT m) where
             pictures = []
           }
 
+instance MonadSourceTransform m => SourceAggregate (TransformPreviewT m) where
+  importSources _ = do
+    $(logDebug) ("Preview importSources called" :: String)
+    pure empty
+  updateSource s = do
+    $(logDebug) ("Preview updateSource called" :: String)
+    pure $ Right s
+
 data TransformationError
   = MoveTransformError SourceMoveError
   | MetadataTransformError F.MetadataException
@@ -189,7 +197,7 @@ data TransformationError
   | UnsupportedSourceKind
   | CollectionNotFound CollectionRef
   | SourceNotFound SourceRef
-  | ImportFailed
+  | ImportFailed SourceError
   | MultiTrackError MultiTrackError
   | SourceConversionError (TryFromException SourceEntity Source)
   | UnsupportedTransform String
@@ -398,12 +406,13 @@ extractTrack collectionRef' patterns s@Source {multiTrack = Just MultiTrackDesc 
                   mf <- writeMetadataFile metadataFile dest >>= mapE MetadataTransformError
                   srcs <- importSources (V.singleton (FileSource collectionRef mf))
                   if V.null srcs
-                    then throwE ImportFailed
+                    then throwE (ImportFailed (ImportSourceError Nothing))
                     else pure $ srcs V.! 0
         Nothing -> pure $ Right s
-  where
-    mapE e = except . mapLeft e
 extractTrack _ _ src = pure $ Right src
+
+mapE :: Monad m => (b -> c) -> Either b a -> ExceptT c m a
+mapE e = except . mapLeft e
 
 data MetadataTransformation
   = SetMapping Text (Vector Text)
@@ -413,41 +422,34 @@ data MetadataTransformation
 
 editMetadata :: MonadSourceTransform m => MetadataTransformation -> Source -> m (Either TransformationError Source)
 editMetadata _ src@Source {metadata = Nothing} = pure $ Right src
-editMetadata (SetMapping mappingName vs) Source {metadata = Just metadata, ..} =
-  case uriToFilePath source of
-    Nothing -> pure $ Left UnsupportedSourceKind
-    Just path -> runExceptT @TransformationError do
-      mapping <- eitherToError . maybeToRight (UnknownTagMapping mappingName) =<< getMappingNamed mappingName
-      let newMetadata@Metadata {formatId} :: Metadata = metadata & F.tagLens mapping .~ vs
-      raw <- eitherToError . mapLeft from =<< readMetadataFile kind path
-      let metadataFile = raw & #metadata . at formatId .~ Just newMetadata
-      metadataFile' <- eitherToError . mapLeft from =<< writeMetadataFile metadataFile path
-      importSources (V.singleton (FileSource collectionRef metadataFile')) >>= headOrException ImportFailed
+editMetadata (SetMapping mappingName vs) src@Source {metadata = Just metadata} =
+  runExceptT @TransformationError do
+    mapping <- getMappingNamed mappingName >>= eitherToError . maybeToRight (UnknownTagMapping mappingName)
+    let newMetadata = metadata & F.tagLens mapping .~ vs
+    if newMetadata == metadata
+      then pure src
+      else
+        updateSource (src & #metadata .~ Just newMetadata) >>= mapE ImportFailed
 editMetadata (RemoveMappings mappings) src = flatten <$> (forM mappings $ \mapping -> editMetadata (SetMapping mapping V.empty) src)
   where
-    flatten es = foldl' (\_a b -> b) (Left ImportFailed) es
-editMetadata (Retain retained) Source {metadata = Just metadata, ..} =
+    flatten es = foldl' (\_a b -> b) (Left $ ImportFailed undefined) es
+editMetadata (Retain retained) src@Source {metadata = Just metadata} =
   let tag = F.mappedTag metadata.mappingSelector
-   in case uriToFilePath source of
-        Nothing -> pure $ Left UnsupportedSourceKind
-        Just path -> runExceptT @TransformationError do
-          retainedMappings <- forM retained $ \mappingName -> do
-            getMappingNamed mappingName
-              >>= eitherToError . maybeToRight (UnknownTagMapping mappingName)
-          let newTags = foldl' (\ts mapping -> ts & tag mapping .~ (metadata.tag mapping)) F.emptyTags retainedMappings
-          let newMetadata@Metadata {formatId} :: Metadata = metadata {F.tags = newTags}
-          raw <- eitherToError . mapLeft from =<< readMetadataFile kind path
-          let metadataFile = raw & #metadata . at formatId .~ Just newMetadata
-          metadataFile' <- eitherToError . mapLeft from =<< writeMetadataFile metadataFile path
-          importSources (V.singleton (FileSource collectionRef metadataFile')) >>= headOrException ImportFailed
-
-headOrException :: (Traversable f, MonadError e m) => e -> f a -> m a
-headOrException e xs = case firstOf traverse xs of
-  Just x -> pure x
-  Nothing -> throwError e
+   in runExceptT @TransformationError do
+        retainedMappings <- forM retained $ \mappingName -> do
+          getMappingNamed mappingName
+            >>= eitherToError . maybeToRight (UnknownTagMapping mappingName)
+        let newTags = foldl' (\ts mapping -> ts & tag mapping .~ (metadata.tag mapping)) F.emptyTags retainedMappings
+        let newMetadata = metadata {F.tags = newTags}
+        if newMetadata == metadata
+          then pure src
+          else
+            updateSource (src & #metadata .~ Just newMetadata) >>= mapE ImportFailed
 
 musicBrainzLookup :: MonadSourceTransform m => Source -> m (Either TransformationError Source)
-musicBrainzLookup src@Source {metadata = Nothing} = pure $ Right src
+musicBrainzLookup src@Source {metadata = Nothing} = do
+  $(logDebug) $ "No Metadata; Cannot lookup MusicBrainz by metadata for source " <> show src.ref
+  pure $ Right src
 musicBrainzLookup src@Source {metadata = Just metadata} = (flip evalStateT) metadata do
   get >>= MB.getReleaseOrGroup >>= \case
     Nothing -> pure ()
@@ -467,5 +469,5 @@ musicBrainzLookup src@Source {metadata = Just metadata} = (flip evalStateT) meta
       let trackArtists = recording.artistCredit ^.. _Just . traverse . (to (.artist.id.mbid))
       F.tagLens MB.artistIdTag .= V.fromList trackArtists
     _ -> pure ()
-  metadata <- get
-  pure $ Right (src & #metadata .~ Just metadata)
+  newMetadata <- get
+  mapLeft ImportFailed <$> updateSource (src & #metadata .~ Just newMetadata)

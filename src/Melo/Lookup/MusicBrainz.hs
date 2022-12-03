@@ -220,7 +220,8 @@ data RecordingSearch = RecordingSearch
     artist :: Maybe Text,
     album :: Maybe Text,
     releaseId :: Maybe Text,
-    releaseGroupId :: Maybe Text
+    releaseGroupId :: Maybe Text,
+    isrc :: Maybe Text
   }
   deriving (Show, Generic, Eq)
 
@@ -396,8 +397,9 @@ getRecordingByTrack m = do
   let album = m.tagHead M.album
   let trackNumber = m.tagHead M.trackNumber
   let artist = m.tagHead M.artist
+  let isrc = m.tagHead M.isrc
   if isJust title && (isJust album || isJust artist)
-    then find perfectScore <$> searchRecordings def {title, album, trackNumber, artist}
+    then find perfectScore <$> searchRecordings def {title, album, trackNumber, artist, isrc}
     else pure Nothing
 
 perfectScore :: (Integral i, HasField "score" r (Maybe i)) => r -> Bool
@@ -491,7 +493,8 @@ instance
               fmap (\a -> "artist:\"" <> a <> "\"") search.artist,
               fmap (\a -> "release:\"" <> a <> "\"") search.album,
               fmap (\a -> "reid:\"" <> a <> "\"") search.releaseId,
-              fmap (\a -> "rgid:\"" <> a <> "\"") search.releaseGroupId
+              fmap (\a -> "rgid:\"" <> a <> "\"") search.releaseGroupId,
+              fmap (\a -> "isrc:\"" <> a <> "\"") search.isrc
             ]
     case qterms of
       [] -> pure V.empty

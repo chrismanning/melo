@@ -15,6 +15,7 @@ import Data.ByteString qualified as BS
 import GHC.IO.Exception
 import System.Directory qualified as Dir
 import System.FilePath qualified as P
+import System.FilePath ((</>))
 import System.IO hiding (readFile)
 import System.IO.Error hiding (catchIOError)
 import Prelude hiding (readFile)
@@ -78,7 +79,7 @@ instance
   where
   doesFileExist p = liftIO $ Dir.doesFileExist p
   doesDirectoryExist p = liftIO $ Dir.doesDirectoryExist p
-  listDirectory p = liftIO $ Dir.listDirectory p
+  listDirectory p = liftIO $ fmap (p </>) <$> Dir.listDirectory p
   canonicalizePath p = liftIO $ Dir.canonicalizePath p
   readFile p = liftIO $ withBinaryFile p ReadMode BS.hGetContents
   movePath a b = liftIO $ movePathIO a b

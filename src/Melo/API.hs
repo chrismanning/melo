@@ -231,7 +231,7 @@ findCoverImageIO pool k = withResource pool $ \conn ->
                 Just path -> do
                   $(logInfo) $ "Locating cover image for source " <> show k <> " at path " <> show path
                   let dir = takeDirectory path
-                  fmap (\f -> dir <> (pathSeparator : f)) <$> findCoverImage dir >>= \case
+                  findCoverImage dir >>= \case
                     Just imgPath -> pure $ Just $ ExternalImageFile imgPath
                     Nothing -> do
                       openMetadataFile path >>= \case
