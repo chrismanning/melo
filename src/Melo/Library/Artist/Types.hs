@@ -124,7 +124,9 @@ instance From MB.Artist NewArtist where
         disambiguation = a.disambiguation,
         country = (a.country >>= decodeAlphaTwo)
           <|> (a.area ^? _Just . (to (.iso3166_2codes)) . _Just . _head . (to (.country)) >>= decodeAlphaTwo)
-          <|> (a.beginArea ^? _Just . (to (.iso3166_2codes)) . _Just . _head . (to (.country)) >>= decodeAlphaTwo),
+          <|> (a.area ^? _Just . (to (.iso3166_1codes)) . _Just . _head >>= decodeAlphaTwo)
+          <|> (a.beginArea ^? _Just . (to (.iso3166_2codes)) . _Just . _head . (to (.country)) >>= decodeAlphaTwo)
+          <|> (a.beginArea ^? _Just . (to (.iso3166_1codes)) . _Just . _head >>= decodeAlphaTwo),
         bio = Nothing,
         shortBio = Nothing,
         musicBrainzId = Just a.id

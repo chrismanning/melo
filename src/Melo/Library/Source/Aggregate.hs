@@ -100,6 +100,7 @@ instance
           Just path -> do
             readMetadataFile s.kind path >>= \case
               Right mf -> do
+                -- TODO convert metadata to cover other existing types
                 let mf' = case s.metadata of
                       Just m -> mf & #metadata . at m.formatId .~ Just m
                       Nothing -> mf

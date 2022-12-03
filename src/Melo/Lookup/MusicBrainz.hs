@@ -110,14 +110,16 @@ data Artist = Artist
 instance FromJSON Artist where
   parseJSON = genericParseJSON mbAesonOptions
 
-newtype Area = Area
-  { iso3166_2codes :: Maybe (Vector CountrySubdivision)
+data Area = Area
+  { iso3166_2codes :: Maybe (Vector CountrySubdivision),
+    iso3166_1codes :: Maybe (Vector Text)
   }
   deriving (Show, Generic, Eq)
 
 instance FromJSON Area where
   parseJSON = withObject "Area" $ \v -> Area
                       <$> v .:? "iso-3166-2-codes"
+                      <*> v .:? "iso-3166-1-codes"
 
 data CountrySubdivision = CountrySubdivision
   { country :: Text,
