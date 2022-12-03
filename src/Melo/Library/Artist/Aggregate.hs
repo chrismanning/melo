@@ -56,7 +56,7 @@ instance
   ArtistAggregate (ArtistAggregateIOT m)
   where
   importArtistCredit artistCredit = do
-    getByMusicBrainzId artistCredit.artist.id <<|>> newArtist >>= \case
+    newArtist >>= \case
       Just artist ->
         case artistCredit.name of
           Just alias -> do
@@ -74,7 +74,7 @@ instance
     where
       newArtist = do
         artist <- MB.getArtist artistCredit.artist.id <&> fromMaybe artistCredit.artist
-        insertSingle (from artist)
+        insertSingle @ArtistEntity (from artist)
 
 getArtistNamed ::
   ( MB.MusicBrainzService m,
