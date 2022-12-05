@@ -7,6 +7,7 @@ import Control.Exception.Safe
 import Control.Foldl (impurely, vectorM)
 import Control.Lens hiding (each, from)
 import Data.Coerce
+import Data.Either.Combinators
 import Data.Maybe
 import Data.Pool
 import Data.Vector (Vector ())
@@ -79,7 +80,8 @@ instance (MonadIO m, PrimMonad m) => Repository ArtistEntity (ArtistRepositoryIO
     RepositoryHandle {connSrc, tbl} <- ask
     S.each (insertArtists es tbl (Rel8.Projection (\x -> x)))
       & S.catMaybes
-      & S.mapM (runInsert connSrc)
+      & S.mapM (runInsert' connSrc)
+      & S.mapMaybe rightToMaybe
       & S.concat
       & impurely S.foldM_ vectorM
   insert' es | V.null es = pure 0
@@ -87,7 +89,8 @@ instance (MonadIO m, PrimMonad m) => Repository ArtistEntity (ArtistRepositoryIO
     RepositoryHandle {connSrc, tbl} <- ask
     S.each (insertArtists es tbl (fromIntegral <$> Rel8.NumberOfRowsAffected))
       & S.catMaybes
-      & S.mapM (runInsert connSrc)
+      & S.mapM (runInsert' connSrc)
+      & S.mapMaybe rightToMaybe
       & S.sum_
   delete = ArtistRepositoryIOT . Repo.delete
   update = ArtistRepositoryIOT . Repo.update

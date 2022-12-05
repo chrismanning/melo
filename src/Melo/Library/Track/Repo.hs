@@ -7,29 +7,18 @@ import Control.Concurrent.Classy
 import Control.Exception.Safe
 import Control.Lens (firstOf, (^.))
 import Control.Monad.Reader
-import Data.Hashable
 import Data.Pool
 import Hasql.Connection
 import Melo.Common.Monad
 import Melo.Database.Repo
 import Melo.Database.Repo.IO
-import Melo.Library.Album.Types
-import Melo.Library.Artist.Types
-import Melo.Library.Genre.Types
 import Melo.Library.Source.Types
 import Melo.Library.Track.Types
 import Melo.Lookup.MusicBrainz as MB
 import Rel8
-import Witch
 
 class Repository TrackEntity m => TrackRepository m where
   getByMusicBrainzId :: MB.MusicBrainzId -> m (Maybe TrackEntity)
-
---  getTrackSource :: UUID -> m Source
---  getTrackArtists :: UUID -> m [Artist]
---  getTrackAlbum :: UUID -> m Album
---  getTrackGenres :: UUID -> m [Genre]
---  searchTracks :: Text -> m [Track]
 
 instance
   {-# OVERLAPPABLE #-}

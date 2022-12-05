@@ -183,6 +183,14 @@ runInsert connSrc i = do
     Single conn' -> liftIO $ run session conn' >>= either throwIO pure
     Pooled pool -> liftIO $ withResource pool $ \conn -> run session conn >>= either throwIO pure
 
+runInsert' :: MonadIO m => DbConnection -> Rel8.Insert a -> m (Either QueryError a)
+runInsert' connSrc i = do
+  $(logDebugIO) $ Rel8.showInsert i
+  let session = statement () $ Rel8.insert i
+  case connSrc of
+    Single conn' -> liftIO $ run session conn'
+    Pooled pool -> liftIO $ withResource pool $ \conn -> run session conn
+
 infixl 4 `startsWith`
 startsWith :: Rel8.Expr s -> Rel8.Expr s -> Rel8.Expr Bool
 startsWith = Rel8.function "starts_with"

@@ -93,7 +93,11 @@ runArtistNameRepositoryPooledIO pool =
       { connSrc = Pooled pool,
         tbl = artistNameSchema,
         pk = (\t -> t.id),
-        upsert = Nothing
+        upsert = Just Upsert {
+          index = \t -> (t.artist_id, t.name),
+          set = \_new old -> old,
+          updateWhere = \_new _old -> lit True
+        }
       }
     . runRepositoryIOT
     . runArtistNameRepositoryIOT
@@ -106,7 +110,11 @@ runArtistNameRepositoryIO conn =
       { connSrc = Single conn,
         tbl = artistNameSchema,
         pk = (\t -> t.id),
-        upsert = Nothing
+        upsert = Just Upsert {
+          index = \t -> (t.artist_id, t.name),
+          set = \_new old -> old,
+          updateWhere = \_new _old -> lit True
+        }
       }
     . runRepositoryIOT
     . runArtistNameRepositoryIOT

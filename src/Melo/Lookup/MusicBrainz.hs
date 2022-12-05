@@ -9,6 +9,7 @@ module Melo.Lookup.MusicBrainz
     MusicBrainzService (..),
     MusicBrainzServiceIOT (..),
     Artist (..),
+    ArtistAlias (..),
     Area (..),
     CountrySubdivision (..),
     ArtistCredit (..),
@@ -46,12 +47,11 @@ import Control.Foldl qualified as F
 import Control.Lens hiding (from, lens)
 import Control.Monad.Reader
 import Data.Aeson as A
-import Data.Aeson.Types
 import Data.Aeson.Casing (trainCase)
+import Data.Aeson.Types
 import Data.Char
 import Data.Default
 import Data.Generics.Labels ()
-import Data.List (find)
 import Data.Maybe
 import Data.String (IsString)
 import Data.Text (Text)
@@ -74,8 +74,8 @@ import Melo.Format.Mapping qualified as M
 import Melo.Format.Metadata qualified as F
 import Network.Wreq qualified as Wr
 import Network.Wreq.Session qualified as WrS
-import Prelude as P
 import Streaming.Prelude qualified as S
+import Prelude as P
 
 newtype MusicBrainzId = MusicBrainzId
   { mbid :: Text
@@ -103,12 +103,27 @@ data Artist = Artist
     country :: Maybe Text,
     score :: Maybe Int,
     area :: Maybe Area,
-    beginArea :: Maybe Area
+    beginArea :: Maybe Area,
+    aliases :: Maybe (Vector ArtistAlias)
   }
   deriving (Show, Generic, Eq)
 
 instance FromJSON Artist where
   parseJSON = genericParseJSON mbAesonOptions
+
+data ArtistAlias = ArtistAlias
+  { name :: Text,
+    sortName :: Maybe Text,
+    type' :: Maybe Text
+  }
+  deriving (Show, Generic, Eq)
+
+instance FromJSON ArtistAlias where
+  parseJSON = withObject "ArtistAlias" $ \v ->
+    ArtistAlias
+      <$> v .: "name"
+      <*> v .:? "sort-name"
+      <*> v .:? "type"
 
 data Area = Area
   { iso3166_2codes :: Maybe (Vector CountrySubdivision),
@@ -117,9 +132,10 @@ data Area = Area
   deriving (Show, Generic, Eq)
 
 instance FromJSON Area where
-  parseJSON = withObject "Area" $ \v -> Area
-                      <$> v .:? "iso-3166-2-codes"
-                      <*> v .:? "iso-3166-1-codes"
+  parseJSON = withObject "Area" $ \v ->
+    Area
+      <$> v .:? "iso-3166-2-codes"
+      <*> v .:? "iso-3166-1-codes"
 
 data CountrySubdivision = CountrySubdivision
   { country :: Text,
@@ -129,10 +145,11 @@ data CountrySubdivision = CountrySubdivision
 
 instance FromJSON CountrySubdivision where
   parseJSON (String s) = case T.split (== '-') s of
-   [c, s] | T.length c == 2 -> pure $ CountrySubdivision c s
-   _ -> prependFailure
-                    "parsing CountrySubdivision failed, "
-                    (fail "expected ISO-3166-2 format")
+    [c, s] | T.length c == 2 -> pure $ CountrySubdivision c s
+    _ ->
+      prependFailure
+        "parsing CountrySubdivision failed, "
+        (fail "expected ISO-3166-2 format")
   parseJSON invalid =
     prependFailure
       "parsing CountrySubdivision failed, "
@@ -513,7 +530,7 @@ instance
   getArtist artistId = MusicBrainzServiceIOT $ do
     waitReady
     let opts = mbWreqDefaults
-    let url = baseUrl <> "/artist/" <> artistId ^. coerced
+    let url = baseUrl <> "/artist/" <> artistId.mbid <> "?inc=aliases"
     getWithJson opts url >>= \case
       Left e -> do
         $(logError) $ "error getting artist " <> show artistId <> ": " <> show e

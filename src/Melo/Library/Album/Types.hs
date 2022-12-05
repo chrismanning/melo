@@ -57,7 +57,7 @@ instance From AlbumRef UUID where
   from (AlbumRef uuid) = uuid
 
 data Album = Album
-  { dbId :: AlbumRef,
+  { ref :: AlbumRef,
     title :: Text,
     yearReleased :: Maybe Text,
     artists :: [ArtistNameEntity]
@@ -67,7 +67,7 @@ data Album = Album
 mkAlbum :: Foldable f => f ArtistNameEntity -> AlbumEntity -> Album
 mkAlbum albumArtists e =
   Album
-    { dbId = e.id,
+    { ref = e.id,
       title = e.title,
       yearReleased = e.year_released,
       artists = toList albumArtists
