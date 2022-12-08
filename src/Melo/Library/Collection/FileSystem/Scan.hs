@@ -135,6 +135,7 @@ scanPathIO pool sess scanType ref p' =
         . runTrackArtistNameRepositoryPooledIO pool
         . MB.runMusicBrainzServiceUnlimitedIO sess
         . runTagMappingRepositoryPooledIO pool
+        . MB.runCachingMusicBrainzService
         . runTagMappingAggregate
         . runMetadataAggregateIO
         . runArtistAggregateIOT

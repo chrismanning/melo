@@ -21,6 +21,7 @@ module Melo.Lookup.MusicBrainz
     ReleaseGroup (..),
     LabelInfo (..),
     Label (..),
+    CachingMusicBrainzServiceT (..),
     artistIdTag,
     originalArtistIdTag,
     albumArtistIdTag,
@@ -36,6 +37,7 @@ module Melo.Lookup.MusicBrainz
     getRecordingFromMetadata,
     truncateDate,
     (<<|>>),
+    runCachingMusicBrainzService,
   )
 where
 
@@ -46,12 +48,14 @@ import Control.Exception.Safe
 import Control.Foldl qualified as F
 import Control.Lens hiding (from, lens)
 import Control.Monad.Reader
+import Control.Monad.State.Strict
 import Data.Aeson as A
 import Data.Aeson.Casing (trainCase)
 import Data.Aeson.Types
 import Data.Char
 import Data.Default
 import Data.Generics.Labels ()
+import Data.Map.Strict (Map)
 import Data.Maybe
 import Data.String (IsString)
 import Data.Text (Text)
@@ -86,7 +90,7 @@ newtype MusicBrainzId = MusicBrainzId
 newtype ArtistSearch = ArtistSearch
   { artist :: Text
   }
-  deriving stock (Show, Generic, Eq)
+  deriving stock (Show, Generic, Eq, Ord)
 
 newtype ArtistSearchResult = ArtistSearchResult
   { artists :: Maybe (Vector Artist)
@@ -107,6 +111,9 @@ data Artist = Artist
     aliases :: Maybe (Vector ArtistAlias)
   }
   deriving (Show, Generic, Eq)
+
+instance Ord Artist where
+  a <= b = a.id <= b.id && a.name <= b.name
 
 instance FromJSON Artist where
   parseJSON = genericParseJSON mbAesonOptions
@@ -161,7 +168,7 @@ data ReleaseSearch = ReleaseSearch
     date :: Maybe Text,
     catNum :: Maybe Text
   }
-  deriving (Show, Generic, Eq)
+  deriving (Show, Generic, Eq, Ord)
 
 instance Default ReleaseSearch
 
@@ -190,7 +197,7 @@ data ArtistCredit = ArtistCredit
   { name :: Maybe Text,
     artist :: Artist
   }
-  deriving (Show, Generic, Eq)
+  deriving (Show, Generic, Eq, Ord)
 
 instance FromJSON ArtistCredit where
   parseJSON = genericParseJSON mbAesonOptions
@@ -242,7 +249,7 @@ data RecordingSearch = RecordingSearch
     releaseGroupId :: Maybe Text,
     isrc :: Maybe Text
   }
-  deriving (Show, Generic, Eq)
+  deriving (Show, Generic, Eq, Ord)
 
 instance Default RecordingSearch
 
@@ -658,6 +665,65 @@ newtype UnlimitedT m a = UnlimitedT {runUnlimitedT :: m a}
 
 instance Monad m => RateLimit (UnlimitedT m) where
   waitReady = pure ()
+
+data CacheAggregate = CacheAggregate
+  { searchReleasesStore :: Map ReleaseSearch (Vector Release),
+    searchReleaseGroupsStore :: Map ReleaseSearch (Vector ReleaseGroup),
+    searchArtistsStore :: Map ArtistSearch (Vector Artist),
+    searchRecordingsStore :: Map RecordingSearch (Vector Recording),
+    getArtistStore :: Map MusicBrainzId (Maybe Artist),
+    getArtistReleaseGroupsStore :: Map MusicBrainzId (Vector ReleaseGroup),
+    getArtistReleasesStore :: Map MusicBrainzId (Vector Release),
+    getArtistRecordingsStore :: Map MusicBrainzId (Vector Recording),
+    getReleaseStore :: Map MusicBrainzId (Maybe Release),
+    getReleaseGroupStore :: Map MusicBrainzId (Maybe ReleaseGroup),
+    getRecordingStore :: Map MusicBrainzId (Maybe Recording)
+  }
+  deriving (Generic)
+
+instance Default CacheAggregate where
+
+newtype CachingMusicBrainzServiceT m a = CachingMusicBrainzServiceT
+  { runCachingMusicBrainzServiceT :: StateT CacheAggregate m a
+  }
+  deriving newtype
+    ( Functor,
+      Applicative,
+      Monad,
+      MonadIO,
+      MonadBase b,
+      MonadBaseControl b,
+      MonadConc,
+      MonadCatch,
+      MonadMask,
+      MonadThrow,
+      MonadTrans,
+      MonadTransControl,
+      PrimMonad
+    )
+
+doCache :: MusicBrainzService m => Lens' CacheAggregate (Maybe a) -> m a -> StateT CacheAggregate m a
+doCache l m = doImpl $ lift $ m
+  where
+    doImpl mb = use l >>= \case
+      Just x -> pure x
+      Nothing -> mb >>= (l <?=)
+
+instance MusicBrainzService m => MusicBrainzService (CachingMusicBrainzServiceT m) where
+  searchReleases search = CachingMusicBrainzServiceT $ doCache ( #searchReleasesStore . at search ) (searchReleases search)
+  searchReleaseGroups search = CachingMusicBrainzServiceT $ doCache ( #searchReleaseGroupsStore . at search ) (searchReleaseGroups search)
+  searchArtists search = CachingMusicBrainzServiceT $ doCache ( #searchArtistsStore . at search ) (searchArtists search)
+  searchRecordings search = CachingMusicBrainzServiceT $ doCache ( #searchRecordingsStore . at search ) (searchRecordings search)
+  getArtist mbid = CachingMusicBrainzServiceT $ doCache ( #getArtistStore . at mbid ) (getArtist mbid)
+  getArtistReleaseGroups mbid = CachingMusicBrainzServiceT $ doCache ( #getArtistReleaseGroupsStore . at mbid ) (getArtistReleaseGroups mbid)
+  getArtistReleases mbid = CachingMusicBrainzServiceT $ doCache ( #getArtistReleasesStore . at mbid ) (getArtistReleases mbid)
+  getArtistRecordings mbid = CachingMusicBrainzServiceT $ doCache ( #getArtistRecordingsStore . at mbid ) (getArtistRecordings mbid)
+  getRelease mbid = CachingMusicBrainzServiceT $ doCache ( #getReleaseStore . at mbid ) (getRelease mbid)
+  getReleaseGroup mbid = CachingMusicBrainzServiceT $ doCache ( #getReleaseGroupStore . at mbid ) (getReleaseGroup mbid)
+  getRecording mbid = CachingMusicBrainzServiceT $ doCache ( #getRecordingStore . at mbid ) (getRecording mbid)
+
+runCachingMusicBrainzService :: Monad m => CachingMusicBrainzServiceT m a -> m a
+runCachingMusicBrainzService (CachingMusicBrainzServiceT m) = evalStateT m def
 
 mbAesonOptions :: A.Options
 mbAesonOptions = defaultOptions {fieldLabelModifier = trainCase}
