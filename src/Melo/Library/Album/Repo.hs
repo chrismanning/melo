@@ -114,8 +114,11 @@ albumSchema =
             title = "title",
             comment = "comment",
             year_released = "year_released",
+            original_year_released = "original_year_released",
             length = "length",
-            musicbrainz_id = "musicbrainz_id"
+            musicbrainz_id = "musicbrainz_id",
+            musicbrainz_group_id = "musicbrainz_group_id",
+            catalogue_number = "catalogue_number"
           }
     }
 

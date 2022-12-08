@@ -47,7 +47,10 @@ CREATE TABLE melo.album (
     comment text,
     year_released text,
     length interval,
-    musicbrainz_id text
+    musicbrainz_id text,
+    original_year_released text,
+    musicbrainz_group_id text,
+    catalogue_number text
 );
 
 
@@ -675,4 +678,5 @@ INSERT INTO melo.schema_migrations (version) VALUES
     ('20221028182923'),
     ('20221030214943'),
     ('20221116005520'),
-    ('20221204172930');
+    ('20221204172930'),
+    ('20221208162831');

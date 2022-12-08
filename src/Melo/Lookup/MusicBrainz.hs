@@ -32,6 +32,7 @@ module Melo.Lookup.MusicBrainz
     releaseGroupIdTag,
     releaseIdTag,
     getReleaseOrGroup,
+    getReleaseAndGroup,
     getReleaseFromMetadata,
     getReleaseGroupFromMetadata,
     getRecordingFromMetadata,
@@ -314,6 +315,15 @@ getReleaseOrGroup m =
     Just release -> pure $ Just $ Left release
     Nothing -> fmap Right <$> getReleaseGroupFromMetadata m
 
+getReleaseAndGroup ::
+  MusicBrainzService m =>
+  F.Metadata ->
+  m (Maybe ReleaseGroup, Maybe Release)
+getReleaseAndGroup m = do
+  releaseGroup <- getReleaseGroupFromMetadata m
+  release <- getReleaseFromMetadata m
+  pure (releaseGroup, release)
+
 getReleaseFromMetadata ::
   MusicBrainzService m =>
   F.Metadata ->
@@ -549,6 +559,7 @@ instance
           mbWreqDefaults
             & Wr.param "artist" .~ [artistId ^. coerced]
             & Wr.param "limit" .~ ["100"]
+            & Wr.param "inc" .~ ["artist-credits labels"]
     let url = baseUrl <> "/release-group/"
     getWithJson opts url >>= \case
       Left e -> do
@@ -561,6 +572,7 @@ instance
           mbWreqDefaults
             & Wr.param "artist" .~ [artistId ^. coerced]
             & Wr.param "limit" .~ ["100"]
+            & Wr.param "inc" .~ ["artist-credits labels"]
     let url = baseUrl <> "/release/"
     getWithJson opts url >>= \case
       Left e -> do
@@ -581,7 +593,9 @@ instance
       Right r -> pure $ r ^. Wr.responseBody
   getRelease releaseId = MusicBrainzServiceIOT $ do
     waitReady
-    let opts = mbWreqDefaults
+    let opts =
+          mbWreqDefaults
+            & Wr.param "inc" .~ ["artist-credits labels"]
     let url = baseUrl <> "/release/" <> releaseId ^. coerced
     getWithJson opts url >>= \case
       Left e -> do
@@ -590,7 +604,9 @@ instance
       Right r -> pure $ r ^. Wr.responseBody
   getReleaseGroup releaseGroupId = MusicBrainzServiceIOT $ do
     waitReady
-    let opts = mbWreqDefaults
+    let opts =
+          mbWreqDefaults
+            & Wr.param "inc" .~ ["artist-credits labels"]
     let url = baseUrl <> "/release-group/" <> releaseGroupId ^. coerced
     getWithJson opts url >>= \case
       Left e -> do

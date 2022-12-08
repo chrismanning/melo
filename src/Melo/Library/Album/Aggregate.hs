@@ -3,6 +3,7 @@
 
 module Melo.Library.Album.Aggregate where
 
+import Control.Applicative
 import Control.Exception.Safe
 import Control.Foldl (impurely, vectorM)
 import Control.Lens hiding (from, lens)
@@ -78,35 +79,40 @@ instance
   importAlbums srcs =
     lift $
       S.each srcs
-        & S.mapM (\src -> (src,) . join <$> traverse MB.getReleaseOrGroup src.metadata)
+        & S.mapM mbLookup
         & S.groupBy (\(_, releaseA) (_, releaseB) -> releaseA == releaseB)
         & S.mapped (impurely S.foldM vectorM)
         & S.map (\srcs -> (snd (srcs ! 0), fst <$> srcs))
-        & \s ->
-          S.for
-            s
-            ( \(mbRelease, srcs) -> case mbRelease of
-                Just (Right mbRelease) -> importMusicBrainzRelease mbRelease srcs
-                Just (Left mbRelease) -> importMusicBrainzRelease mbRelease srcs
-                Nothing -> importAlbumsFromMetadata srcs
-            )
-            & impurely S.foldM_ vectorM
+        & importAlbum'
+        & impurely S.foldM_ vectorM
     where
-      importMusicBrainzRelease mbRelease srcs = do
-        let newAlbum = insertSingle @AlbumEntity (from mbRelease)
-        album <- Album.getByMusicBrainzId mbRelease.id <<|>> newAlbum
-        artistNames <- case mbRelease.artistCredit of
-          Just as -> V.mapMaybeM importArtistCredit as
-          _ -> pure V.empty
-        case album of
-          Just album -> do
-            $(logInfo) $ "Found album '" <> album.title <> "'"
-            let mk a = AlbumArtistNameTable {album_id = album.id, artist_name_id = a.id}
-            _ <- AlbumArtist.insert' (mk <$> artistNames)
-            let album' = mkAlbum (V.toList artistNames) album
-            _tracks <- importAlbumTracks srcs album'
-            S.yield album'
-          Nothing -> pure ()
+      mbLookup :: Source -> m (Source, (Maybe MB.ReleaseGroup, Maybe MB.Release))
+      mbLookup src = case src.metadata of
+        Nothing -> pure (src, (Nothing, Nothing))
+        Just metadata -> (src,) <$> MB.getReleaseAndGroup metadata
+      importAlbum' s = S.for s
+        ( \((mbReleaseGroup, mbRelease), srcs) -> case (mbReleaseGroup, mbRelease) of
+            (Nothing, Nothing) -> importAlbumsFromMetadata srcs
+            (mbReleaseGroup, mbRelease) -> importMusicBrainzRelease mbReleaseGroup mbRelease srcs
+        )
+      importMusicBrainzRelease mbReleaseGroup mbRelease srcs = case fromMusicBrainz mbReleaseGroup mbRelease of
+        Nothing -> pure ()
+        Just newAlbum -> do
+          album <- fmap join (traverse Album.getByMusicBrainzId (mbRelease ^? _Just . #id)) <<|>> insertSingle @AlbumEntity newAlbum
+          let artistCredits = mbRelease ^? _Just . #artistCredit . _Just <|> mbReleaseGroup ^? _Just . #artistCredit . _Just
+          $(logDebug) $ "Artist credits for album " <> show newAlbum.title <> ": " <> show artistCredits
+          artistNames <- case artistCredits of
+            Just as -> V.mapMaybeM importArtistCredit as
+            _ -> pure V.empty
+          case album of
+            Just album -> do
+              $(logInfo) $ "Found album '" <> album.title <> "'"
+              let mk a = AlbumArtistNameTable {album_id = album.id, artist_name_id = a.id}
+              _ <- AlbumArtist.insert' (mk <$> artistNames)
+              let album' = mkAlbum (V.toList artistNames) album
+              _tracks <- importAlbumTracks srcs album'
+              S.yield album'
+            Nothing -> pure ()
       importAlbumsFromMetadata srcs = do
         S.each srcs
           & S.mapMaybeM (\src -> fmap (src,) <$> singleMapping "album_title" src)
@@ -116,14 +122,19 @@ instance
           & S.mapMaybeM (uncurry importAlbumSources)
       importAlbumSources title srcs = do
         let src = srcs ! 0
-        yearReleased <- singleMapping "original_release_year" src
+        originalYearReleased <- singleMapping "original_release_year" src
+        yearReleased <- singleMapping "release_year" src
+        catalogueNumber <- singleMapping "catalogue_number" src
         album <-
           insertSingle @AlbumEntity
             NewAlbum
               { title,
                 yearReleased,
+                originalYearReleased,
                 comment = Nothing,
-                musicbrainzId = Nothing
+                musicbrainzId = Nothing,
+                musicbrainzGroupId = Nothing,
+                catalogueNumber
               }
         albumArtistNames <- importAlbumArtists src album
         case mkAlbum albumArtistNames <$> album of

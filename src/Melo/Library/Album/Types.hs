@@ -2,6 +2,7 @@
 
 module Melo.Library.Album.Types where
 
+import Control.Lens hiding (from)
 import Data.Foldable
 import Data.Hashable
 import Data.Morpheus.Kind
@@ -22,7 +23,10 @@ data AlbumTable f = AlbumTable
     comment :: Column f (Maybe Text),
     year_released :: Column f (Maybe Text),
     length :: Column f (Maybe CalendarDiffTime),
-    musicbrainz_id :: Column f (Maybe Text)
+    musicbrainz_id :: Column f (Maybe Text),
+    original_year_released :: Column f (Maybe Text),
+    musicbrainz_group_id :: Column f (Maybe Text),
+    catalogue_number :: Column f (Maybe Text)
   }
   deriving (Generic, Rel8able)
 
@@ -60,6 +64,8 @@ data Album = Album
   { ref :: AlbumRef,
     title :: Text,
     yearReleased :: Maybe Text,
+    originalYearReleased :: Maybe Text,
+    catalogueNumber :: Maybe Text,
     artists :: [ArtistNameEntity]
   }
   deriving (Show, Eq, Generic)
@@ -70,6 +76,8 @@ mkAlbum albumArtists e =
     { ref = e.id,
       title = e.title,
       yearReleased = e.year_released,
+      originalYearReleased = e.original_year_released,
+      catalogueNumber = e.catalogue_number,
       artists = toList albumArtists
     }
 
@@ -77,27 +85,42 @@ data NewAlbum = NewAlbum
   { title :: Text,
     comment :: Maybe Text,
     yearReleased :: Maybe Text,
-    musicbrainzId :: Maybe MB.MusicBrainzId
+    musicbrainzId :: Maybe MB.MusicBrainzId,
+    originalYearReleased :: Maybe Text,
+    musicbrainzGroupId :: Maybe MB.MusicBrainzId,
+    catalogueNumber :: Maybe Text
   }
   deriving (Generic, Eq, Ord, Show)
 
-instance From MB.Release NewAlbum where
-  from mbRelease =
-    NewAlbum
-      { title = mbRelease.title,
-        yearReleased = MB.truncateDate <$> mbRelease.date,
-        musicbrainzId = Just mbRelease.id,
-        comment = Nothing
-      }
-
-instance From MB.ReleaseGroup NewAlbum where
-  from mbRelease =
-    NewAlbum
-      { title = mbRelease.title,
-        yearReleased = MB.truncateDate <$> mbRelease.firstReleaseDate,
-        musicbrainzId = Just mbRelease.id,
-        comment = Nothing
-      }
+fromMusicBrainz :: Maybe MB.ReleaseGroup -> Maybe MB.Release -> Maybe NewAlbum
+fromMusicBrainz Nothing Nothing = Nothing
+fromMusicBrainz (Just releaseGroup) (Just release) = Just NewAlbum {
+  title = releaseGroup.title,
+  yearReleased = release.date,
+  originalYearReleased = releaseGroup.firstReleaseDate,
+  musicbrainzId = Just release.id,
+  musicbrainzGroupId = Just releaseGroup.id,
+  catalogueNumber = release ^? #labelInfo . _Just . _head . #catalogNumber . _Just,
+  comment = Nothing
+}
+fromMusicBrainz (Just releaseGroup) Nothing = Just NewAlbum {
+  title = releaseGroup.title,
+  yearReleased = Nothing,
+  originalYearReleased = releaseGroup.firstReleaseDate,
+  musicbrainzId = Nothing,
+  musicbrainzGroupId = Just releaseGroup.id,
+  catalogueNumber = Nothing,
+  comment = Nothing
+}
+fromMusicBrainz Nothing (Just release) = Just NewAlbum {
+  title = release.title,
+  yearReleased = release.date,
+  originalYearReleased = Nothing,
+  musicbrainzId = Just release.id,
+  musicbrainzGroupId = Nothing,
+  catalogueNumber = release ^? #labelInfo . _Just . _head . #catalogNumber . _Just,
+  comment = Nothing
+}
 
 instance From NewAlbum (AlbumTable Expr) where
   from a =
@@ -106,6 +129,9 @@ instance From NewAlbum (AlbumTable Expr) where
         title = lit a.title,
         comment = lit Nothing,
         year_released = lit a.yearReleased,
+        original_year_released = lit a.originalYearReleased,
         length = lit Nothing,
-        musicbrainz_id = lit $ MB.mbid <$> a.musicbrainzId
+        musicbrainz_id = lit $ MB.mbid <$> a.musicbrainzId,
+        musicbrainz_group_id = lit $ MB.mbid <$> a.musicbrainzGroupId,
+        catalogue_number = lit a.catalogueNumber
       }
