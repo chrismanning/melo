@@ -5,9 +5,13 @@ module Melo.Library.Artist.Aggregate where
 
 import Control.Exception.Safe
 import Control.Lens hiding (from, lens)
+import Control.Monad.State.Strict
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 import Data.Maybe
 import Data.Vector (Vector)
 import Data.Vector qualified as V
+import GHC.Generics hiding (from, to)
 import Melo.Common.Logging
 import Melo.Common.Monad
 import Melo.Database.Repo
@@ -80,12 +84,12 @@ instance
                   name = artist.name
                 }
       Nothing -> do
-        $(logError) $ "Unable to find MusicBrainz artist with MBID " <> show artistCredit.artist.id
+        $(logError) $ "Unable to find MusicBrainz artist with MBID " <> show artistCredit.artist.id.mbid
         pure Nothing
     where
       newArtist = do
         mbArtist <- MB.getArtist artistCredit.artist.id <&> fromMaybe artistCredit.artist
-        insertSingle @ArtistEntity (from mbArtist)
+        insertSingle @ArtistEntity (from mbArtist) <<|>> getByMusicBrainzId mbArtist.id
   importMusicBrainzArtist mbArtist =
     insertSingle @ArtistEntity (from mbArtist) <<|>> getByMusicBrainzId mbArtist.id >>= \case
       Just artist -> do
