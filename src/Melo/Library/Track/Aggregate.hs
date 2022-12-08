@@ -12,7 +12,6 @@ import Data.Int (Int16)
 import Data.Maybe
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.UUID qualified as UUID
 import Data.Vector (Vector)
 import Data.Vector qualified as V
 import GHC.Generics hiding (from)
@@ -90,13 +89,7 @@ instance
       importSourceTrack :: Source -> m (Maybe TrackEntity)
       importSourceTrack src = do
         $(logDebug) $ "Importing track from source " <> show src.ref
-        recording <- join <$> traverse MB.getRecordingFromMetadata src.metadata
-        firstJustM (Track.getByMusicBrainzId . (.id)) recording >>= \case
-          Just existing -> do
-            $(logWarn) $ "Found existing track " <> show existing.id <> " for MusicBrainz recording " <> show existing.musicbrainz_id <> " from source " <> show src.ref
-            -- TODO allow multiple editions of same track despite musicbrainz lookup
-            pure Nothing
-          Nothing -> insertSingle (mkNewTrack album.ref ((.id) <$> recording) src)
+        insertSingle (mkNewTrack album.ref Nothing src)
       linkTrackArtists :: Source -> TrackEntity -> m ()
       linkTrackArtists src track = do
         albumArtists <- resolveMappingNamed "album_artist" src
@@ -109,19 +102,19 @@ instance
             void $ TrackArtist.insert' (TrackArtistNameTable track.id <$> artistNames)
           else do
             $(logDebug) $ "Track artists differ from album artists for source " <> show src.ref
-            unlessM (importArtistsByRecording track) do
+            unlessM (importArtistsByRecording src track) do
               let mbArtistIds = MB.MusicBrainzId <$> fromMaybe V.empty (src.metadata ^? _Just . tagLens MB.artistIdTag)
               importArtistsByMetadata src track trackArtists mbArtistIds
       importArtistsByMetadata src _track trackArtists mbArtistIds | V.length mbArtistIds /= V.length trackArtists =
         $(logWarn) $ "Invalid track artist MusicBrainz info found for source " <> show src
-      importArtistsByMetadata src track trackArtists mbArtistIds =
+      importArtistsByMetadata _src track trackArtists mbArtistIds =
         V.forM_ mbArtistIds $ \mbid ->
           MB.getArtist mbid >>= \case
             Just mbArtist ->
               importMusicBrainzArtist mbArtist >>= \case
                 Just (artist, names) ->
                   forM_ trackArtists \trackArtist ->
-                    getAlias artist.id trackArtist >>= \case
+                    case V.find (\n -> n.name == trackArtist) names of
                       Just artistName ->
                         void $ TrackArtist.insertSingle (TrackArtistNameTable track.id artistName.id)
                       Nothing ->
@@ -129,21 +122,17 @@ instance
                 Nothing -> $(logWarn) ("No artist imported" :: String)
             Nothing ->
               $(logWarn) $ "No MusicBrainz artist found with MBID " <> show mbid.mbid
-      importArtistsByRecording track =
-        case MB.MusicBrainzId <$> track.musicbrainz_id of
-          Just mbRecordingId -> MB.getRecording mbRecordingId >>= \case
-            Just mbRecording ->
-              case mbRecording.artistCredit of
-                Just artistCredits -> do
-                  artistNames <- V.mapMaybeM importArtistCredit artistCredits
-                  TrackArtist.insert' (TrackArtistNameTable track.id . (.id) <$> artistNames)
-                  pure True
-                Nothing -> do
-                  $(logDebug) $ "No artist credits for recording " <> show mbRecordingId.mbid
-                  pure False
-            Nothing -> do
-              $(logDebug) $ "No recording with id " <> show mbRecordingId.mbid
-              pure False
+      importArtistsByRecording src track =
+        join <$> traverse MB.getRecordingFromMetadata src.metadata >>= \case
+          Just mbRecording ->
+            case mbRecording.artistCredit of
+              Just artistCredits -> do
+                artistNames <- V.mapMaybeM importArtistCredit artistCredits
+                TrackArtist.insert' (TrackArtistNameTable track.id . (.id) <$> artistNames)
+                pure True
+              Nothing -> do
+                $(logDebug) $ "No artist credits for recording " <> show mbRecording.id.mbid
+                pure False
           Nothing -> do
             $(logDebug) $ "No recording for track " <> show track.id
             pure False
