@@ -186,7 +186,6 @@ data Release = Release
     artistCredit :: Maybe (Vector ArtistCredit),
     date :: Maybe Text,
     score :: Maybe Int,
-    releaseGroup :: ReleaseGroup,
     labelInfo :: Maybe (Vector LabelInfo)
   }
   deriving (Show, Generic, Eq)
@@ -550,45 +549,45 @@ instance
     let url = baseUrl <> "/artist/" <> artistId.mbid <> "?inc=aliases"
     getWithJson opts url >>= \case
       Left e -> do
-        $(logError) $ "error getting artist " <> show artistId <> ": " <> show e
+        $(logError) $ "error getting artist " <> show artistId.mbid <> ": " <> show e
         pure Nothing
       Right r -> pure $ r ^. Wr.responseBody
   getArtistReleaseGroups artistId = MusicBrainzServiceIOT $ do
     waitReady
     let opts =
           mbWreqDefaults
-            & Wr.param "artist" .~ [artistId ^. coerced]
+            & Wr.param "artist" .~ [artistId.mbid]
             & Wr.param "limit" .~ ["100"]
             & Wr.param "inc" .~ ["artist-credits labels"]
     let url = baseUrl <> "/release-group/"
     getWithJson opts url >>= \case
       Left e -> do
-        $(logError) $ "error getting release groups for artist " <> show artistId <> ": " <> show e
+        $(logError) $ "error getting release groups for artist " <> show artistId.mbid <> ": " <> show e
         pure V.empty
       Right r -> pure $ r ^. Wr.responseBody
   getArtistReleases artistId = MusicBrainzServiceIOT $ do
     waitReady
     let opts =
           mbWreqDefaults
-            & Wr.param "artist" .~ [artistId ^. coerced]
+            & Wr.param "artist" .~ [artistId.mbid]
             & Wr.param "limit" .~ ["100"]
             & Wr.param "inc" .~ ["artist-credits labels"]
     let url = baseUrl <> "/release/"
     getWithJson opts url >>= \case
       Left e -> do
-        $(logError) $ "error getting releases for artist " <> show artistId <> ": " <> show e
+        $(logError) $ "error getting releases for artist " <> show artistId.mbid <> ": " <> show e
         pure V.empty
       Right r -> pure $ r ^. Wr.responseBody
   getArtistRecordings artistId = MusicBrainzServiceIOT $ do
     waitReady
     let opts =
           mbWreqDefaults
-            & Wr.param "artist" .~ [artistId ^. coerced]
+            & Wr.param "artist" .~ [artistId.mbid]
             & Wr.param "limit" .~ ["100"]
     let url = baseUrl <> "/recording/"
     getWithJson opts url >>= \case
       Left e -> do
-        $(logError) $ "error getting recordings for artist " <> show artistId <> ": " <> show e
+        $(logError) $ "error getting recordings for artist " <> show artistId.mbid <> ": " <> show e
         pure V.empty
       Right r -> pure $ r ^. Wr.responseBody
   getRelease releaseId = MusicBrainzServiceIOT $ do
@@ -596,10 +595,10 @@ instance
     let opts =
           mbWreqDefaults
             & Wr.param "inc" .~ ["artist-credits labels"]
-    let url = baseUrl <> "/release/" <> releaseId ^. coerced
+    let url = baseUrl <> "/release/" <> releaseId.mbid
     getWithJson opts url >>= \case
       Left e -> do
-        $(logError) $ "error getting release " <> show releaseId <> ": " <> show e
+        $(logError) $ "error getting release " <> show releaseId.mbid <> ": " <> show e
         pure Nothing
       Right r -> pure $ r ^. Wr.responseBody
   getReleaseGroup releaseGroupId = MusicBrainzServiceIOT $ do
@@ -607,10 +606,10 @@ instance
     let opts =
           mbWreqDefaults
             & Wr.param "inc" .~ ["artist-credits labels"]
-    let url = baseUrl <> "/release-group/" <> releaseGroupId ^. coerced
+    let url = baseUrl <> "/release-group/" <> releaseGroupId.mbid
     getWithJson opts url >>= \case
       Left e -> do
-        $(logError) $ "error getting release group " <> show releaseGroupId <> ": " <> show e
+        $(logError) $ "error getting release group " <> show releaseGroupId.mbid <> ": " <> show e
         pure Nothing
       Right r -> pure $ r ^. Wr.responseBody
   getRecording recordingId = MusicBrainzServiceIOT $ do
@@ -619,7 +618,7 @@ instance
     let url = baseUrl <> "/recording/" <> recordingId.mbid
     getWithJson opts url >>= \case
       Left e -> do
-        $(logError) $ "error getting recording " <> show recordingId <> ": " <> show e
+        $(logError) $ "error getting recording " <> show recordingId.mbid <> ": " <> show e
         pure Nothing
       Right r -> pure $ r ^. Wr.responseBody
 
