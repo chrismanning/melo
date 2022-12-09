@@ -605,7 +605,7 @@ instance
     waitReady
     let opts =
           mbWreqDefaults
-            & Wr.param "inc" .~ ["artist-credits labels"]
+            & Wr.param "inc" .~ ["artist-credits"]
     let url = baseUrl <> "/release-group/" <> releaseGroupId.mbid
     getWithJson opts url >>= \case
       Left e -> do
