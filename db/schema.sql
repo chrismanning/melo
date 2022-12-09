@@ -416,7 +416,7 @@ CREATE UNIQUE INDEX artist_name_artist_id_name_uindex ON melo.artist_name USING 
 -- Name: artist_name_musicbrainz_id_uindex; Type: INDEX; Schema: melo; Owner: -
 --
 
-CREATE UNIQUE INDEX artist_name_musicbrainz_id_uindex ON melo.artist USING btree (name) WHERE (musicbrainz_id IS NOT NULL);
+CREATE UNIQUE INDEX artist_name_musicbrainz_id_uindex ON melo.artist USING btree (name, musicbrainz_id) WHERE (musicbrainz_id IS NOT NULL);
 
 
 --
@@ -679,4 +679,5 @@ INSERT INTO melo.schema_migrations (version) VALUES
     ('20221030214943'),
     ('20221116005520'),
     ('20221204172930'),
-    ('20221208162831');
+    ('20221208162831'),
+    ('20221209154929');
