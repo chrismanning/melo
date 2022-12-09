@@ -77,6 +77,12 @@ instance
   resolveMappingNamed m src | m == "album_artist_origin" = do
     artists <- getSourceAlbumArtists src.ref
     pure $ V.take 1 $ V.mapMaybe ((\c -> c >>= decodeAlphaThree <&> alphaTwoUpper) . (.country) . fst) artists
+  resolveMappingNamed m src | m == "va_track_artist" = do
+    albumArtists <- resolveMappingNamed "album_artist" src
+    trackArtists <- resolveMappingNamed "track_artist" src
+    if trackArtists /= albumArtists then
+      pure trackArtists
+    else pure V.empty
   resolveMappingNamed _ Source {metadata = Nothing} = pure V.empty
   resolveMappingNamed mappingName Source {metadata = Just metadata} =
     getMappingNamed mappingName >>= \case
