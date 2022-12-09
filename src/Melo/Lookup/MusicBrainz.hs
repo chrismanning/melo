@@ -346,13 +346,13 @@ getReleaseByAlbum ::
   m (Maybe Release)
 getReleaseByAlbum m = do
   let albumTitle = m.tagHead M.album
-  let albumArtist = m.tagHead M.albumArtist
+  let albumArtists = m.tag M.albumArtist
   let date = m.tagHead M.originalReleaseYear <&> truncateDate
   let catNum = m.tagHead M.catalogNumber
-  if isJust albumTitle && isJust albumArtist && isJust catNum
+  if isJust albumTitle && not (null albumArtists) && isJust catNum
     then
       find perfectScore
-        <$> searchReleases def {albumArtist, albumTitle, date, catNum}
+        <$> searchReleases def {albumArtist = Just $ T.intercalate " & " (toList albumArtists), albumTitle, date, catNum}
     else pure Nothing
 
 getReleaseGroupFromMetadata ::
@@ -378,12 +378,12 @@ getReleaseGroupByAlbum ::
   m (Maybe ReleaseGroup)
 getReleaseGroupByAlbum m = do
   let albumTitle = m.tagHead M.album
-  let albumArtist = m.tagHead M.albumArtist
+  let albumArtists = m.tag M.albumArtist
   let date = m.tagHead M.originalReleaseYear <&> truncateDate
-  if isJust albumTitle && isJust albumArtist
+  if isJust albumTitle && not (null albumArtists)
     then
       find perfectScore
-        <$> searchReleaseGroups def {albumArtist, albumTitle, date}
+        <$> searchReleaseGroups def {albumArtist = Just $ T.intercalate " & " (toList albumArtists), albumTitle, date}
     else pure Nothing
 
 getRecordingFromMetadata ::
@@ -482,8 +482,8 @@ instance
       [] -> pure V.empty
       ts -> do
         let q = T.intercalate " AND " ts
-        let opts = mbWreqDefaults & Wr.param "query" .~ [q]
-        let url = baseUrl <> "/release"
+        let opts = mbWreqDefaults
+        let url = baseUrl <> "/release?query=" <> q
         getWithJson @_ @ReleaseSearchResult opts url >>= \case
           Left e -> do
             $(logError) $ "error searching for matching releases: " <> show e
@@ -501,8 +501,8 @@ instance
       [] -> pure V.empty
       ts -> do
         let q = T.intercalate " AND " ts
-        let opts = mbWreqDefaults & Wr.param "query" .~ [q]
-        let url = baseUrl <> "/release-group"
+        let opts = mbWreqDefaults
+        let url = baseUrl <> "/release-group?query=" <> q
         getWithJson @_ @ReleaseGroupSearchResult opts url >>= \case
           Left e -> do
             $(logError) $ "error searching for matching release groups: " <> show e
@@ -510,10 +510,8 @@ instance
           Right r -> pure $ fromMaybe V.empty $ r ^. Wr.responseBody . #releaseGroups
   searchArtists search = MusicBrainzServiceIOT $ do
     waitReady
-    let opts =
-          mbWreqDefaults
-            & Wr.param "query" .~ ["artist:\"" <> search.artist <> "\""]
-    let url = baseUrl <> "/artist"
+    let opts = mbWreqDefaults
+    let url = baseUrl <> "/artist?query=" <> "artist:\"" <> search.artist <> "\""
     getWithJson @_ @ArtistSearchResult opts url >>= \case
       Left e -> do
         $(logError) $ "error searching for matching artists: " <> show e
@@ -535,9 +533,8 @@ instance
       [] -> pure V.empty
       ts -> do
         let q = T.intercalate " AND " ts
-        let opts =
-              mbWreqDefaults & Wr.param "query" .~ [q]
-        let url = baseUrl <> "/recording"
+        let opts = mbWreqDefaults
+        let url = baseUrl <> "/recording?query=" <> q
         getWithJson @_ @RecordingSearchResult opts url >>= \case
           Left e -> do
             $(logError) $ "error searching for matching recordings: " <> show e
