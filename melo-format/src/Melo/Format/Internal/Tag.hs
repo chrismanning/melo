@@ -2,6 +2,7 @@ module Melo.Format.Internal.Tag where
 
 import Data.Foldable
 import qualified Data.List.NonEmpty as NE
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.Maybe
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -44,22 +45,12 @@ getMappedTagIndices s (TagMapping ms) t =
 
 setMappedTag :: (Functor f, Foldable f) => FieldMappingSelector -> TagMapping -> f Text -> Tags -> Tags
 setMappedTag s tm vs t | toList (getMappedTag s tm t) == toList vs = t
-setMappedTag s tm@(TagMapping ms) vs t@(Tags tags) =
-  let is = getMappedTagIndices s tm t
+setMappedTag s (TagMapping (m :| _)) vs t@(Tags tags) =
+  let is = getMappedTagIndices s (TagMapping (m :| [])) t
       ft = V.ifilter (\i _ -> not (V.elem i is)) tags
-      fm =
-        ms
-          ^.. each
-            . filtered
-              ( \m -> case s m of
-                  Nothing -> False
-                  _ -> True
-              )
-   in case fm of
-        (m : _) -> case s m of
-           Just m' -> Tags (ft <> V.fromList (toList (vs <&> (canonicalForm m',))))
-           Nothing -> t
-        [] -> t
+   in case s m of
+        Just m' -> Tags (ft <> V.fromList (toList (vs <&> (canonicalForm m',))))
+        Nothing -> t
 
 mappedTag :: FieldMappingSelector -> TagMapping -> TagLens
 mappedTag s m f tags = (\vs -> setMappedTag s m vs tags) <$> f (getMappedTag s m tags)
