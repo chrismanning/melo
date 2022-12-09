@@ -451,17 +451,19 @@ musicBrainzLookup src@Source {metadata = Nothing} = do
   $(logDebug) $ "No Metadata; Cannot lookup MusicBrainz by metadata for source " <> show src.ref
   pure $ Right src
 musicBrainzLookup src@Source {metadata = Just metadata} = (flip evalStateT) metadata do
-  get >>= MB.getReleaseOrGroup >>= \case
-    Nothing -> pure ()
-    Just (Left release) -> do
+  get >>= MB.getReleaseAndGroup >>= \case
+    (Nothing, Nothing) -> pure ()
+    (releaseGroup, Just release) -> do
       F.tagLens MB.releaseIdTag .= V.singleton release.id.mbid
-      F.tagLens MB.releaseGroupIdTag .= V.singleton release.releaseGroup.id.mbid
+      case releaseGroup ^? _Just . #id . coerced of
+        Just releaseGroupId -> F.tagLens MB.releaseGroupIdTag .= V.singleton releaseGroupId
+        _ -> pure ()
       let albumArtists = release.artistCredit ^.. _Just . traverse . (to (.artist.id.mbid))
       F.tagLens MB.albumArtistIdTag .= V.fromList albumArtists
       case release.labelInfo ^? _Just . traverse . to (.catalogNumber) . _Just of
         Just catNum -> F.tagLens M.catalogNumber .= V.singleton catNum
         _ -> pure ()
-    Just (Right releaseGroup) ->
+    (Just releaseGroup, Nothing) ->
       F.tagLens MB.releaseGroupIdTag .= V.singleton releaseGroup.id.mbid
   get >>= MB.getRecordingFromMetadata >>= \case
     Just recording -> do
