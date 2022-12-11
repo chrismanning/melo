@@ -61,6 +61,7 @@ import Data.Maybe
 import Data.String (IsString)
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.Text.Encoding
 import Data.Vector (Vector ())
 import Data.Vector qualified as V
 import GHC.Generics (Generic)
@@ -77,6 +78,7 @@ import Melo.Format.Mapping
   )
 import Melo.Format.Mapping qualified as M
 import Melo.Format.Metadata qualified as F
+import Network.HTTP.Types.URI
 import Network.Wreq qualified as Wr
 import Network.Wreq.Session qualified as WrS
 import Streaming.Prelude qualified as S
@@ -164,7 +166,7 @@ instance FromJSON CountrySubdivision where
       (typeMismatch "String" invalid)
 
 data ReleaseSearch = ReleaseSearch
-  { albumArtist :: Maybe Text,
+  { albumArtists :: Maybe [Text],
     albumTitle :: Maybe Text,
     date :: Maybe Text,
     catNum :: Maybe Text
@@ -243,7 +245,7 @@ instance FromJSON ReleaseGroup where
 data RecordingSearch = RecordingSearch
   { title :: Maybe Text,
     trackNumber :: Maybe Text,
-    artist :: Maybe Text,
+    artists :: Maybe [Text],
     album :: Maybe Text,
     releaseId :: Maybe Text,
     releaseGroupId :: Maybe Text,
@@ -352,7 +354,7 @@ getReleaseByAlbum m = do
   if isJust albumTitle && not (null albumArtists) && isJust catNum
     then
       find perfectScore
-        <$> searchReleases def {albumArtist = Just $ T.intercalate " & " (toList albumArtists), albumTitle, date, catNum}
+        <$> searchReleases def {albumArtists = Just (toList albumArtists), albumTitle, date, catNum}
     else pure Nothing
 
 getReleaseGroupFromMetadata ::
@@ -383,7 +385,7 @@ getReleaseGroupByAlbum m = do
   if isJust albumTitle && not (null albumArtists)
     then
       find perfectScore
-        <$> searchReleaseGroups def {albumArtist = Just $ T.intercalate " & " (toList albumArtists), albumTitle, date}
+        <$> searchReleaseGroups def {albumArtists = Just (toList albumArtists), albumTitle, date}
     else pure Nothing
 
 getRecordingFromMetadata ::
@@ -431,10 +433,10 @@ getRecordingByTrack m = do
   let title = m.tagHead M.trackTitle
   let album = m.tagHead M.album
   let trackNumber = m.tagHead M.trackNumber
-  let artist = m.tagHead M.artist
+  let artists = toList $ m.tag M.artist
   let isrc = m.tagHead M.isrc
-  if isJust title && (isJust album || isJust artist)
-    then find perfectScore <$> searchRecordings def {title, album, trackNumber, artist, isrc}
+  if isJust title && (isJust album || not (null artists))
+    then find perfectScore <$> searchRecordings def {title, album, trackNumber, isrc, artists = Just artists}
     else pure Nothing
 
 perfectScore :: (Integral i, HasField "score" r (Maybe i)) => r -> Bool
@@ -463,6 +465,24 @@ newtype MusicBrainzServiceIOT m a = MusicBrainzServiceIOT
 instance MonadTrans MusicBrainzServiceIOT where
   lift m = MusicBrainzServiceIOT $ HttpSessionIOT $ ReaderT $ const m
 
+data QueryTerm
+  = QueryTerm
+      { key :: Text,
+        value :: Maybe Text
+      }
+  | MultiTerm
+      { key :: Text,
+        values :: Maybe [Text]
+      }
+
+renderQueryParam :: [QueryTerm] -> Maybe Text
+renderQueryParam qs = case catMaybes $ fmap encodeTerm qs of
+  [] -> Nothing
+  ts -> Just $ T.intercalate "%20AND%20" ts
+  where
+    encodeTerm q@QueryTerm {} = q.value <&> \v -> q.key <> ":%22" <> decodeUtf8 (urlEncode True (encodeUtf8 v)) <> "%22"
+    encodeTerm q@MultiTerm {} = q.values <&> \v -> q.key <> ":%22" <> T.intercalate " & " (decodeUtf8 . urlEncode True . encodeUtf8 <$> v) <> "%22"
+
 instance
   ( MonadIO m,
     RateLimit m,
@@ -473,15 +493,13 @@ instance
   searchReleases search = MusicBrainzServiceIOT $ do
     waitReady
     let qterms =
-          catMaybes
-            [ fmap (\t -> "releaseaccent:\"" <> t <> "\"") search.albumTitle,
-              fmap (\a -> "artist:\"" <> a <> "\"") search.albumArtist,
-              fmap (\c -> "catno:\"" <> c <> "\"") search.catNum
-            ]
-    case qterms of
-      [] -> pure V.empty
-      ts -> do
-        let q = T.intercalate " AND " ts
+          [ QueryTerm "releaseaccent" search.albumTitle,
+            MultiTerm "artist" search.albumArtists,
+            QueryTerm "catno" search.catNum
+          ]
+    case renderQueryParam qterms of
+      Nothing -> pure V.empty
+      Just q -> do
         let opts = mbWreqDefaults
         let url = baseUrl <> "/release?query=" <> q
         getWithJson @_ @ReleaseSearchResult opts url >>= \case
@@ -492,15 +510,13 @@ instance
   searchReleaseGroups search = MusicBrainzServiceIOT $ do
     waitReady
     let qterms =
-          catMaybes
-            [ fmap (\t -> "(releasegroupaccent:\"" <> t <> "\" OR title:\"" <> t <> "\")") search.albumTitle,
-              fmap (\a -> "artist:\"" <> a <> "\"") search.albumArtist,
-              fmap (\a -> "firstreleasedate:\"" <> a <> "\"") search.date
-            ]
-    case qterms of
-      [] -> pure V.empty
-      ts -> do
-        let q = T.intercalate " AND " ts
+          [ QueryTerm "releasegroupaccent" search.albumTitle,
+            MultiTerm "artist" search.albumArtists,
+            QueryTerm "firstreleasedate" search.date
+          ]
+    case renderQueryParam qterms of
+      Nothing -> pure V.empty
+      Just q -> do
         let opts = mbWreqDefaults
         let url = baseUrl <> "/release-group?query=" <> q
         getWithJson @_ @ReleaseGroupSearchResult opts url >>= \case
@@ -510,8 +526,10 @@ instance
           Right r -> pure $ fromMaybe V.empty $ r ^. Wr.responseBody . #releaseGroups
   searchArtists search = MusicBrainzServiceIOT $ do
     waitReady
-    let opts = mbWreqDefaults
-    let url = baseUrl <> "/artist?query=" <> "artist:\"" <> search.artist <> "\""
+    let opts =
+          mbWreqDefaults
+            & Wr.param "query" .~ ["artist:\"" <> decodeUtf8 (urlEncode True (encodeUtf8 search.artist)) <> "\""]
+    let url = baseUrl <> "/artist"
     getWithJson @_ @ArtistSearchResult opts url >>= \case
       Left e -> do
         $(logError) $ "error searching for matching artists: " <> show e
@@ -520,19 +538,17 @@ instance
   searchRecordings search = MusicBrainzServiceIOT $ do
     waitReady
     let qterms =
-          catMaybes
-            [ fmap (\a -> "recording:\"" <> a <> "\"") search.title,
-              fmap (\a -> "tnum:\"" <> a <> "\"") search.trackNumber,
-              fmap (\a -> "artist:\"" <> a <> "\"") search.artist,
-              fmap (\a -> "release:\"" <> a <> "\"") search.album,
-              fmap (\a -> "reid:\"" <> a <> "\"") search.releaseId,
-              fmap (\a -> "rgid:\"" <> a <> "\"") search.releaseGroupId,
-              fmap (\a -> "isrc:\"" <> a <> "\"") search.isrc
-            ]
-    case qterms of
-      [] -> pure V.empty
-      ts -> do
-        let q = T.intercalate " AND " ts
+          [ QueryTerm "recording" search.title,
+            QueryTerm "tnum" search.trackNumber,
+            MultiTerm "artist" search.artists,
+            QueryTerm "release" search.album,
+            QueryTerm "reid" search.releaseId,
+            QueryTerm "rgid" search.releaseGroupId,
+            QueryTerm "isrc" search.isrc
+          ]
+    case renderQueryParam qterms of
+      Nothing -> pure V.empty
+      Just q -> do
         let opts = mbWreqDefaults
         let url = baseUrl <> "/recording?query=" <> q
         getWithJson @_ @RecordingSearchResult opts url >>= \case
@@ -693,7 +709,7 @@ data CacheAggregate = CacheAggregate
   }
   deriving (Generic)
 
-instance Default CacheAggregate where
+instance Default CacheAggregate
 
 newtype CachingMusicBrainzServiceT m a = CachingMusicBrainzServiceT
   { runCachingMusicBrainzServiceT :: StateT CacheAggregate m a
@@ -717,9 +733,10 @@ newtype CachingMusicBrainzServiceT m a = CachingMusicBrainzServiceT
 doCache :: MusicBrainzService m => Lens' CacheAggregate (Maybe a) -> m a -> StateT CacheAggregate m a
 doCache l m = doImpl $ lift $ m
   where
-    doImpl mb = use l >>= \case
-      Just x -> pure x
-      Nothing -> mb >>= (l <?=)
+    doImpl mb =
+      use l >>= \case
+        Just x -> pure x
+        Nothing -> mb >>= (l <?=)
 
 instance MusicBrainzService m => MusicBrainzService (CachingMusicBrainzServiceT m) where
   searchReleases search = CachingMusicBrainzServiceT $ doCache ( #searchReleasesStore . at search ) (searchReleases search)
