@@ -7,12 +7,12 @@ import Control.Exception.Safe
 import Control.Foldl (impurely, vectorM)
 import Control.Lens hiding (each, from)
 import Data.Coerce
-import Data.Either.Combinators
 import Data.Maybe
 import Data.Pool
 import Data.Vector (Vector ())
 import Data.Vector qualified as V
 import Hasql.Connection
+import Melo.Common.Logging
 import Melo.Common.Monad
 import Melo.Database.Repo as Repo
 import Melo.Database.Repo.IO
@@ -72,7 +72,7 @@ newtype ArtistRepositoryIOT m a = ArtistRepositoryIOT
       PrimMonad
     )
 
-instance (MonadIO m, PrimMonad m) => Repository ArtistEntity (ArtistRepositoryIOT m) where
+instance (MonadIO m, PrimMonad m, Logging m) => Repository ArtistEntity (ArtistRepositoryIOT m) where
   getAll = ArtistRepositoryIOT Repo.getAll
   getByKey = ArtistRepositoryIOT . Repo.getByKey
   insert es | V.null es = pure V.empty
@@ -81,7 +81,9 @@ instance (MonadIO m, PrimMonad m) => Repository ArtistEntity (ArtistRepositoryIO
     S.each (insertArtists es tbl (Rel8.Projection (\x -> x)))
       & S.catMaybes
       & S.mapM (runInsert' connSrc)
-      & S.mapMaybe rightToMaybe
+      & S.mapMaybeM \case
+        Left e -> $(logWarn) ("Artist insert failed: " <> displayException e) >> pure Nothing
+        Right a -> pure $ Just a
       & S.concat
       & impurely S.foldM_ vectorM
   insert' es | V.null es = pure 0
@@ -90,7 +92,9 @@ instance (MonadIO m, PrimMonad m) => Repository ArtistEntity (ArtistRepositoryIO
     S.each (insertArtists es tbl (fromIntegral <$> Rel8.NumberOfRowsAffected))
       & S.catMaybes
       & S.mapM (runInsert' connSrc)
-      & S.mapMaybe rightToMaybe
+      & S.mapMaybeM \case
+        Left e -> $(logWarn) ("Artist insert failed: " <> displayException e) >> pure Nothing
+        Right a -> pure $ Just a
       & S.sum_
   delete = ArtistRepositoryIOT . Repo.delete
   update = ArtistRepositoryIOT . Repo.update
@@ -111,22 +115,28 @@ insertArtists as tbl returning =
         Insert
           { into = tbl,
             rows = Rel8.values (Witch.from <$> (if incl then a else b)),
-            onConflict =
-              DoUpdate
-                PartialUpsert
-                  { index = (.name),
-                    indexWhere = indexPredicate incl,
-                    set = \new old -> new & #id .~ old.id,
-                    updateWhere = \_new _old -> lit True
-                  },
+            onConflict = DoUpdate (partialUpsert incl),
             returning
           }
-    indexPredicate True a = isNonNull a.musicbrainz_id
-    indexPredicate False a = isNull a.musicbrainz_id
+    partialUpsert False =
+      PartialUpsert
+        { index = (.name),
+          indexWhere = \a -> isNull a.musicbrainz_id,
+          set = \new old -> new & #id .~ old.id,
+          updateWhere = \_new _old -> lit True
+        }
+    partialUpsert True =
+      PartialUpsert
+        { index = \a -> (a.name, a.musicbrainz_id),
+          indexWhere = \a -> isNonNull a.musicbrainz_id,
+          set = \new old -> new & #id .~ old.id,
+          updateWhere = \_new _old -> lit True
+        }
 
 instance
   ( MonadIO m,
-    PrimMonad m
+    PrimMonad m,
+    Logging m
   ) =>
   ArtistRepository (ArtistRepositoryIOT m)
   where
