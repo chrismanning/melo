@@ -121,8 +121,8 @@ insertArtists as tbl returning =
                   },
             returning
           }
-    indexPredicate True a = isNull a.musicbrainz_id
-    indexPredicate False a = isNonNull a.musicbrainz_id
+    indexPredicate True a = isNonNull a.musicbrainz_id
+    indexPredicate False a = isNull a.musicbrainz_id
 
 instance
   ( MonadIO m,

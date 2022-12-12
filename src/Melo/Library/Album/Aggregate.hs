@@ -8,6 +8,7 @@ import Control.Exception.Safe
 import Control.Foldl (impurely, vectorM)
 import Control.Lens hiding (from, lens)
 import Data.Maybe
+import Data.Text qualified as T
 import Data.Vector (Vector (), (!))
 import Data.Vector qualified as V
 import Melo.Common.Logging
@@ -22,7 +23,7 @@ import Melo.Library.Album.Types
 import Melo.Library.Artist.Aggregate
 import Melo.Library.Artist.Name.Repo
 import Melo.Library.Artist.Name.Types
-import Melo.Library.Artist.Repo
+import Melo.Library.Artist.Repo as Artist
 import Melo.Library.Artist.Types
 import Melo.Library.Source.Types
 import Melo.Library.Track.Aggregate
@@ -100,13 +101,13 @@ instance
         Just newAlbum -> do
           album <- fmap join (traverse Album.getByMusicBrainzId (mbRelease ^? _Just . #id)) <<|>> insertSingle @AlbumEntity newAlbum
           let artistCredits = mbRelease ^? _Just . #artistCredit . _Just <|> mbReleaseGroup ^? _Just . #artistCredit . _Just
-          $(logDebug) $ "Artist credits for album " <> show newAlbum.title <> ": " <> show artistCredits
+          $(logDebug) $ "Artist credits for album " <> T.pack (show newAlbum.title) <> ": " <> T.pack (show artistCredits)
           artistNames <- case artistCredits of
             Just as -> V.mapMaybeM importArtistCredit as
             _ -> pure V.empty
           case album of
             Just album -> do
-              $(logInfo) $ "Found album '" <> album.title <> "'"
+              $(logInfo) $ "Found album " <> T.pack (show album.title)
               let mk a = AlbumArtistNameTable {album_id = album.id, artist_name_id = a.id}
               _ <- AlbumArtist.insert' (mk <$> artistNames)
               let album' = mkAlbum (V.toList artistNames) album
@@ -152,8 +153,8 @@ instance
         let mbArtistIds = MB.MusicBrainzId <$> fromMaybe V.empty (src.metadata ^? _Just . tagLens MB.albumArtistIdTag)
         newArtists <- V.mapMaybeM MB.getArtist mbArtistIds
         artists <- forMaybeM newArtists \newArtist -> runMaybeT do
-          artist <- MaybeT $ insertSingle @ArtistEntity (from newArtist)
-          artistName <- MaybeT $ insertSingle @ArtistNameEntity (NewArtistName artist.id artist.name)
+          artist <- MaybeT $ insertSingle @ArtistEntity (from newArtist) <<|>> Artist.getByMusicBrainzId newArtist.id
+          artistName <- MaybeT $ insertSingle @ArtistNameEntity (NewArtistName artist.id artist.name) <<|>> getAlias artist.id artist.name
           _ <- MaybeT $ AlbumArtist.insertSingle (AlbumArtistNameEntity album.id artistName.id)
           pure artistName
 

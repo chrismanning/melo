@@ -392,10 +392,24 @@ ALTER TABLE ONLY melo.track
 
 
 --
+-- Name: album_musicbrainz_group_id_uindex; Type: INDEX; Schema: melo; Owner: -
+--
+
+CREATE UNIQUE INDEX album_musicbrainz_group_id_uindex ON melo.album USING btree (musicbrainz_group_id) WHERE (musicbrainz_id IS NULL);
+
+
+--
 -- Name: album_musicbrainz_id_uindex; Type: INDEX; Schema: melo; Owner: -
 --
 
 CREATE UNIQUE INDEX album_musicbrainz_id_uindex ON melo.album USING btree (musicbrainz_id);
+
+
+--
+-- Name: album_title_year_released_uindex; Type: INDEX; Schema: melo; Owner: -
+--
+
+CREATE UNIQUE INDEX album_title_year_released_uindex ON melo.album USING btree (title, year_released) WHERE ((musicbrainz_id IS NULL) AND (musicbrainz_group_id IS NULL));
 
 
 --
@@ -680,4 +694,5 @@ INSERT INTO melo.schema_migrations (version) VALUES
     ('20221116005520'),
     ('20221204172930'),
     ('20221208162831'),
-    ('20221209154929');
+    ('20221209154929'),
+    ('20221211232034');
