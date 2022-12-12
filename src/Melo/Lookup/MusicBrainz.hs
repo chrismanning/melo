@@ -42,11 +42,9 @@ module Melo.Lookup.MusicBrainz
   )
 where
 
-import Control.Applicative as A
 import Control.Concurrent.Classy
 import Control.Concurrent.TokenLimiter
 import Control.Exception.Safe
-import Control.Foldl qualified as F
 import Control.Lens hiding (from, lens)
 import Control.Monad.Reader
 import Control.Monad.State.Strict
@@ -81,8 +79,6 @@ import Melo.Format.Metadata qualified as F
 import Network.HTTP.Types.URI
 import Network.Wreq qualified as Wr
 import Network.Wreq.Session qualified as WrS
-import Streaming.Prelude qualified as S
-import Prelude as P
 
 newtype MusicBrainzId = MusicBrainzId
   { mbid :: Text
@@ -267,7 +263,7 @@ data Recording = Recording
     score :: Maybe Int,
     title :: Text,
     artistCredit :: Maybe (Vector ArtistCredit),
-    releases :: Vector Release
+    releases :: Maybe (Vector Release)
   }
   deriving (Show, Generic, Eq)
 
@@ -336,11 +332,7 @@ getReleaseByMusicBrainzId ::
   MusicBrainzService m =>
   F.Metadata ->
   m (Maybe Release)
-getReleaseByMusicBrainzId m = do
-  let releaseIds = MusicBrainzId <$> m.tag releaseIdTag
-  S.each releaseIds
-    & S.mapMaybeM getRelease
-    & F.impurely S.foldM_ (F.generalize $ F.find perfectScore)
+getReleaseByMusicBrainzId m = firstJustM getRelease (MusicBrainzId <$> m.tagHead releaseIdTag)
 
 getReleaseByAlbum ::
   MusicBrainzService m =>
@@ -368,11 +360,7 @@ getReleaseGroupByMusicBrainzId ::
   MusicBrainzService m =>
   F.Metadata ->
   m (Maybe ReleaseGroup)
-getReleaseGroupByMusicBrainzId m = do
-  let releaseGroupIds = MusicBrainzId <$> m.tag releaseGroupIdTag
-  S.each releaseGroupIds
-    & S.mapMaybeM getReleaseGroup
-    & F.impurely S.foldM_ (F.generalize $ F.find perfectScore)
+getReleaseGroupByMusicBrainzId m = firstJustM getReleaseGroup (MusicBrainzId <$> m.tagHead releaseGroupIdTag)
 
 getReleaseGroupByAlbum ::
   MusicBrainzService m =>
@@ -401,10 +389,7 @@ getRecordingByMusicBrainzId ::
   MusicBrainzService m =>
   F.Metadata ->
   m (Maybe Recording)
-getRecordingByMusicBrainzId m = do
-  let recordingIds = m.tag recordingIdTag
-  V.find perfectScore . V.catMaybes
-    <$> V.forM recordingIds (getRecording . MusicBrainzId)
+getRecordingByMusicBrainzId m = firstJustM getRecording (MusicBrainzId <$> m.tagHead recordingIdTag)
 
 getRecordingByReleaseIdTags ::
   MusicBrainzService m =>
