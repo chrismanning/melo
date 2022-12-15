@@ -463,11 +463,13 @@ streamSourceGroupsQuery collectionWatchState pool collectionRef groupByMappings 
             )
       pure srcs
     streamSession :: Connection -> IO (Either QueryError ())
-    streamSession =
-      run $
+    streamSession conn = do
+      let q = sourcesForCollection collectionRef
+      $(logInfoIO) $ show (Rel8.showQuery q)
+      flip run conn $
         transactionIO ReadCommitted ReadOnly NotDeferrable $
           cursorTransactionIO $
-            processStream (selectStream (sourcesForCollection collectionRef))
+            processStream (selectStream q)
     processStream :: MonadIO m => S.Stream (S.Of Ty.SourceEntity) m () -> m ()
     processStream s = do
       $(logInfoIO) $ "Starting streaming sources from collection " <> show collectionRef
@@ -601,20 +603,16 @@ transformSourcesImpl ::
 transformSourcesImpl (TransformSourcesArgs ts where') = do
   es <- resolveSourceEntities where'
   $(logDebug) $ "Transforming sources " <> show (es <&> \e -> e.id) <> " with " <> show ts
-  forM es $ \s ->
-    lift $
-      E.catchAny
-        ( case tryFrom s of
-            Left e -> E.throwM (into @Tr.TransformationError e)
-            Right s' -> do
-              Tr.evalTransformActions (interpretTransforms ts) s' >>= \case
-                Left e -> E.throwM e
-                Right s'' -> pure $ UpdatedSource (enrichSourceEntity @m @MUTATION (from s''))
-        )
-        ( \e -> do
-            $(logError) $ E.displayException e
-            pure $ FailedSourceUpdate s.id (T.pack $ E.displayException e)
-        )
+  ss <- lift $ forM es $ \s ->
+    case tryFrom s of
+      Left e -> pure $ Left (s.id, into @Tr.TransformationError e)
+      Right s' -> mapLeft (s.id,) <$> Tr.evalTransformActions (interpretTransforms ts) s'
+  lift $ fork $ void $ importAlbums (V.mapMaybe rightToMaybe ss)
+  forM ss \case
+    Left (id, e) -> do
+      $(logError) $ E.displayException e
+      pure $ FailedSourceUpdate id (T.pack $ E.displayException e)
+    Right s -> pure $ UpdatedSource (enrichSourceEntity @m @MUTATION (from s))
   where
     interpretTransforms :: Vector Transform -> Vector Tr.TransformAction
     interpretTransforms ts = V.mapMaybe (rightToMaybe . tryFrom) ts
