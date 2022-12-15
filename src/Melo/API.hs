@@ -192,12 +192,14 @@ api collectionWatchState pool sess = do
       runArtistRepositoryPooledIO pool $
         runTagMappingRepositoryPooledIO pool $
           runTagMappingAggregate (getMappingsNamed mappingNames)
+    orphans <- rescue (param "orphans") (const $ pure False)
+    let filt = if orphans then API.Orphaned else API.AllSourceGroups
     rq <- body
     case fromASCIIBytes collectionId of
       Nothing -> status badRequest400
       Just uuid ->
         stream $
-          API.streamSourceGroupsQuery collectionWatchState pool (CollectionRef uuid) groupByMappings rq
+          API.streamSourceGroupsQuery collectionWatchState pool (CollectionRef uuid) groupByMappings filt rq
 
 instance (PrimMonad m, ScottyError a) => PrimMonad (ActionT a m) where
   type PrimState (ActionT a m) = PrimState m

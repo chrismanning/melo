@@ -46,6 +46,7 @@ import Melo.GraphQL.Where
 import Melo.Library.Album.Aggregate
 import Melo.Library.Album.ArtistName.Repo
 import Melo.Library.Album.Repo
+import Melo.Library.Album.Types
 import Melo.Library.Artist.Aggregate
 import Melo.Library.Artist.Name.Repo
 import Melo.Library.Artist.Repo
@@ -61,12 +62,13 @@ import Melo.Library.Source.Types qualified as Ty
 import Melo.Library.Track.Aggregate
 import Melo.Library.Track.ArtistName.Repo
 import Melo.Library.Track.Repo
+import Melo.Library.Track.Types
 import Melo.Lookup.MusicBrainz as MB
 import Melo.Metadata.Mapping.Aggregate
 import Melo.Metadata.Mapping.Repo
 import Network.Wai (StreamingBody)
 import Network.Wreq.Session (newAPISession)
-import Rel8 (JSONBEncoded (..), (==.))
+import Rel8 (JSONBEncoded (..), (&&.), (==.))
 import Rel8 qualified
 import Streaming.Prelude qualified as S
 import System.FilePath as P
@@ -431,8 +433,10 @@ mkSrcGroup s =
                           }
               Nothing -> pure Nothing
 
-streamSourceGroupsQuery :: CollectionWatchState -> Pool Connection -> Ty.CollectionRef -> TagMappingIndex -> L.ByteString -> StreamingBody
-streamSourceGroupsQuery collectionWatchState pool collectionRef groupByMappings rq sendChunk flush =
+data SourceGroupFilter = AllSourceGroups | Orphaned
+
+streamSourceGroupsQuery :: CollectionWatchState -> Pool Connection -> Ty.CollectionRef -> TagMappingIndex -> SourceGroupFilter -> L.ByteString -> StreamingBody
+streamSourceGroupsQuery collectionWatchState pool collectionRef groupByMappings filt rq sendChunk flush =
   withResource pool (streamSession >=> either throwIO pure)
   where
     mkRoot :: SourceGroup (Resolver QUERY () m) -> RootResolver m () SourceGroupStream Undefined Undefined
@@ -445,7 +449,18 @@ streamSourceGroupsQuery collectionWatchState pool collectionRef groupByMappings 
         }
     sourcesForCollection collectionRef = do
       srcs <- orderByUri $ Rel8.each sourceSchema
-      Rel8.where_ (srcs.collection_id ==. Rel8.lit collectionRef)
+      case filt of
+        AllSourceGroups ->
+          Rel8.where_ (srcs.collection_id ==. Rel8.lit collectionRef)
+        Orphaned -> do
+          tracks <- Rel8.each trackSchema
+          albums <- Rel8.each albumSchema
+          Rel8.where_
+            ( srcs.collection_id ==. Rel8.lit collectionRef
+                &&. tracks.source_id ==. srcs.id
+                &&. albums.id ==. tracks.album_id
+                &&. Rel8.isNull albums.musicbrainz_group_id
+            )
       pure srcs
     streamSession :: Connection -> IO (Either QueryError ())
     streamSession =
