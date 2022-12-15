@@ -10,9 +10,9 @@ import Control.Lens (firstOf)
 import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
-import Data.Foldable
 import Data.Pool
 import Data.Text (Text)
+import Data.Vector (Vector)
 import Hasql.Connection
 import Melo.Database.Repo
 import Melo.Database.Repo.IO
@@ -21,7 +21,7 @@ import Melo.Library.Artist.Types
 import Rel8
 
 class Repository ArtistNameEntity m => ArtistNameRepository m where
-  getArtistNames :: ArtistRef -> m [Text]
+  getArtistNames :: ArtistRef -> m (Vector ArtistNameEntity)
   getAlias :: ArtistRef -> Text -> m (Maybe ArtistNameEntity)
 
 instance
@@ -59,10 +59,10 @@ newtype ArtistNameRepositoryIOT m a = ArtistNameRepositoryIOT
 instance MonadIO m => ArtistNameRepository (ArtistNameRepositoryIOT m) where
   getArtistNames artistRef = do
     RepositoryHandle {connSrc, tbl} <- ask
-    toList <$> runSelect connSrc do
+    runSelect connSrc do
       artistName <- Rel8.each tbl
       Rel8.where_ $ artistName.artist_id ==. lit artistRef
-      pure artistName.name
+      pure artistName
   getAlias artistRef name = do
     RepositoryHandle {connSrc, tbl} <- ask
     firstOf traverse <$> runSelect connSrc do

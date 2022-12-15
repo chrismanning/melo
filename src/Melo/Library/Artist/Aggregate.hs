@@ -3,15 +3,13 @@
 
 module Melo.Library.Artist.Aggregate where
 
+import Control.Applicative
 import Control.Exception.Safe
 import Control.Lens hiding (from, lens)
 import Control.Monad.State.Strict
-import Data.Map.Strict (Map)
-import Data.Map.Strict qualified as Map
 import Data.Maybe
 import Data.Vector (Vector)
 import Data.Vector qualified as V
-import GHC.Generics hiding (from, to)
 import Melo.Common.Logging
 import Melo.Common.Monad
 import Melo.Database.Repo
@@ -64,8 +62,9 @@ instance
   ArtistAggregate (ArtistAggregateIOT m)
   where
   importArtistCredit artistCredit = do
-    newArtist >>= \case
-      Just artist ->
+    mbArtist <- MB.getArtist artistCredit.artist.id <&> fromMaybe artistCredit.artist
+    importMusicBrainzArtist mbArtist >>= \case
+      Just (artist, names) ->
         case artistCredit.name of
           Just alias -> do
             artistName <-
@@ -74,31 +73,20 @@ instance
                   { artist = artist.id,
                     name = alias
                   }
-            void $ importMusicBrainzArtist artistCredit.artist
-            pure artistName <<|>> getAlias artist.id alias
-          Nothing -> do
-            void $ importMusicBrainzArtist artistCredit.artist
-            insertSingle @ArtistNameEntity
-              NewArtistName
-                { artist = artist.id,
-                  name = artist.name
-                }
+            pure (artistName <|> V.find (\a -> a.name == alias) names)
+          Nothing -> getAlias artist.id artist.name
       Nothing -> do
         $(logError) $ "Unable to find MusicBrainz artist with MBID " <> show artistCredit.artist.id.mbid
         pure Nothing
-    where
-      newArtist = do
-        mbArtist <- MB.getArtist artistCredit.artist.id <&> fromMaybe artistCredit.artist
-        insertSingle @ArtistEntity (from mbArtist) <<|>> getByMusicBrainzId mbArtist.id
   importMusicBrainzArtist mbArtist =
     insertSingle @ArtistEntity (from mbArtist) <<|>> getByMusicBrainzId mbArtist.id >>= \case
       Just artist -> do
         case getAliases mbArtist.aliases of
           Just aliases -> do
-            names <- insert @ArtistNameEntity (NewArtistName artist.id <$> aliases)
+            names <- insert @ArtistNameEntity (NewArtistName artist.id <$> aliases) <<|>> getArtistNames artist.id
             pure $ Just (artist, names)
           Nothing -> do
-            names <- insert @ArtistNameEntity (V.singleton $ NewArtistName artist.id artist.name)
+            names <- insert @ArtistNameEntity (V.singleton $ NewArtistName artist.id artist.name) <<|>> getArtistNames artist.id
             pure $ Just (artist, names)
       Nothing -> pure Nothing
     where
