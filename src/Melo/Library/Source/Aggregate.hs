@@ -87,12 +87,14 @@ instance
     $(logDebug) $ "Importing " <> show (V.length ss) <> " sources"
     let metadataSources = rights $ fmap tryFrom ss
     $(logDebug) $ "Importing " <> show (V.length metadataSources) <> " metadata sources"
-    srcs <- rights . fmap tryFrom <$> insert (fmap (from @MetadataImportSource) metadataSources)
+    srcs <- rights . fmap tryFrom <$> insert @SourceEntity (fmap (from @MetadataImportSource) metadataSources)
     -- TODO publish sources imported event
     fork $ void $ importAlbums srcs
     pure srcs
-  updateSource s = runExceptT $
-    writeMetadata >> updateDB
+  updateSource s = do
+    e <- runExceptT (writeMetadata >> updateDB)
+    void $ importAlbums (V.singleton s)
+    pure e
     where
       writeMetadata =
         case uriToFilePath s.source of
@@ -113,16 +115,16 @@ instance
                 $(logWarn) $ "Failed to read metadata file " <> displayException e
                 throwE (UpdateSourceError $ Just $ SomeException e)
       updateDB :: ExceptT SourceError (SourceAggregateIOT m) Source
-      updateDB = updateSingle (from s) >>= \case
+      updateDB = updateSingle @SourceEntity (from s) >>= \case
         Just s' -> ExceptT $ pure $ mapLeft (UpdateSourceError . Just . SomeException) $ tryFrom s'
         Nothing -> throwE $ UpdateSourceError Nothing
 
 getAllSources :: SourceRepository m => m (Vector Source)
-getAllSources = rights <$> fmap tryFrom <$> Repo.getAll
+getAllSources = rights <$> fmap tryFrom <$> Repo.getAll @SourceEntity
 
 getSource :: SourceRepository m => SourceRef -> m (Maybe Source)
 getSource key = do
-  srcs <- Repo.getByKey (singleton key)
+  srcs <- Repo.getByKey @SourceEntity (singleton key)
   pure $ firstOf traverse $ rights $ tryFrom <$> srcs
 
 getSourcesByUriPrefix ::
@@ -138,7 +140,7 @@ length' = foldl' (const . (+ 1)) 0
 
 getSourceFilePath :: (SourceRepository m) => SourceRef -> m (Maybe FilePath)
 getSourceFilePath key = do
-  s <- Repo.getSingle key
+  s <- Repo.getSingle @SourceEntity key
   pure (s >>= parseURI . T.unpack . (.source_uri) >>= uriToFilePath)
 
 findCoverImage :: FileSystem m => FilePath -> m (Maybe FilePath)

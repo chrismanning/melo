@@ -99,12 +99,12 @@ instance
 
 runTagMappingAggregate :: TagMappingRepository m => TagMappingAggregateT m a -> m a
 runTagMappingAggregate (TagMappingAggregateT m) = do
-  all <- getAll
+  all <- getAll @TagMappingEntity
   let mappings = Map.fromList $ fmap (\e -> (e.name, e.tagMapping)) $ V.toList all
   runReaderT m mappings
 
 insertDefaultMappings :: (MonadCatch m, TagMappingRepository m) => m ()
-insertDefaultMappings = void (insert' defaultMappings) `catchIO` (\_ -> pure ())
+insertDefaultMappings = void (insert' @TagMappingEntity defaultMappings) `catchIO` (\_ -> pure ())
 
 defaultMappings :: Vector NewTagMapping
 defaultMappings =

@@ -17,7 +17,7 @@ import Melo.Database.Repo
 import Melo.Database.Repo.IO
 import Melo.Library.Album.Types
 import Melo.Lookup.MusicBrainz qualified as MB
-import Rel8 (Expr, Query, lit, (==.))
+import Rel8 (Expr, Query, lit, (==.), (||.))
 import Rel8 qualified
 import Witch
 
@@ -84,7 +84,7 @@ instance MonadIO m => Repository AlbumEntity (AlbumRepositoryIOT m) where
           onConflict = Rel8.DoNothing,
           returning = fromIntegral <$> Rel8.NumberOfRowsAffected
         }
-  delete = AlbumRepositoryIOT . delete
+  delete = AlbumRepositoryIOT . delete @AlbumEntity
   update = AlbumRepositoryIOT . update
   update' = AlbumRepositoryIOT . update'
 
@@ -97,7 +97,9 @@ instance
     RepositoryHandle {connSrc, tbl} <- ask
     firstOf traverse <$> runSelect connSrc do
       album <- Rel8.each tbl
-      Rel8.where_ $ album.musicbrainz_id ==. lit (Just mbid.mbid)
+      let mbid' = lit (Just mbid.mbid)
+      Rel8.where_ $
+        album.musicbrainz_id ==. mbid' ||. album.musicbrainz_group_id ==. mbid'
       pure album
 
 albumForRef :: Expr AlbumRef -> Query (AlbumTable Expr)

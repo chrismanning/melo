@@ -77,15 +77,31 @@ instance
   ) =>
   AlbumAggregate (AlbumAggregateIOT m)
   where
-  importAlbums srcs =
-    lift $
-      S.each srcs
-        & S.mapM mbLookup
-        & S.groupBy (\(_, releaseA) (_, releaseB) -> releaseA == releaseB)
-        & S.mapped (impurely S.foldM vectorM)
-        & S.map (\srcs -> (snd (srcs ! 0), fst <$> srcs))
-        & importAlbum'
-        & impurely S.foldM_ vectorM
+  importAlbums = importAlbumsImpl
+
+importAlbumsImpl ::
+  forall m.
+  (
+    AlbumRepository m,
+    AlbumArtistNameRepository m,
+    ArtistAggregate m,
+    ArtistNameRepository m,
+    ArtistRepository m,
+    TrackAggregate m,
+    TagMappingAggregate m,
+    Logging m,
+    PrimMonad m,
+    MB.MusicBrainzService m
+  ) =>
+  Vector Source -> m (Vector Album)
+importAlbumsImpl srcs =
+  S.each srcs
+    & S.mapM mbLookup
+    & S.groupBy (\(_, releaseA) (_, releaseB) -> releaseA == releaseB)
+    & S.mapped (impurely S.foldM vectorM)
+    & S.map (\srcs -> (snd (srcs ! 0), fst <$> srcs))
+    & importAlbum'
+    & impurely S.foldM_ vectorM
     where
       mbLookup :: Source -> m (Source, (Maybe MB.ReleaseGroup, Maybe MB.Release))
       mbLookup src = case src.metadata of
@@ -99,7 +115,10 @@ instance
       importMusicBrainzRelease mbReleaseGroup mbRelease srcs = case fromMusicBrainz mbReleaseGroup mbRelease of
         Nothing -> pure ()
         Just newAlbum -> do
-          album <- fmap join (traverse Album.getByMusicBrainzId (mbRelease ^? _Just . #id)) <<|>> insertSingle @AlbumEntity newAlbum
+          $(logDebug) $ "Importing musicbrainz release for sources: " <> show (srcs <&> (.ref))
+          album <- fmap join (traverse Album.getByMusicBrainzId (mbRelease ^? _Just . #id))
+            <<|>> fmap join (traverse Album.getByMusicBrainzId (mbReleaseGroup ^? _Just . #id))
+            <<|>> insertSingle @AlbumEntity newAlbum
           let artistCredits = mbRelease ^? _Just . #artistCredit . _Just <|> mbReleaseGroup ^? _Just . #artistCredit . _Just
           $(logDebug) $ "Artist credits for album " <> T.pack (show newAlbum.title) <> ": " <> T.pack (show artistCredits)
           artistNames <- case artistCredits of
@@ -107,7 +126,7 @@ instance
             _ -> pure V.empty
           case album of
             Just album -> do
-              $(logInfo) $ "Found album " <> T.pack (show album.title)
+              $(logInfo) $ "Found album " <> T.pack (show album.title) <> " (id: " <> T.pack (show album.id) <> ")"
               let mk a = AlbumArtistNameTable {album_id = album.id, artist_name_id = a.id}
               _ <- AlbumArtist.insert' (mk <$> artistNames)
               let album' = mkAlbum (V.toList artistNames) album
@@ -115,6 +134,7 @@ instance
               S.yield album'
             Nothing -> pure ()
       importAlbumsFromMetadata srcs = do
+        $(logDebug) $ "Importing albums for sources: " <> show (srcs <&> (.ref))
         S.each srcs
           & S.mapMaybeM (\src -> fmap (src,) <$> singleMapping "album_title" src)
           & S.groupBy (\(_, albumTitleA) (_, albumTitleB) -> albumTitleA == albumTitleB)

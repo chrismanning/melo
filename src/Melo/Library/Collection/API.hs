@@ -19,22 +19,34 @@ import Data.Vector (Vector)
 import Data.Vector qualified as V
 import GHC.Generics hiding (from)
 import Melo.Common.FileSystem
+import Melo.Common.Uuid
 import Melo.Database.Repo as Repo
 import Melo.Format ()
 import Melo.Format.Metadata ()
 import Melo.GraphQL.Where
+import Melo.Library.Album.Repo
+import Melo.Library.Album.ArtistName.Repo
+import Melo.Library.Artist.Name.Repo
 import Melo.Library.Collection.Aggregate
 import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Types qualified as Ty
 import Melo.Library.Source.API as SrcApi
 import Melo.Library.Source.Transform qualified as Tr
+import Melo.Library.Track.ArtistName.Repo
+import Melo.Library.Track.Repo
 import Network.URI
 import Streaming.Prelude qualified as S
 import Witch
 
 resolveCollections ::
   ( Tr.MonadSourceTransform m,
-    MonadConc m
+    AlbumRepository m,
+    AlbumArtistNameRepository m,
+    ArtistNameRepository m,
+    TrackArtistNameRepository m,
+    TrackRepository m,
+    MonadConc m,
+    UuidGenerator m
   ) =>
   CollectionsArgs ->
   ResolverQ e m (Vector (Collection (Resolver QUERY e m)))
@@ -83,7 +95,13 @@ instance Typeable m => GQLType (Collection m)
 
 instance
   ( Tr.MonadSourceTransform m,
+    AlbumRepository m,
+    AlbumArtistNameRepository m,
+    ArtistNameRepository m,
+    TrackArtistNameRepository m,
+    TrackRepository m,
     MonadConc m,
+    UuidGenerator m,
     WithOperation o
   ) =>
   From Ty.CollectionEntity (Collection (Resolver o e m))
@@ -139,8 +157,14 @@ instance Typeable m => GQLType (CollectionMutation m)
 collectionMutation ::
   forall m e.
   ( Tr.MonadSourceTransform m,
+    AlbumRepository m,
+    AlbumArtistNameRepository m,
+    ArtistNameRepository m,
+    TrackArtistNameRepository m,
+    TrackRepository m,
     MonadConc m,
-    CollectionAggregate m
+    CollectionAggregate m,
+    UuidGenerator m
   ) =>
   ResolverM e (m :: Type -> Type) CollectionMutation
 collectionMutation =
@@ -165,7 +189,13 @@ addCollectionImpl ::
   ( Tr.MonadSourceTransform m,
     MonadConc m,
     CollectionAggregate m,
-    FileSystem m
+    AlbumRepository m,
+    AlbumArtistNameRepository m,
+    ArtistNameRepository m,
+    TrackArtistNameRepository m,
+    TrackRepository m,
+    FileSystem m,
+    UuidGenerator m
   ) =>
   AddCollectionArgs ->
   ResolverM e m (Collection (Resolver MUTATION e m))
@@ -193,7 +223,7 @@ deleteAllCollectionsImpl ::
   (CollectionRepository m, CollectionAggregate m, PrimMonad m) =>
   ResolverM e m (Vector Ty.CollectionRef)
 deleteAllCollectionsImpl = lift do
-  collections <- getAll
+  collections <- getAll @Ty.CollectionEntity
   S.each collections
     & S.map (.id)
     & S.mapMaybeM deleteCollection

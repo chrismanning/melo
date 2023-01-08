@@ -446,6 +446,7 @@ newtype MusicBrainzServiceIOT m a = MusicBrainzServiceIOT
       MonadThrow,
       PrimMonad
     )
+  deriving MonadTransControl
 
 instance MonadTrans MusicBrainzServiceIOT where
   lift m = MusicBrainzServiceIOT $ HttpSessionIOT $ ReaderT $ const m

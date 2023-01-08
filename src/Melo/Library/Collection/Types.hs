@@ -3,7 +3,6 @@
 module Melo.Library.Collection.Types where
 
 import Data.Hashable
-import Data.List.NonEmpty
 import Data.Morpheus.Kind
 import Data.Morpheus.Types as M
 import Data.Text (Text)

@@ -13,7 +13,9 @@ import Control.Monad.Trans
 import Control.Monad.Trans.Control
 import Data.Coerce
 import Data.Foldable
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.Text qualified as T
+import Melo.Common.FileSystem.Watcher
 import Melo.Common.Logging
 import Melo.Format (Metadata (..))
 import Melo.Format qualified as F
@@ -71,7 +73,8 @@ runMetadataAggregateIO :: MetadataAggregateIOT m a -> m a
 runMetadataAggregateIO = runMetadataAggregateIOT
 
 instance
-  ( MonadIO m
+  ( MonadIO m,
+    FileSystemWatcher m
   ) =>
   MetadataAggregate (MetadataAggregateIOT m)
   where
@@ -87,7 +90,7 @@ instance
     $(logDebugIO) $ "reading file " <> T.pack path <> " as " <> fid
     F.MetadataFileFactory {readMetadataFile} <- getFactoryIO mfid
     readMetadataFile path
-  writeMetadataFile mf path = liftIO $ try do
+  writeMetadataFile mf path = lockPathsDuring (path :| []) $ liftIO $ try do
     F.MetadataFileFactory {writeMetadataFile, readMetadataFile} <- getFactoryIO mf.fileId
     writeMetadataFile mf path
     readMetadataFile path

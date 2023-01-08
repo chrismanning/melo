@@ -19,10 +19,10 @@ import Data.Int
 import Data.List.NonEmpty (NonEmpty(..))
 import Data.Range
 import Data.Time
+import Melo.Common.FileSystem.Watcher
 import Melo.Common.Metadata
 import Melo.Format.Error
 import Melo.Format.Metadata (MetadataFile)
-import Melo.Library.Collection.FileSystem.Watcher
 import Melo.Library.Source.Types
 import Sound.File.Sndfile qualified as Sndfile
 import System.Directory qualified as Dir

@@ -23,7 +23,9 @@ data ArtistNameTable f = ArtistNameTable
 type ArtistNameEntity = ArtistNameTable Result
 
 deriving instance Show ArtistNameEntity
+
 deriving instance Ord ArtistNameEntity
+
 deriving instance Eq ArtistNameEntity
 
 instance Entity ArtistNameEntity where
@@ -31,17 +33,27 @@ instance Entity ArtistNameEntity where
   type PrimaryKey ArtistNameEntity = ArtistNameRef
   primaryKey e = e.id
 
-data NewArtistName = NewArtistName {
-  artist :: ArtistRef,
-  name :: Text
-} deriving (Show, Eq, Generic)
+data NewArtistName = NewArtistName
+  { artist :: ArtistRef,
+    name :: Text
+  }
+  deriving (Show, Eq, Generic)
 
 instance From NewArtistName (ArtistNameTable Expr) where
-  from n = ArtistNameTable {
-    id = nullaryFunction "uuid_generate_v4",
-    artist_id = lit n.artist,
-    name = lit n.name
-  }
+  from n =
+    ArtistNameTable
+      { id = nullaryFunction "uuid_generate_v4",
+        artist_id = lit n.artist,
+        name = lit n.name
+      }
+
+fromNewArtistName :: NewArtistName -> UUID -> ArtistNameEntity
+fromNewArtistName n ref =
+  ArtistNameTable
+    { id = ArtistNameRef ref,
+      artist_id = n.artist,
+      name = n.name
+    }
 
 newtype ArtistNameRef = ArtistNameRef UUID
   deriving (Show, Eq, Ord, Generic)

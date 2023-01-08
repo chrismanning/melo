@@ -82,8 +82,8 @@ instance MonadIO m => Repository SourceEntity (SourceRepositoryIOT m) where
       Rel8.where_ $ pk all `Rel8.in_` keys
       pure all
   insert = pure . sortByUri <=< SourceRepositoryIOT . insert
-  insert' = SourceRepositoryIOT . insert'
-  delete = SourceRepositoryIOT . delete
+  insert' = SourceRepositoryIOT . insert' @SourceEntity
+  delete = SourceRepositoryIOT . delete @SourceEntity
   update = pure . sortByUri <=< SourceRepositoryIOT . update
   update' = SourceRepositoryIOT . update'
 

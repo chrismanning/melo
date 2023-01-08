@@ -23,7 +23,6 @@ import Melo.Format (tagLens)
 import Melo.Format.Mapping qualified as M
 import Melo.Library.Album.Types
 import Melo.Library.Artist.Aggregate
-import Melo.Library.Artist.Name.Repo
 import Melo.Library.Artist.Name.Types
 import Melo.Library.Artist.Repo as Artist
 import Melo.Library.Artist.Types
@@ -74,7 +73,6 @@ instance
     MB.MusicBrainzService m,
     ArtistAggregate m,
     ArtistRepository m,
-    ArtistNameRepository m,
     TagMappingAggregate m,
     Logging m
   ) =>
@@ -89,7 +87,9 @@ instance
       importSourceTrack :: Source -> m (Maybe TrackEntity)
       importSourceTrack src = do
         $(logDebug) $ "Importing track from source " <> show src.ref
-        insertSingle (mkNewTrack album.ref Nothing src)
+        Track.getBySrcRef src.ref >>= \case
+          Just track -> updateSingle (track { album_id = album.ref })
+          Nothing -> insertSingle (mkNewTrack album.ref Nothing src)
       linkTrackArtists :: Source -> TrackEntity -> m ()
       linkTrackArtists src track = do
         albumArtists <- resolveMappingNamed "album_artist" src

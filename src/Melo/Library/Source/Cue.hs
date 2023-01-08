@@ -15,6 +15,7 @@ import Data.Time
 import Data.Vector (Vector, fromList)
 import Data.Vector qualified as V
 import GHC.Natural (naturalToInteger)
+import Melo.Common.FileSystem.Watcher
 import Melo.Common.Metadata
 import Melo.Format.Info
 import Melo.Format.Mapping qualified as Mapping
@@ -33,7 +34,8 @@ cueId = MetadataId "CUE"
 
 openCueFile ::
   ( MonadIO m,
-    MonadThrow m
+    MonadThrow m,
+    FileSystemWatcher m
   ) =>
   FilePath ->
   m (Vector CueFileSource)

@@ -117,6 +117,29 @@ instance From NewArtist (ArtistTable Expr) where
         musicbrainz_id = lit (MB.mbid <$> a.musicBrainzId)
       }
 
+mergeArtist :: ArtistEntity -> NewArtist -> ArtistEntity
+mergeArtist artist newArtist =
+  artist {
+    name = newArtist.name,
+    disambiguation = newArtist.disambiguation,
+    country = newArtist.country <&> alphaThreeLower,
+    bio = newArtist.bio,
+    short_bio = newArtist.shortBio,
+    musicbrainz_id = newArtist.musicBrainzId <&> (.mbid)
+  }
+
+mkNewArtist :: ArtistRef -> NewArtist -> ArtistEntity
+mkNewArtist artistRef newArtist =
+  ArtistTable {
+    id = artistRef,
+    name = newArtist.name,
+    disambiguation = newArtist.disambiguation,
+    country = newArtist.country <&> alphaThreeLower,
+    bio = newArtist.bio,
+    short_bio = newArtist.shortBio,
+    musicbrainz_id = newArtist.musicBrainzId <&> (.mbid)
+  }
+
 instance From MB.Artist NewArtist where
   from a =
     NewArtist

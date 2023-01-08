@@ -18,10 +18,12 @@ import Data.Vector qualified as V
 import GHC.Generics hiding (from)
 import Hasql.Connection
 import Melo.Common.FileSystem
+import Melo.Common.FileSystem.Watcher
 import Melo.Common.Logging
 import Melo.Common.Metadata
 import Melo.Common.Monad
 import Melo.Common.Uri
+import Melo.Common.Uuid
 import Melo.Format.Metadata (EmbeddedPicture (..), MetadataFile (..), PictureType (..))
 import Melo.Library.API
 import Melo.Library.Album.Aggregate
@@ -31,7 +33,7 @@ import Melo.Library.Artist.Aggregate
 import Melo.Library.Artist.Name.Repo
 import Melo.Library.Artist.Repo
 import Melo.Library.Collection.Aggregate
-import Melo.Library.Collection.FileSystem.Watcher
+import Melo.Library.Collection.FileSystem.Scan
 import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Types (CollectionRef (..))
 import Melo.Library.Source.API qualified as API
@@ -89,6 +91,7 @@ gqlApiIO collectionWatchState pool sess rq = runStdoutLogging do
   $(logDebug) $ "graphql request: " <> rq
   let run =
         runFileSystemIO
+          . runFileSystemWatcherIO pool collectionWatchState sess
           . runMetadataAggregateIO
           . runSourceRepositoryPooledIO pool
           . runTagMappingRepositoryPooledIO pool
@@ -99,11 +102,10 @@ gqlApiIO collectionWatchState pool sess rq = runStdoutLogging do
           . runTrackArtistNameRepositoryPooledIO pool
           . runTrackRepositoryPooledIO pool
           . runMusicBrainzServiceUnlimitedIO sess
-          . runFileSystemWatcherIO pool collectionWatchState sess
           . runMultiTrackIO
           . runCollectionRepositoryPooledIO pool
           . runTagMappingAggregate
-          . runCollectionAggregateIO pool sess
+          . runCollectionAggregateIO pool sess collectionWatchState
           . runArtistAggregateIOT
           . runTrackAggregateIOT
           . runAlbumAggregateIOT
@@ -118,6 +120,7 @@ type ResolverE m =
     PrimMonad m,
     Logging m,
     FileSystem m,
+    UuidGenerator m,
     TagMappingRepository m,
     TagMappingAggregate m,
     SourceRepository m,
@@ -172,7 +175,7 @@ api collectionWatchState pool sess = do
     case fromASCIIBytes srcId of
       Nothing -> status badRequest400
       Just uuid -> do
-        findCoverImageIO pool (SourceRef uuid) >>= \case
+        findCoverImageIO pool sess collectionWatchState (SourceRef uuid) >>= \case
           Nothing -> do
             $(logWarnIO) $ "No cover image found for source " <> srcId
             status notFound404
@@ -215,11 +218,16 @@ getSourceFilePathIO pool k = withResource pool $ \conn ->
 
 data CoverImage = EmbeddedImage EmbeddedPicture | ExternalImageFile FilePath
 
-findCoverImageIO :: (MonadIO m, MonadBaseControl IO m) => Pool Connection -> SourceRef -> m (Maybe CoverImage)
-findCoverImageIO pool k = withResource pool $ \conn ->
+findCoverImageIO ::
+  (MonadIO m, MonadBaseControl IO m) =>
+    Pool Connection ->
+    Wreq.Session ->
+    CollectionWatchState ->
+    SourceRef -> m (Maybe CoverImage)
+findCoverImageIO pool sess cws k = withResource pool $ \conn ->
   liftIO $
     runStdoutLogging $
-      runFileSystemIO $
+      runFileSystemIO $ runFileSystemWatcherIO pool cws sess $
         runSourceRepositoryIO conn $
           runMetadataAggregateIO do
             getSource k >>= \case

@@ -9,6 +9,7 @@ import Control.Lens hiding (each, from)
 import Data.Coerce
 import Data.Maybe
 import Data.Pool
+import Data.Text (Text)
 import Data.Vector (Vector ())
 import Data.Vector qualified as V
 import Hasql.Connection
@@ -30,12 +31,10 @@ import Streaming.Prelude qualified as S
 import Witch
 
 class Repository ArtistEntity m => ArtistRepository m where
-  --  getArtistAlbums :: ArtistRef -> m [ArtistTable Result]
-  --  getArtistTracks :: ArtistRef -> m [ArtistTable Result]
-  --  searchArtists :: Text -> m [ArtistTable Result]
   getByMusicBrainzId :: MB.MusicBrainzId -> m (Maybe ArtistEntity)
   getAlbumArtists :: AlbumRef -> m (Vector (ArtistEntity, ArtistNameEntity))
   getSourceAlbumArtists :: SourceRef -> m (Vector (ArtistEntity, ArtistNameEntity))
+  getByName :: Text -> m (Vector ArtistEntity)
 
 instance
   {-# OVERLAPPABLE #-}
@@ -45,12 +44,10 @@ instance
   ) =>
   ArtistRepository (t m)
   where
-  --  getArtistAlbums = lift . getArtistAlbums
-  --  getArtistTracks = lift . getArtistTracks
-  --  searchArtists = lift . searchArtists
   getByMusicBrainzId = lift . getByMusicBrainzId
   getAlbumArtists = lift . getAlbumArtists
   getSourceAlbumArtists = lift . getSourceAlbumArtists
+  getByName = lift . getByName
 
 newtype ArtistRepositoryIOT m a = ArtistRepositoryIOT
   { runArtistRepositoryIOT :: RepositoryIOT ArtistTable m a
@@ -96,7 +93,7 @@ instance (MonadIO m, PrimMonad m, Logging m) => Repository ArtistEntity (ArtistR
         Left e -> $(logWarn) ("Artist insert failed: " <> displayException e) >> pure Nothing
         Right a -> pure $ Just a
       & S.sum_
-  delete = ArtistRepositoryIOT . Repo.delete
+  delete = ArtistRepositoryIOT . Repo.delete @ArtistEntity
   update = ArtistRepositoryIOT . Repo.update
   update' = ArtistRepositoryIOT . Repo.update'
 
@@ -160,10 +157,18 @@ instance
       artistName <- artistNameForAlbumRef album.id
       artist <- artistForRef artistName.artist_id
       pure (artist, artistName)
+  getByName name = do
+    RepositoryHandle {connSrc} <- ask
+    runSelect connSrc $
+      artistForName (lit name)
 
 artistForRef :: Expr ArtistRef -> Query (ArtistTable Expr)
 artistForRef artistRef =
   Rel8.filter (\artist -> artist.id ==. artistRef) =<< each artistSchema
+
+artistForName :: Expr Text -> Query (ArtistTable Expr)
+artistForName artistName =
+  Rel8.filter (\artist -> artist.name ==. artistName) =<< each artistSchema
 
 artistSchema :: TableSchema (ArtistTable Name)
 artistSchema =

@@ -19,6 +19,7 @@ import Rel8
 
 class Repository TrackEntity m => TrackRepository m where
   getByMusicBrainzId :: MB.MusicBrainzId -> m (Maybe TrackEntity)
+  getBySrcRef :: SourceRef -> m (Maybe TrackEntity)
 
 instance
   {-# OVERLAPPABLE #-}
@@ -29,6 +30,7 @@ instance
   TrackRepository (t m)
   where
   getByMusicBrainzId = lift . getByMusicBrainzId
+  getBySrcRef = lift . getBySrcRef
 
 newtype TrackRepositoryIOT m a = TrackRepositoryIOT
   { runTrackRepositoryIOT :: RepositoryIOT TrackTable m a
@@ -61,6 +63,12 @@ instance
     firstOf traverse <$> runSelect connSrc do
       track <- Rel8.each tbl
       Rel8.where_ $ track.musicbrainz_id ==. lit (Just mbid.mbid)
+      pure track
+  getBySrcRef srcId = do
+    RepositoryHandle {connSrc, tbl} <- ask
+    firstOf traverse <$> runSelect connSrc do
+      track <- Rel8.each tbl
+      Rel8.where_ $ track.source_id ==. lit srcId
       pure track
 
 trackForRef :: Expr TrackRef -> Query (TrackTable Expr)

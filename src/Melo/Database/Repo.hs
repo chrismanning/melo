@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
 
 module Melo.Database.Repo where
 
@@ -16,7 +17,7 @@ class Entity e where
   type PrimaryKey e :: Type
   primaryKey :: e -> PrimaryKey e
 
-class (Monad m, Entity e) => Repository e m | m -> e where
+class (Monad m, Entity e) => Repository e m where
   getAll :: m (Vector e)
   getByKey :: Vector (PrimaryKey e) -> m (Vector e)
   insert :: Vector (NewEntity e) -> m (Vector e)
@@ -45,8 +46,8 @@ instance
   getAll = lift getAll
   getByKey = lift . getByKey
   insert = lift . insert
-  insert' = lift . insert'
-  delete = lift . delete
+  insert' = lift . insert' @ts
+  delete = lift . delete @ts
   update = lift . update
   update' = lift . update'
 

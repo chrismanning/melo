@@ -9,6 +9,7 @@ import qualified Data.Text as T
 import qualified Hasql.Connection as Hasql
 import Melo.API
 import Melo.Common.FileSystem
+import Melo.Common.FileSystem.Watcher
 import Melo.Common.Logging
 import Melo.Common.Metadata
 import Melo.Common.Uri
@@ -17,7 +18,7 @@ import Melo.Library.Album.Repo
 import Melo.Library.Artist.Name.Repo
 import Melo.Library.Artist.Repo
 import Melo.Library.Collection.Aggregate
-import Melo.Library.Collection.FileSystem.Watcher
+import Melo.Library.Collection.FileSystem.Scan
 import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Types
 import Melo.Library.Source.Repo
@@ -72,7 +73,7 @@ initApp collectionWatchState pool sess =
             MB.runMusicBrainzServiceUnlimitedIO sess $
               runCollectionRepositoryPooledIO pool $
                 runFileSystemWatcherIO pool collectionWatchState sess $
-                  runCollectionAggregateIO pool sess $ do
+                  runCollectionAggregateIO pool sess collectionWatchState $ do
                     insertDefaultMappings
                     initCollections
 
@@ -85,7 +86,7 @@ initCollections ::
   m ()
 initCollections = do
   $(logInfo) ("initialising collections" :: String)
-  collections <- getAll
+  collections <- getAll @CollectionEntity
   forM_ collections $ \c@CollectionTable {..} -> do
     $(logDebugShow) c
     when watch $

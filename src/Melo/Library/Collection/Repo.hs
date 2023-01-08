@@ -64,7 +64,7 @@ newtype CollectionRepositoryIOT m a = CollectionRepositoryIOT
       PrimMonad
     )
 
-instance MonadIO m => Repository (CollectionTable Result) (CollectionRepositoryIOT m) where
+instance MonadIO m => Repository CollectionEntity (CollectionRepositoryIOT m) where
   getAll = CollectionRepositoryIOT $ do
     RepositoryHandle {connSrc, tbl} <- ask
     runSelect connSrc $ orderByUri $ Rel8.each tbl
@@ -76,8 +76,8 @@ instance MonadIO m => Repository (CollectionTable Result) (CollectionRepositoryI
       Rel8.where_ $ pk all `Rel8.in_` keys
       pure all
   insert = pure . sortByUri <=< CollectionRepositoryIOT . insert
-  insert' = CollectionRepositoryIOT . insert'
-  delete = CollectionRepositoryIOT . delete
+  insert' = CollectionRepositoryIOT . insert' @CollectionEntity
+  delete = CollectionRepositoryIOT . delete @CollectionEntity
   update = pure . sortByUri <=< CollectionRepositoryIOT . update
   update' = CollectionRepositoryIOT . update'
 

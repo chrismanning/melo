@@ -9,13 +9,16 @@ import Control.Exception.Safe as E hiding (try)
 import Control.Foldl qualified as Fold
 import Control.Lens hiding (from)
 import Control.Monad.Except
-import Control.Monad.State.Strict
+import Control.Monad.State.Class
 import Control.Monad.Trans.Except
+import Control.Monad.Trans.State.Strict (StateT, evalStateT)
 import Data.Char
+import Data.Default
 import Data.Either.Combinators
 import Data.Foldable
 import Data.HashMap.Strict qualified as H
-import Data.List.NonEmpty hiding (length)
+import Data.List.NonEmpty (NonEmpty (..), nonEmpty)
+import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe
 import Data.Text (Text)
@@ -23,20 +26,29 @@ import Data.Text qualified as T
 import Data.Vector (Vector)
 import Data.Vector qualified as V
 import Data.Void (Void)
+import GHC.Generics hiding (from, to)
 import Melo.Common.FileSystem as FS
+import Melo.Common.FileSystem.Watcher
 import Melo.Common.Logging
 import Melo.Common.Metadata
 import Melo.Common.Monad
 import Melo.Common.Uri
+import Melo.Common.Uuid
 import Melo.Database.Repo qualified as Repo
 import Melo.Format qualified as F
 import Melo.Format.Error qualified as F
 import Melo.Format.Internal.Metadata (Metadata (..))
 import Melo.Format.Mapping qualified as M
 import Melo.Library.Album.Aggregate
-import Melo.Library.Artist.Aggregate
-import Melo.Library.Artist.Repo
-import Melo.Library.Collection.FileSystem.Watcher
+import Melo.Library.Album.ArtistName.Repo as AlbumArtist
+import Melo.Library.Album.ArtistName.Types
+import Melo.Library.Album.Repo as Album
+import Melo.Library.Album.Types
+import Melo.Library.Artist.Aggregate as Artist
+import Melo.Library.Artist.Name.Repo
+import Melo.Library.Artist.Name.Types
+import Melo.Library.Artist.Repo as Artist
+import Melo.Library.Artist.Types
 import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Types
 import Melo.Library.Source.Aggregate
@@ -44,9 +56,14 @@ import Melo.Library.Source.MultiTrack
 import Melo.Library.Source.Repo as Src
 import Melo.Library.Source.Types
 import Melo.Library.Track.Aggregate
+import Melo.Library.Track.ArtistName.Repo as TrackArtist
+import Melo.Library.Track.ArtistName.Types
+import Melo.Library.Track.Repo as Track
+import Melo.Library.Track.Types
 import Melo.Lookup.MusicBrainz as MB
 import Melo.Metadata.Mapping.Aggregate
 import Melo.Metadata.Mapping.Repo
+import Melo.Metadata.Mapping.Types
 import System.FilePath
 import System.IO (TextEncoding)
 import Text.Megaparsec
@@ -112,28 +129,53 @@ type MonadSourceTransform m =
 
 previewTransformation ::
   MonadSourceTransform m =>
-  Transform (TransformPreviewT m) ->
+  Transform
+    ( TransformPreviewT
+        ( SourceAggregateIOT
+            ( AlbumAggregateIOT
+                ( TrackAggregateIOT
+                    ( ArtistAggregateIOT
+                        ( TagMappingAggregateT
+                            (VirtualArtistRepoT (StateT VirtualEntities m))
+                        )
+                    )
+                )
+            )
+        )
+    ) ->
   Source ->
   m (Either TransformationError Source)
 previewTransformation transformation src =
-  runTransformPreviewT $
-    transformation src
-
-previewTransformations ::
-  MonadSourceTransform m =>
-  Transform (TransformPreviewT m) ->
-  Vector Source ->
-  m (Vector (Either TransformationError Source))
-previewTransformations transformation srcs =
-  runTransformPreviewT $
-    mapM transformation srcs
+  (flip evalStateT) def $
+    runVirtualArtistRepoT $
+      runTagMappingAggregate $
+        runArtistAggregateIOT $
+          runTrackAggregateIOT $
+            runAlbumAggregateIOT $
+              runSourceAggregateIOT $
+                runTransformPreviewT $
+                  transformation src
 
 newtype TransformPreviewT m a = TransformPreviewT
   { runTransformPreviewT :: m a
   }
   deriving newtype (Functor, Applicative, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadThrow, MonadMask, PrimMonad)
   deriving (MonadTrans, MonadTransControl) via IdentityT
-  deriving (SourceRepository)
+
+type EntityTable e = Map (Repo.PrimaryKey e) e
+
+data VirtualEntities = VirtualEntities
+  { artists :: EntityTable ArtistEntity,
+    artistNames :: EntityTable ArtistNameEntity,
+    albums :: EntityTable AlbumEntity,
+    albumArtists :: [AlbumArtistNameEntity],
+    sources :: EntityTable SourceEntity,
+    tracks :: EntityTable TrackEntity,
+    trackArtists :: [TrackArtistNameEntity]
+  }
+  deriving (Generic)
+
+instance Default VirtualEntities
 
 instance MonadSourceTransform m => FileSystem (TransformPreviewT m) where
   doesFileExist = lift . doesFileExist
@@ -157,19 +199,6 @@ instance MonadSourceTransform m => MetadataAggregate (TransformPreviewT m) where
     $(logDebug) ("Preview writeMetadataFile called" :: String)
     pure $ Right mf
 
-instance MonadSourceTransform m => Repo.Repository SourceEntity (TransformPreviewT m) where
-  getAll = lift $ Repo.getAll @SourceEntity
-  getByKey = lift . Repo.getByKey @SourceEntity
-  insert = pure . fmap from
-  insert' = pure . V.length
-  delete _ = pure V.empty
-  update e = lift $ do
-    $(logDebug) ("Preview update @SourceEntity called" :: String)
-    pure e
-  update' _ = lift $ do
-    $(logDebug) ("Preview update' @SourceEntity called" :: String)
-    pure ()
-
 instance MonadSourceTransform m => MultiTrack (TransformPreviewT m) where
   extractTrackTo cuefile dest =
     pure $
@@ -182,13 +211,381 @@ instance MonadSourceTransform m => MultiTrack (TransformPreviewT m) where
             pictures = []
           }
 
-instance MonadSourceTransform m => SourceAggregate (TransformPreviewT m) where
-  importSources _ = do
-    $(logDebug) ("Preview importSources called" :: String)
-    pure empty
-  updateSource s = do
-    $(logDebug) ("Preview updateSource called" :: String)
-    pure $ Right s
+instance
+  ( TagMappingAggregate m,
+    Logging m
+  ) =>
+  TagMappingAggregate (TransformPreviewT m)
+  where
+  resolveMappingNamed n s = TransformPreviewT do
+    $(logDebug) ("Preview resolveMappingNamed TransformPreviewT" :: String)
+    resolveMappingNamed n s
+  getMappingNamed = lift . getMappingNamed
+  getMappingsNamed = lift . getMappingsNamed
+  getAllMappings = lift getAllMappings
+
+newtype VirtualArtistRepoT m a = VirtualArtistRepoT
+  { runVirtualArtistRepoT :: m a
+  }
+  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadThrow, MonadMask, PrimMonad)
+  deriving (MonadTrans, MonadTransControl) via IdentityT
+
+deriving instance (MonadState VirtualEntities m) => MonadState VirtualEntities (VirtualArtistRepoT m)
+
+instance
+  ( Repo.Repository SourceEntity m,
+    Logging m
+  ) =>
+  Repo.Repository SourceEntity (VirtualArtistRepoT m)
+  where
+  getAll = lift $ Repo.getAll @SourceEntity
+  getByKey = lift . Repo.getByKey @SourceEntity
+  insert es = do
+    $(logDebug) ("Preview insert @SourceEntity called" :: String)
+    pure (from <$> es)
+  insert' = pure . V.length
+  delete _ = pure V.empty
+  update e = lift $ do
+    $(logDebug) ("Preview update @SourceEntity called" :: String)
+    pure e
+  update' = void . Repo.update
+
+instance
+  ( SourceRepository m,
+    Logging m
+  ) =>
+  SourceRepository (VirtualArtistRepoT m)
+  where
+  getByUri = lift . Src.getByUri
+  getKeysByUri = lift . Src.getKeysByUri
+  getByUriPrefix = lift . Src.getByUriPrefix
+  getKeysByUriPrefix = lift . Src.getKeysByUriPrefix
+  getCollectionSources = lift . Src.getCollectionSources
+
+instance
+  ( ArtistRepository m,
+    AlbumArtistNameRepository m,
+    Logging m,
+    MonadState VirtualEntities m,
+    Repo.Repository ArtistNameEntity m,
+    TrackRepository m,
+    UuidGenerator m
+  ) =>
+  Repo.Repository ArtistEntity (VirtualArtistRepoT m)
+  where
+  getAll = VirtualArtistRepoT do
+    $(logDebug) ("Preview getAll @ArtistEntity called" :: String)
+    artists <- uses #artists Map.elems
+    all <- Repo.getAll
+    pure $ V.fromList artists <> all
+  getByKey keys = VirtualArtistRepoT do
+    $(logDebug) ("Preview getByKey @ArtistEntity called" :: String)
+    artists <- gets (.artists)
+    V.catMaybes <$> forM keys \key -> case Map.lookup key artists of
+      Just v -> pure $ Just v
+      Nothing -> Repo.getSingle key
+  insert newArtists = do
+    $(logDebug) ("Preview insert @ArtistEntity called" :: String)
+    forM newArtists \newArtist -> do
+      artist <- case newArtist.musicBrainzId of
+        Just mbid -> Artist.getByMusicBrainzId mbid
+        Nothing -> V.find (\a -> isNothing a.musicbrainz_id) <$> getByName newArtist.name
+      case artist of
+        Just artist -> do
+          let artist' = mergeArtist artist newArtist
+          VirtualArtistRepoT ( #artists %= Map.insert artist.id artist' )
+          pure artist'
+        Nothing -> do
+          id <- ArtistRef <$> VirtualArtistRepoT generateV4
+          let artist' = mkNewArtist id newArtist
+          VirtualArtistRepoT ( #artists %= Map.insert id artist' )
+          pure artist'
+  insert' newArtists = Repo.insert @ArtistEntity newArtists <&> V.length
+  delete _ = pure V.empty
+  update e = do
+    $(logDebug) ("Preview update @ArtistEntity called" :: String)
+    pure e
+  update' _ = do
+    $(logDebug) ("Preview update' @ArtistEntity called" :: String)
+    pure ()
+
+instance
+  ( ArtistRepository m,
+    AlbumArtistNameRepository m,
+    Logging m,
+    MonadState VirtualEntities m,
+    Repo.Repository ArtistNameEntity m,
+    TrackRepository m,
+    UuidGenerator m
+  ) =>
+  ArtistRepository (VirtualArtistRepoT m)
+  where
+  getByMusicBrainzId mbid = VirtualArtistRepoT do
+    artists <- uses #artists Map.elems
+    case find (\a -> a.musicbrainz_id == Just (mbid.mbid)) artists of
+      Just artist -> pure (Just artist)
+      Nothing -> Artist.getByMusicBrainzId mbid
+  getAlbumArtists albumRef = do
+    $(logDebug) ("Preview getAlbumArtists called" :: String)
+    artistNames <- getAlbumArtistNames albumRef
+    albumArtists <- V.mapMaybeM (\artistName -> fmap (,artistName) <$> Repo.getSingle @ArtistEntity artistName.artist_id) artistNames
+    if V.null albumArtists
+      then VirtualArtistRepoT $ getAlbumArtists albumRef
+      else pure albumArtists
+  getSourceAlbumArtists srcRef = fmap (fromMaybe V.empty) $ runMaybeT do
+    $(logDebug) ("Preview getSourceAlbumArtists called" :: String)
+    track <- MaybeT $ Track.getBySrcRef srcRef
+    $(logDebug) $ "track: " <> show track
+    getAlbumArtists track.album_id
+  getByName name = VirtualArtistRepoT do
+    artists <- uses #artists Map.elems
+    case filter (\a -> a.name == name) artists of
+      [] -> getByName name
+      artists -> pure (V.fromList artists)
+
+instance
+  ( Repo.Repository ArtistNameEntity m,
+    Logging m,
+    MonadState VirtualEntities m,
+    UuidGenerator m
+  ) =>
+  Repo.Repository ArtistNameEntity (VirtualArtistRepoT m)
+  where
+  getAll = VirtualArtistRepoT do
+    $(logDebug) ("Preview getAll @ArtistNameEntity called" :: String)
+    artistNames <- uses #artistNames Map.elems
+    all <- Repo.getAll
+    pure $ V.fromList artistNames <> all
+  getByKey keys = VirtualArtistRepoT do
+    $(logDebug) ("Preview getByKey @ArtistNameEntity called" :: String)
+    artistNames <- gets (.artistNames)
+    V.catMaybes <$> forM keys \key -> case Map.lookup key artistNames of
+      Just v -> pure $ Just v
+      Nothing -> Repo.getSingle key
+  insert = mapM \a -> do
+    $(logDebug) ("Preview insert @ArtistNameEntity called" :: String)
+    id <- generateV4
+    let artistName = fromNewArtistName a id
+    #artistNames . at artistName.id <?= artistName
+  insert' artistNames = Repo.insert @ArtistNameEntity artistNames <&> V.length
+  delete _ = pure V.empty
+  update e = lift $ do
+    $(logDebug) ("Preview update @ArtistNameEntity called" :: String)
+    pure e
+  update' _ = lift $ do
+    $(logDebug) ("Preview update' @ArtistNameEntity called" :: String)
+    pure ()
+
+instance
+  ( ArtistNameRepository m,
+    Logging m,
+    MonadState VirtualEntities m,
+    UuidGenerator m
+  ) =>
+  ArtistNameRepository (VirtualArtistRepoT m)
+  where
+  getArtistNames artistRef = VirtualArtistRepoT do
+    artistNames <- uses #artistNames Map.elems
+    case filter (\a -> a.artist_id == artistRef) artistNames of
+      [] -> getArtistNames artistRef
+      an -> pure $ V.fromList an
+  getAlias artistRef name = VirtualArtistRepoT do
+    artistNames <- uses #artistNames Map.elems
+    case find (\a -> a.artist_id == artistRef && a.name == name) artistNames of
+      Just artistName -> pure $ Just artistName
+      Nothing -> getAlias artistRef name
+
+instance
+  ( Repo.Repository AlbumEntity m,
+    Logging m,
+    MonadState VirtualEntities m,
+    UuidGenerator m
+  ) =>
+  Repo.Repository AlbumEntity (VirtualArtistRepoT m)
+  where
+  getAll = VirtualArtistRepoT do
+    $(logDebug) ("Preview getAll @AlbumEntity called" :: String)
+    albums <- uses #albums Map.elems
+    all <- Repo.getAll
+    pure $ V.fromList albums <> all
+  getByKey keys = VirtualArtistRepoT do
+    $(logDebug) ("Preview getByKey @AlbumEntity called" :: String)
+    albums <- gets (.albums)
+    V.catMaybes <$> forM keys \key -> case Map.lookup key albums of
+      Just v -> pure $ Just v
+      Nothing -> Repo.getSingle key
+  insert = mapM \a -> do
+    $(logDebug) ("Preview insert @AlbumEntity called" :: String)
+    id <- generateV4
+    let album = fromNewAlbum a id
+    as <- #albums . at album.id <?= album
+    x <- gets (.albums)
+    $(logDebug) $ "Preview albums inserted: " <> show x
+    pure as
+  insert' albums = Repo.insert @AlbumEntity albums <&> V.length
+  delete _ = pure V.empty
+  update e = lift $ do
+    $(logDebug) ("Preview update @AlbumEntity called" :: String)
+    pure e
+  update' _ = lift $ do
+    $(logDebug) ("Preview update' @AlbumEntity called" :: String)
+    pure ()
+
+instance
+  ( AlbumRepository m,
+    Logging m,
+    MonadState VirtualEntities m,
+    UuidGenerator m
+  ) =>
+  AlbumRepository (VirtualArtistRepoT m)
+  where
+  getByMusicBrainzId mbid = VirtualArtistRepoT do
+    albums <- uses #albums Map.elems
+    case find (\a -> a.musicbrainz_id == Just (mbid.mbid) || a.musicbrainz_group_id == Just (mbid.mbid)) albums of
+      Just album -> pure (Just album)
+      Nothing -> Album.getByMusicBrainzId mbid
+
+instance
+  ( AlbumArtistNameRepository m,
+    Repo.Repository ArtistNameEntity m,
+    Logging m,
+    MonadState VirtualEntities m
+  ) =>
+  AlbumArtistNameRepository (VirtualArtistRepoT m)
+  where
+  getAlbumArtistNames albumRef = VirtualArtistRepoT do
+    $(logDebug) ("Preview getAlbumArtistNames called" :: String)
+    albumArtists <- gets (.albumArtists)
+    artistNames <- gets (.artistNames)
+    case filter (\a -> a.album_id == albumRef) albumArtists of
+      [] -> getAlbumArtistNames albumRef
+      albumArtists ->
+        pure $
+          V.fromList $
+            mapMaybe (\albumArtist -> Map.lookup albumArtist.artist_name_id artistNames) albumArtists
+  insert as = do
+    $(logDebug) ("Preview insert @AlbumArtistNameEntity called" :: String)
+    #albumArtists <>= V.toList as
+    pure as
+  insert' albumArtists = AlbumArtist.insert albumArtists <&> V.length
+
+instance
+  ( Repo.Repository TrackEntity m,
+    Logging m,
+    MonadState VirtualEntities m,
+    UuidGenerator m
+  ) =>
+  Repo.Repository TrackEntity (VirtualArtistRepoT m)
+  where
+  getAll = VirtualArtistRepoT do
+    $(logDebug) ("Preview getAll @TrackEntity called" :: String)
+    tracks <- uses #tracks Map.elems
+    all <- Repo.getAll
+    pure $ V.fromList tracks <> all
+  getByKey keys = VirtualArtistRepoT do
+    $(logDebug) ("Preview getByKey @TrackEntity called" :: String)
+    tracks <- gets (.tracks)
+    V.catMaybes <$> forM keys \key -> case Map.lookup key tracks of
+      Just v -> pure $ Just v
+      Nothing -> Repo.getSingle key
+  insert = mapM \t -> do
+    $(logDebug) ("Preview insert @TrackEntity called" :: String)
+    id <- generateV4
+    let track = fromNewTrack t id
+    #tracks . at track.id <?= track
+  insert' tracks = Repo.insert @TrackEntity tracks <&> V.length
+  delete _ = pure V.empty
+  update e = lift $ do
+    $(logDebug) ("Preview update @TrackEntity called" :: String)
+    pure e
+  update' _ = lift $ do
+    $(logDebug) ("Preview update' @TrackEntity called" :: String)
+    pure ()
+
+instance
+  ( TrackRepository m,
+    Logging m,
+    MonadState VirtualEntities m,
+    UuidGenerator m
+  ) =>
+  TrackRepository (VirtualArtistRepoT m)
+  where
+  getByMusicBrainzId mbid = VirtualArtistRepoT do
+    tracks <- uses #tracks Map.elems
+    case find (\t -> t.musicbrainz_id == Just mbid.mbid) tracks of
+      Just track -> pure $ Just track
+      Nothing -> Track.getByMusicBrainzId mbid
+  getBySrcRef srcRef = VirtualArtistRepoT do
+    tracks <- uses #tracks Map.elems
+    case find (\t -> t.source_id == srcRef) tracks of
+      Just track -> pure $ Just track
+      Nothing -> Track.getBySrcRef srcRef
+
+instance
+  ( TrackArtistNameRepository m,
+    Logging m,
+    MonadState VirtualEntities m
+  ) =>
+  TrackArtistNameRepository (VirtualArtistRepoT m)
+  where
+  getTrackArtistNames trackRef = VirtualArtistRepoT do
+    $(logDebug) ("Preview getTrackArtistNames called" :: String)
+    trackArtists <- gets (.trackArtists)
+    artistNames <- gets (.artistNames)
+    case filter (\a -> a.track_id == trackRef) trackArtists of
+      [] -> getTrackArtistNames trackRef
+      trackArtists ->
+        pure $
+          V.fromList $
+            mapMaybe (\trackArtist -> Map.lookup trackArtist.artist_name_id artistNames) trackArtists
+  insert ts = do
+    $(logDebug) ("Preview insert @TrackArtistNameEntity called" :: String)
+    #trackArtists <>= V.toList ts
+    pure ts
+  insert' trackArtists = TrackArtist.insert trackArtists <&> V.length
+
+instance
+  ( TagMappingAggregate m,
+    Logging m
+  ) =>
+  TagMappingAggregate (VirtualArtistRepoT m)
+  where
+  resolveMappingNamed n s = VirtualArtistRepoT do
+    $(logDebug) ("Preview resolveMappingNamed VirtualArtistRepoT" :: String)
+    resolveMappingNamed n s
+  getMappingNamed = lift . getMappingNamed
+  getMappingsNamed = lift . getMappingsNamed
+  getAllMappings = lift getAllMappings
+
+instance TagMappingRepository m => TagMappingRepository (VirtualArtistRepoT m)
+
+instance Repo.Repository TagMappingEntity m => Repo.Repository TagMappingEntity (VirtualArtistRepoT m) where
+  getAll = lift Repo.getAll
+  getByKey = lift . Repo.getByKey
+  insert = lift . Repo.insert
+  insert' = lift . Repo.insert' @TagMappingEntity
+  delete = lift . Repo.delete @TagMappingEntity
+  update = lift . Repo.update
+  update' = lift . Repo.update'
+
+instance
+  ( AlbumRepository m,
+    AlbumArtistNameRepository m,
+    ArtistAggregate m,
+    ArtistNameRepository m,
+    ArtistRepository m,
+    TrackAggregate m,
+    TagMappingAggregate m,
+    Logging m,
+    PrimMonad m,
+    MB.MusicBrainzService m
+  ) =>
+  AlbumAggregate (TransformPreviewT m)
+  where
+  importAlbums srcs = do
+    Repo.getAll @ArtistEntity >>= \as -> $(logDebug) $ "Preview artists: " <> show as
+    $(logDebug) ("Preview importAlbums called" :: String)
+    importAlbumsImpl srcs
 
 data TransformationError
   = MoveTransformError SourceMoveError
@@ -221,7 +618,6 @@ moveSourceWithPattern ::
     SourceRepository m,
     TagMappingAggregate m,
     FileSystemWatcher m,
-    ArtistRepository m,
     Logging m
   ) =>
   Maybe CollectionRef ->
@@ -265,7 +661,6 @@ moveSourceWithPattern collectionRef pats src@Source {ref, source} =
 previewSourceMoveWithPattern ::
   ( CollectionRepository m,
     TagMappingAggregate m,
-    ArtistRepository m,
     Logging m
   ) =>
   CollectionRef ->
@@ -282,8 +677,7 @@ previewSourceMoveWithPattern collectionRef pats src@Source {source} =
     Nothing -> pure Nothing
 
 renderSourcePath ::
-  ( ArtistRepository m,
-    TagMappingAggregate m,
+  ( TagMappingAggregate m,
     Logging m
   ) =>
   FilePath ->
@@ -297,8 +691,7 @@ renderSourcePath basepath src pats =
         <$> Fold.foldM (Fold.sink (renderSourcePattern src)) pats
 
 renderSourcePattern ::
-  ( ArtistRepository m,
-    TagMappingAggregate m,
+  ( TagMappingAggregate m,
     Logging m
   ) =>
   Source ->
@@ -428,8 +821,7 @@ editMetadata (SetMapping mappingName vs) src@Source {metadata = Just metadata} =
     let newMetadata = metadata & F.tagLens mapping .~ vs
     if newMetadata == metadata
       then pure src
-      else
-        updateSource (src & #metadata .~ Just newMetadata) >>= mapE ImportFailed
+      else updateSource (src & #metadata .~ Just newMetadata) >>= mapE ImportFailed
 editMetadata (RemoveMappings mappings) src = flatten <$> (forM mappings $ \mapping -> editMetadata (SetMapping mapping V.empty) src)
   where
     flatten es = foldl' (\_a b -> b) (Left $ ImportFailed undefined) es
@@ -443,8 +835,7 @@ editMetadata (Retain retained) src@Source {metadata = Just metadata} =
         let newMetadata = metadata {F.tags = newTags}
         if newMetadata == metadata
           then pure src
-          else
-            updateSource (src & #metadata .~ Just newMetadata) >>= mapE ImportFailed
+          else updateSource (src & #metadata .~ Just newMetadata) >>= mapE ImportFailed
 
 musicBrainzLookup :: MonadSourceTransform m => Source -> m (Either TransformationError Source)
 musicBrainzLookup src@Source {metadata = Nothing} = do
@@ -452,8 +843,11 @@ musicBrainzLookup src@Source {metadata = Nothing} = do
   pure $ Right src
 musicBrainzLookup src@Source {metadata = Just metadata} = (flip evalStateT) metadata do
   get >>= MB.getReleaseAndGroup >>= \case
-    (Nothing, Nothing) -> pure ()
+    (Nothing, Nothing) -> do
+      $(logInfo) $ "No release or release-group found for source " <> show src.ref
+      pure ()
     (releaseGroup, Just release) -> do
+      $(logInfo) $ "release found for source " <> show src.ref
       F.tagLens MB.releaseIdTag .= V.singleton release.id.mbid
       case releaseGroup ^? _Just . #id . coerced of
         Just releaseGroupId -> F.tagLens MB.releaseGroupIdTag .= V.singleton releaseGroupId
@@ -463,7 +857,8 @@ musicBrainzLookup src@Source {metadata = Just metadata} = (flip evalStateT) meta
       case release.labelInfo ^? _Just . traverse . to (.catalogNumber) . _Just of
         Just catNum -> F.tagLens M.catalogNumber .= V.singleton catNum
         _ -> pure ()
-    (Just releaseGroup, Nothing) ->
+    (Just releaseGroup, Nothing) -> do
+      $(logInfo) $ "release-group found for source " <> show src.ref
       F.tagLens MB.releaseGroupIdTag .= V.singleton releaseGroup.id.mbid
   get >>= MB.getRecordingFromMetadata >>= \case
     Just recording -> do
@@ -472,4 +867,5 @@ musicBrainzLookup src@Source {metadata = Just metadata} = (flip evalStateT) meta
       F.tagLens MB.artistIdTag .= V.fromList trackArtists
     _ -> pure ()
   newMetadata <- get
+  $(logDebug) $ "Updating source with musicbrainz metadata " <> show newMetadata
   mapLeft ImportFailed <$> updateSource (src & #metadata .~ Just newMetadata)

@@ -3,6 +3,7 @@
 module Melo.Library.Track.Types where
 
 import Data.Foldable
+import Data.Functor
 import Data.Hashable
 import Data.Int
 import Data.Text
@@ -70,6 +71,20 @@ instance From NewTrack (TrackTable Expr) where
         length = lit (calendarTimeTime t.length),
         musicbrainz_id = lit (MB.mbid <$> t.musicBrainzId)
       }
+
+fromNewTrack :: NewTrack -> UUID -> TrackEntity
+fromNewTrack t id =
+  TrackTable
+    { id = TrackRef id,
+      title = t.title,
+      track_number = t.trackNumber,
+      disc_number = t.discNumber,
+      comment = t.comment,
+      source_id = t.sourceId,
+      album_id = t.albumId,
+      length = calendarTimeTime t.length,
+      musicbrainz_id = t.musicBrainzId <&> (.mbid)
+    }
 
 data Track = Track
   { ref :: TrackRef,

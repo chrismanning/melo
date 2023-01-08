@@ -94,33 +94,39 @@ data NewAlbum = NewAlbum
 
 fromMusicBrainz :: Maybe MB.ReleaseGroup -> Maybe MB.Release -> Maybe NewAlbum
 fromMusicBrainz Nothing Nothing = Nothing
-fromMusicBrainz (Just releaseGroup) (Just release) = Just NewAlbum {
-  title = releaseGroup.title,
-  yearReleased = release.date,
-  originalYearReleased = releaseGroup.firstReleaseDate,
-  musicbrainzId = Just release.id,
-  musicbrainzGroupId = Just releaseGroup.id,
-  catalogueNumber = release ^? #labelInfo . _Just . _head . #catalogNumber . _Just,
-  comment = Nothing
-}
-fromMusicBrainz (Just releaseGroup) Nothing = Just NewAlbum {
-  title = releaseGroup.title,
-  yearReleased = Nothing,
-  originalYearReleased = releaseGroup.firstReleaseDate,
-  musicbrainzId = Nothing,
-  musicbrainzGroupId = Just releaseGroup.id,
-  catalogueNumber = Nothing,
-  comment = Nothing
-}
-fromMusicBrainz Nothing (Just release) = Just NewAlbum {
-  title = release.title,
-  yearReleased = release.date,
-  originalYearReleased = Nothing,
-  musicbrainzId = Just release.id,
-  musicbrainzGroupId = Nothing,
-  catalogueNumber = release ^? #labelInfo . _Just . _head . #catalogNumber . _Just,
-  comment = Nothing
-}
+fromMusicBrainz (Just releaseGroup) (Just release) =
+  Just
+    NewAlbum
+      { title = releaseGroup.title,
+        yearReleased = release.date,
+        originalYearReleased = releaseGroup.firstReleaseDate,
+        musicbrainzId = Just release.id,
+        musicbrainzGroupId = Just releaseGroup.id,
+        catalogueNumber = release ^? #labelInfo . _Just . _head . #catalogNumber . _Just,
+        comment = Nothing
+      }
+fromMusicBrainz (Just releaseGroup) Nothing =
+  Just
+    NewAlbum
+      { title = releaseGroup.title,
+        yearReleased = Nothing,
+        originalYearReleased = releaseGroup.firstReleaseDate,
+        musicbrainzId = Nothing,
+        musicbrainzGroupId = Just releaseGroup.id,
+        catalogueNumber = Nothing,
+        comment = Nothing
+      }
+fromMusicBrainz Nothing (Just release) =
+  Just
+    NewAlbum
+      { title = release.title,
+        yearReleased = release.date,
+        originalYearReleased = Nothing,
+        musicbrainzId = Just release.id,
+        musicbrainzGroupId = Nothing,
+        catalogueNumber = release ^? #labelInfo . _Just . _head . #catalogNumber . _Just,
+        comment = Nothing
+      }
 
 instance From NewAlbum (AlbumTable Expr) where
   from a =
@@ -135,3 +141,17 @@ instance From NewAlbum (AlbumTable Expr) where
         musicbrainz_group_id = lit $ MB.mbid <$> a.musicbrainzGroupId,
         catalogue_number = lit a.catalogueNumber
       }
+
+fromNewAlbum :: NewAlbum -> UUID -> AlbumEntity
+fromNewAlbum a ref =
+  AlbumTable
+    { id = AlbumRef ref,
+      title = a.title,
+      comment = Nothing,
+      year_released = a.yearReleased,
+      original_year_released = a.originalYearReleased,
+      length = Nothing,
+      musicbrainz_id = MB.mbid <$> a.musicbrainzId,
+      musicbrainz_group_id = MB.mbid <$> a.musicbrainzGroupId,
+      catalogue_number = a.catalogueNumber
+    }

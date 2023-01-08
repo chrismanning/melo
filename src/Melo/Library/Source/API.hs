@@ -39,6 +39,7 @@ import Melo.Common.FileSystem
 import Melo.Common.Logging
 import Melo.Common.Metadata
 import Melo.Common.Uri
+import Melo.Common.Uuid
 import Melo.Database.Repo
 import Melo.Database.Repo.IO (selectStream)
 import Melo.Format qualified as F
@@ -51,7 +52,7 @@ import Melo.Library.Artist.Aggregate
 import Melo.Library.Artist.Name.Repo
 import Melo.Library.Artist.Repo
 import Melo.Library.Collection.Aggregate
-import Melo.Library.Collection.FileSystem.Watcher
+import Melo.Library.Collection.FileSystem.Scan
 import Melo.Library.Collection.Repo (runCollectionRepositoryPooledIO)
 import Melo.Library.Collection.Types qualified as Ty
 import Melo.Library.Source.Aggregate
@@ -81,7 +82,13 @@ data SourceEvent
 
 resolveSources ::
   ( Tr.MonadSourceTransform m,
+    AlbumRepository m,
+    AlbumArtistNameRepository m,
+    ArtistNameRepository m,
+    TrackArtistNameRepository m,
+    TrackRepository m,
     MonadConc m,
+    UuidGenerator m,
     WithOperation o
   ) =>
   SourcesArgs ->
@@ -93,7 +100,13 @@ resolveSources args = do
 resolveSourceGroups ::
   forall m o e.
   ( Tr.MonadSourceTransform m,
+    AlbumRepository m,
+    AlbumArtistNameRepository m,
+    ArtistNameRepository m,
+    TrackArtistNameRepository m,
+    TrackRepository m,
     MonadConc m,
+    UuidGenerator m,
     WithOperation o
   ) =>
   SourceGroupsArgs ->
@@ -145,7 +158,13 @@ convertSources = fmap (mapLeft from . tryFrom)
 
 resolveCollectionSources ::
   ( Tr.MonadSourceTransform m,
+    AlbumRepository m,
+    AlbumArtistNameRepository m,
+    ArtistNameRepository m,
+    TrackArtistNameRepository m,
+    TrackRepository m,
     MonadConc m,
+    UuidGenerator m,
     WithOperation o
   ) =>
   Ty.CollectionRef ->
@@ -175,6 +194,12 @@ enrichSourceEntity ::
   forall m o e.
   ( Tr.MonadSourceTransform m,
     MonadConc m,
+    AlbumRepository m,
+    AlbumArtistNameRepository m,
+    ArtistNameRepository m,
+    TrackArtistNameRepository m,
+    TrackRepository m,
+    UuidGenerator m,
     WithOperation o
   ) =>
   Ty.SourceEntity ->
@@ -308,7 +333,13 @@ resolveMappedTags src mappingNames =
 
 resolveCollectionSourceGroups ::
   ( Tr.MonadSourceTransform m,
+    AlbumRepository m,
+    AlbumArtistNameRepository m,
+    ArtistNameRepository m,
+    TrackArtistNameRepository m,
+    TrackRepository m,
     MonadConc m,
+    UuidGenerator m,
     WithOperation o
   ) =>
   Ty.CollectionRef ->
@@ -369,7 +400,16 @@ data SourceGroupStreamArgs = SourceGroupStreamArgs
 instance GQLType SourceGroupStreamArgs
 
 groupSources' ::
-  (Tr.MonadSourceTransform m, WithOperation o, Monad n) =>
+  ( Tr.MonadSourceTransform m,
+    AlbumRepository m,
+    AlbumArtistNameRepository m,
+    ArtistNameRepository m,
+    TrackArtistNameRepository m,
+    TrackRepository m,
+    UuidGenerator m,
+    WithOperation o,
+    Monad n
+  ) =>
   TagMappingIndex ->
   S.Stream (S.Of Ty.SourceEntity) n () ->
   S.Stream (S.Of (SourceGroup (Resolver o e m))) n ()
@@ -393,7 +433,16 @@ extractMappedTags mappings e = case tryFrom @_ @F.Metadata e of
 
 mkSrcGroup ::
   forall m o e x n.
-  (Tr.MonadSourceTransform m, WithOperation o, Monad n) =>
+  ( Tr.MonadSourceTransform m,
+    UuidGenerator m,
+    AlbumRepository m,
+    AlbumArtistNameRepository m,
+    ArtistNameRepository m,
+    TrackArtistNameRepository m,
+    TrackRepository m,
+    WithOperation o,
+    Monad n
+  ) =>
   S.Stream (S.Of (Ty.SourceEntity, MappedTags)) n x ->
   n (S.Of (SourceGroup (Resolver o e m)) x)
 mkSrcGroup s =
@@ -485,6 +534,7 @@ streamSourceGroupsQuery collectionWatchState pool collectionRef groupByMappings 
 
 runSourceIO collectionWatchState sess pool =
   runFileSystemIO
+    . runFileSystemWatcherIO pool collectionWatchState sess
     . runMetadataAggregateIO
     . runSourceRepositoryPooledIO pool
     . runTagMappingRepositoryPooledIO pool
@@ -495,10 +545,9 @@ runSourceIO collectionWatchState sess pool =
     . runTrackArtistNameRepositoryPooledIO pool
     . runTrackRepositoryPooledIO pool
     . runMusicBrainzServiceUnlimitedIO sess
-    . runFileSystemWatcherIO pool collectionWatchState sess
     . runMultiTrackIO
     . runCollectionRepositoryPooledIO pool
-    . runCollectionAggregateIO pool sess
+    . runCollectionAggregateIO pool sess collectionWatchState
     . runTagMappingAggregate
     . runArtistAggregateIOT
     . runTrackAggregateIOT
@@ -570,6 +619,12 @@ instance GQLType MetadataTransformation where
 previewTransformSourceImpl ::
   forall m e o.
   ( Tr.MonadSourceTransform m,
+    AlbumRepository m,
+    AlbumArtistNameRepository m,
+    ArtistNameRepository m,
+    TrackArtistNameRepository m,
+    TrackRepository m,
+    UuidGenerator m,
     WithOperation o
   ) =>
   Ty.SourceEntity ->
@@ -580,10 +635,11 @@ previewTransformSourceImpl s ts = do
   E.catchAny
     ( case tryFrom s of
         Left e -> E.throwM (into @Tr.TransformationError e)
-        Right s' -> do
+        Right s' ->
           Tr.previewTransformation (Tr.evalTransformActions (interpretTransforms ts)) s' >>= \case
             Left e -> E.throwM e
-            Right s'' -> pure $ UpdatedSource (enrichSourceEntity (from s''))
+            Right s'' -> do
+              pure $ UpdatedSource (enrichSourceEntity (from s''))
     )
     ( \e -> do
         $(logError) $ E.displayException e
@@ -596,6 +652,12 @@ previewTransformSourceImpl s ts = do
 transformSourcesImpl ::
   forall m e.
   ( MonadConc m,
+    AlbumRepository m,
+    AlbumArtistNameRepository m,
+    ArtistNameRepository m,
+    TrackArtistNameRepository m,
+    TrackRepository m,
+    UuidGenerator m,
     Tr.MonadSourceTransform m
   ) =>
   TransformSourcesArgs ->
