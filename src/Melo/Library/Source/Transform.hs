@@ -188,6 +188,9 @@ instance MonadSourceTransform m => FileSystem (TransformPreviewT m) where
   movePath _ _ = lift $ do
     $(logDebug) ("Preview movePath called" :: String)
     pure $ Right ()
+  removeEmptyDirectories _ = lift $ do
+    $(logDebug) ("Preview removeEmptyDirectories called" :: String)
+    pure $ Right ()
 
 instance MonadSourceTransform m => MetadataAggregate (TransformPreviewT m) where
   openMetadataFile _p = do
@@ -651,6 +654,7 @@ moveSourceWithPattern collectionRef pats src@Source {ref, source} =
                           <> displayException e
                     Right _ ->
                       $(logInfo) $ "successfully moved cover image " <> takeFileName imagePath <> " for source " <> show id
+              void $ removeEmptyDirectories (takeDirectory srcPath)
               let movedSrc = src & #source .~ fileUri destPath
               Repo.updateSingle @SourceEntity (from movedSrc) >>= \case
                 Just updatedSrc -> pure $ mapLeft ConversionError $ tryFrom updatedSrc
