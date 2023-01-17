@@ -53,7 +53,7 @@ extra-deps:
   - github: chrismanning/binary-bits
     commit: 8d9ffaa0e705a04f231d5ce46271f7713ef0f7dc
   - github: chrismanning/hfsnotify
-    commit: fc1feb938670d805e10cdf9fc226e9726da7a96e
+    commit: cc8df085f6dd43bd08cff581d75e436019c75c87
   - github: mtolly/conduit-audio
     commit: a374e66f018ed75e553e9ba076ee3227560db343
     subdirs:
