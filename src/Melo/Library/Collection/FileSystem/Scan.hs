@@ -6,7 +6,7 @@ module Melo.Library.Collection.FileSystem.Scan
   ( scanPathIO,
     ScanType (..),
     runFileSystemWatcherIO,
-    FileSystemWatcherIOT(..),
+    FileSystemWatcherIOT (..),
     CollectionWatchState,
     emptyWatchState,
   )
@@ -31,8 +31,8 @@ import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as M
 import Data.Maybe
 import Data.Pool
-import Data.Sequence qualified as Seq
 import Data.Sequence (Seq (..))
+import Data.Sequence qualified as Seq
 import Data.Text qualified as T
 import Data.Time.LocalTime
 import Data.Vector qualified as V
@@ -67,9 +67,9 @@ import Melo.Lookup.MusicBrainz qualified as MB
 import Melo.Metadata.Mapping.Aggregate
 import Melo.Metadata.Mapping.Repo
 import Network.Wreq.Session qualified as Wreq
-import System.FilePath
 import System.FSNotify (ThreadingMode (..))
 import System.FSNotify qualified as FS
+import System.FilePath
 import UnliftIO.Directory qualified as Dir
 
 data ScanType = ScanNewOrModified | ScanAll
@@ -124,7 +124,7 @@ scanPathIO pool sess cws scanType ref p' =
               liftIO $
                 ifM
                   (shouldImport [p])
-                  (importTransaction [p])
+                  (handleScanErrors $ importTransaction [p])
                   (pure 0)
             else pure 0
     $(logInfoIO) $ show srcs <> " sources imported from path " <> show p
@@ -167,19 +167,19 @@ scanPathIO pool sess cws scanType ref p' =
         . runSourceAggregateIOT
     openMetadataFile'' p =
       runFileSystemWatcherIO pool cws sess $
-      runMetadataAggregateIO $
-        openMetadataFileByExt p >>= \case
-          Right mf -> pure $ Just mf
-          Left e@F.UnknownFormat -> do
-            $(logWarnIO) $ "Could not open by extension " <> p <> ": " <> show e
-            openMetadataFile p >>= \case
-              Left e -> do
-                $(logErrorIO) $ "Could not open " <> p <> ": " <> show e
-                pure Nothing
-              Right mf -> pure $ Just mf
-          Left e -> do
-            $(logErrorIO) $ "Could not open by extension " <> p <> ": " <> show e
-            pure Nothing
+        runMetadataAggregateIO $
+          openMetadataFileByExt p >>= \case
+            Right mf -> pure $ Just mf
+            Left e@F.UnknownFormat -> do
+              $(logWarnIO) $ "Could not open by extension " <> p <> ": " <> show e
+              openMetadataFile p >>= \case
+                Left e -> do
+                  $(logErrorIO) $ "Could not open " <> p <> ": " <> show e
+                  pure Nothing
+                Right mf -> pure $ Just mf
+            Left e -> do
+              $(logErrorIO) $ "Could not open by extension " <> p <> ": " <> show e
+              pure Nothing
     logShow :: SomeException -> IO ()
     logShow e = $(logErrorIO) $ "error during scan: " <> displayException e
     shouldImport :: [FilePath] -> IO Bool
@@ -214,8 +214,9 @@ data CollectionWatchState = CollectionWatchState
   }
 
 emptyWatchState :: IO CollectionWatchState
-emptyWatchState = STM.atomically $
-  CollectionWatchState <$> STM.newTVar H.empty <*> STM.newTVar Seq.empty
+emptyWatchState =
+  STM.atomically $
+    CollectionWatchState <$> STM.newTVar H.empty <*> STM.newTVar Seq.empty
 
 newtype FileSystemWatcherIOT m a = FileSystemWatcherIOT
   { runFileSystemWatcherIOT :: ReaderT (Pool Connection, CollectionWatchState, Wreq.Session) m a
@@ -253,19 +254,17 @@ instance
   startWatching ref p = do
     (pool, watchState, sess) <- ask
     $(logInfo) $ "starting to watch path " <> p
-    liftBaseWith
-      ( \runInBase ->
-          void $
-            liftIO $
-              forkIO $
-                FS.withManagerConf (FS.defaultConfig {FS.confThreadingMode = ThreadPerWatch}) $ \watchManager -> do
-                  let handler e = do
-                        locks <- STM.atomically $ STM.readTVar watchState.locks
-                        void $ runInBase $ handleEvent pool sess watchState ref locks e
-                  stop <- FS.watchTree watchManager p (\e -> takeExtension (FS.eventPath e) `notElem` [".tmp", ".part"]) handler
-                  STM.atomically $ STM.modifyTVar' watchState.stoppers (H.insert ref stop)
-                  forever $ threadDelay 1000000
-      )
+    void $
+      liftIO $
+        forkIO $
+          handle (\(SomeException e) -> $(logErrorIO) $ "Failure occured in filesystem watcher thread: " <> displayException e) $
+            FS.withManagerConf (FS.defaultConfig {FS.confThreadingMode = ThreadPerWatch}) $ \watchManager -> do
+              let handler e = do
+                    locks <- STM.atomically $ STM.readTVar watchState.locks
+                    void $ handleEvent pool sess watchState ref locks e
+              stop <- FS.watchTree watchManager p (\e -> takeExtension e.eventPath `notElem` [".tmp", ".part"]) handler
+              STM.atomically $ STM.modifyTVar' watchState.stoppers (H.insert ref stop)
+              forever $ threadDelay 1000000
   stopWatching ref = do
     (_pool, watchState, _sess) <- ask
     stoppers' <- liftIO $ STM.atomically $ STM.readTVar watchState.stoppers
@@ -276,13 +275,13 @@ instance
     (_pool, watchState, _sess) <- ask
     let packedPaths = Seq.fromList $ NE.toList $ pack <$> ps
     bracket
-      (liftIO $ do
-        STM.atomically $ STM.modifyTVar' watchState.locks (lockPaths packedPaths)
-        $(logInfoIO) $ "Unwatching paths " <> show packedPaths
+      ( liftIO $ do
+          STM.atomically $ STM.modifyTVar' watchState.locks (lockPaths packedPaths)
+          $(logInfoIO) $ "Unwatching paths " <> show packedPaths
       )
-      (\_ -> liftIO $ do
-        $(logInfoIO) $ "Re-watching paths " <> show packedPaths
-        STM.atomically $ STM.modifyTVar' watchState.locks (unlockPaths packedPaths)
+      ( \_ -> liftIO $ do
+          $(logInfoIO) $ "Re-watching paths " <> show packedPaths
+          STM.atomically $ STM.modifyTVar' watchState.locks (unlockPaths packedPaths)
       )
       (const m)
     where
