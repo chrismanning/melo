@@ -29,7 +29,7 @@ class Monad m => FileSystem m where
   canonicalizePath :: FilePath -> m FilePath
   readFile :: FilePath -> m ByteString
   movePath :: FilePath -> FilePath -> m (Either MoveError ())
-  removeEmptyDirectories :: FilePath -> m (Either RemoveError ())
+  removeEmptyDirectories :: FilePath -> m ()
 
 instance
   {-# OVERLAPPABLE #-}
@@ -99,21 +99,14 @@ instance
   movePath a b = liftIO $ movePathIO a b
   removeEmptyDirectories dir =
     doesDirectoryExist dir >>= \case
-      False -> pure $ Left DirectoryDoesNotExist
-      True -> handleIO (pure . Left . RemoveIOError) (do
-        handleIO (pure . Left)
-          (Right <$> listDirectory dir) >>= \case
-          Right [] -> do
+      False -> pure ()
+      True -> handleIO (const $ pure ()) (
+        listDirectory dir >>= \case
+          [] -> do
             liftIO $ Dir.removeDirectory dir
             $(logInfo) $ "Removed directory " <> show dir
-            pure $ Right ()
-          Right es -> Right <$> forM_ es (removeEmptyDirectories >=> \case
-              Left e -> throwIO e
-              _ -> pure ()
-            )
-          Left e -> do
-            $(logWarn) $ "Failed to list directory " <> show dir <> ": " <> displayException e
-            pure $ Right ()
+            pure ()
+          es -> forM_ es removeEmptyDirectories
         )
 
 movePathIO :: FilePath -> FilePath -> IO (Either MoveError ())

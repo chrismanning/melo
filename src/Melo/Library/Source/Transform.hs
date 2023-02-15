@@ -83,14 +83,21 @@ data TransformAction where
   RemoveOtherFiles :: TransformAction
   MusicBrainzLookup :: TransformAction
   ConvertEncoding :: TextEncoding -> TransformAction
-  EditMetadata :: MetadataTransformation -> TransformAction
+  EditMetadata :: Vector MetadataTransformation -> TransformAction
   ConvertMetadataFormat :: F.MetadataId -> TransformAction
   ConvertFileFormat :: F.MetadataFileId -> TransformAction
 
 deriving instance Show TransformAction
 
 evalTransformActions :: MonadSourceTransform m => Vector TransformAction -> Source -> m (Either TransformationError Source)
-evalTransformActions = foldl' (\b a -> b >=/> evalTransformAction a) (pure . Right)
+evalTransformActions ts = foldl' (\b a -> b >=/> evalTransformAction a) (pure . Right) (optimiseTransformActions ts)
+
+optimiseTransformActions :: Vector TransformAction -> Vector TransformAction
+optimiseTransformActions ts = V.fromList $ impl $ V.toList ts
+  where
+    impl (EditMetadata a : EditMetadata b : c) = EditMetadata (a <> b) : impl c
+    impl (a : b) = a : impl b
+    impl [] = []
 
 (>=/>) :: Monad m => Transform m -> Transform m -> Transform m
 f >=/> g = \x ->
@@ -101,7 +108,7 @@ f >=/> g = \x ->
 evalTransformAction :: MonadSourceTransform m => TransformAction -> Transform m
 evalTransformAction (Move ref patterns) src = mapLeft from <$> moveSourceWithPattern ref patterns src
 evalTransformAction (SplitMultiTrackFile ref patterns) src = mapLeft from <$> extractTrack ref patterns src
-evalTransformAction (EditMetadata metadataTransformation) src = mapLeft from <$> editMetadata metadataTransformation src
+evalTransformAction (EditMetadata metadataTransformations) src = mapLeft from <$> editMetadata metadataTransformations src
 evalTransformAction MusicBrainzLookup src = musicBrainzLookup src
 evalTransformAction t _ = pure $ Left (UnsupportedTransform (show t))
 
@@ -190,7 +197,7 @@ instance MonadSourceTransform m => FileSystem (TransformPreviewT m) where
     pure $ Right ()
   removeEmptyDirectories _ = lift $ do
     $(logDebug) ("Preview removeEmptyDirectories called" :: String)
-    pure $ Right ()
+    pure ()
 
 instance MonadSourceTransform m => MetadataAggregate (TransformPreviewT m) where
   openMetadataFile _p = do
@@ -234,6 +241,16 @@ newtype VirtualArtistRepoT m a = VirtualArtistRepoT
   deriving (MonadTrans, MonadTransControl) via IdentityT
 
 deriving instance (MonadState VirtualEntities m) => MonadState VirtualEntities (VirtualArtistRepoT m)
+
+instance MonadSourceTransform m => MetadataAggregate (VirtualArtistRepoT m) where
+  openMetadataFile _p = do
+    $(logDebug) ("Preview openMetadataFile called" :: String)
+    lift $ openMetadataFile _p
+  openMetadataFileByExt = lift . openMetadataFileByExt
+  readMetadataFile mid p = lift $ readMetadataFile mid p
+  writeMetadataFile mf _p = lift $ do
+    $(logDebug) ("Preview writeMetadataFile called" :: String)
+    pure $ Right mf
 
 instance
   ( Repo.Repository SourceEntity m,
@@ -814,32 +831,54 @@ mapE e = except . mapLeft e
 data MetadataTransformation
   = SetMapping Text (Vector Text)
   | RemoveMappings (Vector Text)
-  | Retain (Vector Text)
+  | RetainMappings (Vector Text)
+  | AddTag {key :: Text, value :: Text}
+  | RemoveTag {key :: Text, value :: Text}
+  | RemoveTags {key :: Text}
+  | RemoveAll
   deriving (Show)
 
-editMetadata :: MonadSourceTransform m => MetadataTransformation -> Source -> m (Either TransformationError Source)
+editMetadata :: MonadSourceTransform m => Vector MetadataTransformation -> Source -> m (Either TransformationError Source)
 editMetadata _ src@Source {metadata = Nothing} = pure $ Right src
-editMetadata (SetMapping mappingName vs) src@Source {metadata = Just metadata} =
-  runExceptT @TransformationError do
-    mapping <- getMappingNamed mappingName >>= eitherToError . maybeToRight (UnknownTagMapping mappingName)
-    let newMetadata = metadata & F.tagLens mapping .~ vs
-    if newMetadata == metadata
-      then pure src
-      else updateSource (src & #metadata .~ Just newMetadata) >>= mapE ImportFailed
-editMetadata (RemoveMappings mappings) src = flatten <$> (forM mappings $ \mapping -> editMetadata (SetMapping mapping V.empty) src)
+editMetadata ts src = runExceptT do
+  src' <- foldM (\src t -> ExceptT $ editMetadata' t src) src ts
+  if src' /= src then
+    updateSource src' >>= mapE ImportFailed
+  else pure src'
   where
-    flatten es = foldl' (\_a b -> b) (Left $ ImportFailed undefined) es
-editMetadata (Retain retained) src@Source {metadata = Just metadata} =
-  let tag = F.mappedTag metadata.mappingSelector
-   in runExceptT @TransformationError do
-        retainedMappings <- forM retained $ \mappingName -> do
-          getMappingNamed mappingName
-            >>= eitherToError . maybeToRight (UnknownTagMapping mappingName)
-        let newTags = foldl' (\ts mapping -> ts & tag mapping .~ (metadata.tag mapping)) F.emptyTags retainedMappings
-        let newMetadata = metadata {F.tags = newTags}
-        if newMetadata == metadata
-          then pure src
-          else updateSource (src & #metadata .~ Just newMetadata) >>= mapE ImportFailed
+  editMetadata' _ src@Source {metadata = Nothing} = pure $ Right src
+  editMetadata' (SetMapping mappingName vs) src@Source {metadata = Just metadata} =
+    runExceptT @TransformationError do
+      mapping <- getMappingNamed mappingName >>= eitherToError . maybeToRight (UnknownTagMapping mappingName)
+      let newMetadata = metadata & F.tagLens mapping .~ vs
+      pure (src & #metadata .~ Just newMetadata)
+  editMetadata' (RemoveMappings mappings) src = flatten <$> (forM mappings $ \mapping -> editMetadata' (SetMapping mapping V.empty) src)
+    where
+      flatten es = foldl' (\_a b -> b) (Left $ ImportFailed undefined) es
+  editMetadata' (RetainMappings retained) src@Source {metadata = Just metadata} =
+    let tag = F.mappedTag metadata.mappingSelector
+     in runExceptT @TransformationError do
+          retainedMappings <- forM retained $ \mappingName -> do
+            getMappingNamed mappingName
+              >>= eitherToError . maybeToRight (UnknownTagMapping mappingName)
+          let newTags = foldl' (\ts mapping -> ts & tag mapping .~ (metadata.tag mapping)) F.emptyTags retainedMappings
+          let newMetadata = metadata {F.tags = newTags}
+          pure (src & #metadata .~ Just newMetadata)
+  editMetadata' (AddTag k v) src@Source {metadata = Just metadata} = runExceptT @TransformationError do
+    let (F.Tags tags) = metadata.tags
+    let newMetadata = metadata {F.tags = F.Tags (V.snoc tags (k, v))}
+    pure (src & #metadata .~ Just newMetadata)
+  editMetadata' (RemoveTag k v) src@Source {metadata = Just metadata} = runExceptT @TransformationError do
+    let (F.Tags tags) = metadata.tags
+    let newMetadata = metadata {F.tags = F.Tags (V.filter (\(k', v') -> k' /= k && v' /= v) tags)}
+    pure (src & #metadata .~ Just newMetadata)
+  editMetadata' (RemoveTags k) src@Source {metadata = Just metadata} = runExceptT @TransformationError do
+    let (F.Tags tags) = metadata.tags
+    let newMetadata = metadata {F.tags = F.Tags (V.filter (\(k', _) -> k' /= k) tags)}
+    pure (src & #metadata .~ Just newMetadata)
+  editMetadata' RemoveAll src@Source {metadata = Just metadata} = runExceptT @TransformationError do
+    let newMetadata = metadata {F.tags = F.Tags V.empty}
+    pure (src & #metadata .~ Just newMetadata)
 
 musicBrainzLookup :: MonadSourceTransform m => Source -> m (Either TransformationError Source)
 musicBrainzLookup src@Source {metadata = Nothing} = do

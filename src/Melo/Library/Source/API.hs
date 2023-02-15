@@ -610,7 +610,11 @@ instance GQLType Transform where
 data MetadataTransformation
   = SetMapping {mapping :: Text, values :: Vector Text}
   | RemoveMappings {mappings :: Vector Text}
-  | Retain {mappings :: Vector Text}
+  | RetainMappings {mappings :: Vector Text}
+  | AddTag {key :: Text, value :: Text}
+  | RemoveTag {key :: Text, value :: Text}
+  | RemoveTags {key :: Text}
+  | RemoveAll
   deriving (Show, Generic)
 
 instance GQLType MetadataTransformation where
@@ -683,7 +687,7 @@ instance TryFrom Transform Tr.TransformAction where
   tryFrom t = case t of
     Move {} -> Tr.Move <$> parseRef t.collectionRef <*> parseMovePattern' t.destPattern
     SplitMultiTrackFile {} -> Tr.SplitMultiTrackFile <$> parseRef t.collectionRef <*> parseMovePattern' t.destPattern
-    EditMetadata mt -> Right $ Tr.EditMetadata (from mt)
+    EditMetadata mt -> Right $ Tr.EditMetadata (V.singleton (from mt))
     MusicBrainzLookup _ -> Right Tr.MusicBrainzLookup
     where
       parseMovePattern' pat = mapLeft (TryFromException t <$> fmap toException) $ Tr.parseMovePattern pat
@@ -693,4 +697,8 @@ instance TryFrom Transform Tr.TransformAction where
 instance From MetadataTransformation Tr.MetadataTransformation where
   from (SetMapping m vs) = Tr.SetMapping m vs
   from (RemoveMappings ms) = Tr.RemoveMappings ms
-  from (Retain ms) = Tr.Retain ms
+  from (RetainMappings ms) = Tr.RetainMappings ms
+  from (AddTag k v) = Tr.AddTag k v
+  from (RemoveTag k v) = Tr.RemoveTag k v
+  from (RemoveTags k) = Tr.RemoveTags k
+  from RemoveAll = Tr.RemoveAll

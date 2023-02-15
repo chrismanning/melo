@@ -1,3 +1,8 @@
+input AddTag {
+  key: String!
+  value: String!
+}
+
 type Collection {
   id: CollectionRef!
   rootUri: String!
@@ -84,7 +89,11 @@ i.e., the customer can provide a value for only one field.
 input MetadataTransformation {
   SetMapping: SetMapping
   RemoveMappings: RemoveMappings
-  Retain: Retain
+  RetainMappings: RetainMappings
+  AddTag: AddTag
+  RemoveTag: RemoveTag
+  RemoveTags: RemoveTags
+  RemoveAll: Unit
 }
 
 input Move {
@@ -120,7 +129,16 @@ input RemoveMappings {
   mappings: [String!]!
 }
 
-input Retain {
+input RemoveTag {
+  key: String!
+  value: String!
+}
+
+input RemoveTags {
+  key: String!
+}
+
+input RetainMappings {
   mappings: [String!]!
 }
 
@@ -179,6 +197,10 @@ input Transform {
   SplitMultiTrackFile: SplitMultiTrackFile
   EditMetadata: EditMetadata
   MusicBrainzLookup: MusicBrainzLookup
+}
+
+enum Unit {
+  Unit
 }
 
 type UpdatedSource {
