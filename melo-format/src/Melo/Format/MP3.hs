@@ -29,8 +29,8 @@ import Melo.Format.Ape qualified as Ape
 import Melo.Format.Error
 import Melo.Format.ID3 qualified as ID3
 import Melo.Format.Internal.Info qualified as I
-import Melo.Format.Internal.Locate
 import Melo.Format.Internal.Metadata
+import Streaming.Binary qualified as S
 import Streaming.ByteString qualified as S
 import System.Directory
 import System.FilePath
@@ -108,8 +108,11 @@ hReadMp3 h = do
       id3v1 <- ID3.hGetId3v1 h
       hSeek h AbsoluteSeek 0
       ID3.hSkip h
-      findBinary (get @FrameHeader) (S.hGetContents h) <&> snd >>= \case
-        Just frameHeader -> do
+      hSkipZeroes h
+      (_, _, r) <- S.decode (S.hGet h 6)
+      case r of
+        Left _ -> throwIO $ MetadataReadError "Unable to read MPEG frame header"
+        Right frameHeader -> do
           hSeek h AbsoluteSeek 0
           samples <- mp3Samples h
           pure
@@ -122,7 +125,6 @@ hReadMp3 h = do
                 apev1,
                 samples = if samples > 0 then Just samples else Nothing
               }
-        Nothing -> throwIO $ MetadataReadError "Unable to read MPEG frame header"
     else F.fail "Handle not seekable"
 
 writeMp3File :: MetadataFile -> FilePath -> IO ()
@@ -199,11 +201,11 @@ mp3Samples h = loop h 0
         Just (XingHeaderSamples s) -> pure s
         Nothing -> pure total
     nextFrameDuration h = do
-      skipZeroes h
+      hSkipZeroes h
       Ape.hSkip h
-      skipZeroes h
+      hSkipZeroes h
       ID3.hSkip h
-      skipZeroes h
+      hSkipZeroes h
       buf <- L.hGet h 2
       if L.null buf
         then pure Nothing
@@ -239,11 +241,6 @@ mp3Samples h = loop h 0
       let frameLength = (samples `div` 8) * bitRate `div` header.sampleRate + padding
       hSeek h AbsoluteSeek (mark + fromIntegral frameLength - headerSize)
       pure $ Just (MP3FrameSamples (fromIntegral samples))
-    skipZeroes h = do
-      buf <- hGetSome h 1
-      if buf BS.!? 0 == Just 0
-        then skipZeroes h
-        else hSeek h RelativeSeek (fromIntegral (negate (BS.length buf)))
     infoHeaderOffset :: FrameHeader -> Integer
     infoHeaderOffset header =
       case header.mpegAudioVersion of
@@ -253,6 +250,13 @@ mp3Samples h = loop h 0
         _ -> case header.channels of
           Mono -> 9
           _ -> 17
+
+hSkipZeroes :: Handle -> IO ()
+hSkipZeroes h = do
+  buf <- hGetSome h 1
+  if buf BS.!? 0 == Just 0
+    then hSkipZeroes h
+    else hSeek h RelativeSeek (fromIntegral (negate (BS.length buf)))
 
 data FrameHeader = FrameHeader
   { mpegAudioVersion :: !MpegVersion,
