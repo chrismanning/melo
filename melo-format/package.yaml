@@ -54,19 +54,23 @@ library:
     - wave
     - witch
 
-#executables:
-#  melo-detect:
-#    source-dirs: app/detect
-#    main: Main.hs
-#    dependencies:
-#      - melo-format
-#      - extra
-#      - generic-lens
-#      - microlens
-#      - optparse-applicative
-#      - text
-#      - time
-#      - unordered-containers
+executables:
+  melo-detect:
+    source-dirs: app/detect
+    main: Main.hs
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+    dependencies:
+      - melo-format
+      - extra
+      - generic-lens
+      - microlens
+      - optparse-applicative
+      - text
+      - time
+      - unordered-containers
 
 tests:
   melo-format-test:

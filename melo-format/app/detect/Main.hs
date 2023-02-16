@@ -59,15 +59,13 @@ printTags f = do
     putLine
     psl $ "Tags - " <> formatDesc metadata
     putLine
-    let tags' = tags metadata
-    let tag = lens metadata
-    printTag "Track#" (tags' ^. tag trackNumber)
-    printTag "Track Title" (tags' ^. tag trackTitle)
-    printTag "Artist" (tags' ^. tag artist)
-    printTag "Album" (tags' ^. tag album)
-    printTag "Year" (tags' ^. tag year)
-    printTag "Album Artist" (tags' ^. tag albumArtist)
-    printTag "Genre" (tags' ^. tag genre)
+    printTag "Track#" (metadata.tagHead trackNumber)
+    printTag "Track Title" (metadata.tagHead trackTitle)
+    printTag "Artist" (metadata.tag artist)
+    printTag "Album" (metadata.tagHead album)
+    printTag "Year" (metadata.tagHead year)
+    printTag "Album Artist" (metadata.tag albumArtist)
+    printTag "Genre" (metadata.tag genre)
   where
     putLine = psl (T.replicate 20 "-")
     psl = T.putStrLn
