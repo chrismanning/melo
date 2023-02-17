@@ -280,6 +280,7 @@ instance
           $(logInfoIO) $ "Unwatching paths " <> show packedPaths
       )
       ( \_ -> liftIO $ do
+          threadDelay 10000
           $(logInfoIO) $ "Re-watching paths " <> show packedPaths
           STM.atomically $ STM.modifyTVar' watchState.locks (unlockPaths packedPaths)
       )

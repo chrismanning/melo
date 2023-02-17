@@ -53,7 +53,7 @@ extra-deps:
   - github: chrismanning/binary-bits
     commit: 8d9ffaa0e705a04f231d5ce46271f7713ef0f7dc
   - github: chrismanning/hfsnotify
-    commit: cc8df085f6dd43bd08cff581d75e436019c75c87
+    commit: f5a79a5a4a0e8f429dabb83ed6e713743d317ed5
   - github: mtolly/conduit-audio
     commit: a374e66f018ed75e553e9ba076ee3227560db343
     subdirs:
@@ -71,7 +71,7 @@ extra-deps:
   - github: chrismanning/rel8
     commit: 3f98c7116b62d1fd9b7cd4c7254b2d4e0bd8e831
   - github: chrismanning/kqueue
-    commit: 70f401e065c2cf5143446f6486c996647bccc747
+    commit: 742c7a29b5c5e43b330667f259b7ccea4503ba98
   - github: nikita-volkov/postgresql-binary
     commit: 9733ac2a9f4a1b2f172e8f088de8414e4a61ef2c
   - github: andremarianiello/hasql-transaction-io
