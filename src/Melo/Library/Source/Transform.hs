@@ -515,12 +515,12 @@ instance
     #tracks . at track.id <?= track
   insert' tracks = Repo.insert @TrackEntity tracks <&> V.length
   delete _ = pure V.empty
-  update e = lift $ do
+  update = mapM \track -> do
     $(logDebug) ("Preview update @TrackEntity called" :: String)
-    pure e
-  update' _ = lift $ do
+    #tracks . at track.id <?= track
+  update' = mapM_ \track -> do
     $(logDebug) ("Preview update' @TrackEntity called" :: String)
-    pure ()
+    #tracks . at track.id ?= track
 
 instance
   ( TrackRepository m,
