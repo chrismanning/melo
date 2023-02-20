@@ -88,7 +88,7 @@ trackSchema =
         TrackTable
           { id = "id",
             title = "title",
-            album_id = "album_id",
+            release_id = "release_id",
             track_number = "track_number",
             disc_number = "disc_number",
             comment = "comment",
@@ -109,12 +109,12 @@ runTrackRepositoryPooledIO pool =
         upsert =
           Just
             Upsert
-              { index = \e -> (e.track_number, e.disc_number, e.album_id),
+              { index = \e -> (e.track_number, e.disc_number, e.release_id),
                 set = const,
                 updateWhere = \new old ->
                   new.track_number ==. old.track_number
                     &&. new.disc_number ==. old.disc_number
-                    &&. new.album_id ==. old.album_id
+                    &&. new.release_id ==. old.release_id
               }
       }
     . runRepositoryIOT
@@ -131,12 +131,12 @@ runTrackRepositoryIO conn =
         upsert =
           Just
             Upsert
-              { index = \e -> (e.track_number, e.disc_number, e.album_id),
+              { index = \e -> (e.track_number, e.disc_number, e.release_id),
                 set = const,
                 updateWhere = \new old ->
                   new.track_number ==. old.track_number
                     &&. new.disc_number ==. old.disc_number
-                    &&. new.album_id ==. old.album_id
+                    &&. new.release_id ==. old.release_id
               }
       }
     . runRepositoryIOT

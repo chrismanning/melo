@@ -74,13 +74,13 @@ instance
   ) =>
   TagMappingAggregate (TagMappingAggregateT m)
   where
-  resolveMappingNamed m src | m == "album_artist_origin" = do
-    artists <- getSourceAlbumArtists src.ref
+  resolveMappingNamed m src | m == "release_artist_origin" = do
+    artists <- getSourceReleaseArtists src.ref
     pure $ V.take 1 $ V.mapMaybe ((\c -> c >>= decodeAlphaThree <&> alphaTwoUpper) . (.country) . fst) artists
   resolveMappingNamed m src | m == "va_track_artist" = do
-    albumArtists <- resolveMappingNamed "album_artist" src
+    releaseArtists <- resolveMappingNamed "release_artist" src
     trackArtists <- resolveMappingNamed "track_artist" src
-    if trackArtists /= albumArtists then
+    if trackArtists /= releaseArtists then
       pure trackArtists
     else pure V.empty
   resolveMappingNamed _ Source {metadata = Nothing} = pure V.empty
@@ -109,12 +109,12 @@ insertDefaultMappings = void (insert' @TagMappingEntity defaultMappings) `catchI
 defaultMappings :: Vector NewTagMapping
 defaultMappings =
   V.fromList
-    [ NewTagMapping "album_artist" $ coerce M.albumArtist,
+    [ NewTagMapping "release_artist" $ coerce M.albumArtist,
       NewTagMapping "track_artist" $ coerce M.artist,
       NewTagMapping "artist" $ coerce M.artist,
       NewTagMapping "track_title" $ coerce M.trackTitle,
       NewTagMapping "title" $ coerce M.trackTitle,
-      NewTagMapping "album_title" $ coerce M.album,
+      NewTagMapping "release_title" $ coerce M.album,
       NewTagMapping "album" $ coerce M.album,
       NewTagMapping "track_number" $ coerce M.trackNumber,
       NewTagMapping "tracknumber" $ coerce M.trackNumber,

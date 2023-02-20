@@ -1,7 +1,7 @@
 {-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Melo.Library.Album.Repo where
+module Melo.Library.Release.Repo where
 
 import Control.Concurrent.Classy
 import Control.Exception.Safe
@@ -15,31 +15,27 @@ import Data.Vector qualified as V
 import Hasql.Connection
 import Melo.Database.Repo
 import Melo.Database.Repo.IO
-import Melo.Library.Album.Types
+import Melo.Library.Release.Types
 import Melo.Lookup.MusicBrainz qualified as MB
 import Rel8 (Expr, Query, lit, (==.), (||.))
 import Rel8 qualified
 import Witch
 
-class Repository AlbumEntity m => AlbumRepository m where
-  getByMusicBrainzId :: MB.MusicBrainzId -> m (Maybe AlbumEntity)
-
---  getAlbumGenres :: AlbumRef -> m [Genre]
---  getAlbumTracks :: AlbumRef -> m [Track]
---  searchAlbums :: Text -> m [Album]
+class Repository ReleaseEntity m => ReleaseRepository m where
+  getByMusicBrainzId :: MB.MusicBrainzId -> m (Maybe ReleaseEntity)
 
 instance
   {-# OVERLAPPABLE #-}
   ( Monad (t m),
     MonadTrans t,
-    AlbumRepository m
+    ReleaseRepository m
   ) =>
-  AlbumRepository (t m)
+  ReleaseRepository (t m)
   where
   getByMusicBrainzId = lift . getByMusicBrainzId
 
-newtype AlbumRepositoryIOT m a = AlbumRepositoryIOT
-  { runAlbumRepositoryIOT :: RepositoryIOT AlbumTable m a
+newtype ReleaseRepositoryIOT m a = ReleaseRepositoryIOT
+  { runReleaseRepositoryIOT :: RepositoryIOT ReleaseTable m a
   }
   deriving newtype
     ( Functor,
@@ -51,16 +47,16 @@ newtype AlbumRepositoryIOT m a = AlbumRepositoryIOT
       MonadConc,
       MonadCatch,
       MonadMask,
-      MonadReader (RepositoryHandle AlbumTable),
+      MonadReader (RepositoryHandle ReleaseTable),
       MonadThrow,
       MonadTrans,
       MonadTransControl,
       PrimMonad
     )
 
-instance MonadIO m => Repository AlbumEntity (AlbumRepositoryIOT m) where
-  getAll = AlbumRepositoryIOT getAll
-  getByKey = AlbumRepositoryIOT . getByKey
+instance MonadIO m => Repository ReleaseEntity (ReleaseRepositoryIOT m) where
+  getAll = ReleaseRepositoryIOT getAll
+  getByKey = ReleaseRepositoryIOT . getByKey
   insert es | V.null es = pure V.empty
   insert es = do
     RepositoryHandle {connSrc, tbl} <- ask
@@ -84,34 +80,34 @@ instance MonadIO m => Repository AlbumEntity (AlbumRepositoryIOT m) where
           onConflict = Rel8.DoNothing,
           returning = fromIntegral <$> Rel8.NumberOfRowsAffected
         }
-  delete = AlbumRepositoryIOT . delete @AlbumEntity
-  update = AlbumRepositoryIOT . update
-  update' = AlbumRepositoryIOT . update'
+  delete = ReleaseRepositoryIOT . delete @ReleaseEntity
+  update = ReleaseRepositoryIOT . update
+  update' = ReleaseRepositoryIOT . update'
 
 instance
   ( MonadIO m
   ) =>
-  AlbumRepository (AlbumRepositoryIOT m)
+  ReleaseRepository (ReleaseRepositoryIOT m)
   where
   getByMusicBrainzId mbid = do
     RepositoryHandle {connSrc, tbl} <- ask
     firstOf traverse <$> runSelect connSrc do
-      album <- Rel8.each tbl
+      release <- Rel8.each tbl
       let mbid' = lit (Just mbid.mbid)
       Rel8.where_ $
-        album.musicbrainz_id ==. mbid' ||. album.musicbrainz_group_id ==. mbid'
-      pure album
+        release.musicbrainz_id ==. mbid' ||. release.musicbrainz_group_id ==. mbid'
+      pure release
 
-albumForRef :: Expr AlbumRef -> Query (AlbumTable Expr)
-albumForRef albumRef = Rel8.filter (\album -> album.id ==. albumRef) =<< Rel8.each albumSchema
+releaseForRef :: Expr ReleaseRef -> Query (ReleaseTable Expr)
+releaseForRef releaseRef = Rel8.filter (\release -> release.id ==. releaseRef) =<< Rel8.each releaseSchema
 
-albumSchema :: Rel8.TableSchema (AlbumTable Rel8.Name)
-albumSchema =
+releaseSchema :: Rel8.TableSchema (ReleaseTable Rel8.Name)
+releaseSchema =
   Rel8.TableSchema
-    { name = "album",
+    { name = "release",
       schema = Nothing,
       columns =
-        AlbumTable
+        ReleaseTable
           { id = "id",
             title = "title",
             comment = "comment",
@@ -120,17 +116,18 @@ albumSchema =
             length = "length",
             musicbrainz_id = "musicbrainz_id",
             musicbrainz_group_id = "musicbrainz_group_id",
+            kind = "kind",
             catalogue_number = "catalogue_number"
           }
     }
 
-runAlbumRepositoryPooledIO :: Pool Connection -> AlbumRepositoryIOT m a -> m a
-runAlbumRepositoryPooledIO pool =
+runReleaseRepositoryPooledIO :: Pool Connection -> ReleaseRepositoryIOT m a -> m a
+runReleaseRepositoryPooledIO pool =
   flip
     runReaderT
     RepositoryHandle
       { connSrc = Pooled pool,
-        tbl = albumSchema,
+        tbl = releaseSchema,
         pk = (.id),
         upsert =
           Just
@@ -141,15 +138,15 @@ runAlbumRepositoryPooledIO pool =
               }
       }
     . runRepositoryIOT
-    . runAlbumRepositoryIOT
+    . runReleaseRepositoryIOT
 
-runAlbumRepositoryIO :: Connection -> AlbumRepositoryIOT m a -> m a
-runAlbumRepositoryIO conn =
+runReleaseRepositoryIO :: Connection -> ReleaseRepositoryIOT m a -> m a
+runReleaseRepositoryIO conn =
   flip
     runReaderT
     RepositoryHandle
       { connSrc = Single conn,
-        tbl = albumSchema,
+        tbl = releaseSchema,
         pk = (.id),
         upsert =
           Just
@@ -160,4 +157,4 @@ runAlbumRepositoryIO conn =
               }
       }
     . runRepositoryIOT
-    . runAlbumRepositoryIOT
+    . runReleaseRepositoryIOT

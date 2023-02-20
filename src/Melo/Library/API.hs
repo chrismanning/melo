@@ -12,8 +12,8 @@ import GHC.Generics hiding (from)
 import GHC.OverloadedLabels ()
 import Melo.Common.FileSystem
 import Melo.Common.Uuid
-import Melo.Library.Album.Repo
-import Melo.Library.Album.ArtistName.Repo
+import Melo.Library.Release.Repo
+import Melo.Library.Release.ArtistName.Repo
 import Melo.Library.Artist.Name.Repo
 import Melo.Library.Collection.API
 import Melo.Library.Collection.Aggregate
@@ -33,8 +33,8 @@ instance Typeable m => GQLType (LibraryQuery m)
 
 resolveLibrary ::
   ( Tr.MonadSourceTransform m,
-    AlbumRepository m,
-    AlbumArtistNameRepository m,
+    ReleaseRepository m,
+    ReleaseArtistNameRepository m,
     ArtistNameRepository m,
     TrackArtistNameRepository m,
     TrackRepository m,
@@ -63,8 +63,8 @@ libraryMutation ::
   ( MonadIO m,
     CollectionAggregate m,
     Tr.MonadSourceTransform m,
-    AlbumRepository m,
-    AlbumArtistNameRepository m,
+    ReleaseRepository m,
+    ReleaseArtistNameRepository m,
     ArtistNameRepository m,
     TrackArtistNameRepository m,
     TrackRepository m,

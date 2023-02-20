@@ -26,9 +26,9 @@ import Melo.Common.Uri
 import Melo.Common.Uuid
 import Melo.Format.Metadata (EmbeddedPicture (..), MetadataFile (..), PictureType (..))
 import Melo.Library.API
-import Melo.Library.Album.Aggregate
-import Melo.Library.Album.ArtistName.Repo
-import Melo.Library.Album.Repo
+import Melo.Library.Release.Aggregate
+import Melo.Library.Release.ArtistName.Repo
+import Melo.Library.Release.Repo
 import Melo.Library.Artist.Aggregate
 import Melo.Library.Artist.Name.Repo
 import Melo.Library.Artist.Repo
@@ -95,8 +95,8 @@ gqlApiIO collectionWatchState pool sess rq = runStdoutLogging do
           . runMetadataAggregateIO
           . runSourceRepositoryPooledIO pool
           . runTagMappingRepositoryPooledIO pool
-          . runAlbumRepositoryPooledIO pool
-          . runAlbumArtistNameRepositoryPooledIO pool
+          . runReleaseRepositoryPooledIO pool
+          . runReleaseArtistNameRepositoryPooledIO pool
           . runArtistNameRepositoryPooledIO pool
           . runArtistRepositoryPooledIO pool
           . runTrackArtistNameRepositoryPooledIO pool
@@ -108,7 +108,7 @@ gqlApiIO collectionWatchState pool sess rq = runStdoutLogging do
           . runCollectionAggregateIO pool sess collectionWatchState
           . runArtistAggregateIOT
           . runTrackAggregateIOT
-          . runAlbumAggregateIOT
+          . runReleaseAggregateIOT
           . runSourceAggregateIOT
   !rs <- run (gqlApi rq)
   $(logInfo) ("finished handling graphql request" :: T.Text)
@@ -125,7 +125,7 @@ type ResolverE m =
     TagMappingAggregate m,
     SourceRepository m,
     SourceAggregate m,
-    AlbumAggregate m,
+    ReleaseAggregate m,
     ArtistAggregate m,
     TrackAggregate m,
     MetadataAggregate m,
@@ -133,8 +133,8 @@ type ResolverE m =
     MusicBrainzService m,
     CollectionRepository m,
     CollectionAggregate m,
-    AlbumRepository m,
-    AlbumArtistNameRepository m,
+    ReleaseRepository m,
+    ReleaseArtistNameRepository m,
     ArtistNameRepository m,
     ArtistRepository m,
     TrackRepository m,

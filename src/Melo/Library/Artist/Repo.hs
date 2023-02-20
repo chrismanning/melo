@@ -17,9 +17,9 @@ import Melo.Common.Logging
 import Melo.Common.Monad
 import Melo.Database.Repo as Repo
 import Melo.Database.Repo.IO
-import Melo.Library.Album.ArtistName.Repo
-import Melo.Library.Album.Repo (albumForRef)
-import Melo.Library.Album.Types
+import Melo.Library.Release.ArtistName.Repo
+import Melo.Library.Release.Repo (releaseForRef)
+import Melo.Library.Release.Types
 import Melo.Library.Artist.Name.Types
 import Melo.Library.Artist.Types
 import Melo.Library.Source.Types (SourceRef)
@@ -32,8 +32,8 @@ import Witch
 
 class Repository ArtistEntity m => ArtistRepository m where
   getByMusicBrainzId :: MB.MusicBrainzId -> m (Maybe ArtistEntity)
-  getAlbumArtists :: AlbumRef -> m (Vector (ArtistEntity, ArtistNameEntity))
-  getSourceAlbumArtists :: SourceRef -> m (Vector (ArtistEntity, ArtistNameEntity))
+  getReleaseArtists :: ReleaseRef -> m (Vector (ArtistEntity, ArtistNameEntity))
+  getSourceReleaseArtists :: SourceRef -> m (Vector (ArtistEntity, ArtistNameEntity))
   getByName :: Text -> m (Vector ArtistEntity)
 
 instance
@@ -45,8 +45,8 @@ instance
   ArtistRepository (t m)
   where
   getByMusicBrainzId = lift . getByMusicBrainzId
-  getAlbumArtists = lift . getAlbumArtists
-  getSourceAlbumArtists = lift . getSourceAlbumArtists
+  getReleaseArtists = lift . getReleaseArtists
+  getSourceReleaseArtists = lift . getSourceReleaseArtists
   getByName = lift . getByName
 
 newtype ArtistRepositoryIOT m a = ArtistRepositoryIOT
@@ -143,18 +143,18 @@ instance
       artist <- Rel8.each tbl
       Rel8.where_ $ artist.musicbrainz_id ==. lit (Just $ coerce mbid)
       pure artist
-  getAlbumArtists albumRef = do
+  getReleaseArtists releaseRef = do
     RepositoryHandle {connSrc} <- ask
     runSelect connSrc do
-      artistName <- artistNameForAlbumRef (lit albumRef)
+      artistName <- artistNameForReleaseRef (lit releaseRef)
       artist <- artistForRef artistName.artist_id
       pure (artist, artistName)
-  getSourceAlbumArtists srcRef = do
+  getSourceReleaseArtists srcRef = do
     RepositoryHandle {connSrc} <- ask
     runSelect connSrc do
       track <- trackForSourceRef (lit srcRef)
-      album <- albumForRef track.album_id
-      artistName <- artistNameForAlbumRef album.id
+      release <- releaseForRef track.release_id
+      artistName <- artistNameForReleaseRef release.id
       artist <- artistForRef artistName.artist_id
       pure (artist, artistName)
   getByName name = do

@@ -21,7 +21,7 @@ import Melo.Common.Uri
 import Melo.Database.Repo
 import Melo.Format (tagLens)
 import Melo.Format.Mapping qualified as M
-import Melo.Library.Album.Types
+import Melo.Library.Release.Types
 import Melo.Library.Artist.Aggregate
 import Melo.Library.Artist.Name.Types
 import Melo.Library.Artist.Repo as Artist
@@ -37,7 +37,7 @@ import Melo.Metadata.Mapping.Aggregate
 import Streaming.Prelude qualified as S
 
 class Monad m => TrackAggregate m where
-  importAlbumTracks :: Vector Source -> Album -> m ()
+  importReleaseTracks :: Vector Source -> Release -> m ()
 
 instance
   {-# OVERLAPPABLE #-}
@@ -47,7 +47,7 @@ instance
   ) =>
   TrackAggregate (t m)
   where
-  importAlbumTracks ss a = lift (importAlbumTracks ss a)
+  importReleaseTracks ss a = lift (importReleaseTracks ss a)
 
 newtype TrackAggregateIOT m a = TrackAggregateIOT
   { runTrackAggregateIOT :: m a
@@ -78,7 +78,7 @@ instance
   ) =>
   TrackAggregate (TrackAggregateIOT m)
   where
-  importAlbumTracks srcs album =
+  importReleaseTracks srcs release =
     lift $
       S.zip (S.each srcs) (S.each srcs & S.mapM importSourceTrack)
         & S.mapMaybe (\(src, track) -> (src,) <$> track)
@@ -88,20 +88,20 @@ instance
       importSourceTrack src = do
         $(logDebug) $ "Importing track from source " <> show src.ref
         Track.getBySrcRef src.ref >>= \case
-          Just track -> updateSingle (track { album_id = album.ref })
-          Nothing -> insertSingle (mkNewTrack album.ref Nothing src)
+          Just track -> updateSingle (track { release_id = release.ref })
+          Nothing -> insertSingle (mkNewTrack release.ref Nothing src)
       linkTrackArtists :: Source -> TrackEntity -> m ()
       linkTrackArtists src track = do
-        albumArtists <- resolveMappingNamed "album_artist" src
+        releaseArtists <- resolveMappingNamed "release_artist" src
         trackArtists <- resolveMappingNamed "track_artist" src
-        if albumArtists == trackArtists
+        if releaseArtists == trackArtists
           then do
-            $(logDebug) $ "Track artists same as album artists for source " <> show src.ref
-            albumArtists <- getAlbumArtists album.ref
-            let artistNames = albumArtists <&> (^. _2 . #id)
+            $(logDebug) $ "Track artists same as release artists for source " <> show src.ref
+            releaseArtists <- getReleaseArtists release.ref
+            let artistNames = releaseArtists <&> (^. _2 . #id)
             void $ TrackArtist.insert' (TrackArtistNameTable track.id <$> artistNames)
           else do
-            $(logDebug) $ "Track artists differ from album artists for source " <> show src.ref
+            $(logDebug) $ "Track artists differ from release artists for source " <> show src.ref
             unlessM (importArtistsByRecording src track) do
               let mbArtistIds = MB.MusicBrainzId <$> fromMaybe V.empty (src.metadata ^? _Just . tagLens MB.artistIdTag)
               importArtistsByMetadata src track trackArtists mbArtistIds
@@ -137,8 +137,8 @@ instance
             $(logDebug) $ "No recording for track " <> show track.id
             pure False
 
-mkNewTrack :: AlbumRef -> Maybe MB.MusicBrainzId -> Source -> NewTrack
-mkNewTrack albumRef mbid src@Source {metadata = Nothing} =
+mkNewTrack :: ReleaseRef -> Maybe MB.MusicBrainzId -> Source -> NewTrack
+mkNewTrack releaseRef mbid src@Source {metadata = Nothing} =
   NewTrack
     { title = "",
       trackNumber = fromMaybe 0 $ uriToFilePath src.source >>= parseTrackNumberFromFileName,
@@ -146,10 +146,10 @@ mkNewTrack albumRef mbid src@Source {metadata = Nothing} =
       comment = Nothing,
       length = fromMaybe 0 $ src.length,
       sourceId = src.ref,
-      albumId = albumRef,
+      releaseId = releaseRef,
       musicBrainzId = mbid
     }
-mkNewTrack albumRef mbid src@Source{metadata = Just m} =
+mkNewTrack releaseRef mbid src@Source{metadata = Just m} =
   NewTrack
     { title = trackTitle,
       trackNumber = fromMaybe 0 trackNumber,
@@ -157,7 +157,7 @@ mkNewTrack albumRef mbid src@Source{metadata = Just m} =
       comment = trackComment,
       length = fromMaybe 0 $ src.length,
       sourceId = src.ref,
-      albumId = albumRef,
+      releaseId = releaseRef,
       musicBrainzId = mbid
     }
   where

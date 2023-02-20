@@ -68,7 +68,7 @@ spec = do
     let tagMappingRepo =
           mkTagMappingRepo
             [ ("artist", artist),
-              ("album_artist", albumArtist),
+              ("release_artist", albumArtist),
               ("year", year),
               ("album", album),
               ("track_number", trackNumber),
@@ -77,7 +77,7 @@ spec = do
     context "moving files by patterns" $ do
       let patterns =
             NE.fromList
-              [ Ty.MappingPattern "album_artist",
+              [ Ty.MappingPattern "release_artist",
                 Ty.LiteralPattern "/",
                 Ty.GroupPattern (Ty.MappingPattern "year" :| [Ty.LiteralPattern " - "]),
                 Ty.MappingPattern "album",
@@ -233,20 +233,20 @@ spec = do
               :| []
           )
     it "parses tag mapping" $ do
-      SUT.parseMovePattern "%album_artist" `shouldBe` Right (Ty.MappingPattern "album_artist" :| [])
+      SUT.parseMovePattern "%release_artist" `shouldBe` Right (Ty.MappingPattern "release_artist" :| [])
       SUT.parseMovePattern "%02track_number" `shouldBe` Right (Ty.PrintfPattern "%02s" (Ty.MappingPattern "track_number") :| [])
     it "parses tag mapping in group" $ do
       SUT.parseMovePattern "test[%track_title" `shouldSatisfy` isLeft
       SUT.parseMovePattern "test[%track_title]" `shouldBe` Right (Ty.LiteralPattern "test" :| [Ty.GroupPattern (Ty.MappingPattern "track_title" :| [])])
     it "parses example" $
-      SUT.parseMovePattern "%album_artist[ %artist_origin]/%original_release_year - %album_title/%track_number - %track_title"
+      SUT.parseMovePattern "%release_artist[ %artist_origin]/%original_release_year - %release_title/%track_number - %track_title"
         `shouldBe` Right
-          ( Ty.MappingPattern "album_artist"
+          ( Ty.MappingPattern "release_artist"
               :| [ Ty.GroupPattern (Ty.LiteralPattern " " :| [Ty.MappingPattern "artist_origin"]),
                    Ty.LiteralPattern "/",
                    Ty.MappingPattern "original_release_year",
                    Ty.LiteralPattern " - ",
-                   Ty.MappingPattern "album_title",
+                   Ty.MappingPattern "release_title",
                    Ty.LiteralPattern "/",
                    Ty.MappingPattern "track_number",
                    Ty.LiteralPattern " - ",

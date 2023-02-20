@@ -10,16 +10,16 @@ import Control.Monad.Trans.Control
 import Data.Text (Text)
 import Melo.Database.Repo
 import Melo.Database.Repo.IO
-import Melo.Library.Album.Types
 import Melo.Library.Artist.Types
 import Melo.Library.Genre.Types
+import Melo.Library.Release.Types
 import Melo.Library.Track.Types
 import Rel8
 
 class Repository (GenreTable Result) m => GenreRepository m where
   getByName :: [Text] -> m [Genre]
   getArtists :: [GenreRef] -> m [(GenreRef, Artist)]
-  getAlbums :: [GenreRef] -> m [(GenreRef, Album)]
+  getReleases :: [GenreRef] -> m [(GenreRef, Release)]
   getTracks :: [GenreRef] -> m [(GenreRef, Track)]
 
 newtype GenreRepositoryIOT m a = GenreRepositoryIOT
@@ -82,7 +82,7 @@ newtype GenreRepositoryIOT m a = GenreRepositoryIOT
 --              manyToMany_
 --                (DB.meloDb ^. #album_genre)
 --                (^. #genre_id)
---                (^. #album_id)
+--                (^. #release_id)
 --                (byKeys tbl ks)
 --                (all_ (DB.meloDb ^. #album))
 --            pure (primaryKey g, a)

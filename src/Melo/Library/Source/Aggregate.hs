@@ -27,7 +27,7 @@ import Melo.Common.Uri
 import Melo.Common.Vector
 import Melo.Database.Repo as Repo
 import Melo.Format.Metadata (Metadata (..), MetadataFile (..))
-import Melo.Library.Album.Aggregate
+import Melo.Library.Release.Aggregate
 import Melo.Library.Source.Repo
 import Melo.Library.Source.Types
 import System.FilePath as P
@@ -75,7 +75,7 @@ newtype SourceAggregateIOT m a = SourceAggregateIOT
 
 instance
   ( SourceRepository m,
-    AlbumAggregate m,
+    ReleaseAggregate m,
     MetadataAggregate m,
     MonadConc m,
     Logging m
@@ -89,11 +89,11 @@ instance
     $(logDebug) $ "Importing " <> show (V.length metadataSources) <> " metadata sources"
     srcs <- rights . fmap tryFrom <$> insert @SourceEntity (fmap (from @MetadataImportSource) metadataSources)
     -- TODO publish sources imported event
-    fork $ void $ importAlbums srcs
+    fork $ void $ importReleases srcs
     pure srcs
   updateSource s = do
     e <- runExceptT (writeMetadata >> updateDB)
-    void $ importAlbums (V.singleton s)
+    void $ importReleases (V.singleton s)
     pure e
     where
       writeMetadata =

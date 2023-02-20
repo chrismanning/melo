@@ -463,7 +463,7 @@ type UpdateSource = SourceEntity
 data ImportStats = ImportStats
   { sourcesImported :: Natural,
     tracksImported :: Natural,
-    albumsImported :: Natural,
+    releasesImported :: Natural,
     artistsImported :: Natural,
     genresImported :: Natural
   }
@@ -474,7 +474,7 @@ instance Semigroup ImportStats where
     ImportStats
       { sourcesImported = a.sourcesImported + b.sourcesImported,
         tracksImported = a.tracksImported + b.tracksImported,
-        albumsImported = a.albumsImported + b.albumsImported,
+        releasesImported = a.releasesImported + b.releasesImported,
         artistsImported = a.artistsImported + b.artistsImported,
         genresImported = a.genresImported + b.genresImported
       }
@@ -484,7 +484,7 @@ instance Monoid ImportStats where
     ImportStats
       { sourcesImported = 0,
         tracksImported = 0,
-        albumsImported = 0,
+        releasesImported = 0,
         artistsImported = 0,
         genresImported = 0
       }

@@ -24,8 +24,8 @@ import Melo.Database.Repo as Repo
 import Melo.Format ()
 import Melo.Format.Metadata ()
 import Melo.GraphQL.Where
-import Melo.Library.Album.Repo
-import Melo.Library.Album.ArtistName.Repo
+import Melo.Library.Release.Repo
+import Melo.Library.Release.ArtistName.Repo
 import Melo.Library.Artist.Name.Repo
 import Melo.Library.Collection.Aggregate
 import Melo.Library.Collection.Repo
@@ -40,8 +40,8 @@ import Witch
 
 resolveCollections ::
   ( Tr.MonadSourceTransform m,
-    AlbumRepository m,
-    AlbumArtistNameRepository m,
+    ReleaseRepository m,
+    ReleaseArtistNameRepository m,
     ArtistNameRepository m,
     TrackArtistNameRepository m,
     TrackRepository m,
@@ -95,8 +95,8 @@ instance Typeable m => GQLType (Collection m)
 
 instance
   ( Tr.MonadSourceTransform m,
-    AlbumRepository m,
-    AlbumArtistNameRepository m,
+    ReleaseRepository m,
+    ReleaseArtistNameRepository m,
     ArtistNameRepository m,
     TrackArtistNameRepository m,
     TrackRepository m,
@@ -157,8 +157,8 @@ instance Typeable m => GQLType (CollectionMutation m)
 collectionMutation ::
   forall m e.
   ( Tr.MonadSourceTransform m,
-    AlbumRepository m,
-    AlbumArtistNameRepository m,
+    ReleaseRepository m,
+    ReleaseArtistNameRepository m,
     ArtistNameRepository m,
     TrackArtistNameRepository m,
     TrackRepository m,
@@ -189,8 +189,8 @@ addCollectionImpl ::
   ( Tr.MonadSourceTransform m,
     MonadConc m,
     CollectionAggregate m,
-    AlbumRepository m,
-    AlbumArtistNameRepository m,
+    ReleaseRepository m,
+    ReleaseArtistNameRepository m,
     ArtistNameRepository m,
     TrackArtistNameRepository m,
     TrackRepository m,

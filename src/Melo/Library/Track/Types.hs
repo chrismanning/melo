@@ -11,7 +11,7 @@ import Data.Time
 import Data.UUID
 import GHC.Generics
 import Melo.Database.Repo
-import Melo.Library.Album.Types
+import Melo.Library.Release.Types
 import Melo.Library.Artist.Name.Types
 import Melo.Library.Source.Types
 import Melo.Lookup.MusicBrainz as MB
@@ -21,7 +21,7 @@ import Witch
 data TrackTable f = TrackTable
   { id :: Column f TrackRef,
     title :: Column f Text,
-    album_id :: Column f AlbumRef,
+    release_id :: Column f ReleaseRef,
     track_number :: Column f Int16,
     disc_number :: Column f (Maybe Int16),
     comment :: Column f (Maybe Text),
@@ -52,7 +52,7 @@ data NewTrack = NewTrack
     discNumber :: Maybe Int16,
     comment :: Maybe Text,
     sourceId :: SourceRef,
-    albumId :: AlbumRef,
+    releaseId :: ReleaseRef,
     length :: NominalDiffTime,
     musicBrainzId :: Maybe MB.MusicBrainzId
   }
@@ -65,7 +65,7 @@ instance From NewTrack (TrackTable Expr) where
         title = lit t.title,
         track_number = lit t.trackNumber,
         comment = lit t.comment,
-        album_id = lit t.albumId,
+        release_id = lit t.releaseId,
         disc_number = lit t.discNumber,
         source_id = lit t.sourceId,
         length = lit (calendarTimeTime t.length),
@@ -81,7 +81,7 @@ fromNewTrack t id =
       disc_number = t.discNumber,
       comment = t.comment,
       source_id = t.sourceId,
-      album_id = t.albumId,
+      release_id = t.releaseId,
       length = calendarTimeTime t.length,
       musicbrainz_id = t.musicBrainzId <&> (.mbid)
     }
@@ -94,7 +94,7 @@ data Track = Track
     discNumber :: Maybe Int16,
     comment :: Maybe Text,
     sourceRef :: SourceRef,
-    albumRef :: AlbumRef,
+    releaseRef :: ReleaseRef,
     length :: NominalDiffTime,
     musicBrainzId :: Maybe MB.MusicBrainzId
   }
@@ -109,7 +109,7 @@ mkTrack artists t =
       discNumber = t.disc_number,
       comment = t.comment,
       sourceRef = t.source_id,
-      albumRef = t.album_id,
+      releaseRef = t.release_id,
       length = ctTime t.length,
       musicBrainzId = MB.MusicBrainzId <$> t.musicbrainz_id,
       artists = toList artists

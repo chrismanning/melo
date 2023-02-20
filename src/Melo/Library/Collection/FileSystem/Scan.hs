@@ -45,9 +45,9 @@ import Melo.Database.Repo qualified as Repo
 import Melo.Database.Transaction
 import Melo.Format.Error qualified as F
 import Melo.Format.Metadata (MetadataFile (..), fileFactoryByExt)
-import Melo.Library.Album.Aggregate
-import Melo.Library.Album.ArtistName.Repo
-import Melo.Library.Album.Repo
+import Melo.Library.Release.Aggregate
+import Melo.Library.Release.ArtistName.Repo
+import Melo.Library.Release.Repo
 import Melo.Library.Artist.Aggregate
 import Melo.Library.Artist.Name.Repo
 import Melo.Library.Artist.Repo
@@ -151,8 +151,8 @@ scanPathIO pool sess cws scanType ref p' =
       runSourceRepositoryPooledIO pool
         . runArtistRepositoryPooledIO pool
         . runArtistNameRepositoryPooledIO pool
-        . runAlbumArtistNameRepositoryPooledIO pool
-        . runAlbumRepositoryPooledIO pool
+        . runReleaseArtistNameRepositoryPooledIO pool
+        . runReleaseRepositoryPooledIO pool
         . runTrackRepositoryPooledIO pool
         . runTrackArtistNameRepositoryPooledIO pool
         . MB.runMusicBrainzServiceUnlimitedIO sess
@@ -163,7 +163,7 @@ scanPathIO pool sess cws scanType ref p' =
         . runMetadataAggregateIO
         . runArtistAggregateIOT
         . runTrackAggregateIOT
-        . runAlbumAggregateIOT
+        . runReleaseAggregateIOT
         . runSourceAggregateIOT
     openMetadataFile'' p =
       runFileSystemWatcherIO pool cws sess $

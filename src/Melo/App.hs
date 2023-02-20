@@ -14,7 +14,7 @@ import Melo.Common.Logging
 import Melo.Common.Metadata
 import Melo.Common.Uri
 import Melo.Database.Repo
-import Melo.Library.Album.Repo
+import Melo.Library.Release.Repo
 import Melo.Library.Artist.Name.Repo
 import Melo.Library.Artist.Repo
 import Melo.Library.Collection.Aggregate
@@ -67,7 +67,7 @@ initApp collectionWatchState pool sess =
       runMetadataAggregateIO $
         runSourceRepositoryPooledIO pool $
           runTagMappingRepositoryPooledIO pool $
-            runAlbumRepositoryPooledIO pool $
+            runReleaseRepositoryPooledIO pool $
             runArtistNameRepositoryPooledIO pool $
             runArtistRepositoryPooledIO pool $
             MB.runMusicBrainzServiceUnlimitedIO sess $

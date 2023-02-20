@@ -1,7 +1,7 @@
 {-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Melo.Library.Album.Aggregate where
+module Melo.Library.Release.Aggregate where
 
 import Control.Applicative
 import Control.Exception.Safe
@@ -15,16 +15,16 @@ import Melo.Common.Logging
 import Melo.Common.Monad
 import Melo.Database.Repo as Repo
 import Melo.Format (tagLens)
-import Melo.Library.Album.ArtistName.Repo (AlbumArtistNameRepository)
-import Melo.Library.Album.ArtistName.Repo qualified as AlbumArtist
-import Melo.Library.Album.ArtistName.Types
-import Melo.Library.Album.Repo as Album
-import Melo.Library.Album.Types
 import Melo.Library.Artist.Aggregate
 import Melo.Library.Artist.Name.Repo
 import Melo.Library.Artist.Name.Types
 import Melo.Library.Artist.Repo as Artist
 import Melo.Library.Artist.Types
+import Melo.Library.Release.ArtistName.Repo (ReleaseArtistNameRepository)
+import Melo.Library.Release.ArtistName.Repo qualified as ReleaseArtist
+import Melo.Library.Release.ArtistName.Types
+import Melo.Library.Release.Repo as Release
+import Melo.Library.Release.Types
 import Melo.Library.Source.Types
 import Melo.Library.Track.Aggregate
 import Melo.Lookup.MusicBrainz qualified as MB
@@ -32,21 +32,21 @@ import Melo.Metadata.Mapping.Aggregate
 import Streaming.Prelude qualified as S
 import Witch
 
-class Monad m => AlbumAggregate m where
-  importAlbums :: Vector Source -> m (Vector Album)
+class Monad m => ReleaseAggregate m where
+  importReleases :: Vector Source -> m (Vector Release)
 
 instance
   {-# OVERLAPPABLE #-}
   ( Monad (t m),
     MonadTrans t,
-    AlbumAggregate m
+    ReleaseAggregate m
   ) =>
-  AlbumAggregate (t m)
+  ReleaseAggregate (t m)
   where
-  importAlbums = lift . importAlbums
+  importReleases = lift . importReleases
 
-newtype AlbumAggregateIOT m a = AlbumAggregateIOT
-  { runAlbumAggregateIOT :: m a
+newtype ReleaseAggregateIOT m a = ReleaseAggregateIOT
+  { runReleaseAggregateIOT :: m a
   }
   deriving newtype
     ( Functor,
@@ -64,8 +64,8 @@ newtype AlbumAggregateIOT m a = AlbumAggregateIOT
   deriving (MonadTrans, MonadTransControl) via IdentityT
 
 instance
-  ( AlbumRepository m,
-    AlbumArtistNameRepository m,
+  ( ReleaseRepository m,
+    ReleaseArtistNameRepository m,
     ArtistAggregate m,
     ArtistNameRepository m,
     ArtistRepository m,
@@ -75,15 +75,15 @@ instance
     PrimMonad m,
     MB.MusicBrainzService m
   ) =>
-  AlbumAggregate (AlbumAggregateIOT m)
+  ReleaseAggregate (ReleaseAggregateIOT m)
   where
-  importAlbums = importAlbumsImpl
+  importReleases = importReleasesImpl
 
-importAlbumsImpl ::
+importReleasesImpl ::
   forall m.
   (
-    AlbumRepository m,
-    AlbumArtistNameRepository m,
+    ReleaseRepository m,
+    ReleaseArtistNameRepository m,
     ArtistAggregate m,
     ArtistNameRepository m,
     ArtistRepository m,
@@ -93,99 +93,100 @@ importAlbumsImpl ::
     PrimMonad m,
     MB.MusicBrainzService m
   ) =>
-  Vector Source -> m (Vector Album)
-importAlbumsImpl srcs =
+  Vector Source -> m (Vector Release)
+importReleasesImpl srcs =
   S.each srcs
     & S.mapM mbLookup
     & S.groupBy (\(_, releaseA) (_, releaseB) -> releaseA == releaseB)
     & S.mapped (impurely S.foldM vectorM)
     & S.map (\srcs -> (snd (srcs ! 0), fst <$> srcs))
-    & importAlbum'
+    & importRelease'
     & impurely S.foldM_ vectorM
     where
       mbLookup :: Source -> m (Source, (Maybe MB.ReleaseGroup, Maybe MB.Release))
       mbLookup src = case src.metadata of
         Nothing -> pure (src, (Nothing, Nothing))
         Just metadata -> (src,) <$> MB.getReleaseAndGroup metadata
-      importAlbum' s = S.for s
+      importRelease' s = S.for s
         ( \((mbReleaseGroup, mbRelease), srcs) -> case (mbReleaseGroup, mbRelease) of
-            (Nothing, Nothing) -> importAlbumsFromMetadata srcs
+            (Nothing, Nothing) -> importReleasesFromMetadata srcs
             (mbReleaseGroup, mbRelease) -> importMusicBrainzRelease mbReleaseGroup mbRelease srcs
         )
       importMusicBrainzRelease mbReleaseGroup mbRelease srcs = case fromMusicBrainz mbReleaseGroup mbRelease of
         Nothing -> pure ()
-        Just newAlbum -> do
+        Just newRelease -> do
           $(logDebug) $ "Importing musicbrainz release for sources: " <> show (srcs <&> (.ref))
-          album <- fmap join (traverse Album.getByMusicBrainzId (mbRelease ^? _Just . #id))
-            <<|>> fmap join (traverse Album.getByMusicBrainzId (mbReleaseGroup ^? _Just . #id))
-            <<|>> insertSingle @AlbumEntity newAlbum
+          release <- fmap join (traverse Release.getByMusicBrainzId (mbRelease ^? _Just . #id))
+            <<|>> fmap join (traverse Release.getByMusicBrainzId (mbReleaseGroup ^? _Just . #id))
+            <<|>> insertSingle @ReleaseEntity newRelease
           let artistCredits = mbRelease ^? _Just . #artistCredit . _Just <|> mbReleaseGroup ^? _Just . #artistCredit . _Just
-          $(logDebug) $ "Artist credits for album " <> T.pack (show newAlbum.title) <> ": " <> T.pack (show artistCredits)
+          $(logDebug) $ "Artist credits for release " <> T.pack (show newRelease.title) <> ": " <> T.pack (show artistCredits)
           artistNames <- case artistCredits of
             Just as -> V.mapMaybeM importArtistCredit as
             _ -> pure V.empty
-          case album of
-            Just album -> do
-              $(logInfo) $ "Found album " <> T.pack (show album.title) <> " (id: " <> T.pack (show album.id) <> ")"
-              let mk a = AlbumArtistNameTable {album_id = album.id, artist_name_id = a.id}
-              _ <- AlbumArtist.insert' (mk <$> artistNames)
-              let album' = mkAlbum (V.toList artistNames) album
-              _tracks <- importAlbumTracks srcs album'
-              S.yield album'
+          case release of
+            Just release -> do
+              $(logInfo) $ "Found release " <> T.pack (show release.title) <> " (id: " <> T.pack (show release.id) <> ")"
+              let mk a = ReleaseArtistNameTable {release_id = release.id, artist_name_id = a.id}
+              _ <- ReleaseArtist.insert' (mk <$> artistNames)
+              let release' = mkRelease (V.toList artistNames) release
+              _tracks <- importReleaseTracks srcs release'
+              S.yield release'
             Nothing -> pure ()
-      importAlbumsFromMetadata srcs = do
-        $(logDebug) $ "Importing albums for sources: " <> show (srcs <&> (.ref))
+      importReleasesFromMetadata srcs = do
+        $(logDebug) $ "Importing releases for sources: " <> show (srcs <&> (.ref))
         S.each srcs
-          & S.mapMaybeM (\src -> fmap (src,) <$> singleMapping "album_title" src)
-          & S.groupBy (\(_, albumTitleA) (_, albumTitleB) -> albumTitleA == albumTitleB)
+          & S.mapMaybeM (\src -> fmap (src,) <$> singleMapping "release_title" src)
+          & S.groupBy (\(_, releaseTitleA) (_, releaseTitleB) -> releaseTitleA == releaseTitleB)
           & S.mapped (impurely S.foldM vectorM)
           & S.map (\srcs -> (snd (srcs ! 0), fst <$> srcs))
-          & S.mapMaybeM (uncurry importAlbumSources)
-      importAlbumSources title srcs = do
+          & S.mapMaybeM (uncurry importReleaseSources)
+      importReleaseSources title srcs = do
         let src = srcs ! 0
         originalYearReleased <- singleMapping "original_release_year" src
         yearReleased <- singleMapping "release_year" src
         catalogueNumber <- singleMapping "catalogue_number" src
-        album <-
-          insertSingle @AlbumEntity
-            NewAlbum
+        release <-
+          insertSingle @ReleaseEntity
+            NewRelease
               { title,
                 yearReleased,
                 originalYearReleased,
                 comment = Nothing,
                 musicbrainzId = Nothing,
                 musicbrainzGroupId = Nothing,
+                kind = AlbumKind,
                 catalogueNumber
               }
-        albumArtistNames <- importAlbumArtists src album
-        case mkAlbum albumArtistNames <$> album of
-          Just album' -> do
-            $(logInfo) $ "Imported " <> show album'
-            _tracks <- importAlbumTracks srcs album'
-            pure (Just album')
+        releaseArtistNames <- importReleaseArtists src release
+        case mkRelease releaseArtistNames <$> release of
+          Just release' -> do
+            $(logInfo) $ "Imported " <> show release'
+            _tracks <- importReleaseTracks srcs release'
+            pure (Just release')
           Nothing -> do
-            $(logWarn) $ "No album found for source " <> show src.ref
+            $(logWarn) $ "No release found for source " <> show src.ref
             pure Nothing
 
-      importAlbumArtists :: Source -> Maybe AlbumEntity -> m (Vector ArtistNameEntity)
-      importAlbumArtists _ Nothing = pure V.empty
-      importAlbumArtists src (Just album) = do
+      importReleaseArtists :: Source -> Maybe ReleaseEntity -> m (Vector ArtistNameEntity)
+      importReleaseArtists _ Nothing = pure V.empty
+      importReleaseArtists src (Just release) = do
         let mbArtistIds = MB.MusicBrainzId <$> fromMaybe V.empty (src.metadata ^? _Just . tagLens MB.albumArtistIdTag)
         newArtists <- V.mapMaybeM MB.getArtist mbArtistIds
         artists <- forMaybeM newArtists \newArtist -> runMaybeT do
           artist <- MaybeT $ insertSingle @ArtistEntity (from newArtist) <<|>> Artist.getByMusicBrainzId newArtist.id
           artistName <- MaybeT $ insertSingle @ArtistNameEntity (NewArtistName artist.id artist.name) <<|>> getAlias artist.id artist.name
-          _ <- MaybeT $ AlbumArtist.insertSingle (AlbumArtistNameEntity album.id artistName.id)
+          _ <- MaybeT $ ReleaseArtist.insertSingle (ReleaseArtistNameEntity release.id artistName.id)
           pure artistName
 
-        albumArtists <- resolveMappingNamed "album_artist" src
-        if V.length artists < V.length albumArtists
+        releaseArtists <- resolveMappingNamed "release_artist" src
+        if V.length artists < V.length releaseArtists
           then do
-            $(logInfo) $ "No album artist MusicBrainz info found for source " <> show src
-            forMaybeM albumArtists \albumArtist -> runMaybeT do
-              artist <- MaybeT $ insertSingle @ArtistEntity (mkNewArtist albumArtist)
-              artistName <- MaybeT $ insertSingle @ArtistNameEntity (NewArtistName artist.id albumArtist)
-              _ <- MaybeT $ AlbumArtist.insertSingle (AlbumArtistNameEntity album.id artistName.id)
+            $(logInfo) $ "No release artist MusicBrainz info found for source " <> show src
+            forMaybeM releaseArtists \releaseArtist -> runMaybeT do
+              artist <- MaybeT $ insertSingle @ArtistEntity (mkNewArtist releaseArtist)
+              artistName <- MaybeT $ insertSingle @ArtistNameEntity (NewArtistName artist.id releaseArtist)
+              _ <- MaybeT $ ReleaseArtist.insertSingle (ReleaseArtistNameEntity release.id artistName.id)
               pure artistName
           else pure artists
       mkNewArtist name =

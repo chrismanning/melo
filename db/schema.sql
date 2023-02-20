@@ -38,43 +38,6 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
--- Name: album; Type: TABLE; Schema: melo; Owner: -
---
-
-CREATE TABLE melo.album (
-    id uuid DEFAULT melo.uuid_generate_v4() NOT NULL,
-    title text NOT NULL,
-    comment text,
-    year_released text,
-    length interval,
-    musicbrainz_id text,
-    original_year_released text,
-    musicbrainz_group_id text,
-    catalogue_number text
-);
-
-
---
--- Name: album_artist_name; Type: TABLE; Schema: melo; Owner: -
---
-
-CREATE TABLE melo.album_artist_name (
-    album_id uuid NOT NULL,
-    artist_name_id uuid NOT NULL
-);
-
-
---
--- Name: album_genre; Type: TABLE; Schema: melo; Owner: -
---
-
-CREATE TABLE melo.album_genre (
-    album_id uuid NOT NULL,
-    genre_id uuid NOT NULL
-);
-
-
---
 -- Name: artist; Type: TABLE; Schema: melo; Owner: -
 --
 
@@ -156,6 +119,44 @@ CREATE TABLE melo.related_artist (
 
 
 --
+-- Name: release; Type: TABLE; Schema: melo; Owner: -
+--
+
+CREATE TABLE melo.release (
+    id uuid DEFAULT melo.uuid_generate_v4() NOT NULL,
+    title text NOT NULL,
+    comment text,
+    year_released text,
+    length interval,
+    musicbrainz_id text,
+    original_year_released text,
+    musicbrainz_group_id text,
+    catalogue_number text,
+    kind text DEFAULT 'album'::text NOT NULL
+);
+
+
+--
+-- Name: release_artist_name; Type: TABLE; Schema: melo; Owner: -
+--
+
+CREATE TABLE melo.release_artist_name (
+    release_id uuid NOT NULL,
+    artist_name_id uuid NOT NULL
+);
+
+
+--
+-- Name: release_genre; Type: TABLE; Schema: melo; Owner: -
+--
+
+CREATE TABLE melo.release_genre (
+    release_id uuid NOT NULL,
+    genre_id uuid NOT NULL
+);
+
+
+--
 -- Name: schema_migrations; Type: TABLE; Schema: melo; Owner: -
 --
 
@@ -212,7 +213,7 @@ CREATE TABLE melo.track (
     track_number integer NOT NULL,
     disc_number integer,
     comment text,
-    album_id uuid NOT NULL,
+    release_id uuid NOT NULL,
     length interval NOT NULL,
     source_id uuid NOT NULL,
     musicbrainz_id text
@@ -237,30 +238,6 @@ CREATE TABLE melo.track_genre (
     track_id uuid NOT NULL,
     genre_id uuid NOT NULL
 );
-
-
---
--- Name: album_artist_name album_artist_name_pkey; Type: CONSTRAINT; Schema: melo; Owner: -
---
-
-ALTER TABLE ONLY melo.album_artist_name
-    ADD CONSTRAINT album_artist_name_pkey PRIMARY KEY (album_id, artist_name_id);
-
-
---
--- Name: album_genre album_genre_pkey; Type: CONSTRAINT; Schema: melo; Owner: -
---
-
-ALTER TABLE ONLY melo.album_genre
-    ADD CONSTRAINT album_genre_pkey PRIMARY KEY (album_id, genre_id);
-
-
---
--- Name: album album_pkey; Type: CONSTRAINT; Schema: melo; Owner: -
---
-
-ALTER TABLE ONLY melo.album
-    ADD CONSTRAINT album_pkey PRIMARY KEY (id);
 
 
 --
@@ -328,6 +305,30 @@ ALTER TABLE ONLY melo.related_artist
 
 
 --
+-- Name: release_artist_name release_artist_name_pkey; Type: CONSTRAINT; Schema: melo; Owner: -
+--
+
+ALTER TABLE ONLY melo.release_artist_name
+    ADD CONSTRAINT release_artist_name_pkey PRIMARY KEY (release_id, artist_name_id);
+
+
+--
+-- Name: release_genre release_genre_pkey; Type: CONSTRAINT; Schema: melo; Owner: -
+--
+
+ALTER TABLE ONLY melo.release_genre
+    ADD CONSTRAINT release_genre_pkey PRIMARY KEY (release_id, genre_id);
+
+
+--
+-- Name: release release_pkey; Type: CONSTRAINT; Schema: melo; Owner: -
+--
+
+ALTER TABLE ONLY melo.release
+    ADD CONSTRAINT release_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: schema_migrations schema_migrations_pkey; Type: CONSTRAINT; Schema: melo; Owner: -
 --
 
@@ -389,27 +390,6 @@ ALTER TABLE ONLY melo.track_genre
 
 ALTER TABLE ONLY melo.track
     ADD CONSTRAINT track_pkey PRIMARY KEY (id);
-
-
---
--- Name: album_musicbrainz_group_id_uindex; Type: INDEX; Schema: melo; Owner: -
---
-
-CREATE UNIQUE INDEX album_musicbrainz_group_id_uindex ON melo.album USING btree (musicbrainz_group_id) WHERE (musicbrainz_id IS NULL);
-
-
---
--- Name: album_musicbrainz_id_uindex; Type: INDEX; Schema: melo; Owner: -
---
-
-CREATE UNIQUE INDEX album_musicbrainz_id_uindex ON melo.album USING btree (musicbrainz_id);
-
-
---
--- Name: album_title_year_released_uindex; Type: INDEX; Schema: melo; Owner: -
---
-
-CREATE UNIQUE INDEX album_title_year_released_uindex ON melo.album USING btree (title, year_released) WHERE ((musicbrainz_id IS NULL) AND (musicbrainz_group_id IS NULL));
 
 
 --
@@ -476,6 +456,27 @@ CREATE UNIQUE INDEX collection_root_uri_uindex ON melo.collection USING btree (r
 
 
 --
+-- Name: release_musicbrainz_group_id_uindex; Type: INDEX; Schema: melo; Owner: -
+--
+
+CREATE UNIQUE INDEX release_musicbrainz_group_id_uindex ON melo.release USING btree (musicbrainz_group_id) WHERE (musicbrainz_id IS NULL);
+
+
+--
+-- Name: release_musicbrainz_id_uindex; Type: INDEX; Schema: melo; Owner: -
+--
+
+CREATE UNIQUE INDEX release_musicbrainz_id_uindex ON melo.release USING btree (musicbrainz_id);
+
+
+--
+-- Name: release_title_year_released_uindex; Type: INDEX; Schema: melo; Owner: -
+--
+
+CREATE UNIQUE INDEX release_title_year_released_uindex ON melo.release USING btree (title, year_released) WHERE ((musicbrainz_id IS NULL) AND (musicbrainz_group_id IS NULL));
+
+
+--
 -- Name: source_attachment_attachment_id_index; Type: INDEX; Schema: melo; Owner: -
 --
 
@@ -518,42 +519,10 @@ CREATE UNIQUE INDEX track_source_id_uindex ON melo.track USING btree (source_id)
 
 
 --
--- Name: track_track_number_disc_number_album_id_uindex; Type: INDEX; Schema: melo; Owner: -
+-- Name: track_track_number_disc_number_release_id_uindex; Type: INDEX; Schema: melo; Owner: -
 --
 
-CREATE UNIQUE INDEX track_track_number_disc_number_album_id_uindex ON melo.track USING btree (track_number, disc_number, album_id);
-
-
---
--- Name: album_artist_name album_artist_name_album_id_fkey; Type: FK CONSTRAINT; Schema: melo; Owner: -
---
-
-ALTER TABLE ONLY melo.album_artist_name
-    ADD CONSTRAINT album_artist_name_album_id_fkey FOREIGN KEY (album_id) REFERENCES melo.album(id) ON DELETE CASCADE;
-
-
---
--- Name: album_artist_name album_artist_name_artist_name_id_fkey; Type: FK CONSTRAINT; Schema: melo; Owner: -
---
-
-ALTER TABLE ONLY melo.album_artist_name
-    ADD CONSTRAINT album_artist_name_artist_name_id_fkey FOREIGN KEY (artist_name_id) REFERENCES melo.artist_name(id) ON DELETE CASCADE;
-
-
---
--- Name: album_genre album_genre_album_id_fkey; Type: FK CONSTRAINT; Schema: melo; Owner: -
---
-
-ALTER TABLE ONLY melo.album_genre
-    ADD CONSTRAINT album_genre_album_id_fkey FOREIGN KEY (album_id) REFERENCES melo.album(id) ON DELETE CASCADE;
-
-
---
--- Name: album_genre album_genre_genre_id_fkey; Type: FK CONSTRAINT; Schema: melo; Owner: -
---
-
-ALTER TABLE ONLY melo.album_genre
-    ADD CONSTRAINT album_genre_genre_id_fkey FOREIGN KEY (genre_id) REFERENCES melo.genre(id) ON DELETE CASCADE;
+CREATE UNIQUE INDEX track_track_number_disc_number_release_id_uindex ON melo.track USING btree (track_number, disc_number, release_id);
 
 
 --
@@ -597,6 +566,38 @@ ALTER TABLE ONLY melo.related_artist
 
 
 --
+-- Name: release_artist_name release_artist_name_artist_name_id_fkey; Type: FK CONSTRAINT; Schema: melo; Owner: -
+--
+
+ALTER TABLE ONLY melo.release_artist_name
+    ADD CONSTRAINT release_artist_name_artist_name_id_fkey FOREIGN KEY (artist_name_id) REFERENCES melo.artist_name(id) ON DELETE CASCADE;
+
+
+--
+-- Name: release_artist_name release_artist_name_release_id_fkey; Type: FK CONSTRAINT; Schema: melo; Owner: -
+--
+
+ALTER TABLE ONLY melo.release_artist_name
+    ADD CONSTRAINT release_artist_name_release_id_fkey FOREIGN KEY (release_id) REFERENCES melo.release(id) ON DELETE CASCADE;
+
+
+--
+-- Name: release_genre release_genre_genre_id_fkey; Type: FK CONSTRAINT; Schema: melo; Owner: -
+--
+
+ALTER TABLE ONLY melo.release_genre
+    ADD CONSTRAINT release_genre_genre_id_fkey FOREIGN KEY (genre_id) REFERENCES melo.genre(id) ON DELETE CASCADE;
+
+
+--
+-- Name: release_genre release_genre_release_id_fkey; Type: FK CONSTRAINT; Schema: melo; Owner: -
+--
+
+ALTER TABLE ONLY melo.release_genre
+    ADD CONSTRAINT release_genre_release_id_fkey FOREIGN KEY (release_id) REFERENCES melo.release(id) ON DELETE CASCADE;
+
+
+--
 -- Name: source_attachment source_attachment_attachment_id_fk; Type: FK CONSTRAINT; Schema: melo; Owner: -
 --
 
@@ -618,14 +619,6 @@ ALTER TABLE ONLY melo.source_attachment
 
 ALTER TABLE ONLY melo.source
     ADD CONSTRAINT source_collection_id_fk FOREIGN KEY (collection_id) REFERENCES melo.collection(id) ON DELETE CASCADE;
-
-
---
--- Name: track track_album_id_fkey; Type: FK CONSTRAINT; Schema: melo; Owner: -
---
-
-ALTER TABLE ONLY melo.track
-    ADD CONSTRAINT track_album_id_fkey FOREIGN KEY (album_id) REFERENCES melo.album(id);
 
 
 --
@@ -658,6 +651,14 @@ ALTER TABLE ONLY melo.track_genre
 
 ALTER TABLE ONLY melo.track_genre
     ADD CONSTRAINT track_genre_track_id_fkey FOREIGN KEY (track_id) REFERENCES melo.track(id) ON DELETE CASCADE;
+
+
+--
+-- Name: track track_release_id_fkey; Type: FK CONSTRAINT; Schema: melo; Owner: -
+--
+
+ALTER TABLE ONLY melo.track
+    ADD CONSTRAINT track_release_id_fkey FOREIGN KEY (release_id) REFERENCES melo.release(id);
 
 
 --
@@ -695,4 +696,5 @@ INSERT INTO melo.schema_migrations (version) VALUES
     ('20221204172930'),
     ('20221208162831'),
     ('20221209154929'),
-    ('20221211232034');
+    ('20221211232034'),
+    ('20230219160659');

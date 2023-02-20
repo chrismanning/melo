@@ -44,10 +44,10 @@ import Melo.Database.Repo
 import Melo.Database.Repo.IO (selectStream)
 import Melo.Format qualified as F
 import Melo.GraphQL.Where
-import Melo.Library.Album.Aggregate
-import Melo.Library.Album.ArtistName.Repo
-import Melo.Library.Album.Repo
-import Melo.Library.Album.Types
+import Melo.Library.Release.Aggregate
+import Melo.Library.Release.ArtistName.Repo
+import Melo.Library.Release.Repo
+import Melo.Library.Release.Types
 import Melo.Library.Artist.Aggregate
 import Melo.Library.Artist.Name.Repo
 import Melo.Library.Artist.Repo
@@ -82,8 +82,8 @@ data SourceEvent
 
 resolveSources ::
   ( Tr.MonadSourceTransform m,
-    AlbumRepository m,
-    AlbumArtistNameRepository m,
+    ReleaseRepository m,
+    ReleaseArtistNameRepository m,
     ArtistNameRepository m,
     TrackArtistNameRepository m,
     TrackRepository m,
@@ -100,8 +100,8 @@ resolveSources args = do
 resolveSourceGroups ::
   forall m o e.
   ( Tr.MonadSourceTransform m,
-    AlbumRepository m,
-    AlbumArtistNameRepository m,
+    ReleaseRepository m,
+    ReleaseArtistNameRepository m,
     ArtistNameRepository m,
     TrackArtistNameRepository m,
     TrackRepository m,
@@ -158,8 +158,8 @@ convertSources = fmap (mapLeft from . tryFrom)
 
 resolveCollectionSources ::
   ( Tr.MonadSourceTransform m,
-    AlbumRepository m,
-    AlbumArtistNameRepository m,
+    ReleaseRepository m,
+    ReleaseArtistNameRepository m,
     ArtistNameRepository m,
     TrackArtistNameRepository m,
     TrackRepository m,
@@ -194,8 +194,8 @@ enrichSourceEntity ::
   forall m o e.
   ( Tr.MonadSourceTransform m,
     MonadConc m,
-    AlbumRepository m,
-    AlbumArtistNameRepository m,
+    ReleaseRepository m,
+    ReleaseArtistNameRepository m,
     ArtistNameRepository m,
     TrackArtistNameRepository m,
     TrackRepository m,
@@ -333,8 +333,8 @@ resolveMappedTags src mappingNames =
 
 resolveCollectionSourceGroups ::
   ( Tr.MonadSourceTransform m,
-    AlbumRepository m,
-    AlbumArtistNameRepository m,
+    ReleaseRepository m,
+    ReleaseArtistNameRepository m,
     ArtistNameRepository m,
     TrackArtistNameRepository m,
     TrackRepository m,
@@ -401,8 +401,8 @@ instance GQLType SourceGroupStreamArgs
 
 groupSources' ::
   ( Tr.MonadSourceTransform m,
-    AlbumRepository m,
-    AlbumArtistNameRepository m,
+    ReleaseRepository m,
+    ReleaseArtistNameRepository m,
     ArtistNameRepository m,
     TrackArtistNameRepository m,
     TrackRepository m,
@@ -435,8 +435,8 @@ mkSrcGroup ::
   forall m o e x n.
   ( Tr.MonadSourceTransform m,
     UuidGenerator m,
-    AlbumRepository m,
-    AlbumArtistNameRepository m,
+    ReleaseRepository m,
+    ReleaseArtistNameRepository m,
     ArtistNameRepository m,
     TrackArtistNameRepository m,
     TrackRepository m,
@@ -503,12 +503,12 @@ streamSourceGroupsQuery collectionWatchState pool collectionRef groupByMappings 
           Rel8.where_ (srcs.collection_id ==. Rel8.lit collectionRef)
         Orphaned -> do
           tracks <- Rel8.each trackSchema
-          albums <- Rel8.each albumSchema
+          releases <- Rel8.each releaseSchema
           Rel8.where_
             ( srcs.collection_id ==. Rel8.lit collectionRef
                 &&. tracks.source_id ==. srcs.id
-                &&. albums.id ==. tracks.album_id
-                &&. Rel8.isNull albums.musicbrainz_group_id
+                &&. releases.id ==. tracks.release_id
+                &&. Rel8.isNull releases.musicbrainz_group_id
             )
       pure srcs
     streamSession :: Connection -> IO (Either QueryError ())
@@ -538,8 +538,8 @@ runSourceIO collectionWatchState sess pool =
     . runMetadataAggregateIO
     . runSourceRepositoryPooledIO pool
     . runTagMappingRepositoryPooledIO pool
-    . runAlbumRepositoryPooledIO pool
-    . runAlbumArtistNameRepositoryPooledIO pool
+    . runReleaseRepositoryPooledIO pool
+    . runReleaseArtistNameRepositoryPooledIO pool
     . runArtistNameRepositoryPooledIO pool
     . runArtistRepositoryPooledIO pool
     . runTrackArtistNameRepositoryPooledIO pool
@@ -551,7 +551,7 @@ runSourceIO collectionWatchState sess pool =
     . runTagMappingAggregate
     . runArtistAggregateIOT
     . runTrackAggregateIOT
-    . runAlbumAggregateIOT
+    . runReleaseAggregateIOT
     . runSourceAggregateIOT
 
 getParentUri :: Text -> Text
@@ -623,8 +623,8 @@ instance GQLType MetadataTransformation where
 previewTransformSourceImpl ::
   forall m e o.
   ( Tr.MonadSourceTransform m,
-    AlbumRepository m,
-    AlbumArtistNameRepository m,
+    ReleaseRepository m,
+    ReleaseArtistNameRepository m,
     ArtistNameRepository m,
     TrackArtistNameRepository m,
     TrackRepository m,
@@ -656,8 +656,8 @@ previewTransformSourceImpl s ts = do
 transformSourcesImpl ::
   forall m e.
   ( MonadConc m,
-    AlbumRepository m,
-    AlbumArtistNameRepository m,
+    ReleaseRepository m,
+    ReleaseArtistNameRepository m,
     ArtistNameRepository m,
     TrackArtistNameRepository m,
     TrackRepository m,
@@ -673,7 +673,7 @@ transformSourcesImpl (TransformSourcesArgs ts where') = do
     case tryFrom s of
       Left e -> pure $ Left (s.id, into @Tr.TransformationError e)
       Right s' -> mapLeft (s.id,) <$> Tr.evalTransformActions (interpretTransforms ts) s'
-  lift $ fork $ void $ importAlbums (V.mapMaybe rightToMaybe ss)
+  lift $ fork $ void $ importReleases (V.mapMaybe rightToMaybe ss)
   forM ss \case
     Left (id, e) -> do
       $(logError) $ E.displayException e
