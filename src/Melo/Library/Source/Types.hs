@@ -497,8 +497,8 @@ data SourcePathPattern
   | PrintfPattern String SourcePathPattern
   deriving (Show, Eq)
 
-data SourceMoveError
-  = FileSystemMoveError MoveError
+data SourceFileManipError
+  = FileSystemFileManipError FileManipError
   | PatternError
   | NoSuchSource
   | SourcePathError
@@ -507,5 +507,5 @@ data SourceMoveError
   | ConversionError (TryFromException SourceEntity Source)
   deriving (Show)
 
-instance From MoveError SourceMoveError where
-  from = FileSystemMoveError
+instance From FileManipError SourceFileManipError where
+  from = FileSystemFileManipError

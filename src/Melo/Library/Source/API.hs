@@ -40,7 +40,7 @@ import Melo.Common.Logging
 import Melo.Common.Metadata
 import Melo.Common.Uri
 import Melo.Common.Uuid
-import Melo.Database.Repo
+import Melo.Database.Repo as Repo
 import Melo.Database.Repo.IO (selectStream)
 import Melo.Format qualified as F
 import Melo.GraphQL.Where
@@ -55,6 +55,7 @@ import Melo.Library.Collection.Aggregate
 import Melo.Library.Collection.FileSystem.Scan
 import Melo.Library.Collection.Repo (runCollectionRepositoryPooledIO)
 import Melo.Library.Collection.Types qualified as Ty
+import Melo.Library.Release.Aggregate as Release
 import Melo.Library.Source.Aggregate
 import Melo.Library.Source.MultiTrack
 import Melo.Library.Source.Repo
@@ -62,11 +63,14 @@ import Melo.Library.Source.Transform qualified as Tr
 import Melo.Library.Source.Types qualified as Ty
 import Melo.Library.Track.Aggregate
 import Melo.Library.Track.ArtistName.Repo
-import Melo.Library.Track.Repo
+import Melo.Library.Track.Repo as Track
 import Melo.Library.Track.Types
 import Melo.Lookup.MusicBrainz as MB
+import Melo.Lookup.Covers (Cover(..), CoverService(..))
+import Melo.Lookup.Covers qualified as Covers
 import Melo.Metadata.Mapping.Aggregate
 import Melo.Metadata.Mapping.Repo
+import Network.HTTP.Client as Http
 import Network.Wai (StreamingBody)
 import Network.Wreq.Session (newAPISession)
 import Rel8 (JSONBEncoded (..), (&&.), (==.))
@@ -89,6 +93,7 @@ resolveSources ::
     TrackRepository m,
     MonadConc m,
     UuidGenerator m,
+    CoverService m,
     WithOperation o
   ) =>
   SourcesArgs ->
@@ -107,6 +112,7 @@ resolveSourceGroups ::
     TrackRepository m,
     MonadConc m,
     UuidGenerator m,
+    CoverService m,
     WithOperation o
   ) =>
   SourceGroupsArgs ->
@@ -165,6 +171,7 @@ resolveCollectionSources ::
     TrackRepository m,
     MonadConc m,
     UuidGenerator m,
+    CoverService m,
     WithOperation o
   ) =>
   Ty.CollectionRef ->
@@ -183,7 +190,7 @@ data Source (m :: Type -> Type) = Source
     filePath :: Maybe Text,
     downloadUri :: Text,
     length :: m (Maybe Double),
-    coverImage :: m (Maybe Image),
+    coverImage :: CoverImageArgs -> m [Image],
     previewTransform :: TransformSource m
   }
   deriving (Generic)
@@ -200,6 +207,7 @@ enrichSourceEntity ::
     TrackArtistNameRepository m,
     TrackRepository m,
     UuidGenerator m,
+    CoverService m,
     WithOperation o
   ) =>
   Ty.SourceEntity ->
@@ -215,7 +223,7 @@ enrichSourceEntity s =
           filePath = T.pack <$> filePath,
           downloadUri = "/source/" <> toText (Ty.unSourceRef s.id),
           length = lift $ sourceLengthImpl s,
-          coverImage = lift $ coverImageImpl s filePath,
+          coverImage = \args -> lift $ coverImageImpl s args filePath,
           previewTransform = \args -> lift $ previewTransformSourceImpl s args.transformations
         }
   where
@@ -224,20 +232,42 @@ enrichSourceEntity s =
       pure $
         realToFrac . (* 1000) . nominalDiffTimeToSeconds <$> Ty.rangeLength intervalRange
     sourceLengthImpl _ = pure Nothing
-    coverImageImpl :: Ty.SourceEntity -> Maybe FilePath -> m (Maybe Image)
-    coverImageImpl _ Nothing = pure Nothing
-    coverImageImpl src (Just path) =
-      let downloadUri = "/source/" <> toText (Ty.unSourceRef src.id) <> "/image"
-       in findCoverImage (takeDirectory path) >>= \case
-            Just imgPath ->
-              pure $
-                Just
-                  ExternalImage
-                    { fileName = T.pack $ takeFileName imgPath,
-                      downloadUri
-                    }
-            Nothing ->
-              pure (EmbeddedImage <$> coerce src.cover <*> pure downloadUri)
+    coverImageImpl :: Ty.SourceEntity -> CoverImageArgs -> Maybe FilePath -> m [Image]
+    coverImageImpl _ (CoverImageArgs Nothing) path = coverImageFile path
+    coverImageImpl _ (CoverImageArgs (Just False)) path = coverImageFile path
+    coverImageImpl _ (CoverImageArgs (Just True)) path = (<>) <$> coverImageFile path <*> coverSearch
+    coverImageFile Nothing = pure []
+    coverImageFile (Just path) =
+      findCoverImage (takeDirectory path) >>= \case
+        Just imgPath ->
+          pure $
+            [
+              ExternalImage
+                { fileName = T.pack $ takeFileName imgPath,
+                  downloadUri
+                }
+            ]
+        Nothing ->
+          pure $ catMaybes [EmbeddedImage <$> coerce s.cover <*> pure downloadUri]
+    downloadUri = "/source/" <> toText (Ty.unSourceRef s.id) <> "/image"
+    coverSearch =
+      Track.getBySrcRef s.id >>= \case
+        Nothing -> pure []
+        Just track -> Release.getRelease track.release_id >>= \case
+          Nothing -> pure []
+          Just release -> fmap from <$> searchForCovers release
+
+instance From Cover Image where
+  from CoverInfo {..} = ImageSearchResult
+    { bigCover = from bigCover,
+      smallCover = from smallCover,
+      source = from source
+    }
+
+instance From Covers.CoverSource CoverSource where
+  from Covers.Bandcamp = Bandcamp
+  from Covers.Qobuz = Qobuz
+  from Covers.Tidal = Tidal
 
 newtype CollectionSourcesArgs = CollectionSourcesArgs
   { where' :: Maybe SourceWhere
@@ -340,6 +370,7 @@ resolveCollectionSourceGroups ::
     TrackRepository m,
     MonadConc m,
     UuidGenerator m,
+    CoverService m,
     WithOperation o
   ) =>
   Ty.CollectionRef ->
@@ -356,11 +387,27 @@ data SourceGroup m = SourceGroup
   { groupTags :: MappedTags,
     groupParentUri :: Text,
     sources :: [Source m],
-    coverImage :: m (Maybe Image)
+    coverImage :: CoverImageArgs -> m [Image]
   }
   deriving (Generic)
 
 instance Typeable m => GQLType (SourceGroup m)
+
+data CoverImageArgs = CoverImageArgs
+  { search :: Maybe Bool
+  }
+  deriving (Generic)
+
+instance GQLType CoverImageArgs
+
+data CoverSource
+  = FileSystem
+  | Bandcamp
+  | Qobuz
+  | Tidal
+  deriving (Generic)
+
+instance GQLType CoverSource
 
 data Image
   = ExternalImage
@@ -371,9 +418,32 @@ data Image
       { imageType :: Ty.PictureTypeWrapper,
         downloadUri :: Text
       }
+  | ImageSearchResult
+      { smallCover :: ImageInfo,
+        bigCover :: ImageInfo,
+        source :: CoverSource
+      }
   deriving (Generic)
 
 instance GQLType Image
+
+data ImageInfo = ImageInfo
+  { width :: Int,
+    height :: Int,
+    url :: Text,
+    bytes :: Int
+  }
+  deriving (Show, Eq, Generic)
+
+instance GQLType ImageInfo
+
+instance From Covers.ImageInfo ImageInfo where
+  from s = ImageInfo {
+    width = s.width,
+    height = s.height,
+    url = s.url,
+    bytes = s.bytes
+  }
 
 data SourceContent
   = Folder [SourceContent]
@@ -407,6 +477,7 @@ groupSources' ::
     TrackArtistNameRepository m,
     TrackRepository m,
     UuidGenerator m,
+    CoverService m,
     WithOperation o,
     Monad n
   ) =>
@@ -440,6 +511,7 @@ mkSrcGroup ::
     ArtistNameRepository m,
     TrackArtistNameRepository m,
     TrackRepository m,
+    CoverService m,
     WithOperation o,
     Monad n
   ) =>
@@ -469,23 +541,12 @@ mkSrcGroup s =
             sources = fst <$> ss
             src = head sources
             groupParentUri = getParentUri src.sourceUri
-            coverImage = case parseURI (T.unpack groupParentUri) >>= uriToFilePath of
-              Just dir ->
-                lift (findCoverImage dir) >>= \case
-                  Nothing -> src.coverImage
-                  Just imgPath ->
-                    pure $
-                      Just
-                        ExternalImage
-                          { fileName = T.pack $ takeFileName imgPath,
-                            downloadUri = "/source/" <> toText (coerce (src.id)) <> "/image"
-                          }
-              Nothing -> pure Nothing
+            coverImage = src.coverImage
 
 data SourceGroupFilter = AllSourceGroups | Orphaned
 
-streamSourceGroupsQuery :: CollectionWatchState -> Pool Connection -> Ty.CollectionRef -> TagMappingIndex -> SourceGroupFilter -> L.ByteString -> StreamingBody
-streamSourceGroupsQuery collectionWatchState pool collectionRef groupByMappings filt rq sendChunk flush =
+streamSourceGroupsQuery :: CollectionWatchState -> Pool Connection -> Http.Manager -> Ty.CollectionRef -> TagMappingIndex -> SourceGroupFilter -> L.ByteString -> StreamingBody
+streamSourceGroupsQuery collectionWatchState pool httpManager collectionRef groupByMappings filt rq sendChunk flush =
   withResource pool (streamSession >=> either throwIO pure)
   where
     mkRoot :: SourceGroup (Resolver QUERY () m) -> RootResolver m () SourceGroupStream Undefined Undefined
@@ -523,7 +584,7 @@ streamSourceGroupsQuery collectionWatchState pool collectionRef groupByMappings 
     processStream s = do
       $(logInfoIO) $ "Starting streaming sources from collection " <> show collectionRef
       sess <- liftIO newAPISession
-      let runIO = liftIO . runSourceIO collectionWatchState sess pool
+      let runIO = liftIO . runSourceIO collectionWatchState sess pool httpManager
       s
         & groupSources' groupByMappings
         & S.mapM (\srcGrp -> runIO $ interpreter (mkRoot srcGrp) (L.toStrict rq))
@@ -532,7 +593,7 @@ streamSourceGroupsQuery collectionWatchState pool collectionRef groupByMappings 
     sendFlush :: MonadIO m => BS.ByteString -> m ()
     sendFlush = (liftIO . (const flush)) <=< liftIO . sendChunk . (`append` (putStringUtf8 "\n\n")) . fromByteString
 
-runSourceIO collectionWatchState sess pool =
+runSourceIO collectionWatchState sess pool httpManager =
   runFileSystemIO
     . runFileSystemWatcherIO pool collectionWatchState sess
     . runMetadataAggregateIO
@@ -553,6 +614,7 @@ runSourceIO collectionWatchState sess pool =
     . runTrackAggregateIOT
     . runReleaseAggregateIOT
     . runSourceAggregateIOT
+    . Covers.runCoverServiceIO httpManager
 
 getParentUri :: Text -> Text
 getParentUri srcUri = case parseURI (T.unpack srcUri) of
@@ -602,6 +664,7 @@ data Transform
       }
   | EditMetadata {metadataTransform :: MetadataTransformation}
   | MusicBrainzLookup {options :: Maybe Int}
+  | CopyCoverImage {url :: Text}
   deriving (Show, Generic)
 
 instance GQLType Transform where
@@ -629,6 +692,7 @@ previewTransformSourceImpl ::
     TrackArtistNameRepository m,
     TrackRepository m,
     UuidGenerator m,
+    CoverService m,
     WithOperation o
   ) =>
   Ty.SourceEntity ->
@@ -662,6 +726,7 @@ transformSourcesImpl ::
     TrackArtistNameRepository m,
     TrackRepository m,
     UuidGenerator m,
+    CoverService m,
     Tr.MonadSourceTransform m
   ) =>
   TransformSourcesArgs ->
@@ -689,6 +754,7 @@ instance TryFrom Transform Tr.TransformAction where
     SplitMultiTrackFile {} -> Tr.SplitMultiTrackFile <$> parseRef t.collectionRef <*> parseMovePattern' t.destPattern
     EditMetadata mt -> Right $ Tr.EditMetadata (V.singleton (from mt))
     MusicBrainzLookup _ -> Right Tr.MusicBrainzLookup
+    CopyCoverImage url -> maybeToRight (TryFromException t Nothing) $ Tr.CopyCoverImage <$> parseURI (T.unpack url)
     where
       parseMovePattern' pat = mapLeft (TryFromException t <$> fmap toException) $ Tr.parseMovePattern pat
       parseRef Nothing = Right Nothing

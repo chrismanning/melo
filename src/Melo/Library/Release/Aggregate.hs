@@ -34,6 +34,7 @@ import Witch
 
 class Monad m => ReleaseAggregate m where
   importReleases :: Vector Source -> m (Vector Release)
+  getRelease :: ReleaseRef -> m (Maybe Release)
 
 instance
   {-# OVERLAPPABLE #-}
@@ -44,6 +45,7 @@ instance
   ReleaseAggregate (t m)
   where
   importReleases = lift . importReleases
+  getRelease = lift . getRelease
 
 newtype ReleaseAggregateIOT m a = ReleaseAggregateIOT
   { runReleaseAggregateIOT :: m a
@@ -78,6 +80,12 @@ instance
   ReleaseAggregate (ReleaseAggregateIOT m)
   where
   importReleases = importReleasesImpl
+  getRelease ref =
+    Repo.getSingle @ReleaseEntity ref >>= \case
+      Nothing -> pure Nothing
+      Just e -> do
+        releaseArtists <- getReleaseArtists e.id
+        pure $ Just $ mkRelease (releaseArtists <&> snd) e
 
 importReleasesImpl ::
   forall m.

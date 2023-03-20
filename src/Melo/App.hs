@@ -25,6 +25,7 @@ import Melo.Library.Source.Repo
 import Melo.Lookup.MusicBrainz qualified as MB
 import Melo.Metadata.Mapping.Aggregate
 import Melo.Metadata.Mapping.Repo
+import Network.HTTP.Client.TLS as Http
 import Network.Wai.Handler.Warp
 import Network.Wreq.Session qualified as Wreq
 import System.Exit
@@ -57,8 +58,10 @@ app = do
       )
   $(logInfoIO) ("starting web server" :: String)
 
+  httpManager <- Http.newTlsManager
+
   let opts = def { settings = setHost "*6" $ setPort 5000 defaultSettings }
-  scottyOptsT opts Prelude.id (api collectionWatchState pool sess)
+  scottyOptsT opts Prelude.id (api collectionWatchState pool sess httpManager)
 
 initApp :: CollectionWatchState -> Pool Hasql.Connection -> Wreq.Session -> IO ()
 initApp collectionWatchState pool sess =

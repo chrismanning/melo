@@ -65,7 +65,9 @@ library:
   - hsndfile
   - http-client
   - http-client-tls
+  - http-conduit
   - http-types
+  - imagesize-conduit
   - iproute
   - katip
   - lens
@@ -74,6 +76,7 @@ library:
   - memory
   - monad-control
   - monad-logger
+  - monad-loops
   - monad-par
   - monad-par-extras
   - morpheus-graphql
@@ -109,6 +112,8 @@ library:
   - singletons
   - stm
   - streaming
+  - streaming-bytestring
+  - streaming-utils
   - string-combinators
   - tagged
   - template-haskell

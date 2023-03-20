@@ -184,7 +184,7 @@ data Release = Release
     artistCredit :: Maybe (Vector ArtistCredit),
     date :: Maybe Text,
     score :: Maybe Int,
-    primaryType :: Text,
+    primaryType :: Maybe Text,
     labelInfo :: Maybe (Vector LabelInfo)
   }
   deriving (Show, Generic, Eq)
@@ -232,7 +232,7 @@ data ReleaseGroup = ReleaseGroup
     title :: Text,
     artistCredit :: Maybe (Vector ArtistCredit),
     firstReleaseDate :: Maybe Text,
-    primaryType :: Text,
+    primaryType :: Maybe Text,
     score :: Maybe Int
   }
   deriving (Show, Generic, Eq)

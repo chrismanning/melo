@@ -34,6 +34,7 @@ import Melo.Library.Source.API as SrcApi
 import Melo.Library.Source.Transform qualified as Tr
 import Melo.Library.Track.ArtistName.Repo
 import Melo.Library.Track.Repo
+import Melo.Lookup.Covers
 import Network.URI
 import Streaming.Prelude qualified as S
 import Witch
@@ -46,6 +47,7 @@ resolveCollections ::
     TrackArtistNameRepository m,
     TrackRepository m,
     MonadConc m,
+    CoverService m,
     UuidGenerator m
   ) =>
   CollectionsArgs ->
@@ -102,6 +104,7 @@ instance
     TrackRepository m,
     MonadConc m,
     UuidGenerator m,
+    CoverService m,
     WithOperation o
   ) =>
   From Ty.CollectionEntity (Collection (Resolver o e m))
@@ -164,6 +167,7 @@ collectionMutation ::
     TrackRepository m,
     MonadConc m,
     CollectionAggregate m,
+    CoverService m,
     UuidGenerator m
   ) =>
   ResolverM e (m :: Type -> Type) CollectionMutation
@@ -195,6 +199,7 @@ addCollectionImpl ::
     TrackArtistNameRepository m,
     TrackRepository m,
     FileSystem m,
+    CoverService m,
     UuidGenerator m
   ) =>
   AddCollectionArgs ->

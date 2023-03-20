@@ -44,13 +44,15 @@ import Melo.Library.Source.Types (Source (..), SourceRef (..))
 import Melo.Library.Track.Aggregate
 import Melo.Library.Track.ArtistName.Repo
 import Melo.Library.Track.Repo
+import Melo.Lookup.Covers
 import Melo.Lookup.MusicBrainz
 import Melo.Metadata.Mapping.Aggregate
 import Melo.Metadata.Mapping.Repo
 import Network.HTTP.Types.Status
+import Network.HTTP.Client as Http
 import Network.Wai.Middleware.Cors
 import Network.Wreq.Session qualified as Wreq
-import System.FilePath (pathSeparator, takeDirectory, takeFileName)
+import System.FilePath (takeDirectory, takeFileName)
 import Web.Scotty.Trans
 
 data Query m = Query
@@ -85,8 +87,8 @@ rootResolver =
 gqlApi :: forall m. (ResolverE m, Typeable m) => ByteString -> m ByteString
 gqlApi = interpreter (rootResolver)
 
-gqlApiIO :: CollectionWatchState -> Pool Connection -> Wreq.Session -> ByteString -> IO ByteString
-gqlApiIO collectionWatchState pool sess rq = runStdoutLogging do
+gqlApiIO :: CollectionWatchState -> Pool Connection -> Wreq.Session -> Http.Manager -> ByteString -> IO ByteString
+gqlApiIO collectionWatchState pool sess httpManager rq = runStdoutLogging do
   $(logInfo) ("handling graphql request" :: T.Text)
   $(logDebug) $ "graphql request: " <> rq
   let run =
@@ -110,6 +112,7 @@ gqlApiIO collectionWatchState pool sess rq = runStdoutLogging do
           . runTrackAggregateIOT
           . runReleaseAggregateIOT
           . runSourceAggregateIOT
+          . runCoverServiceIO httpManager
   !rs <- run (gqlApi rq)
   $(logInfo) ("finished handling graphql request" :: T.Text)
   pure rs
@@ -139,6 +142,7 @@ type ResolverE m =
     ArtistRepository m,
     TrackRepository m,
     TrackArtistNameRepository m,
+    CoverService m,
     FileSystemWatcher m
   )
 
@@ -147,12 +151,13 @@ api ::
   CollectionWatchState ->
   Pool Connection ->
   Wreq.Session ->
+  Http.Manager ->
   ScottyT LT.Text m ()
-api collectionWatchState pool sess = do
+api collectionWatchState pool sess httpManager = do
   middleware (cors (const $ Just simpleCorsResourcePolicy {corsRequestHeaders = ["Content-Type"]}))
   matchAny "/api" $ do
     setHeader "Content-Type" "application/json; charset=utf-8"
-    raw =<< (liftIO . gqlApiIO collectionWatchState pool sess =<< body)
+    raw =<< (liftIO . gqlApiIO collectionWatchState pool sess httpManager =<< body)
   get "/graphiql" $ do
     setHeader "Content-Type" "text/html; charset=utf-8"
     file "graphiql.html"
@@ -202,7 +207,7 @@ api collectionWatchState pool sess = do
       Nothing -> status badRequest400
       Just uuid ->
         stream $
-          API.streamSourceGroupsQuery collectionWatchState pool (CollectionRef uuid) groupByMappings filt rq
+          API.streamSourceGroupsQuery collectionWatchState pool httpManager (CollectionRef uuid) groupByMappings filt rq
 
 instance (PrimMonad m, ScottyError a) => PrimMonad (ActionT a m) where
   type PrimState (ActionT a m) = PrimState m

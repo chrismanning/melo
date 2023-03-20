@@ -30,6 +30,17 @@ input ContainsExpr {
   contains: String!
 }
 
+input CopyCoverImage {
+  url: String!
+}
+
+enum CoverSource {
+  FileSystem
+  Bandcamp
+  Qobuz
+  Tidal
+}
+
 input EditMetadata {
   metadataTransform: MetadataTransformation!
 }
@@ -53,7 +64,20 @@ type FailedSourceUpdate {
   msg: String!
 }
 
-union Image = ExternalImage | EmbeddedImage
+union Image = ExternalImage | EmbeddedImage | ImageSearchResult
+
+type ImageInfo {
+  width: Int!
+  height: Int!
+  url: String!
+  bytes: Int!
+}
+
+type ImageSearchResult {
+  smallCover: ImageInfo!
+  bigCover: ImageInfo!
+  source: CoverSource!
+}
 
 input InExpr {
   in: [String!]!
@@ -156,7 +180,7 @@ type Source {
   filePath: String
   downloadUri: String!
   length: Float
-  coverImage: Image
+  coverImage(search: Boolean): [Image!]!
   previewTransform(transformations: [Transform!]!): UpdateSourceResult!
 }
 
@@ -164,7 +188,7 @@ type SourceGroup {
   groupTags: [MappedTag!]!
   groupParentUri: String!
   sources: [Source!]!
-  coverImage: Image
+  coverImage(search: Boolean): [Image!]!
 }
 
 scalar SourceRef
@@ -197,6 +221,7 @@ input Transform {
   SplitMultiTrackFile: SplitMultiTrackFile
   EditMetadata: EditMetadata
   MusicBrainzLookup: MusicBrainzLookup
+  CopyCoverImage: CopyCoverImage
 }
 
 enum Unit {

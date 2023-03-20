@@ -28,6 +28,8 @@ deriving instance Ord ArtistNameEntity
 
 deriving instance Eq ArtistNameEntity
 
+deriving instance Hashable ArtistNameEntity
+
 instance Entity ArtistNameEntity where
   type NewEntity ArtistNameEntity = NewArtistName
   type PrimaryKey ArtistNameEntity = ArtistNameRef

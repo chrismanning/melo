@@ -21,6 +21,7 @@ import Melo.Library.Source.API
 import Melo.Library.Source.Transform qualified as Tr
 import Melo.Library.Track.ArtistName.Repo
 import Melo.Library.Track.Repo
+import Melo.Lookup.Covers
 
 data LibraryQuery m = LibraryQuery
   { sources :: SourcesArgs -> m (Vector (Source m)),
@@ -39,6 +40,7 @@ resolveLibrary ::
     TrackArtistNameRepository m,
     TrackRepository m,
     MonadConc m,
+    CoverService m,
     UuidGenerator m
   ) =>
   ResolverQ e m LibraryQuery
@@ -70,6 +72,7 @@ libraryMutation ::
     TrackRepository m,
     MonadConc m,
     FileSystem m,
+    CoverService m,
     UuidGenerator m
   ) =>
   ResolverM e (m :: Type -> Type) LibraryMutation

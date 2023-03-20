@@ -6,6 +6,7 @@ import Control.Lens hiding (from)
 import Hasql.Decoders qualified as Hasql
 import Data.Foldable
 import Data.Hashable
+import Data.Maybe
 import Data.Morpheus.Kind
 import Data.Morpheus.Types as M
 import Data.Text (Text)
@@ -15,7 +16,7 @@ import GHC.Generics
 import Melo.Database.Repo
 import Melo.Library.Artist.Name.Types
 import Melo.Lookup.MusicBrainz qualified as MB
-import Opaleye.Internal.HaskellDB.PrimQuery (BoundExpr (..), Literal (..), PrimExpr (..))
+import Opaleye.Internal.HaskellDB.PrimQuery (Literal (..), PrimExpr (..))
 import Rel8
 import Witch
 
@@ -70,7 +71,7 @@ data ReleaseKind
   | LiveKind
   | CompilationKind
   | OtherKind
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq, Ord, Generic, Hashable)
 
 instance DBType ReleaseKind where
   typeInformation =
@@ -106,7 +107,7 @@ data Release = Release
     artists :: [ArtistNameEntity],
     kind :: ReleaseKind
   }
-  deriving (Show, Eq, Generic)
+  deriving (Show, Eq, Generic, Hashable)
 
 mkRelease :: Foldable f => f ArtistNameEntity -> ReleaseEntity -> Release
 mkRelease releaseArtists e =
@@ -143,7 +144,7 @@ fromMusicBrainz (Just releaseGroup) (Just release) =
         musicbrainzId = Just release.id,
         musicbrainzGroupId = Just releaseGroup.id,
         catalogueNumber = release ^? #labelInfo . _Just . _head . #catalogNumber . _Just,
-        kind = parsePrimaryType releaseGroup.primaryType,
+        kind = fromMaybe AlbumKind $ parsePrimaryType <$> releaseGroup.primaryType,
         comment = Nothing
       }
 fromMusicBrainz (Just releaseGroup) Nothing =
@@ -155,7 +156,7 @@ fromMusicBrainz (Just releaseGroup) Nothing =
         musicbrainzId = Nothing,
         musicbrainzGroupId = Just releaseGroup.id,
         catalogueNumber = Nothing,
-        kind = parsePrimaryType releaseGroup.primaryType,
+        kind = fromMaybe AlbumKind $ parsePrimaryType <$> releaseGroup.primaryType,
         comment = Nothing
       }
 fromMusicBrainz Nothing (Just release) =
@@ -167,7 +168,7 @@ fromMusicBrainz Nothing (Just release) =
         musicbrainzId = Just release.id,
         musicbrainzGroupId = Nothing,
         catalogueNumber = release ^? #labelInfo . _Just . _head . #catalogNumber . _Just,
-        kind = parsePrimaryType release.primaryType,
+        kind = fromMaybe AlbumKind $ parsePrimaryType <$> release.primaryType,
         comment = Nothing
       }
 

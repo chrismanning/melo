@@ -46,7 +46,7 @@ import Melo.Library.Artist.Repo as Artist
 import Melo.Library.Artist.Types
 import Melo.Library.Collection.Repo
 import Melo.Library.Collection.Types
-import Melo.Library.Release.Aggregate
+import Melo.Library.Release.Aggregate as Release
 import Melo.Library.Release.ArtistName.Repo as ReleaseArtist
 import Melo.Library.Release.ArtistName.Types
 import Melo.Library.Release.Repo as Release
@@ -60,6 +60,7 @@ import Melo.Library.Track.ArtistName.Repo as TrackArtist
 import Melo.Library.Track.ArtistName.Types
 import Melo.Library.Track.Repo as Track
 import Melo.Library.Track.Types
+import Melo.Lookup.Covers qualified as Covers
 import Melo.Lookup.MusicBrainz as MB
 import Melo.Metadata.Mapping.Aggregate
 import Melo.Metadata.Mapping.Repo
@@ -78,7 +79,7 @@ data TransformAction where
   Copy :: Maybe CollectionRef -> NonEmpty SourcePathPattern -> TransformAction
   ExtractEmbeddedImage :: URI -> TransformAction
   EmbedImage :: URI -> TransformAction
-  MoveCoverImage :: URI -> URI -> TransformAction
+  CopyCoverImage :: URI -> TransformAction
   SplitMultiTrackFile :: Maybe CollectionRef -> NonEmpty SourcePathPattern -> TransformAction
   RemoveOtherFiles :: TransformAction
   MusicBrainzLookup :: TransformAction
@@ -110,6 +111,7 @@ evalTransformAction (Move ref patterns) src = mapLeft from <$> moveSourceWithPat
 evalTransformAction (SplitMultiTrackFile ref patterns) src = mapLeft from <$> extractTrack ref patterns src
 evalTransformAction (EditMetadata metadataTransformations) src = mapLeft from <$> editMetadata metadataTransformations src
 evalTransformAction MusicBrainzLookup src = musicBrainzLookup src
+evalTransformAction (CopyCoverImage coverUrl) src = copyCoverImage coverUrl src
 evalTransformAction t _ = pure $ Left (UnsupportedTransform (show t))
 
 type MonadSourceTransform m =
@@ -131,6 +133,7 @@ type MonadSourceTransform m =
     SourceRepository m,
     TagMappingRepository m,
     TagMappingAggregate m,
+    Covers.CoverService m,
     ArtistRepository m
   )
 
@@ -195,6 +198,12 @@ instance MonadSourceTransform m => FileSystem (TransformPreviewT m) where
   movePath _ _ = lift $ do
     $(logDebug) ("Preview movePath called" :: String)
     pure $ Right ()
+  copyPath _ _ = lift $ do
+    $(logDebug) ("Preview copyPath called" :: String)
+    pure $ Right ()
+  removePath _ = lift $ do
+    $(logDebug) ("Preview removePath called" :: String)
+    pure $ Right ()
   removeEmptyDirectories _ = lift $ do
     $(logDebug) ("Preview removeEmptyDirectories called" :: String)
     pure ()
@@ -228,7 +237,7 @@ instance
   TagMappingAggregate (TransformPreviewT m)
   where
   resolveMappingNamed n s = TransformPreviewT do
-    $(logDebug) ("Preview resolveMappingNamed TransformPreviewT" :: String)
+    $(logDebug) $ "Preview resolveMappingNamed " <> show n <> " TransformPreviewT"
     resolveMappingNamed n s
   getMappingNamed = lift . getMappingNamed
   getMappingsNamed = lift . getMappingsNamed
@@ -571,7 +580,7 @@ instance
   TagMappingAggregate (VirtualArtistRepoT m)
   where
   resolveMappingNamed n s = VirtualArtistRepoT do
-    $(logDebug) ("Preview resolveMappingNamed VirtualArtistRepoT" :: String)
+    $(logDebug) $ "Preview resolveMappingNamed " <> show n <> " VirtualArtistRepoT"
     resolveMappingNamed n s
   getMappingNamed = lift . getMappingNamed
   getMappingsNamed = lift . getMappingsNamed
@@ -591,6 +600,7 @@ instance Repo.Repository TagMappingEntity m => Repo.Repository TagMappingEntity 
 instance
   ( ReleaseRepository m,
     ReleaseArtistNameRepository m,
+    ReleaseAggregate m,
     ArtistAggregate m,
     ArtistNameRepository m,
     ArtistRepository m,
@@ -603,12 +613,40 @@ instance
   ReleaseAggregate (TransformPreviewT m)
   where
   importReleases srcs = do
-    Repo.getAll @ArtistEntity >>= \as -> $(logDebug) $ "Preview artists: " <> show as
     $(logDebug) ("Preview importReleases called" :: String)
     importReleasesImpl srcs
+  getRelease ref = TransformPreviewT do
+    $(logDebug) ("Preview getRelease called" :: String)
+    Release.getRelease ref
+
+instance
+  ( Covers.CoverService m,
+    Logging m
+  ) =>
+  Covers.CoverService (TransformPreviewT m)
+  where
+  searchForCovers ref = TransformPreviewT do
+    $(logDebug) ("Preview searchForCovers TransformPreviewT" :: String)
+    Covers.searchForCovers ref
+  copyCoverToDir src dest = TransformPreviewT do
+    $(logDebug) ("Preview copyCoverToDir TransformPreviewT" :: String)
+    Covers.copyCoverToDir src dest
+
+instance
+  ( Covers.CoverService m,
+    Logging m
+  ) =>
+  Covers.CoverService (VirtualArtistRepoT m)
+  where
+  searchForCovers ref = VirtualArtistRepoT do
+    $(logDebug) ("Preview searchForCovers VirtualArtistRepoT" :: String)
+    Covers.searchForCovers ref
+  copyCoverToDir src dest = VirtualArtistRepoT do
+    $(logDebug) ("Preview copyCoverToDir VirtualArtistRepoT" :: String)
+    Covers.copyCoverToDir src dest
 
 data TransformationError
-  = MoveTransformError SourceMoveError
+  = MoveTransformError SourceFileManipError
   | MetadataTransformError F.MetadataException
   | UnknownTagMapping Text
   | UnsupportedSourceKind
@@ -623,7 +661,7 @@ data TransformationError
 
 instance Exception TransformationError
 
-instance From SourceMoveError TransformationError where
+instance From SourceFileManipError TransformationError where
   from = MoveTransformError
 
 instance From F.MetadataException TransformationError where
@@ -643,7 +681,7 @@ moveSourceWithPattern ::
   Maybe CollectionRef ->
   NonEmpty SourcePathPattern ->
   Source ->
-  m (Either SourceMoveError Source)
+  m (Either SourceFileManipError Source)
 moveSourceWithPattern collectionRef pats src@Source {ref, source} =
   case uriToFilePath source of
     Just srcPath ->
@@ -726,7 +764,7 @@ renderSourcePattern src = \case
     pure $ Just (fromMaybe "" x)
   MappingPattern mappingName -> do
     rs <- resolveMappingNamed mappingName src
-    pure $ T.unpack <$> formatList (V.toList rs)
+    pure $ T.unpack <$> formatList (T.replace "/" "," <$> V.toList rs)
   DefaultPattern a b -> renderSourcePattern src a <<|>> renderSourcePattern src b
   PrintfPattern fmt pat ->
     fmap (printf fmt) <$> renderSourcePattern src pat
@@ -736,9 +774,8 @@ renderSourcePattern src = \case
     formatList [a] = Just a
     formatList (a : [b]) = Just (a <> " & " <> b)
     formatList (a : as) = (\b -> a <> ", " <> b) <$> formatList as
-    appendJust Nothing _ = Nothing
-    appendJust _ Nothing = Nothing
     appendJust (Just a) (Just b) = Just (a <> b)
+    appendJust _ _ = Nothing
 
 parseMovePattern :: Text -> Either (Maybe (ParseErrorBundle Text Void)) (NonEmpty SourcePathPattern)
 parseMovePattern s = nonEmptyRight =<< mapLeft Just (parse terms "" s)
@@ -912,3 +949,11 @@ musicBrainzLookup src@Source {metadata = Just metadata} = (flip evalStateT) meta
   newMetadata <- get
   $(logDebug) $ "Updating source with musicbrainz metadata " <> show newMetadata
   mapLeft ImportFailed <$> updateSource (src & #metadata .~ Just newMetadata)
+
+copyCoverImage :: MonadSourceTransform m => URI -> Source -> m (Either TransformationError Source)
+copyCoverImage imageUrl src = -- TODO cache downloaded image
+  case uriToFilePath src.source of
+    Just srcPath -> do
+      Covers.copyCoverToDir imageUrl (takeDirectory srcPath)
+      pure (Right src)
+    Nothing -> pure (Right src)
