@@ -65,20 +65,19 @@ app = do
 
 initApp :: CollectionWatchState -> Pool Hasql.Connection -> Wreq.Session -> IO ()
 initApp collectionWatchState pool sess =
-  runStdoutLogging $
-    runFileSystemIO $
-      runMetadataAggregateIO $
-        runSourceRepositoryPooledIO pool $
-          runTagMappingRepositoryPooledIO pool $
-            runReleaseRepositoryPooledIO pool $
-            runArtistNameRepositoryPooledIO pool $
-            runArtistRepositoryPooledIO pool $
-            MB.runMusicBrainzServiceUnlimitedIO sess $
-              runCollectionRepositoryPooledIO pool $
-                runFileSystemWatcherIO pool collectionWatchState sess $
-                  runCollectionAggregateIO pool sess collectionWatchState $ do
-                    insertDefaultMappings
-                    initCollections
+  runFileSystemIO $
+    runMetadataAggregateIO $
+      runSourceRepositoryPooledIO pool $
+        runTagMappingRepositoryPooledIO pool $
+          runReleaseRepositoryPooledIO pool $
+          runArtistNameRepositoryPooledIO pool $
+          runArtistRepositoryPooledIO pool $
+          MB.runMusicBrainzServiceUnlimitedIO sess $
+            runCollectionRepositoryPooledIO pool $
+              runFileSystemWatcherIO pool collectionWatchState sess $
+                runCollectionAggregateIO pool sess collectionWatchState $ do
+                  insertDefaultMappings
+                  initCollections
 
 initCollections ::
   ( FileSystemWatcher m,

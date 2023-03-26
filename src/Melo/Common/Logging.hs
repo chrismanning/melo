@@ -13,8 +13,6 @@ module Melo.Common.Logging
     logWarnShow,
     logError,
     logErrorShow,
-    runStdoutLogging,
-    LoggingIOT (..),
     logIO,
     logDebugIO,
     logDebugShowIO,
@@ -28,26 +26,22 @@ module Melo.Common.Logging
   )
 where
 
-import Control.Concurrent.Classy
-import Control.Exception.Safe
-import Control.Foldl (PrimMonad)
-import Control.Lens hiding (from)
-import Control.Monad.Base
+import Control.Concurrent (ThreadId, myThreadId, forkIO)
+import Control.Concurrent.STM
 import Control.Monad.IO.Class
 import Control.Monad.Identity
 import Control.Monad.Reader
-import Control.Monad.Trans
-import Control.Monad.Trans.Control
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as L
+import Data.Maybe
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Text.Lazy qualified as LT
-import Data.Time.Format
 import Katip as K
 import Language.Haskell.TH.Syntax (Exp, Loc (..), Q, liftString, qLocation)
 import Language.Haskell.TH.Syntax qualified as TH (Lift (lift))
 import System.IO (stdout)
+import System.IO.Unsafe
 import Witch hiding (over)
 import Prelude hiding (log)
 
@@ -81,54 +75,11 @@ instance From ByteString LogMessage where
 instance From L.ByteString LogMessage where
   from = from . TE.decodeUtf8 . L.toStrict
 
-newtype LoggingIOT m a = LoggingIOT
-  { runLoggingIOT :: ReaderT LogEnv m a
-  }
-  deriving newtype
-    ( Applicative,
-      Functor,
-      Monad,
-      MonadIO,
-      MonadBase b,
-      MonadBaseControl b,
-      MonadConc,
-      MonadCatch,
-      MonadMask,
-      MonadThrow,
-      PrimMonad
-    )
-  deriving (MonadTrans, MonadTransControl)
-
---  deriving (MonadReader LogEnv)
-
 instance Logging IO where
-  log ns severity msg = do
-    handleScribe <- mkHandleScribe ColorIfTerminal stdout (permitItem DebugS) V2
-    logEnv <- registerScribe "stdout" handleScribe defaultScribeSettings =<< initLogEnv "melo" "local"
-    let LogMessage msg' = from msg
-    K.runKatipT logEnv $ K.logMsg ns severity (logStr msg')
---    handleScribe.scribeFinalizer
-
-instance
-  (MonadIO m) =>
-  Logging (LoggingIOT m)
-  where
-  log ns severity msg = do
-    let LogMessage msg' = from msg
-    K.logMsg ns severity (logStr msg')
-
-instance MonadIO m => Katip (LoggingIOT m) where
-  getLogEnv = LoggingIOT ask
-  localLogEnv f (LoggingIOT m) = LoggingIOT (local f m)
-
--- instance MonadIO m => KatipContext (LoggingIOT m) where
---  getKatipContext = view _2
---  localKatipContext f = local (over _2 f)
---  getKatipNamespace = view _3
---  localKatipNamespace f = local (over _3 f)
+  log ns severity msg = logIOImpl' ns severity msg
 
 logImpl :: (From s LogMessage, Logging m) => String -> Int -> s -> m ()
-logImpl ns severity msg = log (Namespace [T.pack ns]) (toEnum severity) msg
+logImpl ns severity msg = log (Namespace (filter (not . T.null) $ T.split (== '.') $ T.pack ns)) (toEnum severity) msg
 
 log_ :: Severity -> Q Exp
 log_ severity =
@@ -162,19 +113,33 @@ logError = log_ K.ErrorS
 logErrorShow :: Q Exp
 logErrorShow = logShow K.ErrorS
 
-runStdoutLogging :: MonadIO m => LoggingIOT m a -> m a
-runStdoutLogging m = do
-  handleScribe <- liftIO $ mkHandleScribe ColorIfTerminal stdout (permitItem DebugS) V2
-  logEnv <- liftIO $ registerScribe "stdout" handleScribe defaultScribeSettings =<< initLogEnv "melo" "local"
-  runReaderT (runLoggingIOT m) logEnv
-
 logIOImpl :: (From s LogMessage, MonadIO m) => String -> Int -> s -> m ()
 logIOImpl ns severity msg =
+  let namespace = Namespace (filter (not . T.null) $ T.split (== '.') $ T.pack ns)
+   in logIOImpl' namespace (toEnum severity) msg
+
+logIOImpl' :: (From s LogMessage, MonadIO m) => Namespace -> Severity -> s -> m ()
+logIOImpl' ns severity msg =
   let (LogMessage s) = from msg
-   in do
-        handleScribe <- liftIO $ mkHandleScribe ColorIfTerminal stdout (permitItem InfoS) V2
-        logEnv <- liftIO $ registerScribe "stdout" handleScribe defaultScribeSettings =<< initLogEnv "melo" "local"
-        K.runKatipT logEnv $ K.logMsg (Namespace [T.pack ns]) (toEnum severity) (logStr s)
+   in liftIO do
+    let LogEnv{..} = logEnv
+    item <- Item <$> pure _logEnvApp
+                <*> pure _logEnvEnv
+                <*> pure severity
+                <*> (mkThreadIdText <$> myThreadId)
+                <*> pure _logEnvHost
+                <*> pure _logEnvPid
+                <*> pure ()
+                <*> pure (logStr s)
+                <*> _logEnvTimer
+                <*> pure (_logEnvApp <> ns)
+                <*> pure Nothing
+    atomically $ writeTQueue messageQueue (LogItemWrapper item)
+
+mkThreadIdText :: ThreadId -> ThreadIdText
+mkThreadIdText = ThreadIdText . stripPrefix' "ThreadId " . T.pack . show
+  where
+    stripPrefix' pfx t = fromMaybe t (T.stripPrefix pfx t)
 
 logIO :: Severity -> Q Exp
 logIO severity =
@@ -208,10 +173,20 @@ logErrorIO = logIO K.ErrorS
 logErrorShowIO :: Q Exp
 logErrorShowIO = logShowIO K.ErrorS
 
+scribe :: Scribe
+scribe = unsafePerformIO $ mkHandleScribe ColorIfTerminal stdout (permitItem DebugS) V2
+
+logEnv :: LogEnv
+logEnv = unsafePerformIO $ registerScribe "stdout" scribe defaultScribeSettings =<< initLogEnv "melo" "local"
+
+data LogItemWrapper = forall a. K.LogItem a => LogItemWrapper (K.Item a)
+
+messageQueue :: TQueue LogItemWrapper
+messageQueue = unsafePerformIO $ newTQueueIO
+
 initLogging :: MonadIO m => m ()
-initLogging = do
-  --  handleScribe <- K.mkHandleScribe K.ColorIfTerminal stdout (K.permitItem K.InfoS) K.V2
-  --  let mkLogEnv = K.registerScribe "stdout" handleScribe K.defaultScribeSettings =<< K.initLogEnv "Melo" "local"
-  --  config <- Wlog.parseLoggerConfig "logging.yaml"
-  --  Wlog.setupLogging (Just (T.pack . formatTime defaultTimeLocale "%F %T%3Q")) config
+initLogging = liftIO $ do
+  forkIO $ forever do
+    LogItemWrapper item <- atomically $ readTQueue messageQueue
+    K.runKatipT logEnv $ K.logKatipItem item
   pure ()

@@ -88,7 +88,7 @@ gqlApi :: forall m. (ResolverE m, Typeable m) => ByteString -> m ByteString
 gqlApi = interpreter (rootResolver)
 
 gqlApiIO :: CollectionWatchState -> Pool Connection -> Wreq.Session -> Http.Manager -> ByteString -> IO ByteString
-gqlApiIO collectionWatchState pool sess httpManager rq = runStdoutLogging do
+gqlApiIO collectionWatchState pool sess httpManager rq = do
   $(logInfo) ("handling graphql request" :: T.Text)
   $(logDebug) $ "graphql request: " <> rq
   let run =
@@ -216,10 +216,9 @@ instance (PrimMonad m, ScottyError a) => PrimMonad (ActionT a m) where
 getSourceFilePathIO :: (MonadIO m, MonadBaseControl IO m) => Pool Connection -> SourceRef -> m (Maybe FilePath)
 getSourceFilePathIO pool k = withResource pool $ \conn ->
   liftIO $
-    runStdoutLogging $
-      runFileSystemIO $
-        runSourceRepositoryIO conn $
-          getSourceFilePath k
+    runFileSystemIO $
+      runSourceRepositoryIO conn $
+        getSourceFilePath k
 
 data CoverImage = EmbeddedImage EmbeddedPicture | ExternalImageFile FilePath
 
@@ -231,28 +230,27 @@ findCoverImageIO ::
     SourceRef -> m (Maybe CoverImage)
 findCoverImageIO pool sess cws k = withResource pool $ \conn ->
   liftIO $
-    runStdoutLogging $
-      runFileSystemIO $ runFileSystemWatcherIO pool cws sess $
-        runSourceRepositoryIO conn $
-          runMetadataAggregateIO do
-            getSource k >>= \case
+    runFileSystemIO $ runFileSystemWatcherIO pool cws sess $
+      runSourceRepositoryIO conn $
+        runMetadataAggregateIO do
+          getSource k >>= \case
+            Nothing -> do
+              $(logWarn) $ "No source found for ref " <> show k
+              pure Nothing
+            Just src -> case uriToFilePath src.source of
               Nothing -> do
-                $(logWarn) $ "No source found for ref " <> show k
+                $(logWarn) $ "No local file found for source " <> show k
                 pure Nothing
-              Just src -> case uriToFilePath src.source of
-                Nothing -> do
-                  $(logWarn) $ "No local file found for source " <> show k
-                  pure Nothing
-                Just path -> do
-                  $(logInfo) $ "Locating cover image for source " <> show k <> " at path " <> show path
-                  let dir = takeDirectory path
-                  findCoverImage dir >>= \case
-                    Just imgPath -> pure $ Just $ ExternalImageFile imgPath
-                    Nothing -> do
-                      openMetadataFile path >>= \case
-                        Left e -> do
-                          $(logWarn) $ "Could not look for embedded image in file " <> show path <> ": " <> displayException e
-                          pure Nothing
-                        Right mf -> do
-                          let coverKey = fromMaybe FrontCover src.cover
-                          pure $ EmbeddedImage <$> lookup coverKey mf.pictures
+              Just path -> do
+                $(logInfo) $ "Locating cover image for source " <> show k <> " at path " <> show path
+                let dir = takeDirectory path
+                findCoverImage dir >>= \case
+                  Just imgPath -> pure $ Just $ ExternalImageFile imgPath
+                  Nothing -> do
+                    openMetadataFile path >>= \case
+                      Left e -> do
+                        $(logWarn) $ "Could not look for embedded image in file " <> show path <> ": " <> displayException e
+                        pure Nothing
+                      Right mf -> do
+                        let coverKey = fromMaybe FrontCover src.cover
+                        pure $ EmbeddedImage <$> lookup coverKey mf.pictures
