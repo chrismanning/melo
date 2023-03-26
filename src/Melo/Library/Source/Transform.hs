@@ -951,7 +951,7 @@ musicBrainzLookup src@Source {metadata = Just metadata} = (flip evalStateT) meta
   mapLeft ImportFailed <$> updateSource (src & #metadata .~ Just newMetadata)
 
 copyCoverImage :: MonadSourceTransform m => URI -> Source -> m (Either TransformationError Source)
-copyCoverImage imageUrl src = -- TODO cache downloaded image
+copyCoverImage imageUrl src =
   case uriToFilePath src.source of
     Just srcPath -> do
       Covers.copyCoverToDir imageUrl (takeDirectory srcPath)

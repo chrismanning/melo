@@ -146,29 +146,33 @@ writeMp3File f newpath = do
       !audioData <- withBinaryFile oldpath ReadMode $ \h -> do
         hSeek h SeekFromEnd 0
         end <- hTell h
-        hSeek h AbsoluteSeek (mp3Size mp3)
-        hGet h $ fromInteger (end - mp3Size mp3)
-      withBinaryFile newpath WriteMode $ \h -> do
-        hWriteMp3 h mp3
-        hPut h audioData
-    mp3Size :: MP3 -> Integer
-    mp3Size MP3 {..} =
-      (if isJust (crc frameHeader) then 6 else 4)
-        + fromMaybe
-          0
-          ( fmap metadataSize id3v2_4
-              <|> fmap metadataSize id3v2_3
-              <|> fmap metadataSize apev2
-          )
 
-hWriteMp3 :: Handle -> MP3 -> IO ()
-hWriteMp3 h mp3 = do
+        hSeek h AbsoluteSeek 0
+        ID3.hSkip h
+        hSkipZeroes h
+        hSeek h RelativeSeek if isJust (crc mp3.frameHeader) then 6 else 4
+        start <- hTell h
+        let audioSize = end - start - apeSize mp3
+
+        hGet h (fromInteger audioSize)
+      withBinaryFile newpath WriteMode $ \h -> do
+        hWriteMp3Headers h mp3
+        hPut h audioData
+        hPut h (L.toStrict $ runPut do
+            mapM_ put mp3.apev2
+            mapM_ put mp3.apev1
+          )
+    apeSize MP3 {..} =
+        fromMaybe 0 (fmap metadataSize apev2)
+      + fromMaybe 0 (fmap metadataSize apev1)
+hWriteMp3Headers :: Handle -> MP3 -> IO ()
+hWriteMp3Headers h mp3 = do
   let buf = L.toStrict $ runPut (putMp3 mp3)
   hPut h buf
   where
     putMp3 MP3 {..} = do
       let (<!|>) = liftM2 (<|>)
-      _ <- mapM put id3v2_4 <!|> mapM put id3v2_3 <!|> mapM put apev2
+      _ <- mapM put id3v2_4 <!|> mapM put id3v2_3
       put frameHeader
 
 instance I.InfoReader MP3 where

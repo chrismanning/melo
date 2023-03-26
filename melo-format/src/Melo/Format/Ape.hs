@@ -84,7 +84,16 @@ type family ApeVersion (v :: Version) = t | t -> v where
   ApeVersion 'V1 = APEv1
   ApeVersion 'V2 = APEv2
 
-hGetApe :: Binary (ApeVersion v) => Handle -> IO (Maybe (ApeVersion v))
+class ApeVersion' (v :: Version) | v -> v where
+  version' :: Version
+
+instance ApeVersion' 'V1 where
+  version' = V1
+
+instance ApeVersion' 'V2 where
+  version' = V2
+
+hGetApe :: forall v. ApeVersion' v => Binary (ApeVersion v) => Handle -> IO (Maybe (ApeVersion v))
 hGetApe h = do
   total <- hFileSize h
   ID3.hGetId3v1 h >>= \case
@@ -99,14 +108,14 @@ hGetApe h = do
       (_, _, r) <- S.decodeWith getHeader (S.hGetContents h)
       case r of
         Left _ -> pure Nothing
-        Right header ->
-          if isHeader (flags header) then do
-            hSeek h AbsoluteSeek (i + headerLoc)
-            S.decode (S.hGetContents h) <&> (^? _3 . _Right)
-          else do
-            let pos = i + headerLoc - fromIntegral (numBytes header) + headerSize
-            hSeek h AbsoluteSeek pos
-            S.decode (S.hGetContents h) <&> (^? _3 . _Right)
+        Right header | headerVersion header /= version' @v -> pure Nothing
+                     | isHeader (flags header) -> do
+                        hSeek h AbsoluteSeek (i + headerLoc)
+                        S.decode (S.hGetContents h) <&> (^? _3 . _Right)
+                     | otherwise -> do
+                        let pos = i + headerLoc - fromIntegral (numBytes header) + headerSize
+                        hSeek h AbsoluteSeek pos
+                        S.decode (S.hGetContents h) <&> (^? _3 . _Right)
 
 newtype APEv2 = APEv2 (Vector TagItem)
   deriving (Show, Eq)
