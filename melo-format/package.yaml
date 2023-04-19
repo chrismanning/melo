@@ -47,12 +47,14 @@ library:
     - streaming
     - streaming-binary
     - streaming-bytestring
+    - stringsearch
     - text
     - time
     - unordered-containers
     - vector
     - wave
     - witch
+    - zlib
 
 executables:
   melo-detect:

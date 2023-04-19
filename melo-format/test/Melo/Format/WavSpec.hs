@@ -4,7 +4,6 @@ import Data.HashMap.Strict qualified as H
 import Data.Vector qualified as V
 import Lens.Micro
 import Melo.Format.Info
-import Melo.Format.Internal.Binary
 import Melo.Format.Mapping
 import Melo.Format.Metadata
 import qualified Melo.Format.Wav as SUT
@@ -27,7 +26,7 @@ spec =
         bitsPerSample = Just 16,
         quality = Nothing
       }
-      wav.metadata `shouldBe` H.singleton SUT.riffId (metadataFactory @SUT.RiffInfo emptyTags)
+      wav.metadata `shouldBe` H.empty
     it "reads WAVE file with RIFF metadata" $ do
       wav <- SUT.readWavMetadataFile "test/Melo/silence-1s-riff.wav"
       wav.fileId `shouldBe` SUT.wavFileId

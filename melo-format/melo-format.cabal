@@ -101,12 +101,14 @@ library
     , streaming
     , streaming-binary
     , streaming-bytestring
+    , stringsearch
     , text
     , time
     , unordered-containers
     , vector
     , wave
     , witch
+    , zlib
   default-language: Haskell2010
 
 executable melo-detect

@@ -10,7 +10,7 @@ module Melo.Format.ID3.ID3v2
     ID3v2_4,
     id3v24Tag,
     id3v24Id,
-    ID3v2Version(..),
+    ID3v2Version (..),
     headerSize,
     SyncSafe,
     fromSyncSafe,
@@ -24,6 +24,7 @@ module Melo.Format.ID3.ID3v2
   )
 where
 
+import Codec.Compression.Zlib qualified as Zlib
 import Control.Applicative
 import Control.Exception.Safe
 import Control.Monad
@@ -35,7 +36,8 @@ import Data.Binary.Put
 import Data.Bits
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
-import Data.ByteString.Lazy qualified as L
+import Data.ByteString.Lazy qualified as L hiding (split)
+import Data.ByteString.Lazy.Search qualified as L
 import Data.Coerce
 import Data.Foldable as F
 import Data.Functor
@@ -46,6 +48,7 @@ import Data.Text as T
 import Data.Text.Encoding
 import Data.Vector qualified as V
 import GHC.Generics hiding (from)
+import GHC.Records
 import Melo.Format.Error
 import Melo.Format.Internal.BinaryUtil
 import Melo.Format.Internal.Encoding
@@ -102,7 +105,7 @@ readId3v2Tags id3 =
 id3v2SizeWithHeader :: (GetFrame v, PutFrame v) => ID3v2 v -> Integer
 id3v2SizeWithHeader ID3v2 {..} =
   toInteger headerSize
-    + foldlFrames (\c f -> c + calculateFrameSize f) 0 frames
+    + foldlFrames (\c f -> c + calculateFrameSize headerFlags f) 0 frames
     + toInteger paddingSize
 
 getId3v2Size :: Get Integer
@@ -177,20 +180,21 @@ instance (GetFrame v, PutFrame v) => Binary (ID3v2 v) where
     frames <- getFrames @v header
     let padding =
           fromSyncSafe totalSize
-            - foldlFrames (\c f -> c + calculateFrameSize f) 0 frames
+            - foldlFrames (\c f -> c + calculateFrameSize header.flags f) 0 frames
     pure $ ID3v2 flags (fromInteger padding) extendedHeader frames
     where
       getExtendedHeader = do
         extendedHeaderSize <- fromSyncSafe <$> get
-        getByteString extendedHeaderSize
+        getByteString (extendedHeaderSize - 4)
   put ID3v2 {..} = do
     let id3data = runPut $ do
           if hasExtendedHeader headerFlags
             then do
-              put $ toSyncSafe (BS.length extendedHeader)
-              put extendedHeader
+              let extendedHeaderSize = BS.length extendedHeader + 4
+              put $ toSyncSafe (fromIntegral @_ @Word32 extendedHeaderSize)
+              putByteString extendedHeader
             else pure ()
-          putFrames frames
+          putFrames headerFlags frames
     let id3v2size = L.length id3data + fromIntegral paddingSize
     let header =
           Header
@@ -219,17 +223,18 @@ id3v2Identifier = "ID3"
 hSkip :: Handle -> IO ()
 hSkip h = do
   headerBuf <- BS.hGetSome h headerSize
-  hSeek h RelativeSeek (fromIntegral (negate (BS.length headerBuf)))
-  when (id3v2Identifier `BS.isPrefixOf` headerBuf) $ do
-    let header = runGet (get @Header) (L.fromStrict headerBuf)
-    let n = fromSyncSafe header.totalSize
-    hSeek h RelativeSeek n
+  if id3v2Identifier `BS.isPrefixOf` headerBuf
+    then do
+      let header = runGet (get @Header) (L.fromStrict headerBuf)
+      let n = fromSyncSafe header.totalSize
+      hSeek h RelativeSeek n
+    else hSeek h RelativeSeek (fromIntegral (negate (BS.length headerBuf)))
 
 instance Binary Header where
   get = isolate headerSize $ do
     expectGetEq (getByteString 3) id3v2Identifier "Expected ID3v2 identifier"
     header <- Header <$> get <*> get <*> get
-    expect (isReadable (flags header)) "Unrecognised ID3v2 flags found"
+    expect header.flags.isReadable "Unrecognised ID3v2 flags found"
     pure header
   put Header {..} = do
     putByteString id3v2Identifier
@@ -274,17 +279,32 @@ instance Binary HeaderFlags where
 isReadable :: HeaderFlags -> Bool
 isReadable (HeaderFlags f) = f .&. 0xF == 0
 
+instance HasField "isReadable" HeaderFlags Bool where
+  getField = isReadable
+
 unsynchronisation :: HeaderFlags -> Bool
 unsynchronisation (HeaderFlags f) = testBit f 7
+
+instance HasField "unsynchronisation" HeaderFlags Bool where
+  getField = unsynchronisation
 
 hasExtendedHeader :: HeaderFlags -> Bool
 hasExtendedHeader (HeaderFlags f) = testBit f 6
 
+instance HasField "hasExtendedHeader" HeaderFlags Bool where
+  getField = hasExtendedHeader
+
 experimental :: HeaderFlags -> Bool
 experimental (HeaderFlags f) = testBit f 5
 
+instance HasField "experimental" HeaderFlags Bool where
+  getField = experimental
+
 hasFooter :: HeaderFlags -> Bool
 hasFooter (HeaderFlags f) = testBit f 4
+
+instance HasField "hasFooter" HeaderFlags Bool where
+  getField = hasFooter
 
 newtype Padding = Padding Word32
   deriving (Eq, Show)
@@ -306,32 +326,43 @@ pictureFrames (Frames frames) =
 id3v2Pictures :: ID3v2 v -> [Picture]
 id3v2Pictures id3 = pictureFrames id3.frames
 
-type GetFrame v = (GetFrameHeader v, GetEncoding v, Version v)
+type GetFrame v =
+  ( GetFrameHeader v,
+    GetEncoding v,
+    Version v,
+    FrameCompressed v,
+    FrameDataLength v,
+    FrameUnsynchronisation v
+  )
 
-getFrames :: (GetFrame v, PutFrame v) => Header -> Get (Frames v)
-getFrames Header {flags} = Frames <$> getFrames'
+getFrames :: GetFrame v => Header -> Get (Frames v)
+getFrames Header {flags, totalSize} = Frames <$> getFrames'
   where
-    getFrames' = liftM2 (:|) get getRest
+    getFrames' = liftM2 (:|) (getFrame flags) getRest
     getRest =
       isEnd >>= \case
         True -> pure []
-        False -> liftM2 (:) get getRest
+        False -> liftM2 (:) (getFrame flags) getRest
+    endPos = fromIntegral $ fromSyncSafe totalSize + headerSize
     isEnd =
-      lookAhead (getByteString 1)
-        <&> if hasFooter flags
-          then \case
-            -- found footer
-            "3" -> True
-            _ -> False
-          else \case
-            -- found padding
-            "\0" -> True
-            _ -> False
+      bytesRead >>= \case
+        n | n == endPos -> pure True
+        _ ->
+          lookAhead (getByteString 1)
+            <&> if hasFooter flags
+              then \case
+                -- found footer
+                "3" -> True
+                _ -> False
+              else \case
+                -- found padding
+                "\0" -> True
+                _ -> False
 
 type PutFrame v = (PutFrameHeader v, PutEncoding v, PutTextContent v, Version v)
 
-putFrames :: (GetFrame v, PutFrame v) => Frames v -> Put
-putFrames (Frames frames) = mapM_ put frames
+putFrames :: (GetFrame v, PutFrame v) => HeaderFlags -> Frames v -> Put
+putFrames flags (Frames frames) = mapM_ (putFrame flags) frames
 
 data Frame (v :: ID3v2Version) = Frame
   { frameId :: !FrameId,
@@ -340,49 +371,106 @@ data Frame (v :: ID3v2Version) = Frame
   }
   deriving (Eq, Show)
 
-instance (GetFrame v, PutFrame v) => Binary (Frame v) where
-  get = do
-    header@FrameHeader {..} <- get @(FrameHeader v)
-    if isText header
-      then do
-        enc <- getEncoding @v
-        frameId' <- getFrameId @v header enc
-        let enc' = if "W" `T.isPrefixOf` frameId then NullTerminated else enc
-        Frame frameId' frameFlags . mkFrameContent frameId' enc <$> getTextContent header frameId' enc'
-      else
-        if isPicture header
+getFrame :: forall v. GetFrame v => HeaderFlags -> Get (Frame v)
+getFrame flags = do
+  (header, frameData) <- do
+    header <- getFrameHeader
+    frameData <- getFrameData header
+    let header' = header {frameSize = fromIntegral (L.length frameData)}
+    pure (header', frameData)
+  let rg g = runGet g frameData
+  !frame <-
+    pure $
+      rg
+        if isText header
           then do
             enc <- getEncoding @v
-            picture <- getPicture @v header enc
-            let frameId' = PreDefinedId frameId
-            pure $ Frame frameId' frameFlags (PictureFrame enc picture)
-          else do
-            frameId' <- getFrameId @v header NullTerminated
-            frameContent <- OtherFrame <$> getByteString (fromIntegral frameSize)
-            pure $ Frame frameId' frameFlags frameContent
-    where
-      isText :: FrameHeader v -> Bool
-      isText FrameHeader {frameId} = T.isPrefixOf "T" frameId || T.isPrefixOf "W" frameId
-      isPicture :: FrameHeader v -> Bool
-      isPicture header = header.frameId == "APIC"
+            frameId' <- getFrameId @v header enc
+            let enc' = if "W" `T.isPrefixOf` header.frameId then NullTerminated else enc
+            Frame frameId' header.frameFlags . mkFrameContent frameId' enc <$> getTextContent header frameId' enc'
+          else
+            if isPicture header
+              then do
+                enc <- getEncoding @v
+                picture <- getPicture @v header enc
+                let frameId' = PreDefinedId header.frameId
+                pure $ Frame frameId' header.frameFlags (PictureFrame enc picture)
+              else do
+                frameId' <- getFrameId @v header NullTerminated
+                frameContent <- OtherFrame <$> getByteString (fromIntegral header.frameSize)
+                pure $ Frame frameId' header.frameFlags frameContent
+  pure frame
+  where
+    isText :: FrameHeader v -> Bool
+    isText FrameHeader {frameId} = T.isPrefixOf "T" frameId || T.isPrefixOf "W" frameId
+    isPicture :: FrameHeader v -> Bool
+    isPicture header = header.frameId == "APIC"
+    getFrameData :: FrameHeader v -> Get L.ByteString
+    getFrameData header = do
+      dataLength <-
+        if frameHasDataLength @v header.frameFlags || frameIsCompressed @v header.frameFlags
+          then Just <$> getFrameDataLength @v
+          else pure Nothing
 
-  put Frame {..} = do
-    let fid = case frameId of
-          PreDefinedId fid' -> fid'
-          UserDefinedId fid' _enc _ -> fid'
-    let frameContentData = runPut $ putFrameContent frameId frameContent
-    let frameSize = fromIntegral $ L.length frameContentData
-    let header :: FrameHeader v =
-          FrameHeader
-            { frameId = fid,
-              frameSize,
-              frameFlags
-            }
-    put header
-    putLazyByteString frameContentData
+      frameData <-
+        if frameHasUnsynchronisation @v flags header.frameFlags
+          then do
+            frameData <- getLazyByteString (fromIntegral header.frameSize - if isJust dataLength then 4 else 0)
+            let synced = L.replace "\xff\x00" ("\xff" :: ByteString) frameData
+            unless (isNothing dataLength || fmap fromIntegral dataLength == Just (L.length synced)) do
+              fail $ "synced data length mismatch. expected " <> show dataLength <> " got " <> show (L.length synced)
+            pure synced
+          else getLazyByteString (fromIntegral header.frameSize)
+      if frameIsCompressed @v header.frameFlags
+        then do
+          let decompressed = Zlib.decompress frameData
+          unless (isNothing dataLength || fmap fromIntegral dataLength == Just (L.length decompressed)) do
+            fail $ "decompressed data length mismatch. expected " <> show dataLength <> " got " <> show (L.length decompressed)
+          pure decompressed
+        else pure frameData
 
-calculateFrameSize :: (GetFrame v, PutFrame v) => Frame v -> Integer
-calculateFrameSize = fromIntegral . L.length . runPut . put
+putFrame :: forall v. (GetFrame v, PutFrame v) => HeaderFlags -> Frame v -> Put
+putFrame flags Frame {..} = do
+  let fid = case frameId of
+        PreDefinedId fid' -> fid'
+        UserDefinedId fid' _enc _ -> fid'
+  let frameContentData = runPut $ putFrameContent frameId frameContent
+
+  (frameContentData', frameFlags) <-
+    if frameIsCompressed @v frameFlags
+      then pure (Zlib.compress frameContentData, setFrameHasDataLength @v frameFlags True)
+      else pure (frameContentData, frameFlags)
+  (frameContentData', frameFlags) <-
+    if frameHasUnsynchronisation @v flags frameFlags
+      then pure (unsync frameContentData', frameFlags)
+      else pure (frameContentData', frameFlags)
+  let shouldWriteDataLengthInd = frameHasDataLength @v frameFlags || frameIsCompressed @v frameFlags
+  let frameSize = fromIntegral $ L.length frameContentData' + if shouldWriteDataLengthInd then 4 else 0
+  let header :: FrameHeader v =
+        FrameHeader
+          { frameId = fid,
+            frameSize,
+            frameFlags
+          }
+  putFrameHeader header
+  when shouldWriteDataLengthInd $
+    putFrameDataLength @v $
+      fromIntegral (L.length frameContentData)
+  putLazyByteString frameContentData'
+  where
+    unsync d = go (L.splitKeepFront "\xFF" d)
+    go (c : cs) = case L.unpack c of
+      (0xFF : 0x00 : ws) -> L.pack (0xFF : 0x00 : 0x00 : ws) <> go cs
+      (0xFF : w : ws) | w .&. 0xE0 == 0xE0 -> "\xFF\x00" <> go (L.pack (w : ws) : cs)
+      (0xFF : []) -> case cs of
+        (c : cs) -> go (L.cons 0xFF c : cs)
+        cs -> "\xFF" <> go cs
+      (_ : _) -> c <> go cs
+      [] -> go cs
+    go [] = L.empty
+
+calculateFrameSize :: (GetFrame v, PutFrame v) => HeaderFlags -> Frame v -> Integer
+calculateFrameSize flags = fromIntegral . L.length . runPut . putFrame flags
 
 changeFrameVersion :: Frame v1 -> Frame v2
 changeFrameVersion Frame {..} =
@@ -425,7 +513,7 @@ getFrameId header@FrameHeader {frameId} enc =
 getUserDefinedFrameId :: FrameHeader v -> TextEncoding -> Get Text
 getUserDefinedFrameId header enc = do
   let sz = frameSize header
-  bs <- lookAhead $ getByteString $ fromIntegral sz
+  bs <- lookAhead $ getByteString $ fromIntegral (sz - 1)
   let uid = fst (BS.breakSubstring (terminator enc) bs)
   skip $ BS.length uid + BS.length (terminator enc)
   decodeID3Text enc uid
@@ -436,10 +524,6 @@ data FrameHeader (v :: ID3v2Version) = FrameHeader
     frameFlags :: !FrameHeaderFlags
   }
   deriving (Show, Eq)
-
-instance (GetFrameHeader v, PutFrameHeader v) => Binary (FrameHeader v) where
-  get = getFrameHeader
-  put = putFrameHeader
 
 class GetFrameHeader (v :: ID3v2Version) where
   getFrameHeader :: Get (FrameHeader v)
@@ -471,6 +555,45 @@ newtype FrameHeaderFlags = FrameHeaderFlags Word16
 instance Binary FrameHeaderFlags where
   get = FrameHeaderFlags <$> getWord16be
   put (FrameHeaderFlags f) = putWord16be f
+
+class FrameCompressed (v :: ID3v2Version) where
+  frameIsCompressed :: FrameHeaderFlags -> Bool
+  setFrameCompressed :: FrameHeaderFlags -> Bool -> FrameHeaderFlags
+
+instance FrameCompressed 'ID3v23 where
+  frameIsCompressed (FrameHeaderFlags flags) = testBit flags 7
+  setFrameCompressed (FrameHeaderFlags flags) b = FrameHeaderFlags if b then setBit flags 7 else clearBit flags 7
+
+instance FrameCompressed 'ID3v24 where
+  frameIsCompressed (FrameHeaderFlags flags) = testBit flags 3
+  setFrameCompressed (FrameHeaderFlags flags) b = FrameHeaderFlags if b then setBit flags 3 else clearBit flags 3
+
+class FrameUnsynchronisation (v :: ID3v2Version) where
+  frameHasUnsynchronisation :: HeaderFlags -> FrameHeaderFlags -> Bool
+
+instance FrameUnsynchronisation 'ID3v23 where
+  frameHasUnsynchronisation flags = const (unsynchronisation flags)
+
+instance FrameUnsynchronisation 'ID3v24 where
+  frameHasUnsynchronisation flags (FrameHeaderFlags frameFlags) = unsynchronisation flags || testBit frameFlags 1
+
+class FrameDataLength (v :: ID3v2Version) where
+  frameHasDataLength :: FrameHeaderFlags -> Bool
+  setFrameHasDataLength :: FrameHeaderFlags -> Bool -> FrameHeaderFlags
+  getFrameDataLength :: Get Word32
+  putFrameDataLength :: Word32 -> Put
+
+instance FrameDataLength 'ID3v23 where
+  frameHasDataLength = frameIsCompressed @'ID3v23
+  setFrameHasDataLength f _ = f
+  getFrameDataLength = getWord32be
+  putFrameDataLength = putWord32be
+
+instance FrameDataLength 'ID3v24 where
+  frameHasDataLength (FrameHeaderFlags flags) = testBit flags 0
+  setFrameHasDataLength (FrameHeaderFlags flags) b = FrameHeaderFlags if b then setBit flags 0 else clearBit flags 0
+  getFrameDataLength = fromSyncSafe <$> get
+  putFrameDataLength = put . toSyncSafe
 
 data FrameContent (v :: ID3v2Version)
   = TextFrame !TextEncoding ![Text]
@@ -640,7 +763,7 @@ getPicture :: forall (v :: ID3v2Version). FrameHeader v -> TextEncoding -> Get P
 getPicture header enc = do
   mimeType <- getNullTerminatedAscii
   pictureType <- mfilter (<= 20) getWord8 <|> fail "Invalid picture type"
-  let sz = fromIntegral header.frameSize - 1 - T.length header.frameId
+  let sz = fromIntegral header.frameSize - (T.length mimeType + 1) - 2 {- enc + pictureType -}
   buf <- getByteString sz
   let term = terminator enc
   let (description, pictureData) = BS.breakSubstring term buf
@@ -657,6 +780,7 @@ putPicture :: forall (v :: ID3v2Version). PutEncoding v => TextEncoding -> Pictu
 putPicture enc picture = do
   putEncoding @v enc
   putByteString (encodeLatin1 picture.mimeType)
+  putWord8 0
   putWord8 picture.pictureType
   putByteString $ encodeID3Text enc picture.description
   putByteString picture.pictureData
