@@ -3,6 +3,7 @@ module Melo.Format.MP3Spec where
 import Control.Exception.Safe
 import qualified Data.ByteString as BS
 import qualified Data.HashMap.Strict as H
+import Data.Maybe
 import qualified Data.Vector as V
 import Lens.Micro
 import Melo.Format.ID3.ID3v1
@@ -116,16 +117,16 @@ spec =
         result `shouldBe` True
     it "writes mp3 file with id3v2.4 with unsynchronised attached picture" $ do
       let origFile = "test/Melo/silence-1s-id3v24-picture-unsync.mp3"
-      orig <- readMp3File origFile
+      orig <- withBinaryFile origFile ReadMode hReadMp3
       bracket (openBinaryTempFile "test/Melo/" "silence-1s-id3v24-picture-unsync.mp3") (removeFile . fst) $ \(tmpfile, h') -> do
+        hWriteMp3Headers h' orig
         hClose h'
-        writeMp3File orig tmpfile
         writtenFileSize <- getFileSize tmpfile
         origFileSize <- getFileSize origFile
         !writtenContents <- withBinaryFile tmpfile ReadMode $ \h ->
           BS.hGet h (fromIntegral writtenFileSize)
         !origContents <- withBinaryFile origFile ReadMode $ \h ->
-          BS.hGet h (fromIntegral origFileSize)
+          BS.hGet h (fromIntegral writtenFileSize)
         let result = writtenContents == origContents
         result `shouldBe` True
     it "reads mp3 file with id3v1" $ do
@@ -274,3 +275,12 @@ spec =
             bitsPerSample = Nothing,
             quality = Just "64 kbps"
           }
+    it "writes mp3 file with id3v1 removed" $ do
+      f <- readMp3File "test/Melo/id3v1/id3v1_001_basic.mp3"
+      H.lookup id3v1Id f.metadata `shouldSatisfy` isJust
+      let f' = f {metadata = mempty}
+      bracket (openBinaryTempFile "test/Melo/" "id3v1-removed.mp3") (removeFile . fst) $ \(tmpfile, h') -> do
+        hClose h'
+        writeMp3File f' tmpfile
+        f'' <- readMp3File tmpfile
+        f''.metadata `shouldBe` mempty

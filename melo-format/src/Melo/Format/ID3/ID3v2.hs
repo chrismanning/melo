@@ -20,6 +20,7 @@ module Melo.Format.ID3.ID3v2
     hSkip,
     Picture (..),
     id3v2Pictures,
+    setPictures,
     hGetId3v2,
   )
 where
@@ -91,7 +92,7 @@ instance MetadataFormat ID3v2_3 where
       }
   fieldMappingSelector = id3v2_3
   readTags = readId3v2Tags
-  replaceWithTags id3 tags = id3 {frames = framesFromTags tags}
+  replaceWithTags id3 tags = id3 {frames = framesFromTags tags `appendFrames` pictureFrames id3.frames}
   metadataSize = id3v2SizeWithHeader
 
 readId3v2Tags :: ID3v2 v -> Tags
@@ -124,10 +125,10 @@ instance MetadataFormat ID3v2_4 where
       }
   fieldMappingSelector = id3v2_4
   readTags = readId3v2Tags
-  replaceWithTags id3 tags = id3 {frames = framesFromTags tags}
+  replaceWithTags id3 tags = id3 {frames = framesFromTags tags `appendFrames` pictureFrames id3.frames}
   metadataSize = id3v2SizeWithHeader
 
-newId3v2 :: DefaultEncoding v => Tags -> ID3v2 v
+newId3v2 :: FrameEncoding v => Tags -> ID3v2 v
 newId3v2 tags =
   ID3v2
     { headerFlags = HeaderFlags 0,
@@ -136,12 +137,12 @@ newId3v2 tags =
       frames = framesFromTags tags
     }
 
-framesFromTags :: DefaultEncoding v => Tags -> Frames v
+framesFromTags :: FrameEncoding v => Tags -> Frames v
 framesFromTags (Tags tags) = case V.toList tags of
   [] -> impureThrow $ MetadataWriteError "ID3v2 must contain at least one frame"
   (t : ts) -> Frames $ createFrame <$> t :| ts
 
-createFrame :: forall (v :: ID3v2Version). DefaultEncoding v => (Text, Text) -> Frame v
+createFrame :: forall (v :: ID3v2Version). FrameEncoding v => (Text, Text) -> Frame v
 createFrame (k, v) =
   let frameId = fromTagKey @v k
    in Frame
@@ -312,19 +313,40 @@ newtype Padding = Padding Word32
 newtype Frames (v :: ID3v2Version) = Frames (NonEmpty (Frame v))
   deriving (Show, Eq)
 
+appendFrames :: Frames v -> [Frame v] -> Frames v
+appendFrames (Frames (f :| fs)) newFrames = Frames (f :| fs <> newFrames)
+
 foldlFrames :: (b -> Frame v -> b) -> b -> Frames v -> b
 foldlFrames f z (Frames frms) = F.foldl' f z frms
 
-pictureFrames :: Frames v -> [Picture]
-pictureFrames (Frames frames) =
-  catMaybes $
-    NE.toList $
-      frames <&> \frame -> case frame.frameContent of
-        PictureFrame _ picture -> Just picture
-        _ -> Nothing
+pictureFrames :: Frames v -> [Frame v]
+pictureFrames (Frames frames) = NE.filter isPictureFrame frames
 
 id3v2Pictures :: ID3v2 v -> [Picture]
-id3v2Pictures id3 = pictureFrames id3.frames
+id3v2Pictures id3 = catMaybes $ pictureFrames id3.frames <&> \case
+  Frame {frameContent = PictureFrame _ pic} -> Just pic
+  _ -> Nothing
+
+isPictureFrame :: Frame v -> Bool
+isPictureFrame Frame {frameContent = PictureFrame _ _} = True
+isPictureFrame _ = False
+
+mkPictureFrame :: PictureType -> EmbeddedPicture -> Picture
+mkPictureFrame pictureType pic = Picture {
+    pictureType = fromIntegral $ fromEnum pictureType,
+    mimeType = pic.mimeType,
+    description = "",
+    pictureData = pic.pictureData
+  }
+
+setPictures :: forall v. FrameEncoding v => [(PictureType, EmbeddedPicture)] -> ID3v2 v -> ID3v2 v
+setPictures pics id3 =
+  let frames = NE.filter (not . isPictureFrame) (coerce id3.frames)
+      picContents = uncurry mkPictureFrame <$> pics
+      frameId = PreDefinedId "APIC"
+      enc = frameContentEncoding @v frameId
+      picFrames = Frame frameId (FrameHeaderFlags 0) . PictureFrame enc <$> picContents in
+  id3 { frames = Frames $ NE.fromList (frames <> picFrames) }
 
 type GetFrame v =
   ( GetFrameHeader v,
@@ -387,7 +409,7 @@ getFrame flags = do
             enc <- getEncoding @v
             frameId' <- getFrameId @v header enc
             let enc' = if "W" `T.isPrefixOf` header.frameId then NullTerminated else enc
-            Frame frameId' header.frameFlags . mkFrameContent frameId' enc <$> getTextContent header frameId' enc'
+            Frame frameId' header.frameFlags . mkFrameContent frameId' enc' <$> getTextContent header frameId' enc'
           else
             if isPicture header
               then do
@@ -489,18 +511,31 @@ toTagKey :: FrameId -> Text
 toTagKey (PreDefinedId fid) = fid
 toTagKey (UserDefinedId fid1 _enc fid2) = fid1 <> ";" <> fid2
 
-class DefaultEncoding (v :: ID3v2Version) where
-  defaultEncoding :: TextEncoding
+class FrameEncoding (v :: ID3v2Version) where
+  frameIdEncoding :: TextEncoding
+  frameContentEncoding :: FrameId -> TextEncoding
 
-instance DefaultEncoding 'ID3v23 where
-  defaultEncoding = NullTerminated
+instance FrameEncoding 'ID3v23 where
+  frameIdEncoding = UCS2
+  frameContentEncoding fid = case fid of
+    PreDefinedId "TYER" -> NullTerminated
+    PreDefinedId "TRCK" -> NullTerminated
+    PreDefinedId fid | "W" `T.isPrefixOf` fid -> NullTerminated
+    UserDefinedId fid _ _ | "W" `T.isPrefixOf` fid -> NullTerminated
+    _ -> UCS2
 
-instance DefaultEncoding 'ID3v24 where
-  defaultEncoding = UTF8
+instance FrameEncoding 'ID3v24 where
+  frameIdEncoding = UTF8
+  frameContentEncoding fid = case fid of
+    PreDefinedId "TDRC" -> NullTerminated
+    PreDefinedId "TRCK" -> NullTerminated
+    PreDefinedId fid | "W" `T.isPrefixOf` fid -> NullTerminated
+    UserDefinedId fid _ _ | "W" `T.isPrefixOf` fid -> NullTerminated
+    _ -> UTF8
 
-fromTagKey :: forall (v :: ID3v2Version). DefaultEncoding v => Text -> FrameId
+fromTagKey :: forall (v :: ID3v2Version). FrameEncoding v => Text -> FrameId
 fromTagKey k = case T.split (== ';') k of
-  [fid, desc] -> UserDefinedId fid (defaultEncoding @v) desc
+  [fid, desc] -> UserDefinedId fid (frameIdEncoding @v) desc
   [fid] -> PreDefinedId fid
   _invalidFrameId -> impureThrow $ MetadataWriteError "invalid id3v2 key"
 
@@ -624,14 +659,14 @@ extractFrameContent Frame {frameId, frameContent} = case frameContent of
   UrlFrame _ vs -> Just (frameId, vs)
   _otherFrame -> Nothing
 
-createFrameContent :: FrameId -> Text -> FrameContent v
+createFrameContent :: forall v. FrameEncoding v => FrameId -> Text -> FrameContent v
 createFrameContent frameId val =
   let frameId' = toTagKey frameId
    in if T.isPrefixOf "T" frameId'
-        then TextFrame UTF8 [val]
+        then TextFrame (frameContentEncoding @v frameId) [val]
         else
           if T.isPrefixOf "W" frameId'
-            then UrlFrame UTF8 [val]
+            then UrlFrame (frameContentEncoding @v frameId) [val]
             else error "invalid ID3v2 text frame id " frameId'
 
 changeContentVersion :: FrameContent v1 -> FrameContent v2
@@ -641,14 +676,13 @@ changeContentVersion (PictureFrame enc picture) = PictureFrame enc picture
 changeContentVersion (OtherFrame content) = OtherFrame content
 
 getTextContent :: forall (v :: ID3v2Version). FrameHeader v -> FrameId -> TextEncoding -> Get [Text]
-getTextContent FrameHeader {frameId, frameSize} frameId' enc = do
+getTextContent FrameHeader {frameSize} frameId' enc = do
   let fidSz = case frameId' of
         UserDefinedId _ frameIdEnc t -> fromIntegral $ BS.length (encodeID3Text frameIdEnc t)
         _otherFrameId -> 0
   let sz = frameSize - 1 - fidSz
   bs <- getByteString (fromIntegral sz)
-  let enc' = if "W" `T.isPrefixOf` frameId then NullTerminated else enc
-  mapM (decodeID3Text enc') (splitFields (terminator enc) bs)
+  mapM (decodeID3Text enc) (splitFields (terminator enc) bs)
 
 splitFields :: ByteString -> ByteString -> [ByteString]
 splitFields term fields
@@ -664,16 +698,14 @@ class PutTextContent (v :: ID3v2Version) where
 
 instance PutFrame v => PutTextContent v where
   putTextContent frameId enc content = do
-    putEncoding @v enc
     case frameId of
-      UserDefinedId _ enc desc -> putByteString (encodeID3Text enc desc)
-      _otherFrameId -> pure ()
+      UserDefinedId _ enc desc -> do
+        putEncoding @v enc
+        putByteString (encodeID3Text enc desc)
+      _otherFrameId -> putEncoding @v enc
     putByteString encodedText
     where
-      encodedText = BS.concat (fmap (encodeID3Text contentEncoding) content)
-      contentEncoding = case T.take 1 (toTagKey frameId) of
-        "W" -> NullTerminated
-        _ignore -> enc
+      encodedText = BS.concat (fmap (encodeID3Text enc) content)
 
 data TextEncoding = NullTerminated | UCS2 | UTF16 | UTF16BE | UTF8
   deriving (Show, Eq)

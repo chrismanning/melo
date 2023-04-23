@@ -76,6 +76,20 @@ mp3Metadata MP3 {..} =
     asMetadata = toPair . extractMetadata
     toPair m = (m.formatId, m)
 
+updateMp3Metadata :: MP3 -> H.HashMap MetadataId Metadata -> MP3
+updateMp3Metadata mp3 newMetadata = mp3 {
+    apev2 = update' Ape.apeV2Id =<< mp3.apev2,
+    apev1 = update' Ape.apeV1Id =<< mp3.apev1,
+    id3v2_4 = update' ID3.id3v24Id =<< mp3.id3v2_4,
+    id3v2_3 = update' ID3.id3v23Id =<< mp3.id3v2_3,
+    id3v1 = update' ID3.id3v1Id =<< mp3.id3v1
+  }
+  where
+    update' :: MetadataFormat m => MetadataId -> m -> Maybe m
+    update' mid m = do
+      metadata <- H.lookup mid newMetadata
+      pure $ replaceWithTags m metadata.tags
+
 mp3Pictures :: MP3 -> [(PictureType, EmbeddedPicture)]
 mp3Pictures MP3 {id3v2_3, id3v2_4} =
   let pictures = (ID3.id3v2Pictures <$> id3v2_4) `cc` (ID3.id3v2Pictures <$> id3v2_3) in
@@ -83,6 +97,12 @@ mp3Pictures MP3 {id3v2_3, id3v2_4} =
     where
       cc :: Maybe [a] -> Maybe [a] -> [a]
       cc a b = fromMaybe [] a <> fromMaybe [] b
+
+updateMp3Pictures :: MP3 -> [(PictureType, EmbeddedPicture)] -> MP3
+updateMp3Pictures mp3 pics = mp3 {
+    id3v2_3 = ID3.setPictures pics <$> mp3.id3v2_3,
+    id3v2_4 = ID3.setPictures pics <$> mp3.id3v2_4
+  }
 
 readMp3File :: FilePath -> IO MetadataFile
 readMp3File p = do
@@ -141,7 +161,7 @@ writeMp3File f newpath = do
     else writeMp3File' oldpath newpath
   where
     writeMp3File' oldpath newpath = do
-      !mp3 <- withBinaryFile oldpath ReadMode hReadMp3
+      !oldMp3 <- withBinaryFile oldpath ReadMode hReadMp3
       -- TODO update mp3 from f
       !audioData <- withBinaryFile oldpath ReadMode $ \h -> do
         hSeek h SeekFromEnd 0
@@ -150,21 +170,25 @@ writeMp3File f newpath = do
         hSeek h AbsoluteSeek 0
         ID3.hSkip h
         hSkipZeroes h
-        hSeek h RelativeSeek if isJust (crc mp3.frameHeader) then 6 else 4
+        hSeek h RelativeSeek if isJust (crc oldMp3.frameHeader) then 6 else 4
         start <- hTell h
-        let audioSize = end - start - apeSize mp3
+        let audioSize = end - start - apeSize oldMp3 - id3v1Size oldMp3
 
         hGet h (fromInteger audioSize)
       withBinaryFile newpath WriteMode $ \h -> do
+        let !mp3 = updateMp3Pictures (updateMp3Metadata oldMp3 f.metadata) f.pictures
         hWriteMp3Headers h mp3
         hPut h audioData
         hPut h (L.toStrict $ runPut do
-            mapM_ put mp3.apev2
-            mapM_ put mp3.apev1
+            let (<!|>) = liftM2 (<|>)
+            _ <- mapM put mp3.apev2 <!|> mapM put mp3.apev1
+            mapM_ put mp3.id3v1
           )
     apeSize MP3 {..} =
         fromMaybe 0 (fmap metadataSize apev2)
       + fromMaybe 0 (fmap metadataSize apev1)
+    id3v1Size MP3 {..} = fromMaybe 0 (fmap metadataSize id3v1)
+
 hWriteMp3Headers :: Handle -> MP3 -> IO ()
 hWriteMp3Headers h mp3 = do
   let buf = L.toStrict $ runPut (putMp3 mp3)
