@@ -107,6 +107,11 @@ flacPictures flac =
     (\p -> (toEnum $ fromIntegral p.pictureType, from p))
     (flacMetadataPictures (flacMetadata flac))
 
+setFlacPictures :: Flac -> [(PictureType, EmbeddedPicture)] -> Flac
+setFlacPictures (MkFlac flacMetadata) pics = MkFlac $ replacePictureBlocks flacMetadata (uncurry mkPicture <$> pics)
+setFlacPictures (MkFlacWithID3v2_3 id3 flacMetadata) pics = MkFlacWithID3v2_3 id3 $ replacePictureBlocks flacMetadata (uncurry mkPicture <$> pics)
+setFlacPictures (MkFlacWithID3v2_4 id3 flacMetadata) pics = MkFlacWithID3v2_4 id3 $ replacePictureBlocks flacMetadata (uncurry mkPicture <$> pics)
+
 readFlacFile :: FilePath -> IO MetadataFile
 readFlacFile p = do
   f <- withBinaryFile p ReadMode hReadFlac
@@ -141,7 +146,7 @@ writeFlacFile f newpath = do
         hSeek h AbsoluteSeek (flacSize oldflac)
         BS.hGet h $ fromInteger (end - flacSize oldflac)
       withBinaryFile newpath WriteMode $ \h -> do
-        let !newflac = updateFlacWith (H.elems f.metadata) oldflac
+        let !newflac = updateFlacWith (H.elems f.metadata) (setFlacPictures oldflac f.pictures)
         hWriteFlac h newflac
         BS.hPut h audioData
 
@@ -179,6 +184,14 @@ replaceVorbisCommentBlock flacMetadata tags =
         VorbisCommentBlock isLast $
           replaceUserComments vcs (toUserComments tags)
       block -> block
+
+replacePictureBlocks :: FlacMetadata -> [Picture] -> FlacMetadata
+replacePictureBlocks flacMetadata pics =
+  let blocks = V.filter (not . isPicture) flacMetadata.metadataBlocks
+   in flacMetadata & #metadataBlocks .~ (blocks <> V.fromList (fmap (PictureBlock False) pics))
+  where
+    isPicture PictureBlock {} = True
+    isPicture _ = False
 
 flacSize :: Flac -> Integer
 flacSize (Flac m) = flacMetadataSize m
@@ -307,7 +320,22 @@ instance Binary FlacMetadata where
   put FlacMetadata {..} =
     putByteString marker
       >> put (StreamInfoBlock False streamInfo)
-      >> V.mapM_ put metadataBlocks
+      >> V.mapM_ put blocks
+    where
+      blocks =
+        V.fromList
+          ( V.toList metadataBlocks
+              & each %~ setLast False
+              & _last %~ setLast True
+          )
+
+setLast :: Bool -> MetadataBlock -> MetadataBlock
+setLast last = \case
+  StreamInfoBlock _ s -> StreamInfoBlock last s
+  PaddingBlock _ p -> PaddingBlock last p
+  VorbisCommentBlock _ v -> VorbisCommentBlock last v
+  PictureBlock _ p -> PictureBlock last p
+  OtherBlock _ x y -> OtherBlock last x y
 
 getMetadataBlocks :: Get (Vector MetadataBlock)
 getMetadataBlocks = V.fromList <$> go
@@ -330,11 +358,13 @@ data MetadataBlock
   deriving (Show)
 
 metadataBlockSize :: MetadataBlock -> Integer
-metadataBlockSize (StreamInfoBlock _ _) = blockHeaderSize + streamInfoSize
-metadataBlockSize (PaddingBlock _ (Padding s)) = blockHeaderSize + toInteger s
-metadataBlockSize (OtherBlock _ _ d) = blockHeaderSize + toInteger (BS.length d)
-metadataBlockSize (VorbisCommentBlock _ vc) = blockHeaderSize + metadataSize vc
-metadataBlockSize (PictureBlock _ p) = blockHeaderSize + pictureSize p
+metadataBlockSize b =
+  blockHeaderSize + case b of
+    StreamInfoBlock _ _ -> streamInfoSize
+    PaddingBlock _ (Padding s) -> toInteger s
+    OtherBlock _ _ d -> toInteger (BS.length d)
+    VorbisCommentBlock _ vc -> metadataSize vc
+    PictureBlock _ p -> pictureSize p
 
 instance Binary MetadataBlock where
   get = do
@@ -364,7 +394,7 @@ instance Binary MetadataBlock where
       MetadataBlockHeader
         { blockType = 1,
           blockLength = size,
-          isLast = isLast
+          isLast
         }
     replicateM_ (fromIntegral size) $ putWord8 0
   put (VorbisCommentBlock isLast vc) = do
@@ -481,19 +511,33 @@ data Picture = Picture
     width :: !Word32,
     height :: !Word32,
     depth :: !Word32,
-    numColours :: !(Maybe Word32),
+    numColours :: !Word32,
     pictureData :: !ByteString
   }
   deriving (Show)
 
-numColors :: Picture -> Maybe Word32
+numColors :: Picture -> Word32
 numColors = numColours
 
+mkPicture :: PictureType -> EmbeddedPicture -> Picture
+mkPicture picType EmbeddedPicture {..} =
+  Picture
+    { mimeType,
+      pictureData,
+      pictureType = fromIntegral $ fromEnum picType,
+      description = "",
+      width = 0,
+      height = 0,
+      depth = 0,
+      numColours = 0
+    }
+
 instance From Picture EmbeddedPicture where
-  from Picture {..} = EmbeddedPicture {
-    mimeType,
-    pictureData
-  }
+  from Picture {..} =
+    EmbeddedPicture
+      { mimeType,
+        pictureData
+      }
 
 instance Binary Picture where
   get = do
@@ -513,7 +557,7 @@ instance Binary Picture where
           width,
           height,
           depth,
-          numColours = mfilter (> 0) $ Just numColours,
+          numColours,
           pictureData
         }
   put Picture {..} = do
@@ -527,7 +571,7 @@ instance Binary Picture where
     putWord32be width
     putWord32be height
     putWord32be depth
-    putWord32be (fromMaybe 0 numColours)
+    putWord32be numColours
     putWord32be $ fromIntegral $ BS.length pictureData
     putByteString pictureData
 
