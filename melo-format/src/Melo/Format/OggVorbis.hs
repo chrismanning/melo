@@ -8,6 +8,7 @@ module Melo.Format.OggVorbis
   )
 where
 
+import Control.Exception.Safe
 import Data.Binary
 import Data.Binary.Put
 import qualified Data.ByteString as BS
@@ -68,9 +69,10 @@ writeOggVorbisFile f newpath = do
     then do
       (tmpfile, h) <- openBinaryTempFile (takeDirectory newpath) (takeBaseName newpath <> ".tmp")
       hClose h
-      writeOggVorbisFile' oldpath tmpfile
-      copyPermissions oldpath tmpfile
-      renameFile tmpfile newpath
+      handleAny (\e -> removeFile tmpfile >> throw e) do
+        writeOggVorbisFile' oldpath tmpfile
+        copyPermissions oldpath tmpfile
+        renameFile tmpfile newpath
     else writeOggVorbisFile' oldpath newpath
   where
     writeOggVorbisFile' oldpath newpath = do

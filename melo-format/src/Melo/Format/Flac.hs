@@ -133,9 +133,10 @@ writeFlacFile f newpath = do
       -- TODO utilise padding when updating existing flac files
       (tmpfile, h) <- openBinaryTempFile (takeDirectory newpath) (takeBaseName newpath <> ".tmp")
       hClose h
-      writeFlacFile' oldpath tmpfile
-      copyPermissions oldpath tmpfile
-      renameFile tmpfile newpath
+      handleAny (\e -> removeFile tmpfile >> throw e) do
+        writeFlacFile' oldpath tmpfile
+        copyPermissions oldpath tmpfile
+        renameFile tmpfile newpath
     else writeFlacFile' oldpath newpath
   where
     writeFlacFile' oldpath newpath = do

@@ -155,9 +155,10 @@ writeMp3File f newpath = do
     then do
       (tmpfile, h) <- openBinaryTempFile (takeDirectory newpath) (takeBaseName newpath <> ".tmp")
       hClose h
-      writeMp3File' oldpath tmpfile
-      copyPermissions oldpath tmpfile
-      renameFile tmpfile newpath
+      handleAny (\e -> removeFile tmpfile >> throw e) do
+        writeMp3File' oldpath tmpfile
+        copyPermissions oldpath tmpfile
+        renameFile tmpfile newpath
     else writeMp3File' oldpath newpath
   where
     writeMp3File' oldpath newpath = do
