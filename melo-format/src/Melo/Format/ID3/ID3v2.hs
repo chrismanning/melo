@@ -97,8 +97,7 @@ instance MetadataFormat ID3v2_3 where
 
 readId3v2Tags :: ID3v2 v -> Tags
 readId3v2Tags id3 =
-  let frames' = id3.frames
-      contents = foldlFrames accumFrames [] frames'
+  let contents = foldlFrames accumFrames [] id3.frames
    in Tags $ V.fromList $ fmap (first toTagKey) contents >>= \(a, bs) -> fmap (a,) bs
   where
     accumFrames acc frame = acc <> catMaybes [extractFrameContent frame]
@@ -400,31 +399,29 @@ getFrame flags = do
     frameData <- getFrameData header
     let header' = header {frameSize = fromIntegral (L.length frameData)}
     pure (header', frameData)
-  let rg g = runGet g frameData
-  !frame <-
-    pure $
-      rg
-        if isText header
-          then do
-            enc <- getEncoding @v
-            frameId' <- getFrameId @v header enc
-            let enc' = if "W" `T.isPrefixOf` header.frameId then NullTerminated else enc
-            Frame frameId' header.frameFlags . mkFrameContent frameId' enc' <$> getTextContent header frameId' enc'
-          else
-            if isPicture header
-              then do
-                enc <- getEncoding @v
-                picture <- getPicture @v header enc
-                let frameId' = PreDefinedId header.frameId
-                pure $ Frame frameId' header.frameFlags (PictureFrame enc picture)
-              else do
-                frameId' <- getFrameId @v header NullTerminated
-                frameContent <- OtherFrame <$> getByteString (fromIntegral header.frameSize)
-                pure $ Frame frameId' header.frameFlags frameContent
-  pure frame
+  pure $ runGet (getFrameImpl header) frameData
   where
+    getFrameImpl header | isText header = do
+      enc <- getEncoding @v
+      frameId' <- getFrameId @v header enc
+      let enc' = if "W" `T.isPrefixOf` header.frameId then NullTerminated else enc
+      Frame frameId' header.frameFlags . mkFrameContent frameId' enc' <$> getTextContent header frameId' enc'
+    getFrameImpl header | isPicture header = do
+      enc <- getEncoding @v
+      picture <- getPicture @v header enc
+      let frameId' = PreDefinedId header.frameId
+      pure $ Frame frameId' header.frameFlags (PictureFrame enc picture)
+    getFrameImpl header = do
+      a <- bytesRead
+      frameId' <- getFrameId @v header NullTerminated
+      b <- bytesRead
+      frameContent <- OtherFrame <$> getByteString (fromIntegral header.frameSize - fromIntegral (b - a))
+      pure $ Frame frameId' header.frameFlags frameContent
     isText :: FrameHeader v -> Bool
-    isText FrameHeader {frameId} = T.isPrefixOf "T" frameId || T.isPrefixOf "W" frameId
+    isText FrameHeader {frameId} = case T.uncons frameId of
+      Just ('T', _) -> True
+      Just ('W', _) -> True
+      _ -> False
     isPicture :: FrameHeader v -> Bool
     isPicture header = header.frameId == "APIC"
     getFrameData :: FrameHeader v -> Get L.ByteString
@@ -534,16 +531,15 @@ instance FrameEncoding 'ID3v24 where
     _ -> UTF8
 
 fromTagKey :: forall (v :: ID3v2Version). FrameEncoding v => Text -> FrameId
-fromTagKey k = case T.split (== ';') k of
-  [fid, desc] -> UserDefinedId fid (frameIdEncoding @v) desc
-  [fid] -> PreDefinedId fid
-  _invalidFrameId -> impureThrow $ MetadataWriteError "invalid id3v2 key"
+fromTagKey k = case T.span (/= ';') k of
+  (fid, "") -> PreDefinedId fid
+  (fid, desc) -> UserDefinedId fid (frameIdEncoding @v) (T.drop 1 desc)
 
 getFrameId :: forall (v :: ID3v2Version). FrameHeader v -> TextEncoding -> Get FrameId
-getFrameId header@FrameHeader {frameId} enc =
-  if "XXX" `T.isSuffixOf` frameId
-    then UserDefinedId frameId enc <$> getUserDefinedFrameId header enc
-    else pure $ PreDefinedId frameId
+getFrameId header@FrameHeader {frameId} enc = case T.uncons frameId of
+  Just ('U', "FID") -> UserDefinedId frameId NullTerminated <$> getNullTerminatedAscii
+  Just (_, "XXX") -> UserDefinedId frameId enc <$> getUserDefinedFrameId header enc
+  _ -> pure $ PreDefinedId frameId
 
 getUserDefinedFrameId :: FrameHeader v -> TextEncoding -> Get Text
 getUserDefinedFrameId header enc = do
@@ -651,23 +647,24 @@ putFrameContent :: forall v. PutFrame v => FrameId -> FrameContent v -> Put
 putFrameContent f (TextFrame enc content) = putTextContent @v f enc content
 putFrameContent f (UrlFrame enc content) = putTextContent @v f enc content
 putFrameContent _ (PictureFrame enc picture) = putPicture @v enc picture
+putFrameContent (UserDefinedId "UFID" _ owner) (OtherFrame content) = putByteString (encodeLatin1 owner) >> putWord8 0 >> putByteString content
 putFrameContent _ (OtherFrame content) = putByteString content
 
 extractFrameContent :: Frame v -> Maybe (FrameId, [Text])
 extractFrameContent Frame {frameId, frameContent} = case frameContent of
   TextFrame _ vs -> Just (frameId, vs)
   UrlFrame _ vs -> Just (frameId, vs)
+  OtherFrame bs -> case frameId of
+    UserDefinedId "UFID" _ _owner -> Just (frameId, [decodeLatin1 bs])
+    _ -> Nothing
   _otherFrame -> Nothing
 
 createFrameContent :: forall v. FrameEncoding v => FrameId -> Text -> FrameContent v
-createFrameContent frameId val =
-  let frameId' = toTagKey frameId
-   in if T.isPrefixOf "T" frameId'
-        then TextFrame (frameContentEncoding @v frameId) [val]
-        else
-          if T.isPrefixOf "W" frameId'
-            then UrlFrame (frameContentEncoding @v frameId) [val]
-            else error "invalid ID3v2 text frame id " frameId'
+createFrameContent frameId val = case T.uncons (toTagKey frameId) of
+  Just ('T', _) -> TextFrame (frameContentEncoding @v frameId) [val]
+  Just ('W', _) -> UrlFrame (frameContentEncoding @v frameId) [val]
+  Just _ -> OtherFrame (encodeLatin1 val)
+  _ -> impureThrow $ MetadataWriteError ("invalid ID3v2 text frame id " <> T.pack (show frameId))
 
 changeContentVersion :: FrameContent v1 -> FrameContent v2
 changeContentVersion (TextFrame enc content) = TextFrame enc content
