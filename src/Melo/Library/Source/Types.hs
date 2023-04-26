@@ -271,30 +271,6 @@ data MetadataImportSource = MetadataImportSource
   }
   deriving (Show, Generic)
 
-instance TryFrom NewImportSource MetadataImportSource where
-  tryFrom s = maybeToRight (TryFromException s Nothing) $ do
-    let metadata = chooseMetadata (getAllMetadata s)
-    src <- parseURI (show $ getSourceUri s)
-    let pictures = getPictures s
-    pure
-      MetadataImportSource
-        { audioInfo = getInfo s,
-          metadata,
-          src,
-          metadataFileId = getMetadataFileId s,
-          idx = getIdx s,
-          range = getRange s,
-          collection = getCollectionRef s,
-          cover = fmap (const FrontCover) $ lookup FrontCover pictures
-        }
-    where
-      getIdx (CueFileImportSource _ CueFileSource {idx}) = Just idx
-      getIdx _ = Nothing
-      getRange (CueFileImportSource _ CueFileSource {range}) = Just range
-      getRange (FileSource _ mf) = TimeRange . R.ubi . calendarTimeTime <$> audioLength mf.audioInfo
-      getPictures (CueFileImportSource _ cue) = cue.pictures
-      getPictures (FileSource _ mf) = mf.pictures
-
 getSourceUri :: NewImportSource -> URI
 getSourceUri (FileSource _ f) = fileUri f.filePath
 getSourceUri (CueFileImportSource _ CueFileSource {..}) = fileUri filePath

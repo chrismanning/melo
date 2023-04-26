@@ -3,7 +3,6 @@
 
 module Melo.Metadata.Mapping.Aggregate where
 
-import Control.Exception.Safe
 import Control.Foldl qualified as F
 import Control.Lens
 import Country
@@ -12,6 +11,7 @@ import Data.Map.Strict as Map
 import Data.Text (Text)
 import Data.Vector (Vector)
 import Data.Vector qualified as V
+import Melo.Common.Exception
 import Melo.Common.Logging
 import Melo.Common.Monad
 import Melo.Database.Repo as Repo
@@ -80,9 +80,9 @@ instance
   resolveMappingNamed m src | m == "va_track_artist" = do
     releaseArtists <- resolveMappingNamed "release_artist" src
     trackArtists <- resolveMappingNamed "track_artist" src
-    if trackArtists /= releaseArtists then
-      pure trackArtists
-    else pure V.empty
+    if trackArtists /= releaseArtists
+      then pure trackArtists
+      else pure V.empty
   resolveMappingNamed _ Source {metadata = Nothing} = pure V.empty
   resolveMappingNamed mappingName Source {metadata = Just metadata} =
     getMappingNamed mappingName >>= \case
@@ -92,9 +92,10 @@ instance
     where
       lookup :: TagMappingIndex -> Maybe M.TagMapping
       lookup mappings = mappings ^. at name
-  getMappingsNamed names = S.each names
-    & S.mapMaybeM (\m -> fmap (m,) <$> getMappingNamed m)
-    & F.impurely S.foldM_ (F.generalize F.map)
+  getMappingsNamed names =
+    S.each names
+      & S.mapMaybeM (\m -> fmap (m,) <$> getMappingNamed m)
+      & F.impurely S.foldM_ (F.generalize F.map)
   getAllMappings = ask
 
 runTagMappingAggregate :: TagMappingRepository m => TagMappingAggregateT m a -> m a

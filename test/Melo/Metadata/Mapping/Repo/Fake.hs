@@ -3,7 +3,7 @@
 module Melo.Metadata.Mapping.Repo.Fake where
 
 import Control.Concurrent.Classy
-import Control.Exception.Safe
+import Melo.Common.Exception
 import Control.Monad.Base
 import Control.Monad.IO.Class
 import Control.Monad.State

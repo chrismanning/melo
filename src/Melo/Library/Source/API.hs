@@ -4,8 +4,8 @@
 module Melo.Library.Source.API where
 
 import Control.Concurrent.Classy
-import Control.Exception.Safe (displayException, throwIO, toException)
-import Control.Exception.Safe qualified as E
+import Melo.Common.Exception (displayException, throwIO, toException)
+import Melo.Common.Exception qualified as E
 import Control.Foldl qualified as Fold
 import Control.Lens hiding (from, lens, (|>))
 import Control.Monad
@@ -35,6 +35,7 @@ import Hasql.Connection
 import Hasql.CursorTransactionIO.TransactionIO
 import Hasql.Session
 import Hasql.TransactionIO.Sessions
+import Melo.Common.Config
 import Melo.Common.FileSystem
 import Melo.Common.Logging
 import Melo.Common.Metadata
@@ -94,6 +95,7 @@ resolveSources ::
     MonadConc m,
     UuidGenerator m,
     CoverService m,
+    ConfigService m,
     WithOperation o
   ) =>
   SourcesArgs ->
@@ -113,6 +115,7 @@ resolveSourceGroups ::
     MonadConc m,
     UuidGenerator m,
     CoverService m,
+    ConfigService m,
     WithOperation o
   ) =>
   SourceGroupsArgs ->
@@ -172,6 +175,7 @@ resolveCollectionSources ::
     MonadConc m,
     UuidGenerator m,
     CoverService m,
+    ConfigService m,
     WithOperation o
   ) =>
   Ty.CollectionRef ->
@@ -208,6 +212,7 @@ enrichSourceEntity ::
     TrackRepository m,
     UuidGenerator m,
     CoverService m,
+    ConfigService m,
     WithOperation o
   ) =>
   Ty.SourceEntity ->
@@ -371,6 +376,7 @@ resolveCollectionSourceGroups ::
     MonadConc m,
     UuidGenerator m,
     CoverService m,
+    ConfigService m,
     WithOperation o
   ) =>
   Ty.CollectionRef ->
@@ -478,6 +484,7 @@ groupSources' ::
     TrackRepository m,
     UuidGenerator m,
     CoverService m,
+    ConfigService m,
     WithOperation o,
     Monad n
   ) =>
@@ -512,6 +519,7 @@ mkSrcGroup ::
     TrackArtistNameRepository m,
     TrackRepository m,
     CoverService m,
+    ConfigService m,
     WithOperation o,
     Monad n
   ) =>
@@ -595,6 +603,7 @@ streamSourceGroupsQuery collectionWatchState pool httpManager collectionRef grou
 
 runSourceIO collectionWatchState sess pool httpManager =
   runFileSystemIO
+    . runConfigRepositoryPooledIO pool
     . runFileSystemWatcherIO pool collectionWatchState sess
     . runMetadataAggregateIO
     . runSourceRepositoryPooledIO pool
@@ -693,6 +702,7 @@ previewTransformSourceImpl ::
     TrackRepository m,
     UuidGenerator m,
     CoverService m,
+    ConfigService m,
     WithOperation o
   ) =>
   Ty.SourceEntity ->
@@ -727,6 +737,7 @@ transformSourcesImpl ::
     TrackRepository m,
     UuidGenerator m,
     CoverService m,
+    ConfigService m,
     Tr.MonadSourceTransform m
   ) =>
   TransformSourcesArgs ->

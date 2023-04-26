@@ -1,13 +1,14 @@
 module Melo.App where
 
 import Control.Concurrent.Classy
-import Control.Exception.Safe
+import Melo.Common.Exception
 import Control.Monad
 import Data.Default
 import Data.Pool
 import qualified Data.Text as T
 import qualified Hasql.Connection as Hasql
 import Melo.API
+import Melo.Common.Config
 import Melo.Common.FileSystem
 import Melo.Common.FileSystem.Watcher
 import Melo.Common.Logging
@@ -66,6 +67,7 @@ app = do
 initApp :: CollectionWatchState -> Pool Hasql.Connection -> Wreq.Session -> IO ()
 initApp collectionWatchState pool sess =
   runFileSystemIO $
+    runConfigRepositoryPooledIO pool $
     runMetadataAggregateIO $
       runSourceRepositoryPooledIO pool $
         runTagMappingRepositoryPooledIO pool $
@@ -77,6 +79,7 @@ initApp collectionWatchState pool sess =
               runFileSystemWatcherIO pool collectionWatchState sess $
                 runCollectionAggregateIO pool sess collectionWatchState $ do
                   insertDefaultMappings
+                  initMetadataConfig
                   initCollections
 
 initCollections ::

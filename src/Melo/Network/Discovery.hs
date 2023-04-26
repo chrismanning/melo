@@ -3,7 +3,7 @@
 module Melo.Network.Discovery where
 
 import Control.Concurrent
-import Control.Exception.Safe hiding (throwTo)
+import Melo.Common.Exception hiding (throwTo)
 import Control.Monad
 import Control.Monad.Base
 import Control.Monad.IO.Class

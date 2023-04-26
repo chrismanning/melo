@@ -10,6 +10,7 @@ import Data.Typeable
 import Data.Vector (Vector)
 import GHC.Generics hiding (from)
 import GHC.OverloadedLabels ()
+import Melo.Common.Config
 import Melo.Common.FileSystem
 import Melo.Common.Uuid
 import Melo.Library.Release.Repo
@@ -41,6 +42,7 @@ resolveLibrary ::
     TrackRepository m,
     MonadConc m,
     CoverService m,
+    ConfigService m,
     UuidGenerator m
   ) =>
   ResolverQ e m LibraryQuery
@@ -73,6 +75,7 @@ libraryMutation ::
     MonadConc m,
     FileSystem m,
     CoverService m,
+    ConfigService m,
     UuidGenerator m
   ) =>
   ResolverM e (m :: Type -> Type) LibraryMutation

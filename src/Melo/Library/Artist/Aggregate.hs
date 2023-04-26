@@ -4,12 +4,12 @@
 module Melo.Library.Artist.Aggregate where
 
 import Control.Applicative
-import Control.Exception.Safe
 import Control.Lens hiding (from, lens)
 import Control.Monad.State.Strict
 import Data.Maybe
 import Data.Vector (Vector)
 import Data.Vector qualified as V
+import Melo.Common.Exception
 import Melo.Common.Logging
 import Melo.Common.Monad
 import Melo.Database.Repo
@@ -57,27 +57,34 @@ instance
   ( MB.MusicBrainzService m,
     ArtistRepository m,
     ArtistNameRepository m,
+    MonadCatch m,
     Logging m
   ) =>
   ArtistAggregate (ArtistAggregateIOT m)
   where
-  importArtistCredit artistCredit = do
-    mbArtist <- MB.getArtist artistCredit.artist.id <&> fromMaybe artistCredit.artist
-    importMusicBrainzArtist mbArtist >>= \case
-      Just (artist, names) ->
-        case artistCredit.name of
-          Just alias -> do
-            artistName <-
-              insertSingle @ArtistNameEntity
-                NewArtistName
-                  { artist = artist.id,
-                    name = alias
-                  }
-            pure (artistName <|> V.find (\a -> a.name == alias) names)
-          Nothing -> getAlias artist.id artist.name
-      Nothing -> do
-        $(logError) $ "Unable to find MusicBrainz artist with MBID " <> show artistCredit.artist.id.mbid
+  importArtistCredit artistCredit = handleAny
+    ( \e -> do
+        let cause = displayException e
+        $(logErrorV ['cause, 'artistCredit]) "failed to import artistCredit"
         pure Nothing
+    )
+    do
+      mbArtist <- MB.getArtist artistCredit.artist.id <&> fromMaybe artistCredit.artist
+      importMusicBrainzArtist mbArtist >>= \case
+        Just (artist, names) ->
+          case artistCredit.name of
+            Just alias -> do
+              artistName <-
+                insertSingle @ArtistNameEntity
+                  NewArtistName
+                    { artist = artist.id,
+                      name = alias
+                    }
+              pure (artistName <|> V.find (\a -> a.name == alias) names)
+            Nothing -> getAlias artist.id artist.name
+        Nothing -> do
+          $(logError) $ "Unable to find MusicBrainz artist with MBID " <> show artistCredit.artist.id.mbid
+          pure Nothing
   importMusicBrainzArtist mbArtist =
     insertSingle @ArtistEntity (from mbArtist) <<|>> getByMusicBrainzId mbArtist.id >>= \case
       Just artist -> do

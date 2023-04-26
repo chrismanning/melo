@@ -4,8 +4,9 @@
 
 module Melo.Database.Repo where
 
-import Control.Exception.Safe (Exception)
+import Melo.Common.Exception (Exception)
 import Control.Lens
+import Control.Monad
 import Control.Monad.Trans
 import Data.ByteString (ByteString)
 import Data.Kind
@@ -32,8 +33,14 @@ getSingle k = firstOf traverse <$> getByKey (singleton k)
 insertSingle :: forall e m. Repository e m => NewEntity e -> m (Maybe e)
 insertSingle e = firstOf traverse <$> insert (singleton e)
 
+insertSingle' :: forall e m. Repository e m => NewEntity e -> m ()
+insertSingle' e = void $ insert @e (singleton e)
+
 updateSingle :: forall e m. Repository e m => e -> m (Maybe e)
 updateSingle e = firstOf traverse <$> update (singleton e)
+
+updateSingle' :: forall e m. Repository e m => e -> m ()
+updateSingle' e = void $ update @e (singleton e)
 
 instance
   {-# OVERLAPPABLE #-}

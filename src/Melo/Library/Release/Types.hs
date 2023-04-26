@@ -4,6 +4,7 @@ module Melo.Library.Release.Types where
 
 import Control.Lens hiding (from)
 import Hasql.Decoders qualified as Hasql
+import Data.Aeson qualified as A
 import Data.Foldable
 import Data.Hashable
 import Data.Maybe
@@ -73,6 +74,9 @@ data ReleaseKind
   | OtherKind
   deriving (Show, Eq, Ord, Generic, Hashable)
 
+instance A.ToJSON ReleaseKind where
+  toEncoding = A.genericToEncoding A.defaultOptions
+
 instance DBType ReleaseKind where
   typeInformation =
     TypeInformation
@@ -132,6 +136,9 @@ data NewRelease = NewRelease
     kind :: ReleaseKind
   }
   deriving (Generic, Eq, Ord, Show)
+
+instance A.ToJSON NewRelease where
+  toEncoding = A.genericToEncoding A.defaultOptions
 
 fromMusicBrainz :: Maybe MB.ReleaseGroup -> Maybe MB.Release -> Maybe NewRelease
 fromMusicBrainz Nothing Nothing = Nothing

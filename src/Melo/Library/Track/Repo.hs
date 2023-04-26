@@ -4,7 +4,7 @@
 module Melo.Library.Track.Repo where
 
 import Control.Concurrent.Classy
-import Control.Exception.Safe
+import Melo.Common.Exception
 import Control.Lens (firstOf, (^.))
 import Control.Monad.Reader
 import Data.Pool

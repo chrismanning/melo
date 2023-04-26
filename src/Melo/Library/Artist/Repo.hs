@@ -3,7 +3,7 @@
 
 module Melo.Library.Artist.Repo where
 
-import Control.Exception.Safe
+import Melo.Common.Exception
 import Control.Foldl (impurely, vectorM)
 import Control.Lens hiding (each, from)
 import Data.Coerce

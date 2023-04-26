@@ -1,7 +1,7 @@
 module Melo.Library.Source.Cue where
 
 import Control.Applicative
-import Control.Exception.Safe
+import Melo.Common.Exception
 import Control.Lens hiding (from)
 import Control.Monad
 import Control.Monad.IO.Class
@@ -15,6 +15,7 @@ import Data.Time
 import Data.Vector (Vector, fromList)
 import Data.Vector qualified as V
 import GHC.Natural (naturalToInteger)
+import Melo.Common.Config
 import Melo.Common.FileSystem.Watcher
 import Melo.Common.Metadata
 import Melo.Format.Info
@@ -35,6 +36,7 @@ cueId = MetadataId "CUE"
 openCueFile ::
   ( MonadIO m,
     MonadThrow m,
+    ConfigService m,
     FileSystemWatcher m
   ) =>
   FilePath ->

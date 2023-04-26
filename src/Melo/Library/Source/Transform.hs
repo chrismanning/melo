@@ -5,7 +5,7 @@ module Melo.Library.Source.Transform where
 
 import Control.Applicative hiding (many, some)
 import Control.Concurrent.Classy
-import Control.Exception.Safe as E hiding (try)
+import Melo.Common.Exception as E hiding (try)
 import Control.Foldl qualified as Fold
 import Control.Lens hiding (from)
 import Control.Monad.Except
@@ -217,6 +217,9 @@ instance MonadSourceTransform m => MetadataAggregate (TransformPreviewT m) where
   writeMetadataFile mf _p = lift $ do
     $(logDebug) ("Preview writeMetadataFile called" :: String)
     pure $ Right mf
+  chooseMetadata ms = lift $ do
+    $(logDebug) ("Preview chooseMetadata called" :: String)
+    chooseMetadata ms
 
 instance MonadSourceTransform m => MultiTrack (TransformPreviewT m) where
   extractTrackTo cuefile dest =
@@ -260,6 +263,9 @@ instance MonadSourceTransform m => MetadataAggregate (VirtualArtistRepoT m) wher
   writeMetadataFile mf _p = lift $ do
     $(logDebug) ("Preview writeMetadataFile called" :: String)
     pure $ Right mf
+  chooseMetadata ms = lift $ do
+    $(logDebug) ("Preview chooseMetadata called" :: String)
+    chooseMetadata ms
 
 instance
   ( Repo.Repository SourceEntity m,
@@ -607,6 +613,7 @@ instance
     TrackAggregate m,
     TagMappingAggregate m,
     Logging m,
+    MonadCatch m,
     PrimMonad m,
     MB.MusicBrainzService m
   ) =>
@@ -884,10 +891,13 @@ editMetadata ts src = runExceptT do
   else pure src'
   where
   editMetadata' _ src@Source {metadata = Nothing} = pure $ Right src
-  editMetadata' (SetMapping mappingName vs) src@Source {metadata = Just metadata} =
+  editMetadata' (SetMapping mappingName vs) src@Source {metadata = Just metadata'} =
     runExceptT @TransformationError do
       mapping <- getMappingNamed mappingName >>= eitherToError . maybeToRight (UnknownTagMapping mappingName)
-      let newMetadata = metadata & F.tagLens mapping .~ vs
+      let metadata = into @SourceMetadata metadata
+          current  = metadata' ^. F.tagLens mapping in
+        $(logDebugV ['mapping, 'metadata, 'current]) $ "Setting tag to " <> T.pack (show vs)
+      let newMetadata = metadata' & F.tagLens mapping .~ vs
       pure (src & #metadata .~ Just newMetadata)
   editMetadata' (RemoveMappings mappings) src = flatten <$> (forM mappings $ \mapping -> editMetadata' (SetMapping mapping V.empty) src)
     where

@@ -13,7 +13,7 @@ where
 
 import Control.Applicative
 import Control.Concurrent.Classy (MonadConc)
-import Control.Exception.Safe
+import Melo.Common.Exception
 import Control.Foldl (PrimMonad)
 import Control.Monad.Base
 import Control.Monad.Except

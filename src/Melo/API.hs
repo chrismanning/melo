@@ -3,7 +3,6 @@
 module Melo.API where
 
 import Control.Concurrent.Classy
-import Control.Exception.Safe
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Control
 import Data.ByteString.Lazy.Char8
@@ -17,6 +16,8 @@ import Data.UUID (fromASCIIBytes)
 import Data.Vector qualified as V
 import GHC.Generics hiding (from)
 import Hasql.Connection
+import Melo.Common.Config
+import Melo.Common.Exception
 import Melo.Common.FileSystem
 import Melo.Common.FileSystem.Watcher
 import Melo.Common.Logging
@@ -93,6 +94,7 @@ gqlApiIO collectionWatchState pool sess httpManager rq = do
   $(logDebug) $ "graphql request: " <> rq
   let run =
         runFileSystemIO
+          . runConfigRepositoryPooledIO pool
           . runFileSystemWatcherIO pool collectionWatchState sess
           . runMetadataAggregateIO
           . runSourceRepositoryPooledIO pool
@@ -143,6 +145,7 @@ type ResolverE m =
     TrackRepository m,
     TrackArtistNameRepository m,
     CoverService m,
+    ConfigService m,
     FileSystemWatcher m
   )
 
@@ -231,6 +234,7 @@ findCoverImageIO ::
 findCoverImageIO pool sess cws k = withResource pool $ \conn ->
   liftIO $
     runFileSystemIO $ runFileSystemWatcherIO pool cws sess $
+      runConfigRepositoryIO conn $
       runSourceRepositoryIO conn $
         runMetadataAggregateIO do
           getSource k >>= \case

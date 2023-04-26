@@ -3,7 +3,7 @@
 
 module Melo.Database.Repo.IO where
 
-import Control.Exception.Safe
+import Melo.Common.Exception
 import Control.Foldl (PrimMonad)
 import Control.Monad.Base
 import Control.Monad.Conc.Class
@@ -164,7 +164,7 @@ runSelect ::
   Rel8.Query exprs ->
   m (Vector (Rel8.FromExprs exprs))
 runSelect connSrc q = do
-  $(logDebugIO) $ Rel8.showQuery q
+--  $(logDebugIO) $ Rel8.showQuery q
   let session = statement () $ Rel8.selectVector q
   case connSrc of
     Single conn' -> liftIO $ run session conn' >>= either throwIO pure
@@ -177,7 +177,7 @@ selectStream q = streamingQuery (Rel8.select q) ()
 
 runInsert :: MonadIO m => DbConnection -> Rel8.Insert a -> m a
 runInsert connSrc i = do
-  $(logDebugIO) $ Rel8.showInsert i
+--  $(logDebugIO) $ Rel8.showInsert i
   let session = statement () $ Rel8.insert i
   case connSrc of
     Single conn' -> liftIO $ run session conn' >>= either throwIO pure
@@ -185,7 +185,7 @@ runInsert connSrc i = do
 
 runInsert' :: MonadIO m => DbConnection -> Rel8.Insert a -> m (Either QueryError a)
 runInsert' connSrc i = do
-  $(logDebugIO) $ Rel8.showInsert i
+--  $(logDebugIO) $ Rel8.showInsert i
   let session = statement () $ Rel8.insert i
   case connSrc of
     Single conn' -> liftIO $ run session conn'

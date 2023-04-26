@@ -14,7 +14,7 @@ module Melo.Lookup.Covers (
 
 import Conduit
 import Control.Concurrent.STM (TVar, newTVar, readTVar, modifyTVar')
-import Control.Exception.Safe
+import Melo.Common.Exception
 import Control.Lens hiding (from, lens, (<|))
 import Control.Monad.Reader
 import Data.Aeson as A

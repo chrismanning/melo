@@ -18,6 +18,7 @@ import Data.UUID (fromText)
 import Data.Vector (Vector)
 import Data.Vector qualified as V
 import GHC.Generics hiding (from)
+import Melo.Common.Config
 import Melo.Common.FileSystem
 import Melo.Common.Uuid
 import Melo.Database.Repo as Repo
@@ -48,6 +49,7 @@ resolveCollections ::
     TrackRepository m,
     MonadConc m,
     CoverService m,
+    ConfigService m,
     UuidGenerator m
   ) =>
   CollectionsArgs ->
@@ -105,6 +107,7 @@ instance
     MonadConc m,
     UuidGenerator m,
     CoverService m,
+    ConfigService m,
     WithOperation o
   ) =>
   From Ty.CollectionEntity (Collection (Resolver o e m))
@@ -168,6 +171,7 @@ collectionMutation ::
     MonadConc m,
     CollectionAggregate m,
     CoverService m,
+    ConfigService m,
     UuidGenerator m
   ) =>
   ResolverM e (m :: Type -> Type) CollectionMutation
@@ -200,6 +204,7 @@ addCollectionImpl ::
     TrackRepository m,
     FileSystem m,
     CoverService m,
+    ConfigService m,
     UuidGenerator m
   ) =>
   AddCollectionArgs ->

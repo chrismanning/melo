@@ -4,7 +4,6 @@
 module Melo.Library.Track.Aggregate where
 
 import Control.Applicative
-import Control.Exception.Safe
 import Control.Lens hiding (from, lens)
 import Data.Attoparsec.Text
 import Data.Foldable.Extra
@@ -15,17 +14,18 @@ import Data.Text qualified as T
 import Data.Vector (Vector)
 import Data.Vector qualified as V
 import GHC.Generics hiding (from)
+import Melo.Common.Exception
 import Melo.Common.Logging
 import Melo.Common.Monad
 import Melo.Common.Uri
 import Melo.Database.Repo
 import Melo.Format (tagLens)
 import Melo.Format.Mapping qualified as M
-import Melo.Library.Release.Types
 import Melo.Library.Artist.Aggregate
 import Melo.Library.Artist.Name.Types
 import Melo.Library.Artist.Repo as Artist
 import Melo.Library.Artist.Types
+import Melo.Library.Release.Types
 import Melo.Library.Source.Types
 import Melo.Library.Track.ArtistName.Repo (TrackArtistNameRepository)
 import Melo.Library.Track.ArtistName.Repo qualified as TrackArtist
@@ -88,7 +88,7 @@ instance
       importSourceTrack src = do
         $(logDebug) $ "Importing track from source " <> show src.ref
         Track.getBySrcRef src.ref >>= \case
-          Just track -> updateSingle (track { release_id = release.ref })
+          Just track -> updateSingle (track {release_id = release.ref})
           Nothing -> insertSingle (mkNewTrack release.ref Nothing src)
       linkTrackArtists :: Source -> TrackEntity -> m ()
       linkTrackArtists src track = do
@@ -105,8 +105,9 @@ instance
             unlessM (importArtistsByRecording src track) do
               let mbArtistIds = MB.MusicBrainzId <$> fromMaybe V.empty (src.metadata ^? _Just . tagLens MB.artistIdTag)
               importArtistsByMetadata src track trackArtists mbArtistIds
-      importArtistsByMetadata src _track trackArtists mbArtistIds | V.length mbArtistIds /= V.length trackArtists =
-        $(logWarn) $ "Invalid track artist MusicBrainz info found for source " <> show src
+      importArtistsByMetadata src _track trackArtists mbArtistIds
+        | V.length mbArtistIds /= V.length trackArtists =
+            $(logWarn) $ "Invalid track artist MusicBrainz info found for source " <> show src
       importArtistsByMetadata _src track trackArtists mbArtistIds =
         V.forM_ mbArtistIds $ \mbid ->
           MB.getArtist mbid >>= \case
@@ -149,7 +150,7 @@ mkNewTrack releaseRef mbid src@Source {metadata = Nothing} =
       releaseId = releaseRef,
       musicBrainzId = mbid
     }
-mkNewTrack releaseRef mbid src@Source{metadata = Just m} =
+mkNewTrack releaseRef mbid src@Source {metadata = Just m} =
   NewTrack
     { title = trackTitle,
       trackNumber = fromMaybe 0 trackNumber,

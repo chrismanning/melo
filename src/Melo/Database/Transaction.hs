@@ -2,7 +2,7 @@
 
 module Melo.Database.Transaction where
 
-import Control.Exception.Safe as E
+import Melo.Common.Exception as E
 import Control.Monad.Reader
 import Data.Pool as P
 import Hasql.Connection

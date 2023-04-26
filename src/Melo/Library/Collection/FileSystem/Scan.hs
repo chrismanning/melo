@@ -19,7 +19,6 @@ import Control.Exception.Safe
 import Control.Foldl (PrimMonad)
 import Control.Monad
 import Control.Monad.Base
-import Control.Monad.Extra
 import Control.Monad.Par.Combinator
 import Control.Monad.Par.IO
 import Control.Monad.Reader
@@ -28,7 +27,6 @@ import Data.ByteString.Char8 (ByteString, isPrefixOf, pack)
 import Data.Functor ((<&>))
 import Data.HashMap.Strict qualified as H
 import Data.List.NonEmpty qualified as NE
-import Data.Map.Strict qualified as M
 import Data.Maybe
 import Data.Pool
 import Data.Sequence (Seq (..))
@@ -37,12 +35,13 @@ import Data.Text qualified as T
 import Data.Time.LocalTime
 import Data.Vector qualified as V
 import Hasql.Connection
+import Melo.Common.Config
+import Melo.Common.Exception
 import Melo.Common.FileSystem.Watcher
 import Melo.Common.Logging
 import Melo.Common.Metadata
 import Melo.Common.Uri
 import Melo.Database.Repo qualified as Repo
-import Melo.Database.Transaction
 import Melo.Format.Error qualified as F
 import Melo.Format.Metadata (MetadataFile (..), fileFactoryByExt)
 import Melo.Library.Release.Aggregate
@@ -120,35 +119,29 @@ scanPathIO pool sess cws scanType ref p' =
               pure 0
         else
           if isFile
-            then
-              liftIO $
-                ifM
-                  (shouldImport [p])
-                  (handleScanErrors $ importTransaction [p])
-                  (pure 0)
+            then liftIO $ handleScanErrors $ importTransaction [p]
             else pure 0
     $(logInfoIO) $ show srcs <> " sources imported from path " <> show p
     pure ()
   where
     handleScanErrors :: (MonadIO m) => IO Int -> m Int
-    handleScanErrors = liftIO . handle (logShow >=> \_ -> pure 0)
+    handleScanErrors = liftIO . handleAny (logShow >=> \_ -> pure 0)
     importTransaction :: [FilePath] -> IO Int
     importTransaction files = do
-      ifM
-        (shouldImport files)
-        ( do
-            $(logDebugIO) $ "Importing " <> show files
-            mfs <- catMaybes <$> mapM openMetadataFile'' files
-            $(logDebugIO) $ "Opened " <> show (mfs <&> \mf -> mf.filePath)
-            srcs <-
-              runImport pool sess $
-                importSources $
-                  V.fromList (FileSource ref <$> mfs)
-            pure (V.length srcs)
-        )
-        (pure 0)
+      filterImports files >>= \case
+        [] -> pure 0
+        files -> do
+          $(logDebugIO) $ T.pack $ "Importing " <> show files
+          mfs <- catMaybes <$> mapM openMetadataFile'' files
+          $(logDebugIO) $ T.pack $ "Opened " <> show (mfs <&> \mf -> mf.filePath)
+          srcs <-
+            runImport pool sess $
+              importSources $
+                V.fromList (FileSource ref <$> mfs)
+          pure (V.length srcs)
     runImport pool sess =
-      runSourceRepositoryPooledIO pool
+        runConfigRepositoryPooledIO pool
+        . runSourceRepositoryPooledIO pool
         . runArtistRepositoryPooledIO pool
         . runArtistNameRepositoryPooledIO pool
         . runReleaseArtistNameRepositoryPooledIO pool
@@ -166,6 +159,7 @@ scanPathIO pool sess cws scanType ref p' =
         . runReleaseAggregateIOT
         . runSourceAggregateIOT
     openMetadataFile'' p =
+      runConfigRepositoryPooledIO pool $
       runFileSystemWatcherIO pool cws sess $
         runMetadataAggregateIO $
           openMetadataFileByExt p >>= \case
@@ -182,31 +176,27 @@ scanPathIO pool sess cws scanType ref p' =
               pure Nothing
     logShow :: SomeException -> IO ()
     logShow e = $(logErrorIO) $ "error during scan: " <> displayException e
-    shouldImport :: [FilePath] -> IO Bool
-    shouldImport _ | scanType == ScanAll = pure True
-    shouldImport files = handle (logShow >=> \_ -> pure False) do
+    filterImports :: [FilePath] -> IO [FilePath]
+    filterImports files | scanType == ScanAll = pure files
+    filterImports files = do
       tz <- liftIO getCurrentTimeZone
       ss <- sourceMap files
-      updated <- forM files $ \p ->
-        case M.lookup (T.pack $ show $ fileUri p) ss of
+      imports <- catMaybes <$> forM files \p ->
+        case H.lookup (T.pack $ show $ fileUri p) ss of
           Just s -> do
             mtime <- utcToLocalTime tz <$> Dir.getModificationTime p
             if mtime > s.scanned
-              then do
-                $(logInfoIO) $ "Importing updated path " <> show p
-                pure True
-              else pure False
+              then pure $ Just p
+              else pure Nothing
           Nothing ->
             if isJust $ fileFactoryByExt p
-              then do
-                $(logInfoIO) $ "Importing new path " <> show p
-                pure True
-              else pure False
-      pure $ any (== True) updated
-    sourceMap :: [FilePath] -> IO (M.Map T.Text SourceEntity)
+              then pure $ Just p
+              else pure Nothing
+      pure imports
+    sourceMap :: [FilePath] -> IO (H.HashMap T.Text SourceEntity)
     sourceMap files = runSourceRepositoryPooledIO pool do
       ss <- V.toList <$> getByUri (V.fromList $ fileUri <$> files)
-      pure $ M.fromList $ (\s -> (s.source_uri, s)) <$> ss
+      pure $ H.fromList $ (\s -> (s.source_uri, s)) <$> ss
 
 data CollectionWatchState = CollectionWatchState
   { stoppers :: STM.TVar (H.HashMap CollectionRef FS.StopListening),
@@ -292,7 +282,6 @@ instance
 
 handleEvent ::
   ( Logging m,
-    MonadMask m,
     MonadIO m
   ) =>
   Pool Connection ->
@@ -319,7 +308,7 @@ handleEvent pool sess cws ref locks event = unless (isLocked (pack event.eventPa
     FS.WatchedDirectoryRemoved p _ _ -> do
       $(logInfo) $ "watched directory removed " <> p
       let uri = fileUri p
-      withTransaction pool runSourceRepositoryIO do
+      runSourceRepositoryPooledIO pool do
         refs <- getKeysByUriPrefix uri
         void $ Repo.delete @SourceEntity refs
     FS.Removed p _ isDir -> do
@@ -327,12 +316,12 @@ handleEvent pool sess cws ref locks event = unless (isLocked (pack event.eventPa
       if isDir == FS.IsDirectory
         then do
           $(logInfo) $ "directory removed " <> p
-          withTransaction pool runSourceRepositoryIO do
+          runSourceRepositoryPooledIO pool do
             refs <- getKeysByUriPrefix uri
             void $ Repo.delete @SourceEntity refs
         else do
           $(logInfo) $ "file removed " <> p
-          withTransaction pool runSourceRepositoryIO do
+          runSourceRepositoryPooledIO pool do
             refs <- getKeysByUri (V.singleton uri)
             void $ Repo.delete @SourceEntity refs
     FS.Unknown p _ _ s ->

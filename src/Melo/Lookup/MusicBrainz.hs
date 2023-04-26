@@ -44,7 +44,7 @@ where
 
 import Control.Concurrent.Classy
 import Control.Concurrent.TokenLimiter
-import Control.Exception.Safe
+import Melo.Common.Exception
 import Control.Lens hiding (from, lens)
 import Control.Monad.Reader
 import Control.Monad.State.Strict
@@ -117,6 +117,10 @@ instance Ord Artist where
 instance FromJSON Artist where
   parseJSON = genericParseJSON mbAesonOptions
 
+instance ToJSON Artist where
+  toJSON = genericToJSON mbAesonOptions
+  toEncoding = genericToEncoding mbAesonOptions
+
 data ArtistAlias = ArtistAlias
   { name :: Text,
     sortName :: Maybe Text,
@@ -131,6 +135,10 @@ instance FromJSON ArtistAlias where
       <*> v .:? "sort-name"
       <*> v .:? "type"
 
+instance ToJSON ArtistAlias where
+  toJSON = genericToJSON mbAesonOptions
+  toEncoding = genericToEncoding mbAesonOptions
+
 data Area = Area
   { iso3166_2codes :: Maybe (Vector CountrySubdivision),
     iso3166_1codes :: Maybe (Vector Text)
@@ -143,11 +151,15 @@ instance FromJSON Area where
       <$> v .:? "iso-3166-2-codes"
       <*> v .:? "iso-3166-1-codes"
 
+instance ToJSON Area where
+  toJSON Area {..} = A.object ["iso-3166-2-codes" A..= iso3166_2codes, "iso-3166-1-codes" A..= iso3166_1codes]
+  toEncoding Area {..} = A.pairs ("iso-3166-2-codes" A..= iso3166_2codes <> "iso-3166-1-codes" A..= iso3166_1codes)
+
 data CountrySubdivision = CountrySubdivision
   { country :: Text,
     subdivision :: Text
   }
-  deriving (Show, Eq)
+  deriving (Show, Generic, Eq)
 
 instance FromJSON CountrySubdivision where
   parseJSON (String s) = case T.split (== '-') s of
@@ -160,6 +172,10 @@ instance FromJSON CountrySubdivision where
     prependFailure
       "parsing CountrySubdivision failed, "
       (typeMismatch "String" invalid)
+
+instance ToJSON CountrySubdivision where
+  toJSON = genericToJSON mbAesonOptions
+  toEncoding = genericToEncoding mbAesonOptions
 
 data ReleaseSearch = ReleaseSearch
   { albumArtists :: Maybe [Text],
@@ -200,6 +216,10 @@ data ArtistCredit = ArtistCredit
 
 instance FromJSON ArtistCredit where
   parseJSON = genericParseJSON mbAesonOptions
+
+instance ToJSON ArtistCredit where
+  toJSON = genericToJSON mbAesonOptions
+  toEncoding = genericToEncoding mbAesonOptions
 
 data LabelInfo = LabelInfo
   { catalogNumber :: Maybe Text,

@@ -1,10 +1,9 @@
-{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnboxedTuples #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Library.Collection.Aggregate where
 
 import Control.Concurrent.Classy
-import Control.Exception.Safe
 import Control.Foldl (PrimMonad)
 import Control.Lens (firstOf)
 import Control.Monad
@@ -13,9 +12,10 @@ import Control.Monad.Par.IO
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
 import Data.Pool
-import qualified Data.Text as T
+import Data.Text qualified as T
 import Data.Vector (Vector, singleton)
 import Hasql.Connection
+import Melo.Common.Exception
 import Melo.Common.FileSystem.Watcher
 import Melo.Common.Logging
 import Melo.Common.Uri

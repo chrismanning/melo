@@ -4,7 +4,7 @@
 module Melo.Library.Collection.Repo where
 
 import Control.Concurrent.Classy
-import Control.Exception.Safe
+import Melo.Common.Exception
 import Control.Foldl (PrimMonad)
 import Control.Monad
 import Control.Monad.Base

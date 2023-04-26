@@ -2,7 +2,6 @@
 
 module Melo.Database.Repo.Fake where
 
-import Control.Exception.Safe
 import Control.Lens (iso, mapping)
 import Control.Monad.Base
 import Control.Monad.Conc.Class
@@ -16,6 +15,7 @@ import qualified Data.HashMap.Strict as H
 import Data.Maybe
 import qualified Data.Vector as V
 import Data.Vector.Lens
+import Melo.Common.Exception
 import Melo.Database.Repo
 import Witch
 

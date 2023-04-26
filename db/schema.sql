@@ -98,6 +98,16 @@ CREATE TABLE melo.collection (
 
 
 --
+-- Name: config; Type: TABLE; Schema: melo; Owner: -
+--
+
+CREATE TABLE melo.config (
+    key text NOT NULL,
+    value jsonb NOT NULL
+);
+
+
+--
 -- Name: genre; Type: TABLE; Schema: melo; Owner: -
 --
 
@@ -278,6 +288,14 @@ ALTER TABLE ONLY melo.attachment
 
 ALTER TABLE ONLY melo.collection
     ADD CONSTRAINT collection_pk PRIMARY KEY (id);
+
+
+--
+-- Name: config config_pk; Type: CONSTRAINT; Schema: melo; Owner: -
+--
+
+ALTER TABLE ONLY melo.config
+    ADD CONSTRAINT config_pk PRIMARY KEY (key);
 
 
 --
@@ -697,4 +715,5 @@ INSERT INTO melo.schema_migrations (version) VALUES
     ('20221208162831'),
     ('20221209154929'),
     ('20221211232034'),
-    ('20230219160659');
+    ('20230219160659'),
+    ('20230422225419');

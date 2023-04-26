@@ -4,7 +4,7 @@ module Melo.Library.Source.TransformSpec where
 
 import Control.Concurrent.Classy
 import Control.Exception (evaluate)
-import Control.Exception.Safe
+import Melo.Common.Exception
 import Control.Lens hiding (from)
 import Control.Monad
 import Control.Monad.Base

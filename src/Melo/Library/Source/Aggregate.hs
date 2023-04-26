@@ -4,41 +4,47 @@
 module Melo.Library.Source.Aggregate where
 
 import Control.Applicative hiding (empty)
-import Control.Exception.Safe
-import Control.Foldl (PrimMonad)
+import Control.Foldl (PrimMonad, impurely, vectorM)
 import Control.Lens hiding (from)
 import Control.Monad
-import Control.Monad.Trans.Except
 import Control.Monad.Base
 import Control.Monad.Conc.Class
 import Control.Monad.Trans
 import Control.Monad.Trans.Control
+import Control.Monad.Trans.Except
 import Control.Monad.Trans.Identity
 import Data.Char
 import Data.Either.Combinators (mapLeft)
 import Data.Foldable
+import Data.Range qualified as R
 import Data.Text qualified as T
+import Data.Time.LocalTime
 import Data.Vector (Vector, empty, singleton)
 import Data.Vector qualified as V
+import Melo.Common.Config
+import Melo.Common.Exception
 import Melo.Common.FileSystem
 import Melo.Common.Logging
 import Melo.Common.Metadata
 import Melo.Common.Uri
 import Melo.Common.Vector
 import Melo.Database.Repo as Repo
-import Melo.Format.Metadata (Metadata (..), MetadataFile (..))
+import Melo.Format.Metadata (Metadata (..), MetadataFile (..), PictureType(..))
+import Melo.Format.Info
 import Melo.Library.Release.Aggregate
 import Melo.Library.Source.Repo
 import Melo.Library.Source.Types
+import Streaming.Prelude qualified as S
 import System.FilePath as P
+
 import Witch
 
 class Monad m => SourceAggregate m where
   importSources :: Vector NewImportSource -> m (Vector Source)
   updateSource :: Source -> m (Either SourceError Source)
 
-data SourceError =
-    ImportSourceError (Maybe SomeException)
+data SourceError
+  = ImportSourceError (Maybe SomeException)
   | UpdateSourceError (Maybe SomeException)
   deriving (Show)
 
@@ -77,7 +83,9 @@ instance
   ( SourceRepository m,
     ReleaseAggregate m,
     MetadataAggregate m,
+    ConfigService m,
     MonadConc m,
+    PrimMonad m,
     Logging m
   ) =>
   SourceAggregate (SourceAggregateIOT m)
@@ -85,9 +93,11 @@ instance
   importSources ss | null ss = pure empty
   importSources ss = do
     $(logDebug) $ "Importing " <> show (V.length ss) <> " sources"
-    let metadataSources = rights $ fmap tryFrom ss
+    metadataSources <- S.each ss & S.mapMaybeM transformImportSource & impurely S.foldM_ vectorM
     $(logDebug) $ "Importing " <> show (V.length metadataSources) <> " metadata sources"
     srcs <- rights . fmap tryFrom <$> insert @SourceEntity (fmap (from @MetadataImportSource) metadataSources)
+    let sources = fmap (show . (.ref)) srcs
+    $(logDebugV ['sources]) ("Imported sources" :: T.Text)
     -- TODO publish sources imported event
     fork $ void $ importReleases srcs
     pure srcs
@@ -102,9 +112,13 @@ instance
           Just path -> do
             readMetadataFile s.kind path >>= \case
               Right mf -> do
-                -- TODO convert metadata to cover other existing types
+                config <- lift $ getConfigDefault metadataConfigKey
                 let mf' = case s.metadata of
-                      Just m -> mf & #metadata . at m.formatId .~ Just m
+                      Just m ->
+                        if config.removeOtherTagTypes
+                          then mf & #metadata .~  ( mempty & at m.formatId .~ Just m )
+                          -- TODO convert metadata to cover other existing types
+                          else mf & #metadata . at m.formatId .~ Just m
                       Nothing -> mf
                 writeMetadataFile mf' mf'.filePath >>= \case
                   Left e -> do
@@ -115,9 +129,33 @@ instance
                 $(logWarn) $ "Failed to read metadata file " <> displayException e
                 throwE (UpdateSourceError $ Just $ SomeException e)
       updateDB :: ExceptT SourceError (SourceAggregateIOT m) Source
-      updateDB = updateSingle @SourceEntity (from s) >>= \case
-        Just s' -> ExceptT $ pure $ mapLeft (UpdateSourceError . Just . SomeException) $ tryFrom s'
-        Nothing -> throwE $ UpdateSourceError Nothing
+      updateDB =
+        updateSingle @SourceEntity (from s) >>= \case
+          Just s' -> ExceptT $ pure $ mapLeft (UpdateSourceError . Just . SomeException) $ tryFrom s'
+          Nothing -> throwE $ UpdateSourceError Nothing
+
+transformImportSource :: MetadataAggregate m => NewImportSource -> m (Maybe MetadataImportSource)
+transformImportSource s = do
+  metadata <- chooseMetadata (getAllMetadata s)
+  pure case parseURI (show $ getSourceUri s) of
+    Nothing -> Nothing
+    Just src -> Just MetadataImportSource
+      { audioInfo = getInfo s,
+        metadata,
+        src,
+        metadataFileId = getMetadataFileId s,
+        idx = getIdx s,
+        range = getRange s,
+        collection = getCollectionRef s,
+        cover = fmap (const FrontCover) $ lookup FrontCover (getPictures s)
+      }
+  where
+    getIdx (CueFileImportSource _ CueFileSource {idx}) = Just idx
+    getIdx _ = Nothing
+    getRange (CueFileImportSource _ CueFileSource {range}) = Just range
+    getRange (FileSource _ mf) = TimeRange . R.ubi . calendarTimeTime <$> audioLength mf.audioInfo
+    getPictures (CueFileImportSource _ cue) = cue.pictures
+    getPictures (FileSource _ mf) = mf.pictures
 
 getAllSources :: SourceRepository m => m (Vector Source)
 getAllSources = rights <$> fmap tryFrom <$> Repo.getAll @SourceEntity
