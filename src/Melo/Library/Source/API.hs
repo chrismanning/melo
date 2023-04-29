@@ -21,7 +21,6 @@ import Data.Kind
 import Data.Map.Strict qualified as Map
 import Data.Maybe
 import Data.Morpheus
-import Data.Morpheus.Kind
 import Data.Morpheus.Types
 import Data.Pool
 import Data.Text (Text)
@@ -655,6 +654,7 @@ data Transform
   | EditMetadata {metadataTransform :: MetadataTransformation}
   | MusicBrainzLookup {options :: Maybe Int}
   | CopyCoverImage {url :: Text}
+  | ConvertMetadataFormat {targetId :: Text}
   deriving (Show, Generic, GQLType)
 
 data MetadataTransformation
@@ -741,6 +741,7 @@ instance TryFrom Transform Tr.TransformAction where
     EditMetadata mt -> Right $ Tr.EditMetadata (V.singleton (from mt))
     MusicBrainzLookup _ -> Right Tr.MusicBrainzLookup
     CopyCoverImage url -> maybeToRight (TryFromException t Nothing) $ Tr.CopyCoverImage <$> parseURI (T.unpack url)
+    ConvertMetadataFormat mid -> Right $ Tr.ConvertMetadataFormat (F.MetadataId mid)
     where
       parseMovePattern' pat = mapLeft (TryFromException t <$> fmap toException) $ Tr.parseMovePattern pat
       parseRef Nothing = Right Nothing

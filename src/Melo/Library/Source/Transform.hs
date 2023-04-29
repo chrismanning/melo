@@ -112,6 +112,7 @@ evalTransformAction (SplitMultiTrackFile ref patterns) src = mapLeft from <$> ex
 evalTransformAction (EditMetadata metadataTransformations) src = mapLeft from <$> editMetadata metadataTransformations src
 evalTransformAction MusicBrainzLookup src = musicBrainzLookup src
 evalTransformAction (CopyCoverImage coverUrl) src = copyCoverImage coverUrl src
+evalTransformAction (ConvertMetadataFormat mid) src = convertMetadataFormat mid src
 evalTransformAction t _ = pure $ Left (UnsupportedTransform (show t))
 
 type MonadSourceTransform m =
@@ -663,6 +664,7 @@ data TransformationError
   | MultiTrackError MultiTrackError
   | SourceConversionError (TryFromException SourceEntity Source)
   | UnsupportedTransform String
+  | MetadataConversionError F.MetadataId F.MetadataId
   | UnknownLength
   deriving (Show)
 
@@ -967,3 +969,11 @@ copyCoverImage imageUrl src =
       Covers.copyCoverToDir imageUrl (takeDirectory srcPath)
       pure (Right src)
     Nothing -> pure (Right src)
+
+convertMetadataFormat :: MonadSourceTransform m => F.MetadataId -> Source -> m (Either TransformationError Source)
+convertMetadataFormat mid src = do
+  !mappings <- V.fromList . Map.elems <$> getAllMappings
+
+  case flip (F.convert' mid) mappings =<< src.metadata of
+    Just metadata -> pure $ Right (src & #metadata ?~ metadata)
+    Nothing -> pure $ Left $ MetadataConversionError (fromMaybe nullMetadata $ src.metadata <&> (.formatId)) mid

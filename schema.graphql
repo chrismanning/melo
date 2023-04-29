@@ -30,6 +30,10 @@ input ContainsExpr {
   contains: String!
 }
 
+input ConvertMetadataFormat {
+  targetId: String!
+}
+
 input CopyCoverImage {
   url: String!
 }
@@ -222,6 +226,7 @@ input Transform {
   EditMetadata: EditMetadata
   MusicBrainzLookup: MusicBrainzLookup
   CopyCoverImage: CopyCoverImage
+  ConvertMetadataFormat: ConvertMetadataFormat
 }
 
 enum Unit {
