@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Library.Source.API where
@@ -278,41 +279,31 @@ newtype CollectionSourcesArgs = CollectionSourcesArgs
   { where' :: Maybe SourceWhere
   }
   deriving (Generic)
-
-instance GQLType CollectionSourcesArgs where
-  type KIND CollectionSourcesArgs = INPUT
+  deriving anyclass (GQLType)
 
 newtype SourcesArgs = SourceArgs
   { where' :: Maybe SourceWhere
   }
   deriving (Generic)
-
-instance GQLType SourcesArgs where
-  type KIND SourcesArgs = INPUT
+  deriving anyclass (GQLType)
 
 data SourceWhere = SourceWhere
   { id :: Maybe Where,
     sourceUri :: Maybe Where
   }
-  deriving (Generic)
-
-instance GQLType SourceWhere where
-  type KIND SourceWhere = INPUT
+  deriving (Generic, GQLType)
 
 data SourceGroupsArgs = SourceGroupsArgs
   { groupByMappings :: Vector Text,
     where' :: Maybe SourceWhere
   }
-  deriving (Generic)
-
-instance GQLType SourceGroupsArgs
+  deriving (Generic, GQLType)
 
 newtype CollectionSourceGroupsArgs = CollectionSourceGroupsArgs
   { groupByMappings :: Vector Text
   }
   deriving (Generic)
-
-instance GQLType CollectionSourceGroupsArgs
+  deriving anyclass (GQLType)
 
 data Metadata m = Metadata
   { tags :: Vector Ty.TagPair,
@@ -330,16 +321,12 @@ data MappedTag = MappedTag
   { mappingName :: Text,
     values :: Vector Text
   }
-  deriving (Show, Eq, Ord, Generic)
-
-instance GQLType MappedTag
+  deriving (Show, Eq, Ord, Generic, GQLType)
 
 data MappedTagsArgs = MappedTagsArgs
   { mappings :: Vector Text
   }
-  deriving (Generic)
-
-instance GQLType MappedTagsArgs
+  deriving (Generic, GQLType)
 
 instance (TagMappingAggregate m, WithOperation o) => From Ty.SourceEntity (Metadata (Resolver o e m)) where
   from s =
@@ -646,10 +633,7 @@ type TransformSource m = TransformSourceArgs -> m (UpdateSourceResult m)
 data TransformSourceArgs = TransformSourceArgs
   { transformations :: Vector Transform
   }
-  deriving (Generic)
-
-instance GQLType TransformSourceArgs where
-  type KIND TransformSourceArgs = INPUT
+  deriving (Generic, GQLType)
 
 type TransformSources m = TransformSourcesArgs -> m (UpdatedSources m)
 
@@ -657,10 +641,7 @@ data TransformSourcesArgs = TransformSourcesArgs
   { transformations :: Vector Transform,
     where' :: Maybe SourceWhere
   }
-  deriving (Generic)
-
-instance GQLType TransformSourcesArgs where
-  type KIND TransformSourcesArgs = INPUT
+  deriving (Generic, GQLType)
 
 data Transform
   = Move
@@ -674,10 +655,7 @@ data Transform
   | EditMetadata {metadataTransform :: MetadataTransformation}
   | MusicBrainzLookup {options :: Maybe Int}
   | CopyCoverImage {url :: Text}
-  deriving (Show, Generic)
-
-instance GQLType Transform where
-  type KIND Transform = INPUT
+  deriving (Show, Generic, GQLType)
 
 data MetadataTransformation
   = SetMapping {mapping :: Text, values :: Vector Text}
@@ -687,10 +665,7 @@ data MetadataTransformation
   | RemoveTag {key :: Text, value :: Text}
   | RemoveTags {key :: Text}
   | RemoveAll
-  deriving (Show, Generic)
-
-instance GQLType MetadataTransformation where
-  type KIND MetadataTransformation = INPUT
+  deriving (Show, Generic, GQLType)
 
 previewTransformSourceImpl ::
   forall m e o.

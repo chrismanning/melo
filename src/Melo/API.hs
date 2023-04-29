@@ -4,7 +4,6 @@ module Melo.API where
 
 import Control.Concurrent.Classy
 import Control.Monad.IO.Class
-import Control.Monad.Trans.Control
 import Data.ByteString.Lazy.Char8
 import Data.Maybe
 import Data.Morpheus
@@ -150,7 +149,7 @@ type ResolverE m =
   )
 
 api ::
-  (MonadIO m, MonadBaseControl IO m, Logging m, PrimMonad m) =>
+  (MonadIO m, Logging m, PrimMonad m) =>
   CollectionWatchState ->
   Pool Connection ->
   Wreq.Session ->
@@ -169,7 +168,7 @@ api collectionWatchState pool sess httpManager = do
     case fromASCIIBytes srcId of
       Nothing -> status badRequest400
       Just uuid -> do
-        getSourceFilePathIO pool (SourceRef uuid) >>= \case
+        liftIO (getSourceFilePathIO pool (SourceRef uuid)) >>= \case
           Nothing -> do
             $(logWarnIO) $ "No local file found for source " <> show uuid
             status notFound404
@@ -183,7 +182,7 @@ api collectionWatchState pool sess httpManager = do
     case fromASCIIBytes srcId of
       Nothing -> status badRequest400
       Just uuid -> do
-        findCoverImageIO pool sess collectionWatchState (SourceRef uuid) >>= \case
+        liftIO (findCoverImageIO pool sess collectionWatchState (SourceRef uuid)) >>= \case
           Nothing -> do
             $(logWarnIO) $ "No cover image found for source " <> srcId
             status notFound404
@@ -216,45 +215,42 @@ instance (PrimMonad m, ScottyError a) => PrimMonad (ActionT a m) where
   type PrimState (ActionT a m) = PrimState m
   primitive = lift . primitive
 
-getSourceFilePathIO :: (MonadIO m, MonadBaseControl IO m) => Pool Connection -> SourceRef -> m (Maybe FilePath)
+getSourceFilePathIO :: Pool Connection -> SourceRef -> IO (Maybe FilePath)
 getSourceFilePathIO pool k = withResource pool $ \conn ->
-  liftIO $
-    runFileSystemIO $
-      runSourceRepositoryIO conn $
-        getSourceFilePath k
+  runFileSystemIO $
+    runSourceRepositoryIO conn $
+      getSourceFilePath k
 
 data CoverImage = EmbeddedImage EmbeddedPicture | ExternalImageFile FilePath
 
 findCoverImageIO ::
-  (MonadIO m, MonadBaseControl IO m) =>
-    Pool Connection ->
-    Wreq.Session ->
-    CollectionWatchState ->
-    SourceRef -> m (Maybe CoverImage)
+  Pool Connection ->
+  Wreq.Session ->
+  CollectionWatchState ->
+  SourceRef -> IO (Maybe CoverImage)
 findCoverImageIO pool sess cws k = withResource pool $ \conn ->
-  liftIO $
-    runFileSystemIO $ runFileSystemWatcherIO pool cws sess $
-      runConfigRepositoryIO conn $
-      runSourceRepositoryIO conn $
-        runMetadataAggregateIO do
-          getSource k >>= \case
+  runFileSystemIO $ runFileSystemWatcherIO pool cws sess $
+    runConfigRepositoryIO conn $
+    runSourceRepositoryIO conn $
+      runMetadataAggregateIO do
+        getSource k >>= \case
+          Nothing -> do
+            $(logWarn) $ "No source found for ref " <> show k
+            pure Nothing
+          Just src -> case uriToFilePath src.source of
             Nothing -> do
-              $(logWarn) $ "No source found for ref " <> show k
+              $(logWarn) $ "No local file found for source " <> show k
               pure Nothing
-            Just src -> case uriToFilePath src.source of
-              Nothing -> do
-                $(logWarn) $ "No local file found for source " <> show k
-                pure Nothing
-              Just path -> do
-                $(logInfo) $ "Locating cover image for source " <> show k <> " at path " <> show path
-                let dir = takeDirectory path
-                findCoverImage dir >>= \case
-                  Just imgPath -> pure $ Just $ ExternalImageFile imgPath
-                  Nothing -> do
-                    openMetadataFile path >>= \case
-                      Left e -> do
-                        $(logWarn) $ "Could not look for embedded image in file " <> show path <> ": " <> displayException e
-                        pure Nothing
-                      Right mf -> do
-                        let coverKey = fromMaybe FrontCover src.cover
-                        pure $ EmbeddedImage <$> lookup coverKey mf.pictures
+            Just path -> do
+              $(logInfo) $ "Locating cover image for source " <> show k <> " at path " <> show path
+              let dir = takeDirectory path
+              findCoverImage dir >>= \case
+                Just imgPath -> pure $ Just $ ExternalImageFile imgPath
+                Nothing -> do
+                  openMetadataFile path >>= \case
+                    Left e -> do
+                      $(logWarn) $ "Could not look for embedded image in file " <> show path <> ": " <> displayException e
+                      pure Nothing
+                    Right mf -> do
+                      let coverKey = fromMaybe FrontCover src.cover
+                      pure $ EmbeddedImage <$> lookup coverKey mf.pictures

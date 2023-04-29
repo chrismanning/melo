@@ -53,7 +53,6 @@ library:
   - filepath
   - foldl
   - fsnotify
-  - generic-aeson
   - generic-deriving
   - generic-lens
   - hashable
@@ -85,7 +84,6 @@ library:
   - morpheus-graphql-server
   - morpheus-graphql-subscriptions
   - mtl
-  - multistate
   - natural-sort
   - network
   - network-bsd

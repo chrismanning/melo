@@ -1,6 +1,7 @@
+{-# LANGUAGE DeriveAnyClass #-}
+
 module Melo.GraphQL.Where where
 
-import Data.Morpheus.Kind
 import Data.Morpheus.Types
 import Data.Text
 import GHC.Generics
@@ -11,47 +12,34 @@ data Where
   | WhereContainsExpr ContainsExpr
   | WhereInExpr InExpr
   | WhereStartsWithExpr StartsWithExpr
-  deriving (Generic)
-
-instance GQLType Where where
-  type KIND Where = INPUT
+  deriving (Generic, GQLType)
 
 newtype EqExpr = EqExpr
   { eq :: Text
   }
-  deriving (Generic)
-
-instance GQLType EqExpr where
-  type KIND EqExpr = INPUT
+  deriving stock (Generic)
+  deriving anyclass (GQLType)
 
 newtype NotEqExpr = NotEqExpr
   { notEq :: Text
   }
-  deriving (Generic)
-
-instance GQLType NotEqExpr where
-  type KIND NotEqExpr = INPUT
+  deriving stock (Generic)
+  deriving anyclass (GQLType)
 
 newtype ContainsExpr = ContainsExpr
   { contains :: Text
   }
-  deriving (Generic)
-
-instance GQLType ContainsExpr where
-  type KIND ContainsExpr = INPUT
+  deriving stock (Generic)
+  deriving anyclass (GQLType)
 
 newtype InExpr = InExpr
   { in' :: [Text]
   }
   deriving (Generic)
-
-instance GQLType InExpr where
-  type KIND InExpr = INPUT
+  deriving anyclass (GQLType)
 
 newtype StartsWithExpr = StartsWithExpr
   { startsWith :: Text
   }
   deriving (Generic)
-
-instance GQLType StartsWithExpr where
-  type KIND StartsWithExpr = INPUT
+  deriving anyclass (GQLType)

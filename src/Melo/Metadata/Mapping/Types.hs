@@ -18,7 +18,6 @@ import Data.Aeson.Types
     typeMismatch,
   )
 import Data.List.NonEmpty
-import Data.Morpheus.Kind
 import Data.Morpheus.Types as M
 import Data.Text (Text)
 import Data.Traversable
@@ -53,11 +52,15 @@ instance FromJSON FM.TagMapping where
 instance ToJSON FM.TagMapping where
   toJSON (FM.TagMapping fms) = toJSON (toList fms)
 
+instance GQLType FM.TagMapping
+
 instance FromJSON FM.FieldMappings where
   parseJSON = genericParseJSON jsonOptions
 
 instance ToJSON FM.FieldMappings where
   toJSON = genericToJSON jsonOptions
+
+instance GQLType FM.FieldMappings
 
 instance FromJSON FM.FieldMapping where
   parseJSON = genericParseJSON jsonOptions
@@ -65,11 +68,15 @@ instance FromJSON FM.FieldMapping where
 instance ToJSON FM.FieldMapping where
   toJSON = genericToJSON jsonOptions
 
+instance GQLType FM.FieldMapping
+
 instance FromJSON FM.FieldMatchMode where
   parseJSON = genericParseJSON jsonOptions
 
 instance ToJSON FM.FieldMatchMode where
   toJSON = genericToJSON jsonOptions
+
+instance GQLType FM.FieldMatchMode
 
 instance HasField "tagMapping" TagMappingEntity FM.TagMapping where
   getField e = fromJSONBEncoded e.field_mappings
@@ -91,8 +98,7 @@ data NewTagMapping = NewTagMapping
   }
   deriving (Show, Eq, Generic)
 
-instance GQLType NewTagMapping where
-  type KIND NewTagMapping = INPUT
+instance GQLType NewTagMapping
 
 instance From NewTagMapping (TagMappingTable Expr) where
   from c =

@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Library.Collection.API where
@@ -137,19 +138,13 @@ data LocalFileCollection m = LocalFileCollection
 data CollectionsArgs = CollectionsArgs
   { where' :: Maybe CollectionWhere
   }
-  deriving (Generic)
-
-instance GQLType CollectionsArgs where
-  type KIND CollectionsArgs = INPUT
+  deriving (Generic, GQLType)
 
 data CollectionWhere = CollectionWhere
   { id :: Maybe Where,
     rootUri :: Maybe Where
   }
-  deriving (Generic)
-
-instance GQLType CollectionWhere where
-  type KIND CollectionWhere = INPUT
+  deriving (Generic, GQLType)
 
 data CollectionMutation (m :: Type -> Type) = CollectionMutation
   { add :: AddCollectionArgs -> m (Collection m),
@@ -187,10 +182,7 @@ collectionMutation =
 data AddCollectionArgs = AddCollectionArgs
   { newCollection :: Ty.NewCollection
   }
-  deriving (Generic)
-
-instance GQLType AddCollectionArgs where
-  type KIND AddCollectionArgs = INPUT
+  deriving (Generic, GQLType)
 
 addCollectionImpl ::
   forall m e.
@@ -218,10 +210,7 @@ addCollectionImpl AddCollectionArgs {..} = do
 data DeleteCollectionArgs = DeleteCollectionArgs
   { id :: Ty.CollectionRef
   }
-  deriving (Generic)
-
-instance GQLType DeleteCollectionArgs where
-  type KIND DeleteCollectionArgs = INPUT
+  deriving (Generic, GQLType)
 
 deleteCollectionImpl ::
   CollectionAggregate m =>

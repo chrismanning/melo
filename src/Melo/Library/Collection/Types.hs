@@ -55,10 +55,7 @@ data NewCollection = NewFilesystemCollection
     name :: Text,
     watch :: Bool
   }
-  deriving (Show, Eq, Generic)
-
-instance GQLType NewCollection where
-  type KIND NewCollection = INPUT
+  deriving (Show, Eq, Generic, GQLType)
 
 instance From NewCollection (CollectionTable Expr) where
   from c@NewFilesystemCollection {name, watch} =
