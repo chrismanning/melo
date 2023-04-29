@@ -123,6 +123,7 @@ library:
   - token-limiter
   - transformers
   - transformers-base
+  - ttrie
   - unliftio
   - unordered-containers
   - utf8-string

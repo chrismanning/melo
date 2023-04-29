@@ -15,7 +15,7 @@ where
 import Control.Concurrent
 import Control.Concurrent.Classy (MonadConc)
 import Control.Concurrent.STM qualified as STM
-import Control.Exception.Safe
+import Control.Concurrent.STM.Map qualified as SM
 import Control.Foldl (PrimMonad)
 import Control.Monad
 import Control.Monad.Base
@@ -244,17 +244,35 @@ instance
   startWatching ref p = do
     (pool, watchState, sess) <- ask
     $(logInfo) $ "starting to watch path " <> p
+    let conf = FS.defaultConfig { FS.confThreadingMode = ThreadPerWatch, FS.confOnHandlerException = handleException }
     void $
       liftIO $
         forkIO $
-          handle (\(SomeException e) -> $(logErrorIO) $ "Failure occured in filesystem watcher thread: " <> displayException e) $
-            FS.withManagerConf (FS.defaultConfig {FS.confThreadingMode = ThreadPerWatch}) $ \watchManager -> do
-              let handler e = do
-                    locks <- STM.atomically $ STM.readTVar watchState.locks
-                    void $ handleEvent pool sess watchState ref locks e
-              stop <- FS.watchTree watchManager p (\e -> takeExtension e.eventPath `notElem` [".tmp", ".part"]) handler
-              STM.atomically $ STM.modifyTVar' watchState.stoppers (H.insert ref stop)
-              forever $ threadDelay 1000000
+          forever $
+            handle handleException $
+              FS.withManagerConf conf \watchManager -> do
+                events <- STM.atomically SM.empty
+                let handler e = do
+                      tid <- forkIO do
+                        $(logDebugIO) $ "FileSystem event received; waiting for 100ms: " <> show e
+                        tid <- myThreadId
+                        threadDelay 100000
+                        latest <- STM.atomically do
+                          SM.lookup e.eventPath events >>= \case
+                            Just (e', tid') | e' == e && tid == tid' -> do
+                              SM.delete e.eventPath events
+                              pure True
+                            _ -> pure False
+                        $(logDebugIO) $ "Event is latest after 100ms: " <> show latest
+                        when latest do
+                          !locks <- STM.atomically $ STM.readTVar watchState.locks
+                          handleEvent pool sess watchState ref locks e
+                      STM.atomically $ SM.insert e.eventPath (e, tid) events
+                stop <- FS.watchTree watchManager p (\e -> takeExtension e.eventPath `notElem` [".tmp", ".part"]) handler
+                STM.atomically $ STM.modifyTVar' watchState.stoppers (H.insert ref stop)
+                forever $ threadDelay 1000000
+    where
+      handleException (SomeException e) = $(logErrorIO) $ "Failure occured in filesystem watcher thread: " <> displayException e
   stopWatching ref = do
     (_pool, watchState, _sess) <- ask
     stoppers' <- liftIO $ STM.atomically $ STM.readTVar watchState.stoppers
@@ -293,20 +311,24 @@ handleEvent ::
   m ()
 handleEvent pool sess cws ref locks event = unless (isLocked (pack event.eventPath)) do
   case event of
-    FS.Added p _ _ -> do
-      $(logInfo) $ "file/directory added; scanning " <> p
+    FS.Added p _ FS.IsDirectory -> do
+      -- skip added directories to avoid reading half-written files
+      -- the files should get their own events when finished writing (after debounced)
+      $(logInfo) $ "directory added; skipping " <> T.pack (show p)
+    FS.Added p _ FS.IsFile -> do
+      $(logInfo) $ "file added; scanning " <> T.pack (show p)
       liftIO $ runParIO (scanPathIO pool sess cws ScanAll ref p)
       pure ()
     FS.Modified p _ _ -> do
-      $(logInfo) $ "file/directory modified; scanning " <> p
+      $(logInfo) $ "file/directory modified; scanning " <> T.pack (show p)
       liftIO $ runParIO (scanPathIO pool sess cws ScanNewOrModified ref p)
       pure ()
     FS.ModifiedAttributes p _ _ -> do
-      $(logInfo) $ "file/directory attributes modified; scanning " <> p
+      $(logInfo) $ "file/directory attributes modified; scanning " <> T.pack (show p)
       liftIO $ runParIO (scanPathIO pool sess cws ScanNewOrModified ref p)
       pure ()
     FS.WatchedDirectoryRemoved p _ _ -> do
-      $(logInfo) $ "watched directory removed " <> p
+      $(logInfo) $ "watched directory removed " <> T.pack (show p)
       let uri = fileUri p
       runSourceRepositoryPooledIO pool do
         refs <- getKeysByUriPrefix uri
@@ -315,16 +337,16 @@ handleEvent pool sess cws ref locks event = unless (isLocked (pack event.eventPa
       let uri = fileUri p
       if isDir == FS.IsDirectory
         then do
-          $(logInfo) $ "directory removed " <> p
+          $(logInfo) $ "directory removed " <> T.pack (show p)
           runSourceRepositoryPooledIO pool do
             refs <- getKeysByUriPrefix uri
             void $ Repo.delete @SourceEntity refs
         else do
-          $(logInfo) $ "file removed " <> p
+          $(logInfo) $ "file removed " <> T.pack (show p)
           runSourceRepositoryPooledIO pool do
             refs <- getKeysByUri (V.singleton uri)
             void $ Repo.delete @SourceEntity refs
     FS.Unknown p _ _ s ->
-      $(logWarn) $ "unknown file system event on path " <> p <> ": " <> s
+      $(logWarn) $ "unknown file system event on path " <> T.pack (show p) <> ": " <> T.pack s
   where
     isLocked p = isJust $ Seq.findIndexL (\x -> isPrefixOf x p) locks
