@@ -239,12 +239,12 @@ mp3Samples h = loop h 0
       if L.null buf
         then pure Nothing
         else
-          if frameSync == (runGet (BG.runBitGet $ getBits 11) buf)
+          if Just frameSync == (runGetOrFail (BG.runBitGet $ getBits 11) buf) ^? _Right . _3
             then do
               hSeek h RelativeSeek (negate (fromIntegral $ L.length buf))
               buf <- L.hGet h 6
-              case runGet (tryGetHeader) buf of
-                Just header -> do
+              case runGetOrFail (tryGetHeader) buf of
+                Right(_, _, Just header) -> do
                   let headerDiff = if isJust header.crc then 0 else (-2)
                   let headerSize = fromIntegral (L.length buf) + headerDiff
                   mark <- hTell h <&> (+ headerDiff)
@@ -254,14 +254,19 @@ mp3Samples h = loop h 0
                   if info == "Info" || info == "Xing" then do
                     flags <- hGetSome h 4
                     if ((flags `BS.index` 3) .&. 0b1) == 0b1 then do
-                      totalFrames <- L.hGet h 4 <&> runGet getWord32be
-                      let samples = samplesPerFrame header.mpegAudioVersion header.layer
-                      pure $ Just (XingHeaderSamples (fromIntegral (totalFrames * samples)))
+                      totalFramesBuf <- L.hGet h 4
+                      case runGetOrFail getWord32be totalFramesBuf of
+                        Left _ -> do
+                          hSeek h RelativeSeek (negate (fromIntegral $ L.length totalFramesBuf))
+                          findNextFrame header mark headerSize
+                        Right (_, _, totalFrames) -> do
+                          let samples = samplesPerFrame header.mpegAudioVersion header.layer
+                          pure $ Just (XingHeaderSamples (fromIntegral (totalFrames * samples)))
                     else do
                       findNextFrame header mark headerSize
                   else do
                     findNextFrame header mark headerSize
-                Nothing -> pure Nothing
+                _ -> pure Nothing
             else pure Nothing
     findNextFrame header mark headerSize = do
       let padding = if header.padding then 1 else 0

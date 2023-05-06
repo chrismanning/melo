@@ -19,6 +19,7 @@ module Melo.Format.Ape
   )
 where
 
+import Control.Exception.Safe
 import Control.Monad
 import Data.Binary
 import Data.Binary.Bits
@@ -35,6 +36,7 @@ import Data.Text.Encoding
 import Data.Vector (Vector)
 import qualified Data.Vector as V
 import qualified Melo.Format.ID3 as ID3
+import Melo.Format.Error
 import Melo.Format.Internal.BinaryUtil
 import Melo.Format.Internal.Encoding
 import Melo.Format.Internal.Locate
@@ -168,9 +170,10 @@ hSkip :: Handle -> IO ()
 hSkip h = do
   buf <- BS.hGet h (BS.length preamble)
   hSeek h RelativeSeek (negate (fromIntegral (BS.length buf)))
-  when (buf == preamble) $ do
-    header <- runGet getHeader <$> L.hGet h headerSize
-    hSeek h RelativeSeek (fromIntegral header.numBytes)
+  when (buf == preamble) do
+    runGetOrFail getHeader <$> L.hGet h headerSize >>= \case
+      Left _ -> impureThrow $ MetadataReadError "found 'APETAGEX' identifier but failed to read APE header"
+      Right (_, _, header) -> hSeek h RelativeSeek (fromIntegral header.numBytes)
 
 instance Binary APE where
   put a = do

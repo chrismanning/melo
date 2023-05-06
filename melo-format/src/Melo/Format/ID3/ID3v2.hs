@@ -225,9 +225,11 @@ hSkip h = do
   headerBuf <- BS.hGetSome h headerSize
   if id3v2Identifier `BS.isPrefixOf` headerBuf
     then do
-      let header = runGet (get @Header) (L.fromStrict headerBuf)
-      let n = fromSyncSafe header.totalSize
-      hSeek h RelativeSeek n
+      case runGetOrFail (get @Header) (L.fromStrict headerBuf) of
+        Left _ -> impureThrow $ MetadataReadError "found 'ID3' identifier but failed to read header"
+        Right (_, _, header) -> do
+          let n = fromSyncSafe header.totalSize
+          hSeek h RelativeSeek n
     else hSeek h RelativeSeek (fromIntegral (negate (BS.length headerBuf)))
 
 instance Binary Header where
@@ -399,7 +401,9 @@ getFrame flags = do
     frameData <- getFrameData header
     let header' = header {frameSize = fromIntegral (L.length frameData)}
     pure (header', frameData)
-  pure $ runGet (getFrameImpl header) frameData
+  case runGetOrFail (getFrameImpl header) frameData of
+    Left (_, _, e) -> fail e
+    Right (_, _, frame) -> pure frame
   where
     getFrameImpl header | isText header = do
       enc <- getEncoding @v
