@@ -118,10 +118,10 @@ instance Default MetadataConfig where
       , tagPreference = [
           F.MetadataId "CUE",
           F.vorbisCommentsId,
-          F.apeV2Id,
-          F.apeV1Id,
           F.id3v24Id,
           F.id3v23Id,
+          F.apeV2Id,
+          F.apeV1Id,
           F.riffId,
           F.id3v1Id
         ]
