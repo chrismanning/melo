@@ -45,7 +45,7 @@ import Data.Functor
 import Data.List.NonEmpty as NE
 import Data.Maybe
 import Data.String (IsString)
-import Data.Text as T
+import Data.Text as T hiding (elem)
 import Data.Text.Encoding
 import Data.Vector qualified as V
 import GHC.Generics hiding (from)
@@ -549,7 +549,9 @@ getUserDefinedFrameId :: FrameHeader v -> TextEncoding -> Get Text
 getUserDefinedFrameId header enc = do
   let sz = frameSize header
   bs <- lookAhead $ getByteString $ fromIntegral (sz - 1)
-  let uid = fst (BS.breakSubstring (terminator enc) bs)
+  let !uid = case (enc, fst (BS.breakSubstring (terminator enc) bs)) of
+        (enc, uid') | enc `elem` [UTF16, UCS2] && BS.length uid' `mod` 2 /= 0 -> uid' <> "\0"
+        (_, uid') -> uid'
   skip $ BS.length uid + BS.length (terminator enc)
   decodeID3Text enc uid
 
