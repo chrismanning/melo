@@ -103,11 +103,11 @@ scanPathIO pool sess cws scanType ref p' =
           files <- filterM Dir.doesFileExist ((p </>) <$> entries)
           let cuefiles = filter ((== ".cue") . takeExtension) files
           case cuefiles of
-            [] -> handleScanErrors $ importTransaction files
+            [] -> handleScanErrors files $ importTransaction files
             [cuefile] -> do
               $(logDebugIO) $ "Cue file found " <> show cuefile
               liftIO $
-                handle (logShow >=> \_ -> handleScanErrors $ importTransaction files) $
+                handleAny (logShow files >=> \_ -> handleScanErrors files $ importTransaction files) $
                   V.length
                     <$> runImport
                       pool
@@ -119,13 +119,13 @@ scanPathIO pool sess cws scanType ref p' =
               pure 0
         else
           if isFile
-            then liftIO $ handleScanErrors $ importTransaction [p]
+            then liftIO $ handleScanErrors [p] $ importTransaction [p]
             else pure 0
     $(logInfoIO) $ show srcs <> " sources imported from path " <> show p
     pure ()
   where
-    handleScanErrors :: (MonadIO m) => IO Int -> m Int
-    handleScanErrors = liftIO . handleAny (logShow >=> \_ -> pure 0)
+    handleScanErrors :: (MonadIO m) => [FilePath] -> IO Int -> m Int
+    handleScanErrors ps = liftIO . handleAny (logShow ps >=> \_ -> pure 0)
     importTransaction :: [FilePath] -> IO Int
     importTransaction files = do
       filterImports files >>= \case
@@ -174,8 +174,9 @@ scanPathIO pool sess cws scanType ref p' =
             Left e -> do
               $(logErrorIO) $ "Could not open by extension " <> p <> ": " <> show e
               pure Nothing
-    logShow :: SomeException -> IO ()
-    logShow e = $(logErrorIO) $ "error during scan: " <> displayException e
+    logShow :: [FilePath] -> SomeException -> IO ()
+    logShow filePaths e = let !cause = displayException e in
+      $(logErrorVIO ['filePaths]) $ "error during scan: " <> T.pack cause
     filterImports :: [FilePath] -> IO [FilePath]
     filterImports files | scanType == ScanAll = pure files
     filterImports files = do

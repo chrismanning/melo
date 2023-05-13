@@ -30,6 +30,7 @@ library:
   - bytestring
   - cache
   - caerbannog
+  - casing
   - clock
   - concurrency
   - conduit

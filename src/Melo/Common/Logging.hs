@@ -33,17 +33,19 @@ module Melo.Common.Logging
     logErrorIO,
     logErrorVIO,
     logErrorShowIO,
-    initLogging,
+    withLogging,
   )
 where
 
 import Control.Concurrent (ThreadId, myThreadId)
+import Control.Exception hiding (Handler)
 import Control.Monad.IO.Class
 import Control.Monad.Identity
 import Control.Monad.Reader
 import Data.Aeson as A
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as L
+import Data.IORef
 import Data.Maybe
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
@@ -52,9 +54,13 @@ import Katip as K
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax (liftString, qLocation)
 import Language.Haskell.TH.Syntax qualified as TH (Lift (lift))
+import Melo.Common.Logging.Loki
+import Melo.Env
+import Network.HTTP.Client qualified as Http
+import System.Exit
 import System.IO
 import System.IO.Unsafe
-import Witch hiding (over)
+import Witch
 import Prelude hiding (log)
 
 class Monad m => Logging m where
@@ -175,16 +181,16 @@ logIOImpl ns severity msg =
   let namespace = Namespace (filter (not . T.null) $ T.split (== '.') $ T.pack ns)
    in logIOImpl' namespace (toEnum severity) msg mempty
 
-logVIOImpl :: (MonadIO m) => String -> Int -> T.Text -> SimpleLogPayload -> m ()
-logVIOImpl ns severity msg payload =
+logVIOImpl :: (MonadIO m) => String -> Int -> [(String, A.Value)] -> T.Text -> m ()
+logVIOImpl ns severity payload msg =
   let namespace = Namespace (filter (not . T.null) $ T.split (== '.') $ T.pack ns)
-   in logIOImpl' namespace (toEnum severity) msg payload
+   in logIOImpl' namespace (toEnum severity) msg (foldArgs payload)
 
 logIOImpl' :: (From s LogMessage, MonadIO m) => Namespace -> Severity -> s -> SimpleLogPayload -> m ()
 logIOImpl' ns severity msg payload =
   let (LogMessage s) = from msg
    in liftIO do
-    let LogEnv{..} = logEnv
+    logEnv@LogEnv{..} <- readIORef logEnv
     item <- Item <$> pure _logEnvApp
                 <*> pure _logEnvEnv
                 <*> pure severity
@@ -251,12 +257,27 @@ logErrorVIO = logVIO K.ErrorS
 logErrorShowIO :: Q Exp
 logErrorShowIO = logShowIO K.ErrorS
 
-scribe :: Scribe
-scribe = unsafePerformIO $ mkHandleScribe ColorIfTerminal stdout (permitItem DebugS) V2
+stdoutScribe :: Scribe
+stdoutScribe = unsafePerformIO $ mkHandleScribe ColorIfTerminal stdout (permitItem DebugS) V2
 
-logEnv :: LogEnv
-logEnv = unsafePerformIO $ registerScribe "stdout" scribe defaultScribeSettings =<< initLogEnv "melo" "local"
+stdoutLogEnv :: LogEnv
+stdoutLogEnv = unsafePerformIO $ registerScribe "stdout" stdoutScribe defaultScribeSettings =<< initLogEnv "melo" "local"
 
-initLogging :: MonadIO m => m ()
-initLogging = liftIO $ do
-  pure ()
+logEnv :: IORef LogEnv
+logEnv = unsafePerformIO $ newIORef stdoutLogEnv
+
+withLogging :: LoggingConfig -> Http.Manager -> IO () -> IO ()
+withLogging config manager m = do
+  hPutStrLn stderr $ show config
+  mkLokiScribe config.loki manager >>= \case
+    Just lokiScribe -> do
+      hPutStrLn stderr "initialising loki scribe"
+      let makeLogEnv = registerScribe "loki" lokiScribe defaultScribeSettings stdoutLogEnv
+      bracket makeLogEnv closeScribes \logEnv' -> do
+        writeIORef logEnv logEnv'
+        handle logFatalError m
+    _ -> handle logFatalError m
+    where
+      logFatalError :: SomeException -> IO ()
+      logFatalError e =
+        die $ "Fatal error: " <> displayException e
