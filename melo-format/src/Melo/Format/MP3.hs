@@ -15,6 +15,7 @@ import Data.ByteString hiding ((!?))
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as L
 import Data.Coerce
+import Data.Foldable qualified as Fold
 import Data.HashMap.Strict ((!))
 import Data.HashMap.Strict qualified as H
 import Data.Hashable
@@ -31,8 +32,8 @@ import Melo.Format.Error
 import Melo.Format.ID3 qualified as ID3
 import Melo.Format.Internal.Info qualified as I
 import Melo.Format.Internal.Metadata
-import Streaming.Binary qualified as S
-import Streaming.ByteString qualified as S
+import Streaming.ByteString qualified as S (hGetContents, unpack)
+import Streaming.Prelude qualified as S
 import System.Directory
 import System.FilePath
 import System.IO
@@ -129,11 +130,13 @@ hReadMp3 h = do
       id3v1 <- ID3.hGetId3v1 h
       hSeek h AbsoluteSeek 0
       ID3.hSkip h
-      hSkipZeroes h
-      (_, _, r) <- S.decode (S.hGet h 6)
+      r <- S.slidingWindow 6 (S.take (1024 * 1024) $ S.unpack $ S.hGetContents h)
+        & S.map (L.pack . Fold.toList)
+        & S.map decodeOrFail
+        & untilDecode
       case r of
-        Left _ -> throwIO $ MetadataReadError "Unable to read MPEG frame header"
-        Right frameHeader -> do
+        Nothing -> throwIO $ MetadataReadError "Unable to read MPEG frame header"
+        Just frameHeader -> do
           hSeek h AbsoluteSeek 0
           samples <- mp3Samples h
           pure
@@ -147,6 +150,12 @@ hReadMp3 h = do
                 samples = if samples > 0 then Just samples else Nothing
               }
     else F.fail "Handle not seekable"
+  where
+    untilDecode :: S.Stream (S.Of (Either (L.ByteString, ByteOffset, String) (L.ByteString, ByteOffset, FrameHeader))) IO () -> IO (Maybe FrameHeader)
+    untilDecode s = S.uncons s >>= \case
+      Just (Right (_, _, a), _s') -> pure $ Just a
+      Just (Left (_, _, _e), s') -> untilDecode s'
+      Nothing -> pure Nothing
 
 writeMp3File :: MetadataFile -> FilePath -> IO ()
 writeMp3File f newpath = do
