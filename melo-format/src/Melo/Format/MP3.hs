@@ -26,6 +26,7 @@ import GHC.Generics hiding (from)
 import Lens.Micro
 import Melo.Format.Ape (APEv1 (..), APEv2 (..), hGetApe)
 import Melo.Format.Ape qualified as Ape
+import Melo.Format.Internal.Binary
 import Melo.Format.Error
 import Melo.Format.ID3 qualified as ID3
 import Melo.Format.Internal.Info qualified as I
@@ -284,13 +285,6 @@ mp3Samples h = loop h 0
         _ -> case header.channels of
           Mono -> 9
           _ -> 17
-
-hSkipZeroes :: Handle -> IO ()
-hSkipZeroes h = do
-  buf <- hGetSome h 1
-  if buf BS.!? 0 == Just 0
-    then hSkipZeroes h
-    else hSeek h RelativeSeek (fromIntegral (negate (BS.length buf)))
 
 data FrameHeader = FrameHeader
   { mpegAudioVersion :: !MpegVersion,

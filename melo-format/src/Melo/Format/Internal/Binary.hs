@@ -7,6 +7,7 @@ module Melo.Format.Internal.Binary
     bdecodeHandleOrFail,
     bdecodeFileOrFail,
     bdecodeOrThrowIO,
+    hSkipZeroes,
   )
 where
 
@@ -14,6 +15,7 @@ import Control.Exception.Safe
 import qualified Data.Binary as Bin
 import qualified Data.Binary.Get as Bin
 import qualified Data.ByteString.Lazy as L
+import Data.ByteString qualified as BS
 import qualified Data.Text as T
 import Melo.Format.Error (MetadataException (MetadataReadError))
 import Streaming.Binary qualified as S
@@ -48,3 +50,10 @@ bdecodeOrThrowIO stream = do
 
 instance {-# OVERLAPPABLE #-} Bin.Binary a => BinaryGet a where
   bget = Bin.get
+
+hSkipZeroes :: Handle -> IO ()
+hSkipZeroes h = do
+  buf <- BS.hGetSome h 1
+  if buf BS.!? 0 == Just 0
+    then hSkipZeroes h
+    else hSeek h RelativeSeek (fromIntegral (negate (BS.length buf)))

@@ -51,6 +51,7 @@ import Data.Vector qualified as V
 import GHC.Generics hiding (from)
 import GHC.Records
 import Melo.Format.Error
+import Melo.Format.Internal.Binary
 import Melo.Format.Internal.BinaryUtil
 import Melo.Format.Internal.Encoding
 import Melo.Format.Internal.Metadata
@@ -230,6 +231,8 @@ hSkip h = do
         Right (_, _, header) -> do
           let n = fromSyncSafe header.totalSize
           hSeek h RelativeSeek n
+          hSkipZeroes h
+          hSkip h
     else hSeek h RelativeSeek (fromIntegral (negate (BS.length headerBuf)))
 
 instance Binary Header where
