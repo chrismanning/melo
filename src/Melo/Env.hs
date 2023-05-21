@@ -69,6 +69,7 @@ data LoggingConfig = Logging
 
 data LokiConfig = LokiConfig
   { url :: Maybe String
+  , bufferSize :: Maybe Natural
   }
   deriving (Show, Generic)
 

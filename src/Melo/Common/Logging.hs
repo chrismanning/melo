@@ -39,6 +39,7 @@ where
 
 import Control.Concurrent (ThreadId, myThreadId)
 import Control.Exception hiding (Handler)
+import Control.Lens ((&),(.~))
 import Control.Monad.IO.Class
 import Control.Monad.Identity
 import Control.Monad.Reader
@@ -272,7 +273,8 @@ withLogging config manager m = do
   mkLokiScribe config.loki manager >>= \case
     Just lokiScribe -> do
       hPutStrLn stderr "initialising loki scribe"
-      let makeLogEnv = registerScribe "loki" lokiScribe defaultScribeSettings stdoutLogEnv
+      let bufferSize = fromMaybe (100 * 1024) (fromIntegral <$> config.loki.bufferSize)
+      let makeLogEnv = registerScribe "loki" lokiScribe (defaultScribeSettings & scribeBufferSize .~ bufferSize) stdoutLogEnv
       bracket makeLogEnv closeScribes \logEnv' -> do
         writeIORef logEnv logEnv'
         handle logFatalError m
