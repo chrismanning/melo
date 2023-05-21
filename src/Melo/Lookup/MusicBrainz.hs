@@ -223,7 +223,7 @@ instance ToJSON ArtistCredit where
 
 data LabelInfo = LabelInfo
   { catalogNumber :: Maybe Text,
-    label :: Label
+    label :: Maybe Label
   }
   deriving (Show, Generic, Eq)
 
