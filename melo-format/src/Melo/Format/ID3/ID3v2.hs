@@ -223,7 +223,7 @@ id3v2Identifier = "ID3"
 
 hSkip :: Handle -> IO ()
 hSkip h = do
-  headerBuf <- BS.hGetSome h headerSize
+  headerBuf <- BS.hGet h headerSize
   if id3v2Identifier `BS.isPrefixOf` headerBuf
     then do
       case runGetOrFail (get @Header) (L.fromStrict headerBuf) of

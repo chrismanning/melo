@@ -32,7 +32,7 @@ import Melo.Format.Error
 import Melo.Format.ID3 qualified as ID3
 import Melo.Format.Internal.Info qualified as I
 import Melo.Format.Internal.Metadata
-import Streaming.ByteString qualified as S (hGetContents, unpack)
+import Streaming.ByteString qualified as S hiding (take, map, uncons)
 import Streaming.Prelude qualified as S
 import System.Directory
 import System.FilePath
@@ -150,12 +150,12 @@ hReadMp3 h = do
                 samples = if samples > 0 then Just samples else Nothing
               }
     else F.fail "Handle not seekable"
-  where
-    untilDecode :: S.Stream (S.Of (Either (L.ByteString, ByteOffset, String) (L.ByteString, ByteOffset, FrameHeader))) IO () -> IO (Maybe FrameHeader)
-    untilDecode s = S.uncons s >>= \case
-      Just (Right (_, _, a), _s') -> pure $ Just a
-      Just (Left (_, _, _e), s') -> untilDecode s'
-      Nothing -> pure Nothing
+
+untilDecode :: S.Stream (S.Of (Either (L.ByteString, ByteOffset, String) (L.ByteString, ByteOffset, FrameHeader))) IO () -> IO (Maybe FrameHeader)
+untilDecode s = S.uncons s >>= \case
+  Just (Right (_, _, a), _s') -> pure $ Just a
+  Just (Left (_, _, _e), s') -> untilDecode s'
+  Nothing -> pure Nothing
 
 writeMp3File :: MetadataFile -> FilePath -> IO ()
 writeMp3File f newpath = do
@@ -245,45 +245,38 @@ mp3Samples h = loop h 0
       hSkipZeroes h
       ID3.hSkip h
       hSkipZeroes h
-      buf <- L.hGet h 2
-      if L.null buf
-        then pure Nothing
-        else
-          if Just frameSync == (runGetOrFail (BG.runBitGet $ getBits 11) buf) ^? _Right . _3
-            then do
-              hSeek h RelativeSeek (negate (fromIntegral $ L.length buf))
-              buf <- L.hGet h 6
-              case runGetOrFail (tryGetHeader) buf of
-                Right(_, _, Just header) -> do
-                  let headerDiff = if isJust header.crc then 0 else (-2)
-                  let headerSize = fromIntegral (L.length buf) + headerDiff
-                  mark <- hTell h <&> (+ headerDiff)
-                  -- look for Xing/Lame header - offset never includes crc
-                  hSeek h RelativeSeek (infoHeaderOffset header - 2)
-                  info <- hGetSome h 4
-                  if info == "Info" || info == "Xing" then do
-                    flags <- hGetSome h 4
-                    if ((flags `BS.index` 3) .&. 0b1) == 0b1 then do
-                      totalFramesBuf <- L.hGet h 4
-                      case runGetOrFail getWord32be totalFramesBuf of
-                        Left _ -> do
-                          hSeek h RelativeSeek (negate (fromIntegral $ L.length totalFramesBuf))
-                          findNextFrame header mark headerSize
-                        Right (_, _, totalFrames) -> do
-                          let samples = samplesPerFrame header.mpegAudioVersion header.layer
-                          pure $ Just (XingHeaderSamples (fromIntegral (totalFrames * samples)))
-                    else do
-                      findNextFrame header mark headerSize
-                  else do
-                    findNextFrame header mark headerSize
-                _ -> pure Nothing
-            else pure Nothing
-    findNextFrame header mark headerSize = do
+      r <- S.slidingWindow 6 (S.take (1024 * 1024) $ S.unpack $ S.hGetContentsN 1 h)
+        & S.map (L.pack . Fold.toList)
+        & S.map decodeOrFail
+        & untilDecode
+      case r of
+        Nothing -> pure Nothing
+        Just header -> do
+          mark <- hTell h
+          -- look for Xing/Lame header - offset never includes crc
+          hSeek h RelativeSeek (infoHeaderOffset header - 2)
+          info <- hGet h 4
+          if info == "Info" || info == "Xing" then do
+            flags <- hGet h 4
+            if ((flags `BS.index` 3) .&. 0b1) == 0b1 then do
+              totalFramesBuf <- L.hGet h 4
+              case runGetOrFail getWord32be totalFramesBuf of
+                Left _ -> do
+                  hSeek h RelativeSeek (negate (fromIntegral $ L.length totalFramesBuf))
+                  findNextFrame header mark
+                Right (_, _, totalFrames) -> do
+                  let samples = samplesPerFrame header.mpegAudioVersion header.layer
+                  pure $ Just (XingHeaderSamples (fromIntegral (totalFrames * samples)))
+            else do
+              findNextFrame header mark
+          else do
+            findNextFrame header mark
+    findNextFrame header mark = do
       let padding = if header.padding then 1 else 0
       let bitRate = (coerce header.bitRate) * 1000
       let samples = samplesPerFrame header.mpegAudioVersion header.layer
       let frameLength = (samples `div` 8) * bitRate `div` header.sampleRate + padding
-      hSeek h AbsoluteSeek (mark + fromIntegral frameLength - headerSize)
+      hSeek h AbsoluteSeek (mark + fromIntegral frameLength - 6)
       pure $ Just (MP3FrameSamples (fromIntegral samples))
     infoHeaderOffset :: FrameHeader -> Integer
     infoHeaderOffset header =

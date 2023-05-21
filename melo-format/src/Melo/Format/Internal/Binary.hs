@@ -53,7 +53,7 @@ instance {-# OVERLAPPABLE #-} Bin.Binary a => BinaryGet a where
 
 hSkipZeroes :: Handle -> IO ()
 hSkipZeroes h = do
-  buf <- BS.hGetSome h 1
+  buf <- BS.hGet h 1
   if buf BS.!? 0 == Just 0
     then hSkipZeroes h
     else hSeek h RelativeSeek (fromIntegral (negate (BS.length buf)))
