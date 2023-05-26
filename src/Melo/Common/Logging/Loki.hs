@@ -60,7 +60,9 @@ mkLokiScribe config manager = case config.url of
         stream = buildLabels item,
         values = buildEntry item :| []
       }
-      scribeFinalizer = pure ()
+      scribeFinalizer = do
+        System.IO.putStrLn "loki scribe closing"
+        pure ()
       buildEntry :: LogItem a => Item a -> Entry
       buildEntry item = Entry {
         timestamp = from $ utcToSystemTime item._itemTime,

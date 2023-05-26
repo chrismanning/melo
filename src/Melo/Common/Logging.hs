@@ -37,7 +37,8 @@ module Melo.Common.Logging
   )
 where
 
-import Control.Concurrent (ThreadId, myThreadId)
+import Control.Concurrent (myThreadId)
+import Control.Concurrent.STM
 import Control.Exception hiding (Handler)
 import Control.Lens ((&),(.~))
 import Control.Monad.IO.Class
@@ -47,11 +48,13 @@ import Data.Aeson as A
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as L
 import Data.IORef
+import Data.Map.Strict qualified as M
 import Data.Maybe
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Text.Lazy qualified as LT
 import Katip as K
+import Katip.Core as K
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax (liftString, qLocation)
 import Language.Haskell.TH.Syntax qualified as TH (Lift (lift))
@@ -203,12 +206,17 @@ logIOImpl' ns severity msg payload =
                 <*> _logEnvTimer
                 <*> pure (_logEnvApp <> ns)
                 <*> pure Nothing
-    K.runKatipT logEnv $ K.logKatipItem item
-
-mkThreadIdText :: ThreadId -> ThreadIdText
-mkThreadIdText = ThreadIdText . stripPrefix' "ThreadId " . T.pack . show
+    K.runKatipT logEnv $ logKatipItem' item
   where
-    stripPrefix' pfx t = fromMaybe t (T.stripPrefix pfx t)
+    logKatipItem' item = do
+      LogEnv{..} <- getLogEnv
+      liftIO $
+        forM_ (M.elems _logEnvScribes) $ \ScribeHandle {..} -> do
+          whenM (scribePermitItem shScribe item) do
+            atomically (tryWriteTBQueue shChan (NewItem item)) >>= \case
+              False -> do
+                hPutStrLn stderr "Failed to add log item to queue"
+              _ -> pure ()
 
 logIO :: Severity -> Q Exp
 logIO severity =
@@ -273,7 +281,7 @@ withLogging config manager m = do
   mkLokiScribe config.loki manager >>= \case
     Just lokiScribe -> do
       hPutStrLn stderr "initialising loki scribe"
-      let bufferSize = fromMaybe (100 * 1024) (fromIntegral <$> config.loki.bufferSize)
+      let bufferSize = fromMaybe (1024 * 1024) (fromIntegral <$> config.loki.bufferSize)
       let makeLogEnv = registerScribe "loki" lokiScribe (defaultScribeSettings & scribeBufferSize .~ bufferSize) stdoutLogEnv
       bracket makeLogEnv closeScribes \logEnv' -> do
         writeIORef logEnv logEnv'
