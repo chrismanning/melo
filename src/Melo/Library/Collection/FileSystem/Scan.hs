@@ -24,16 +24,22 @@ import Control.Monad.Par.Combinator
 import Control.Monad.Par.IO
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
-import Data.ByteString.Char8 (ByteString, isPrefixOf, pack)
+import Data.ByteString ((!?))
+import Data.ByteString qualified as BS
+import Data.ByteString.Char8 (ByteString, pack)
+import Data.Char
+import Data.Foldable
 import Data.Functor ((<&>))
 import Data.HashMap.Strict qualified as H
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NE
 import Data.Maybe
+import Data.Monoid
 import Data.Pool
-import Data.Sequence (Seq (..))
-import Data.Sequence qualified as Seq
 import Data.Text qualified as T
 import Data.Time.LocalTime
+import Data.Trie (Trie ())
+import Data.Trie qualified as Trie
 import Data.Vector qualified as V
 import Hasql.Connection
 import Melo.Common.Config
@@ -45,13 +51,13 @@ import Melo.Common.Uri
 import Melo.Database.Repo qualified as Repo
 import Melo.Format.Error qualified as F
 import Melo.Format.Metadata (MetadataFile (..), fileFactoryByExt)
-import Melo.Library.Release.Aggregate
-import Melo.Library.Release.ArtistName.Repo
-import Melo.Library.Release.Repo
 import Melo.Library.Artist.Aggregate
 import Melo.Library.Artist.Name.Repo
 import Melo.Library.Artist.Repo
 import Melo.Library.Collection.Types
+import Melo.Library.Release.Aggregate
+import Melo.Library.Release.ArtistName.Repo
+import Melo.Library.Release.Repo
 import Melo.Library.Source.Aggregate
 import Melo.Library.Source.Cue
 import Melo.Library.Source.Repo
@@ -141,7 +147,7 @@ scanPathIO pool sess cws scanType ref p' =
                 V.fromList (FileSource ref <$> mfs)
           pure (V.length srcs)
     runImport pool sess =
-        runConfigRepositoryPooledIO pool
+      runConfigRepositoryPooledIO pool
         . runSourceRepositoryPooledIO pool
         . runArtistRepositoryPooledIO pool
         . runArtistNameRepositoryPooledIO pool
@@ -161,39 +167,41 @@ scanPathIO pool sess cws scanType ref p' =
         . runSourceAggregateIOT
     openMetadataFile'' p =
       runConfigRepositoryPooledIO pool $
-      runFileSystemWatcherIO pool cws sess $
-        runMetadataAggregateIO $
-          openMetadataFileByExt p >>= \case
-            Right mf -> pure $ Just mf
-            Left e@F.UnknownFormat -> do
-              $(logWarnIO) $ "Could not open by extension " <> p <> ": " <> show e
-              openMetadataFile p >>= \case
-                Left e -> do
-                  $(logErrorIO) $ "Could not open " <> p <> ": " <> show e
-                  pure Nothing
-                Right mf -> pure $ Just mf
-            Left e -> do
-              $(logErrorIO) $ "Could not open by extension " <> p <> ": " <> show e
-              pure Nothing
+        runFileSystemWatcherIO pool cws sess $
+          runMetadataAggregateIO $
+            openMetadataFileByExt p >>= \case
+              Right mf -> pure $ Just mf
+              Left e@F.UnknownFormat -> do
+                $(logWarnIO) $ "Could not open by extension " <> p <> ": " <> show e
+                openMetadataFile p >>= \case
+                  Left e -> do
+                    $(logErrorIO) $ "Could not open " <> p <> ": " <> show e
+                    pure Nothing
+                  Right mf -> pure $ Just mf
+              Left e -> do
+                $(logErrorIO) $ "Could not open by extension " <> p <> ": " <> show e
+                pure Nothing
     logShow :: [FilePath] -> SomeException -> IO ()
-    logShow filePaths e = let !cause = displayException e in
-      $(logErrorVIO ['filePaths]) $ "error during scan: " <> T.pack cause
+    logShow filePaths e =
+      let !cause = displayException e
+       in $(logErrorVIO ['filePaths]) $ "error during scan: " <> T.pack cause
     filterImports :: [FilePath] -> IO [FilePath]
     filterImports files | scanType == ScanAll = pure files
     filterImports files = do
       tz <- liftIO getCurrentTimeZone
       ss <- sourceMap files
-      imports <- catMaybes <$> forM files \p ->
-        case H.lookup (T.pack $ show $ fileUri p) ss of
-          Just s -> do
-            mtime <- utcToLocalTime tz <$> Dir.getModificationTime p
-            if mtime > s.scanned
-              then pure $ Just p
-              else pure Nothing
-          Nothing ->
-            if isJust $ fileFactoryByExt p
-              then pure $ Just p
-              else pure Nothing
+      imports <-
+        catMaybes <$> forM files \p ->
+          case H.lookup (T.pack $ show $ fileUri p) ss of
+            Just s -> do
+              mtime <- utcToLocalTime tz <$> Dir.getModificationTime p
+              if mtime > s.scanned
+                then pure $ Just p
+                else pure Nothing
+            Nothing ->
+              if isJust $ fileFactoryByExt p
+                then pure $ Just p
+                else pure Nothing
       pure imports
     sourceMap :: [FilePath] -> IO (H.HashMap T.Text SourceEntity)
     sourceMap files = runSourceRepositoryPooledIO pool do
@@ -202,13 +210,13 @@ scanPathIO pool sess cws scanType ref p' =
 
 data CollectionWatchState = CollectionWatchState
   { stoppers :: STM.TVar (H.HashMap CollectionRef FS.StopListening),
-    locks :: STM.TVar (Seq ByteString)
+    locks :: STM.TVar FilePathLocks
   }
 
 emptyWatchState :: IO CollectionWatchState
 emptyWatchState =
   STM.atomically $
-    CollectionWatchState <$> STM.newTVar H.empty <*> STM.newTVar Seq.empty
+    CollectionWatchState <$> STM.newTVar mempty <*> STM.newTVar mempty
 
 newtype FileSystemWatcherIOT m a = FileSystemWatcherIOT
   { runFileSystemWatcherIOT :: ReaderT (Pool Connection, CollectionWatchState, Wreq.Session) m a
@@ -246,7 +254,7 @@ instance
   startWatching ref p = do
     (pool, watchState, sess) <- ask
     $(logInfo) $ "starting to watch path " <> p
-    let conf = FS.defaultConfig { FS.confThreadingMode = ThreadPerWatch, FS.confOnHandlerException = handleException }
+    let conf = FS.defaultConfig {FS.confThreadingMode = ThreadPerWatch, FS.confOnHandlerException = handleException}
     void $
       liftIO $
         forkIO $
@@ -254,10 +262,7 @@ instance
             handle handleException $
               FS.withManagerConf conf \watchManager -> do
                 events <- STM.atomically SM.empty
-                let isLocked' e = do
-                      !locks <- STM.atomically $ STM.readTVar watchState.locks
-                      pure $ isLocked locks (pack e.eventPath)
-                let handler e = unlessM (isLocked' e) do
+                let handler e = unlessM (isLocked watchState e.eventPath) do
                       tid <- forkIO do
                         $(logDebugIO) $ "FileSystem event received; waiting for 100ms: " <> show e
                         tid <- myThreadId
@@ -270,8 +275,7 @@ instance
                             _ -> pure False
                         $(logDebugIO) $ "Event is latest after 100ms: " <> show latest
                         when latest do
-                          !locks <- STM.atomically $ STM.readTVar watchState.locks
-                          handleEvent pool sess watchState ref locks e
+                          handleEvent pool sess watchState ref e
                       STM.atomically $ SM.insert e.eventPath (e, tid) events
                 stop <- FS.watchTree watchManager p (\e -> takeExtension e.eventPath `notElem` [".tmp", ".part"]) handler
                 STM.atomically $ STM.modifyTVar' watchState.stoppers (H.insert ref stop)
@@ -286,35 +290,61 @@ instance
       Nothing -> pure ()
   lockPathsDuring ps m = do
     (_pool, watchState, _sess) <- ask
-    let packedPaths = Seq.fromList $ NE.toList $ pack <$> ps
     bracket
       ( liftIO $ do
-          STM.atomically $ STM.modifyTVar' watchState.locks (lockPaths packedPaths)
-          $(logInfoIO) $ "Unwatching paths " <> show packedPaths
+          STM.atomically $ STM.modifyTVar' watchState.locks (lockPaths ps)
+          $(logInfoIO) $ "Unwatching paths " <> show (NE.toList ps)
       )
       ( \_ -> liftIO $ do
           threadDelay 10000
-          $(logInfoIO) $ "Re-watching paths " <> show packedPaths
-          STM.atomically $ STM.modifyTVar' watchState.locks (unlockPaths packedPaths)
+          $(logInfoIO) $ "Re-watching paths " <> show (NE.toList ps)
+          STM.atomically $ STM.modifyTVar' watchState.locks (unlockPaths ps)
       )
       (const m)
-    where
-      lockPaths = (Seq.><)
-      unlockPaths packedPaths =
-        Seq.filter (\lock -> isNothing $ Seq.elemIndexL lock packedPaths)
+
+data FilePathLocks = FilePathLocks
+  { lockCounter :: Trie (Sum Int)
+  }
+  deriving (Show)
+
+instance Semigroup FilePathLocks where
+  a <> b = FilePathLocks (a.lockCounter <> b.lockCounter)
+
+instance Monoid FilePathLocks where
+  mempty = FilePathLocks mempty
+
+lockPaths :: NonEmpty FilePath -> FilePathLocks -> FilePathLocks
+lockPaths newPaths locks = foldl' (\l newPath -> FilePathLocks $ Trie.alterBy lockPath (pack newPath) 1 l.lockCounter) locks newPaths
+  where
+    lockPath :: ByteString -> Sum Int -> Maybe (Sum Int) -> Maybe (Sum Int)
+    lockPath _ c Nothing = Just c
+    lockPath _ c (Just c') = Just (c <> c')
+
+unlockPaths :: NonEmpty FilePath -> FilePathLocks -> FilePathLocks
+unlockPaths oldPaths locks = foldl' (\l oldPath -> FilePathLocks $ Trie.alterBy unlockPath (pack oldPath) (-1) l.lockCounter) locks oldPaths
+  where
+    unlockPath :: ByteString -> Sum Int -> Maybe (Sum Int) -> Maybe (Sum Int)
+    unlockPath _ _ Nothing = Nothing
+    unlockPath _ _ (Just 1) = Nothing
+    unlockPath _ c (Just c') = Just (c <> c')
+
+isPathLocked :: FilePath -> FilePathLocks -> Bool
+isPathLocked path locks = validMatch $ Trie.matches locks.lockCounter (pack path)
+  where
+    validMatch :: [(ByteString, Sum Int, ByteString)] -> Bool
+    validMatch ((_, _, rem) : _) | BS.null rem = True
+    validMatch ((_, _, rem) : _) | rem !? 0 == Just (fromIntegral $ ord '/') = True
+    validMatch (_ : xs) = validMatch xs
+    validMatch [] = False
 
 handleEvent ::
-  ( Logging m,
-    MonadIO m
-  ) =>
   Pool Connection ->
   Wreq.Session ->
   CollectionWatchState ->
   CollectionRef ->
-  Seq ByteString ->
   FS.Event ->
-  m ()
-handleEvent pool sess cws ref locks event = unless (isLocked locks (pack event.eventPath)) do
+  IO ()
+handleEvent pool sess cws ref event = unlessM (isLocked cws event.eventPath) do
   case event of
     FS.Added p _ FS.IsDirectory -> do
       -- skip added directories to avoid reading half-written files
@@ -354,5 +384,7 @@ handleEvent pool sess cws ref locks event = unless (isLocked locks (pack event.e
     FS.Unknown p _ _ s ->
       $(logWarn) $ "unknown file system event on path " <> T.pack (show p) <> ": " <> T.pack s
 
-isLocked :: Seq ByteString -> ByteString -> Bool
-isLocked locks p = isJust $ Seq.findIndexL (\x -> isPrefixOf x p) locks
+isLocked :: CollectionWatchState -> FilePath -> IO Bool
+isLocked watchState p = do
+  !locks <- STM.atomically $ STM.readTVar watchState.locks
+  pure $ isPathLocked p locks

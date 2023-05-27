@@ -28,6 +28,7 @@ library:
   - binary
   - binary-parser
   - bytestring
+  - bytestring-trie
   - cache
   - caerbannog
   - casing
