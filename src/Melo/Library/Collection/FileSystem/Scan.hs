@@ -19,6 +19,7 @@ import Control.Concurrent.STM.Map qualified as SM
 import Control.Foldl (PrimMonad)
 import Control.Monad
 import Control.Monad.Base
+import Control.Monad.Extra
 import Control.Monad.Par.Combinator
 import Control.Monad.Par.IO
 import Control.Monad.Reader
@@ -253,7 +254,10 @@ instance
             handle handleException $
               FS.withManagerConf conf \watchManager -> do
                 events <- STM.atomically SM.empty
-                let handler e = do
+                let isLocked' e = do
+                      !locks <- STM.atomically $ STM.readTVar watchState.locks
+                      pure $ isLocked locks (pack e.eventPath)
+                let handler e = unlessM (isLocked' e) do
                       tid <- forkIO do
                         $(logDebugIO) $ "FileSystem event received; waiting for 100ms: " <> show e
                         tid <- myThreadId
@@ -310,7 +314,7 @@ handleEvent ::
   Seq ByteString ->
   FS.Event ->
   m ()
-handleEvent pool sess cws ref locks event = unless (isLocked (pack event.eventPath)) do
+handleEvent pool sess cws ref locks event = unless (isLocked locks (pack event.eventPath)) do
   case event of
     FS.Added p _ FS.IsDirectory -> do
       -- skip added directories to avoid reading half-written files
@@ -349,5 +353,6 @@ handleEvent pool sess cws ref locks event = unless (isLocked (pack event.eventPa
             void $ Repo.delete @SourceEntity refs
     FS.Unknown p _ _ s ->
       $(logWarn) $ "unknown file system event on path " <> T.pack (show p) <> ": " <> T.pack s
-  where
-    isLocked p = isJust $ Seq.findIndexL (\x -> isPrefixOf x p) locks
+
+isLocked :: Seq ByteString -> ByteString -> Bool
+isLocked locks p = isJust $ Seq.findIndexL (\x -> isPrefixOf x p) locks
