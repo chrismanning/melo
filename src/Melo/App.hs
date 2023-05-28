@@ -12,6 +12,7 @@ import Melo.Common.Exception
 import Melo.Common.FileSystem
 import Melo.Common.FileSystem.Watcher
 import Melo.Common.Logging
+import Melo.Common.Logging.Env
 import Melo.Common.Metadata
 import Melo.Common.Uri
 import Melo.Database.Repo

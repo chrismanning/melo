@@ -33,16 +33,12 @@ module Melo.Common.Logging
     logErrorIO,
     logErrorVIO,
     logErrorShowIO,
-    withLogging,
+    logEnv,
   )
 where
 
 import Control.Concurrent (myThreadId)
 import Control.Concurrent.STM
-import Control.Exception hiding (Handler)
-import Control.Lens ((&),(.~))
-import Control.Monad.IO.Class
-import Control.Monad.Identity
 import Control.Monad.Reader
 import Data.Aeson as A
 import Data.ByteString (ByteString)
@@ -58,10 +54,6 @@ import Katip.Core as K
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax (liftString, qLocation)
 import Language.Haskell.TH.Syntax qualified as TH (Lift (lift))
-import Melo.Common.Logging.Loki
-import Melo.Env
-import Network.HTTP.Client qualified as Http
-import System.Exit
 import System.IO
 import System.IO.Unsafe
 import Witch
@@ -266,28 +258,5 @@ logErrorVIO = logVIO K.ErrorS
 logErrorShowIO :: Q Exp
 logErrorShowIO = logShowIO K.ErrorS
 
-stdoutScribe :: Scribe
-stdoutScribe = unsafePerformIO $ mkHandleScribe ColorIfTerminal stdout (permitItem DebugS) V2
-
-stdoutLogEnv :: LogEnv
-stdoutLogEnv = unsafePerformIO $ registerScribe "stdout" stdoutScribe defaultScribeSettings =<< initLogEnv "melo" "local"
-
 logEnv :: IORef LogEnv
-logEnv = unsafePerformIO $ newIORef stdoutLogEnv
-
-withLogging :: LoggingConfig -> Http.Manager -> IO () -> IO ()
-withLogging config manager m = do
-  hPutStrLn stderr $ show config
-  mkLokiScribe config.loki manager >>= \case
-    Just lokiScribe -> do
-      hPutStrLn stderr "initialising loki scribe"
-      let bufferSize = fromMaybe (1024 * 1024) (fromIntegral <$> config.loki.bufferSize)
-      let makeLogEnv = registerScribe "loki" lokiScribe (defaultScribeSettings & scribeBufferSize .~ bufferSize) stdoutLogEnv
-      bracket makeLogEnv closeScribes \logEnv' -> do
-        writeIORef logEnv logEnv'
-        handle logFatalError m
-    _ -> handle logFatalError m
-    where
-      logFatalError :: SomeException -> IO ()
-      logFatalError e =
-        die $ "Fatal error: " <> displayException e
+logEnv = unsafePerformIO $ newIORef =<< initLogEnv "melo" "local"

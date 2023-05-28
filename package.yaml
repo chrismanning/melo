@@ -22,6 +22,7 @@ library:
   - abstract-par
   - aeson
   - aeson-casing
+  - async
   - attoparsec
   - authenticate-oauth
   - barbies
