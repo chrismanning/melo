@@ -138,7 +138,6 @@ library:
   - wave
   - websockets
   - witch
-  - wreq
 
 executables:
   melo-api:

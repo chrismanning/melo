@@ -73,7 +73,6 @@ import Melo.Metadata.Mapping.Aggregate
 import Melo.Metadata.Mapping.Repo
 import Network.HTTP.Client as Http
 import Network.Wai (StreamingBody)
-import Network.Wreq.Session (newAPISession)
 import Rel8 (JSONBEncoded (..), (&&.), (==.))
 import Rel8 qualified
 import Streaming.Prelude qualified as S
@@ -577,8 +576,7 @@ streamSourceGroupsQuery collectionWatchState pool httpManager collectionRef grou
     processStream :: MonadIO m => S.Stream (S.Of Ty.SourceEntity) m () -> m ()
     processStream s = do
       $(logInfoIO) $ "Starting streaming sources from collection " <> show collectionRef
-      sess <- liftIO newAPISession
-      let runIO = liftIO . runSourceIO collectionWatchState sess pool httpManager
+      let runIO = liftIO . runSourceIO collectionWatchState pool httpManager
       s
         & groupSources' groupByMappings
         & S.mapM (\srcGrp -> runIO $ interpreter (mkRoot srcGrp) (L.toStrict rq))
@@ -587,10 +585,10 @@ streamSourceGroupsQuery collectionWatchState pool httpManager collectionRef grou
     sendFlush :: MonadIO m => BS.ByteString -> m ()
     sendFlush = (liftIO . (const flush)) <=< liftIO . sendChunk . (`append` (putStringUtf8 "\n\n")) . fromByteString
 
-runSourceIO collectionWatchState sess pool httpManager =
+runSourceIO collectionWatchState pool httpManager =
   runFileSystemIO
     . runConfigRepositoryPooledIO pool
-    . runFileSystemWatcherIO pool collectionWatchState sess
+    . runFileSystemWatcherIO pool collectionWatchState httpManager
     . runMetadataAggregateIO
     . runSourceRepositoryPooledIO pool
     . runTagMappingRepositoryPooledIO pool
@@ -600,10 +598,10 @@ runSourceIO collectionWatchState sess pool httpManager =
     . runArtistRepositoryPooledIO pool
     . runTrackArtistNameRepositoryPooledIO pool
     . runTrackRepositoryPooledIO pool
-    . runMusicBrainzServiceUnlimitedIO sess
+    . runMusicBrainzServiceUnlimitedIO httpManager
     . runMultiTrackIO
     . runCollectionRepositoryPooledIO pool
-    . runCollectionAggregateIO pool sess collectionWatchState
+    . runCollectionAggregateIO pool httpManager collectionWatchState
     . runTagMappingAggregate
     . runArtistAggregateIOT
     . runTrackAggregateIOT

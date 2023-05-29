@@ -72,7 +72,7 @@ import Melo.Library.Track.Repo
 import Melo.Lookup.MusicBrainz qualified as MB
 import Melo.Metadata.Mapping.Aggregate
 import Melo.Metadata.Mapping.Repo
-import Network.Wreq.Session qualified as Wreq
+import Network.HTTP.Client qualified as Http
 import System.FSNotify (ThreadingMode (..))
 import System.FSNotify qualified as FS
 import System.FilePath
@@ -83,13 +83,13 @@ data ScanType = ScanNewOrModified | ScanAll
 
 scanPathIO ::
   Pool Connection ->
-  Wreq.Session ->
+  Http.Manager ->
   CollectionWatchState ->
   ScanType ->
   CollectionRef ->
   FilePath ->
   ParIO ()
-scanPathIO pool sess cws scanType ref p' =
+scanPathIO pool manager cws scanType ref p' =
   do
     p <- Dir.canonicalizePath p'
     $(logInfoIO) $ "Scanning " <> show p
@@ -105,7 +105,7 @@ scanPathIO pool sess cws scanType ref p' =
           entries <- Dir.listDirectory p
           dirs <- filterM Dir.doesDirectoryExist ((p </>) <$> entries)
 
-          _ <- parMapM (scanPathIO pool sess cws scanType ref) dirs
+          _ <- parMapM (scanPathIO pool manager cws scanType ref) dirs
 
           files <- filterM Dir.doesFileExist ((p </>) <$> entries)
           let cuefiles = filter ((== ".cue") . takeExtension) files
@@ -118,7 +118,7 @@ scanPathIO pool sess cws scanType ref p' =
                   V.length
                     <$> runImport
                       pool
-                      sess
+                      manager
                       ( openCueFile cuefile <&> (CueFileImportSource ref <$>) >>= importSources
                       )
             _ -> do
@@ -142,11 +142,11 @@ scanPathIO pool sess cws scanType ref p' =
           mfs <- catMaybes <$> mapM openMetadataFile'' files
           $(logDebugIO) $ T.pack $ "Opened " <> show (mfs <&> \mf -> mf.filePath)
           srcs <-
-            runImport pool sess $
+            runImport pool manager $
               importSources $
                 V.fromList (FileSource ref <$> mfs)
           pure (V.length srcs)
-    runImport pool sess =
+    runImport pool manager =
       runConfigRepositoryPooledIO pool
         . runSourceRepositoryPooledIO pool
         . runArtistRepositoryPooledIO pool
@@ -155,11 +155,11 @@ scanPathIO pool sess cws scanType ref p' =
         . runReleaseRepositoryPooledIO pool
         . runTrackRepositoryPooledIO pool
         . runTrackArtistNameRepositoryPooledIO pool
-        . MB.runMusicBrainzServiceUnlimitedIO sess
+        . MB.runMusicBrainzServiceUnlimitedIO manager
         . runTagMappingRepositoryPooledIO pool
         . MB.runCachingMusicBrainzService
         . runTagMappingAggregate
-        . runFileSystemWatcherIO pool cws sess
+        . runFileSystemWatcherIO pool cws manager
         . runMetadataAggregateIO
         . runArtistAggregateIOT
         . runTrackAggregateIOT
@@ -167,7 +167,7 @@ scanPathIO pool sess cws scanType ref p' =
         . runSourceAggregateIOT
     openMetadataFile'' p =
       runConfigRepositoryPooledIO pool $
-        runFileSystemWatcherIO pool cws sess $
+        runFileSystemWatcherIO pool cws manager $
           runMetadataAggregateIO $
             openMetadataFileByExt p >>= \case
               Right mf -> pure $ Just mf
@@ -219,7 +219,7 @@ emptyWatchState =
     CollectionWatchState <$> STM.newTVar mempty <*> STM.newTVar mempty
 
 newtype FileSystemWatcherIOT m a = FileSystemWatcherIOT
-  { runFileSystemWatcherIOT :: ReaderT (Pool Connection, CollectionWatchState, Wreq.Session) m a
+  { runFileSystemWatcherIOT :: ReaderT (Pool Connection, CollectionWatchState, Http.Manager) m a
   }
   deriving newtype
     ( Functor,
@@ -229,7 +229,7 @@ newtype FileSystemWatcherIOT m a = FileSystemWatcherIOT
       MonadConc,
       MonadCatch,
       MonadMask,
-      MonadReader (Pool Connection, CollectionWatchState, Wreq.Session),
+      MonadReader (Pool Connection, CollectionWatchState, Http.Manager),
       MonadThrow,
       MonadTrans,
       MonadTransControl,
@@ -239,9 +239,9 @@ newtype FileSystemWatcherIOT m a = FileSystemWatcherIOT
     )
 
 runFileSystemWatcherIO ::
-  Pool Connection -> CollectionWatchState -> Wreq.Session -> FileSystemWatcherIOT m a -> m a
-runFileSystemWatcherIO pool watchState sess =
-  flip runReaderT (pool, watchState, sess) . runFileSystemWatcherIOT
+  Pool Connection -> CollectionWatchState -> Http.Manager -> FileSystemWatcherIOT m a -> m a
+runFileSystemWatcherIO pool watchState manager =
+  flip runReaderT (pool, watchState, manager) . runFileSystemWatcherIOT
 
 instance
   ( MonadIO m,
@@ -252,7 +252,7 @@ instance
   FileSystemWatcher (FileSystemWatcherIOT m)
   where
   startWatching ref p = do
-    (pool, watchState, sess) <- ask
+    (pool, watchState, manager) <- ask
     $(logInfo) $ "starting to watch path " <> p
     let conf = FS.defaultConfig {FS.confThreadingMode = ThreadPerWatch, FS.confOnHandlerException = handleException}
     void $
@@ -275,7 +275,7 @@ instance
                             _ -> pure False
                         $(logDebugIO) $ "Event is latest after 100ms: " <> show latest
                         when latest do
-                          handleEvent pool sess watchState ref e
+                          handleEvent pool manager watchState ref e
                       STM.atomically $ SM.insert e.eventPath (e, tid) events
                 stop <- FS.watchTree watchManager p (\e -> takeExtension e.eventPath `notElem` [".tmp", ".part"]) handler
                 STM.atomically $ STM.modifyTVar' watchState.stoppers (H.insert ref stop)
@@ -283,7 +283,7 @@ instance
     where
       handleException (SomeException e) = $(logErrorIO) $ "Failure occured in filesystem watcher thread: " <> displayException e
   stopWatching ref = do
-    (_pool, watchState, _sess) <- ask
+    (_pool, watchState, _) <- ask
     stoppers' <- liftIO $ STM.atomically $ STM.readTVar watchState.stoppers
     case H.lookup ref stoppers' of
       Just stop -> liftIO stop
@@ -339,12 +339,12 @@ isPathLocked path locks = validMatch $ Trie.matches locks.lockCounter (pack path
 
 handleEvent ::
   Pool Connection ->
-  Wreq.Session ->
+  Http.Manager ->
   CollectionWatchState ->
   CollectionRef ->
   FS.Event ->
   IO ()
-handleEvent pool sess cws ref event = unlessM (isLocked cws event.eventPath) do
+handleEvent pool manager cws ref event = unlessM (isLocked cws event.eventPath) do
   case event of
     FS.Added p _ FS.IsDirectory -> do
       -- skip added directories to avoid reading half-written files
@@ -352,15 +352,15 @@ handleEvent pool sess cws ref event = unlessM (isLocked cws event.eventPath) do
       $(logInfo) $ "directory added; skipping " <> T.pack (show p)
     FS.Added p _ FS.IsFile -> do
       $(logInfo) $ "file added; scanning " <> T.pack (show p)
-      liftIO $ runParIO (scanPathIO pool sess cws ScanAll ref p)
+      liftIO $ runParIO (scanPathIO pool manager cws ScanAll ref p)
       pure ()
     FS.Modified p _ _ -> do
       $(logInfo) $ "file/directory modified; scanning " <> T.pack (show p)
-      liftIO $ runParIO (scanPathIO pool sess cws ScanNewOrModified ref p)
+      liftIO $ runParIO (scanPathIO pool manager cws ScanNewOrModified ref p)
       pure ()
     FS.ModifiedAttributes p _ _ -> do
       $(logInfo) $ "file/directory attributes modified; scanning " <> T.pack (show p)
-      liftIO $ runParIO (scanPathIO pool sess cws ScanNewOrModified ref p)
+      liftIO $ runParIO (scanPathIO pool manager cws ScanNewOrModified ref p)
       pure ()
     FS.WatchedDirectoryRemoved p _ _ -> do
       $(logInfo) $ "watched directory removed " <> T.pack (show p)

@@ -44,13 +44,13 @@ where
 
 import Control.Concurrent.Classy
 import Control.Concurrent.TokenLimiter
-import Melo.Common.Exception
 import Control.Lens hiding (from, lens)
 import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Data.Aeson as A
 import Data.Aeson.Casing (trainCase)
 import Data.Aeson.Types
+import Data.ByteString.Char8 qualified as C8
 import Data.Char
 import Data.Default
 import Data.Generics.Labels ()
@@ -64,6 +64,7 @@ import Data.Vector (Vector ())
 import Data.Vector qualified as V
 import GHC.Generics (Generic)
 import GHC.Records
+import Melo.Common.Exception
 import Melo.Common.Http
 import Melo.Common.Logging
 import Melo.Common.Monad
@@ -76,9 +77,9 @@ import Melo.Format.Mapping
   )
 import Melo.Format.Mapping qualified as M
 import Melo.Format.Metadata qualified as F
+import Network.HTTP.Client as Http
+import Network.HTTP.Types.Status
 import Network.HTTP.Types.URI
-import Network.Wreq qualified as Wr
-import Network.Wreq.Session qualified as WrS
 
 newtype MusicBrainzId = MusicBrainzId
   { mbid :: Text
@@ -453,7 +454,7 @@ truncateDate :: Text -> Text
 truncateDate = T.takeWhile isDigit
 
 newtype MusicBrainzServiceIOT m a = MusicBrainzServiceIOT
-  { runMusicBrainzServiceIOT :: HttpSessionIOT m a
+  { runMusicBrainzServiceIOT :: ReaderT Http.Manager m a
   }
   deriving newtype
     ( Applicative,
@@ -465,13 +466,14 @@ newtype MusicBrainzServiceIOT m a = MusicBrainzServiceIOT
       MonadConc,
       MonadIO,
       MonadMask,
+      MonadReader Http.Manager,
       MonadThrow,
       PrimMonad
     )
-  deriving MonadTransControl
+  deriving (MonadTransControl)
 
 instance MonadTrans MusicBrainzServiceIOT where
-  lift m = MusicBrainzServiceIOT $ HttpSessionIOT $ ReaderT $ const m
+  lift m = MusicBrainzServiceIOT $ ReaderT $ const m
 
 data QueryTerm
   = QueryTerm
@@ -491,8 +493,34 @@ renderQueryParam qs = case catMaybes $ fmap encodeTerm qs of
     encodeTerm q@QueryTerm {} = q.value <&> \v -> q.key <> ":%22" <> decodeUtf8 (urlEncode True (encodeUtf8 v)) <> "%22"
     encodeTerm q@MultiTerm {} = q.values <&> \v -> q.key <> ":%22" <> T.intercalate " & " (decodeUtf8 . urlEncode True . encodeUtf8 <$> v) <> "%22"
 
+getJson ::
+  forall a m.
+  ( FromJSON a,
+    MonadCatch m,
+    MonadIO m,
+    MonadReader Http.Manager m,
+    Logging m
+  ) =>
+  Http.Request ->
+  m (Maybe a)
+getJson req = handle' do
+  manager <- ask
+  let request = req {requestHeaders = [("User-Agent", meloUserAgent), ("Accept", "application/json")]}
+  response <- liftIO $ Http.httpLbs request manager
+  $(logDebug) $ "HTTP response from '" <> reqUrl <> "': " <> show response.responseStatus
+  if response.responseStatus == status200
+    then do
+      pure $ A.decode response.responseBody
+    else pure Nothing
+  where
+    handle' = handleAny \e -> do
+      $(logError) $ "HTTP error from '" <> reqUrl <> "': " <> displayException e
+      pure Nothing
+    reqUrl = C8.unpack $ req.host <> ":" <> C8.pack (show req.port) <> req.path <> req.queryString
+
 instance
   ( MonadIO m,
+    MonadCatch m,
     RateLimit m,
     Logging m
   ) =>
@@ -508,13 +536,12 @@ instance
     case renderQueryParam qterms of
       Nothing -> pure V.empty
       Just q -> do
-        let opts = mbWreqDefaults
-        let url = baseUrl <> "/release?query=" <> q
-        getWithJson @_ @ReleaseSearchResult opts url >>= \case
-          Left e -> do
-            $(logError) $ "error searching for matching releases: " <> show e
+        let url = baseUrl <> "/release?query=" <> T.unpack q <> "&fmt=json"
+        parseRequest url >>= getJson @ReleaseSearchResult >>= \case
+          Just r -> pure $ fromMaybe V.empty $ r.releases
+          Nothing -> do
+            $(logWarn) ("no matching releases found" :: String)
             pure V.empty
-          Right r -> pure $ fromMaybe V.empty $ r ^. Wr.responseBody . #releases
   searchReleaseGroups search = MusicBrainzServiceIOT $ do
     waitReady
     let qterms =
@@ -525,24 +552,20 @@ instance
     case renderQueryParam qterms of
       Nothing -> pure V.empty
       Just q -> do
-        let opts = mbWreqDefaults
-        let url = baseUrl <> "/release-group?query=" <> q
-        getWithJson @_ @ReleaseGroupSearchResult opts url >>= \case
-          Left e -> do
-            $(logError) $ "error searching for matching release groups: " <> show e
+        let url = baseUrl <> "/release-group?query=" <> T.unpack q <> "&fmt=json"
+        parseRequest url >>= getJson @ReleaseGroupSearchResult >>= \case
+          Just r -> pure $ fromMaybe V.empty r.releaseGroups
+          Nothing -> do
+            $(logWarn) ("no matching release groups found" :: String)
             pure V.empty
-          Right r -> pure $ fromMaybe V.empty $ r ^. Wr.responseBody . #releaseGroups
   searchArtists search = MusicBrainzServiceIOT $ do
     waitReady
-    let opts =
-          mbWreqDefaults
-            & Wr.param "query" .~ ["artist:\"" <> decodeUtf8 (urlEncode True (encodeUtf8 search.artist)) <> "\""]
-    let url = baseUrl <> "/artist"
-    getWithJson @_ @ArtistSearchResult opts url >>= \case
-      Left e -> do
-        $(logError) $ "error searching for matching artists: " <> show e
+    let url = baseUrl <> "/artist?query=artist:\"" <> decodeUtf8 (urlEncode True (encodeUtf8 search.artist)) <> "\"" <> "&fmt=json"
+    parseRequest (T.unpack url) >>= getJson @ArtistSearchResult >>= \case
+      Just r -> pure $ fromMaybe V.empty $ r.artists
+      Nothing -> do
+        $(logError) ("no matching artists found" :: String)
         pure V.empty
-      Right r -> pure $ fromMaybe V.empty $ r ^. Wr.responseBody . #artists
   searchRecordings search = MusicBrainzServiceIOT $ do
     waitReady
     let qterms =
@@ -557,98 +580,93 @@ instance
     case renderQueryParam qterms of
       Nothing -> pure V.empty
       Just q -> do
-        let opts = mbWreqDefaults
-        let url = baseUrl <> "/recording?query=" <> q
-        getWithJson @_ @RecordingSearchResult opts url >>= \case
-          Left e -> do
-            $(logError) $ "error searching for matching recordings: " <> show e
+        let url = baseUrl <> "/recording?query=" <> T.unpack q <> "&fmt=json"
+        parseRequest url >>= getJson @RecordingSearchResult >>= \case
+          Just r -> pure $ fromMaybe V.empty $ r.recordings
+          Nothing -> do
+            $(logError) ("no matching recordings found" :: String)
             pure V.empty
-          Right r -> pure $ fromMaybe V.empty $ r ^. Wr.responseBody . #recordings
   getArtist artistId = MusicBrainzServiceIOT $ do
     waitReady
-    let opts = mbWreqDefaults
-    let url = baseUrl <> "/artist/" <> artistId.mbid <> "?inc=aliases"
-    getWithJson opts url >>= \case
-      Left e -> do
-        $(logError) $ "error getting artist " <> show artistId.mbid <> ": " <> show e
+    let url = baseUrl <> "/artist/" <> T.unpack artistId.mbid <> "?inc=aliases&fmt=json"
+    parseRequest url >>= getJson >>= \case
+      Just r -> pure r
+      Nothing -> do
+        $(logError) $ "failed to get artist " <> show artistId.mbid
         pure Nothing
-      Right r -> pure $ r ^. Wr.responseBody
   getArtistReleaseGroups artistId = MusicBrainzServiceIOT $ do
     waitReady
-    let opts =
-          mbWreqDefaults
-            & Wr.param "artist" .~ [artistId.mbid]
-            & Wr.param "limit" .~ ["100"]
-            & Wr.param "inc" .~ ["artist-credits labels"]
-    let url = baseUrl <> "/release-group/"
-    getWithJson opts url >>= \case
-      Left e -> do
-        $(logError) $ "error getting release groups for artist " <> show artistId.mbid <> ": " <> show e
+    let params =
+          [ ("artist", encodeUtf8 artistId.mbid),
+            ("limit", "100"),
+            ("inc", "artist-credits labels"),
+            ("fmt", "json")
+          ]
+    let url = baseUrl <> "/release-group/" <> renderSimpleQuery True params
+    parseRequest (C8.unpack url) >>= getJson >>= \case
+      Just r -> pure r
+      Nothing -> do
+        $(logError) $ "failed to get release groups for artist " <> show artistId.mbid
         pure V.empty
-      Right r -> pure $ r ^. Wr.responseBody
   getArtistReleases artistId = MusicBrainzServiceIOT $ do
     waitReady
-    let opts =
-          mbWreqDefaults
-            & Wr.param "artist" .~ [artistId.mbid]
-            & Wr.param "limit" .~ ["100"]
-            & Wr.param "inc" .~ ["artist-credits labels"]
-    let url = baseUrl <> "/release/"
-    getWithJson opts url >>= \case
-      Left e -> do
-        $(logError) $ "error getting releases for artist " <> show artistId.mbid <> ": " <> show e
+    let params =
+          [ ("artist", encodeUtf8 artistId.mbid),
+            ("limit", "100"),
+            ("inc", "artist-credits labels"),
+            ("fmt", "json")
+          ]
+    let url = baseUrl <> "/release/" <> renderSimpleQuery True params
+    parseRequest (C8.unpack url) >>= getJson >>= \case
+      Just r -> pure r
+      Nothing -> do
+        $(logError) $ "failed to get releases for artist " <> show artistId.mbid
         pure V.empty
-      Right r -> pure $ r ^. Wr.responseBody
   getArtistRecordings artistId = MusicBrainzServiceIOT $ do
     waitReady
-    let opts =
-          mbWreqDefaults
-            & Wr.param "artist" .~ [artistId.mbid]
-            & Wr.param "limit" .~ ["100"]
-    let url = baseUrl <> "/recording/"
-    getWithJson opts url >>= \case
-      Left e -> do
-        $(logError) $ "error getting recordings for artist " <> show artistId.mbid <> ": " <> show e
+    let params =
+          [ ("artist", encodeUtf8 artistId.mbid),
+            ("limit", "100"),
+            ("fmt", "json")
+          ]
+    let url = baseUrl <> "/recording/" <> renderSimpleQuery True params
+    parseRequest (C8.unpack url) >>= getJson >>= \case
+      Just r -> pure r
+      Nothing -> do
+        $(logError) $ "failed to get recordings for artist " <> show artistId.mbid
         pure V.empty
-      Right r -> pure $ r ^. Wr.responseBody
   getRelease releaseId = MusicBrainzServiceIOT $ do
     waitReady
-    let opts =
-          mbWreqDefaults
-            & Wr.param "inc" .~ ["artist-credits labels"]
-    let url = baseUrl <> "/release/" <> releaseId.mbid
-    getWithJson opts url >>= \case
-      Left e -> do
-        $(logError) $ "error getting release " <> show releaseId.mbid <> ": " <> show e
+    let params =
+          [ ("inc", "artist-credits labels"),
+            ("fmt", "json")
+          ]
+    let url = baseUrl <> "/release/" <> (encodeUtf8 releaseId.mbid) <> renderSimpleQuery True params
+    parseRequest (C8.unpack url) >>= getJson >>= \case
+      Just r -> pure r
+      Nothing -> do
+        $(logError) $ "failed to get release " <> show releaseId.mbid
         pure Nothing
-      Right r -> pure $ r ^. Wr.responseBody
   getReleaseGroup releaseGroupId = MusicBrainzServiceIOT $ do
     waitReady
-    let opts =
-          mbWreqDefaults
-            & Wr.param "inc" .~ ["artist-credits"]
-    let url = baseUrl <> "/release-group/" <> releaseGroupId.mbid
-    getWithJson opts url >>= \case
-      Left e -> do
-        $(logError) $ "error getting release group " <> show releaseGroupId.mbid <> ": " <> show e
+    let params =
+          [ ("inc", "artist-credits"),
+            ("fmt", "json")
+          ]
+    let url = baseUrl <> "/release-group/" <> (encodeUtf8 releaseGroupId.mbid) <> renderSimpleQuery True params
+    parseRequest (C8.unpack url) >>= getJson >>= \case
+      Just r -> pure r
+      Nothing -> do
+        $(logError) $ "failed to get release group " <> show releaseGroupId.mbid
         pure Nothing
-      Right r -> pure $ r ^. Wr.responseBody
   getRecording recordingId = MusicBrainzServiceIOT $ do
     waitReady
-    let opts = mbWreqDefaults
-    let url = baseUrl <> "/recording/" <> recordingId.mbid
-    getWithJson opts url >>= \case
-      Left e -> do
-        $(logError) $ "error getting recording " <> show recordingId.mbid <> ": " <> show e
+    let url = baseUrl <> "/recording/" <> recordingId.mbid <> "?fmt=json"
+    parseRequest (T.unpack url) >>= getJson >>= \case
+      Just r -> pure r
+      Nothing -> do
+        $(logError) $ "failed to get recording " <> show recordingId.mbid
         pure Nothing
-      Right r -> pure $ r ^. Wr.responseBody
-
-mbWreqDefaults :: Wr.Options
-mbWreqDefaults =
-  Wr.defaults
-    & Wr.header "User-Agent" .~ [meloUserAgent]
-    & Wr.header "Accept" .~ ["application/json"]
-    & Wr.param "fmt" .~ ["json"]
 
 baseUrl :: IsString s => s
 -- TODO configurable musicbrainz url
@@ -658,12 +676,12 @@ baseUrl = "http://192.168.1.170:5000/ws/2"
 runMusicBrainzServiceIO ::
   ( MonadIO m
   ) =>
-  WrS.Session ->
+  Http.Manager ->
   MusicBrainzServiceIOT (RateLimitIOT m) a ->
   m a
-runMusicBrainzServiceIO sess =
+runMusicBrainzServiceIO manager =
   runRateLimitIO mbRateLimitConfig
-    . runHttpSession sess
+    . (flip runReaderT) manager
     . runMusicBrainzServiceIOT
 
 mbRateLimitConfig :: LimitConfig
@@ -675,12 +693,12 @@ mbRateLimitConfig =
     }
 
 runMusicBrainzServiceUnlimitedIO ::
-  WrS.Session ->
+  Http.Manager ->
   MusicBrainzServiceIOT (UnlimitedT m) a ->
   m a
-runMusicBrainzServiceUnlimitedIO sess =
+runMusicBrainzServiceUnlimitedIO manager =
   runUnlimitedT
-    . runHttpSession sess
+    . (flip runReaderT) manager
     . runMusicBrainzServiceIOT
 
 newtype UnlimitedT m a = UnlimitedT {runUnlimitedT :: m a}

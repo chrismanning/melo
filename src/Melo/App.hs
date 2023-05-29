@@ -28,9 +28,9 @@ import Melo.Library.Source.Repo
 import Melo.Lookup.MusicBrainz qualified as MB
 import Melo.Metadata.Mapping.Aggregate
 import Melo.Metadata.Mapping.Repo
+import Network.HTTP.Client as Http
 import Network.HTTP.Client.TLS as Http
 import Network.Wai.Handler.Warp
-import Network.Wreq.Session qualified as Wreq
 import System.Exit
 import System.IO
 import Web.Scotty.Trans
@@ -58,12 +58,10 @@ app = do
           exitFailure
       )
 
-    sess <- Wreq.newAPISession
-
     collectionWatchState <- emptyWatchState
     fork $
       catchAny
-        (initApp collectionWatchState pool sess)
+        (initApp collectionWatchState pool httpManager)
         ( \e -> do
             $(logErrorIO) $ "error initialising app: " <> show e
             exitFailure
@@ -71,10 +69,10 @@ app = do
     $(logInfoIO) ("starting web server" :: String)
 
     let opts = def {settings = setHost "*6" $ setPort env.server.port.unwrap defaultSettings}
-    scottyOptsT opts Prelude.id (api collectionWatchState pool sess httpManager)
+    scottyOptsT opts Prelude.id (api collectionWatchState pool httpManager)
 
-initApp :: CollectionWatchState -> Pool Hasql.Connection -> Wreq.Session -> IO ()
-initApp collectionWatchState pool sess =
+initApp :: CollectionWatchState -> Pool Hasql.Connection -> Http.Manager -> IO ()
+initApp collectionWatchState pool httpManager =
   runFileSystemIO $
     runConfigRepositoryPooledIO pool $
       runMetadataAggregateIO $
@@ -83,10 +81,10 @@ initApp collectionWatchState pool sess =
             runReleaseRepositoryPooledIO pool $
               runArtistNameRepositoryPooledIO pool $
                 runArtistRepositoryPooledIO pool $
-                  MB.runMusicBrainzServiceUnlimitedIO sess $
+                  MB.runMusicBrainzServiceUnlimitedIO httpManager $
                     runCollectionRepositoryPooledIO pool $
-                      runFileSystemWatcherIO pool collectionWatchState sess $
-                        runCollectionAggregateIO pool sess collectionWatchState $ do
+                      runFileSystemWatcherIO pool collectionWatchState httpManager $
+                        runCollectionAggregateIO pool httpManager collectionWatchState $ do
                           insertDefaultMappings
                           initMetadataConfig
                           initCollections

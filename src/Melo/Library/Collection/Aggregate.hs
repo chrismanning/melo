@@ -23,7 +23,7 @@ import Melo.Database.Repo as Repo
 import Melo.Library.Collection.FileSystem.Scan
 import Melo.Library.Collection.Repo as Repo
 import Melo.Library.Collection.Types
-import Network.Wreq.Session qualified as Wreq
+import Network.HTTP.Client qualified as Http
 
 class Monad m => CollectionAggregate m where
   addCollection :: NewCollection -> m CollectionRef
@@ -43,7 +43,7 @@ instance
   rescanCollection = lift . rescanCollection
 
 newtype CollectionAggregateIOT m a = CollectionAggregateIOT
-  { runCollectionAggregateIOT :: ReaderT (Pool Connection, Wreq.Session, CollectionWatchState) m a
+  { runCollectionAggregateIOT :: ReaderT (Pool Connection, Http.Manager, CollectionWatchState) m a
   }
   deriving newtype
     ( Functor,
@@ -56,14 +56,14 @@ newtype CollectionAggregateIOT m a = CollectionAggregateIOT
       MonadConc,
       MonadMask,
       MonadThrow,
-      MonadReader (Pool Connection, Wreq.Session, CollectionWatchState),
+      MonadReader (Pool Connection, Http.Manager, CollectionWatchState),
       MonadTrans,
       MonadTransControl,
       PrimMonad
     )
 
-runCollectionAggregateIO :: Pool Connection -> Wreq.Session -> CollectionWatchState -> CollectionAggregateIOT m a -> m a
-runCollectionAggregateIO pool sess cws = flip runReaderT (pool, sess, cws) . runCollectionAggregateIOT
+runCollectionAggregateIO :: Pool Connection -> Http.Manager -> CollectionWatchState -> CollectionAggregateIOT m a -> m a
+runCollectionAggregateIO pool manager cws = flip runReaderT (pool, manager, cws) . runCollectionAggregateIOT
 
 instance
   ( CollectionRepository m,
@@ -80,8 +80,8 @@ instance
     $(logDebug) $ "Adding collection " <> show c
     Repo.insertSingle @CollectionEntity c >>= \case
       Just CollectionTable {..} -> do
-        (pool, sess, cws) <- ask
-        fork $ liftIO $ runParIO $ scanPathIO pool sess cws ScanAll id (T.unpack rootPath)
+        (pool, manager, cws) <- ask
+        fork $ liftIO $ runParIO $ scanPathIO pool manager cws ScanAll id (T.unpack rootPath)
         when watch $ startWatching id (T.unpack rootPath)
         pure id
       Nothing -> error "unexpected insertCollections result"
@@ -90,9 +90,9 @@ instance
       Just CollectionTable {id, root_uri} ->
         case parseURI (T.unpack root_uri) >>= uriToFilePath of
           Just rootPath -> do
-            (pool, sess, cws) <- ask
+            (pool, manager, cws) <- ask
             $(logInfo) $ "re-scanning collection " <> show id <> " at " <> rootPath
-            liftIO $ runParIO $ scanPathIO pool sess cws ScanNewOrModified ref rootPath
+            liftIO $ runParIO $ scanPathIO pool manager cws ScanNewOrModified ref rootPath
           Nothing -> $(logWarn) $ "collection " <> show id <> " not a local file system"
       Nothing -> $(logWarn) $ "collection " <> show id <> " not found"
     pure ()

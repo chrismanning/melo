@@ -51,7 +51,6 @@ import Melo.Metadata.Mapping.Repo
 import Network.HTTP.Types.Status
 import Network.HTTP.Client as Http
 import Network.Wai.Middleware.Cors
-import Network.Wreq.Session qualified as Wreq
 import System.FilePath (takeDirectory, takeFileName)
 import Web.Scotty.Trans
 
@@ -87,14 +86,14 @@ rootResolver =
 gqlApi :: forall m. (ResolverE m, Typeable m) => ByteString -> m ByteString
 gqlApi = interpreter (rootResolver)
 
-gqlApiIO :: CollectionWatchState -> Pool Connection -> Wreq.Session -> Http.Manager -> ByteString -> IO ByteString
-gqlApiIO collectionWatchState pool sess httpManager rq = do
+gqlApiIO :: CollectionWatchState -> Pool Connection ->  Http.Manager -> ByteString -> IO ByteString
+gqlApiIO collectionWatchState pool httpManager rq = do
   $(logInfo) ("handling graphql request" :: T.Text)
   $(logDebug) $ "graphql request: " <> rq
   let run =
         runFileSystemIO
           . runConfigRepositoryPooledIO pool
-          . runFileSystemWatcherIO pool collectionWatchState sess
+          . runFileSystemWatcherIO pool collectionWatchState httpManager
           . runMetadataAggregateIO
           . runSourceRepositoryPooledIO pool
           . runTagMappingRepositoryPooledIO pool
@@ -104,11 +103,11 @@ gqlApiIO collectionWatchState pool sess httpManager rq = do
           . runArtistRepositoryPooledIO pool
           . runTrackArtistNameRepositoryPooledIO pool
           . runTrackRepositoryPooledIO pool
-          . runMusicBrainzServiceUnlimitedIO sess
+          . runMusicBrainzServiceUnlimitedIO httpManager
           . runMultiTrackIO
           . runCollectionRepositoryPooledIO pool
           . runTagMappingAggregate
-          . runCollectionAggregateIO pool sess collectionWatchState
+          . runCollectionAggregateIO pool httpManager collectionWatchState
           . runArtistAggregateIOT
           . runTrackAggregateIOT
           . runReleaseAggregateIOT
@@ -152,14 +151,13 @@ api ::
   (MonadIO m, Logging m, PrimMonad m) =>
   CollectionWatchState ->
   Pool Connection ->
-  Wreq.Session ->
   Http.Manager ->
   ScottyT LT.Text m ()
-api collectionWatchState pool sess httpManager = do
+api collectionWatchState pool httpManager = do
   middleware (cors (const $ Just simpleCorsResourcePolicy {corsRequestHeaders = ["Content-Type"]}))
   matchAny "/api" $ do
     setHeader "Content-Type" "application/json; charset=utf-8"
-    raw =<< (liftIO . gqlApiIO collectionWatchState pool sess httpManager =<< body)
+    raw =<< (liftIO . gqlApiIO collectionWatchState pool httpManager =<< body)
   get "/graphiql" $ do
     setHeader "Content-Type" "text/html; charset=utf-8"
     file "graphiql.html"
@@ -182,7 +180,7 @@ api collectionWatchState pool sess httpManager = do
     case fromASCIIBytes srcId of
       Nothing -> status badRequest400
       Just uuid -> do
-        liftIO (findCoverImageIO pool sess collectionWatchState (SourceRef uuid)) >>= \case
+        liftIO (findCoverImageIO pool httpManager collectionWatchState (SourceRef uuid)) >>= \case
           Nothing -> do
             $(logWarnIO) $ "No cover image found for source " <> srcId
             status notFound404
@@ -225,11 +223,11 @@ data CoverImage = EmbeddedImage EmbeddedPicture | ExternalImageFile FilePath
 
 findCoverImageIO ::
   Pool Connection ->
-  Wreq.Session ->
+  Http.Manager ->
   CollectionWatchState ->
   SourceRef -> IO (Maybe CoverImage)
-findCoverImageIO pool sess cws k = withResource pool $ \conn ->
-  runFileSystemIO $ runFileSystemWatcherIO pool cws sess $
+findCoverImageIO pool httpManager cws k = withResource pool $ \conn ->
+  runFileSystemIO $ runFileSystemWatcherIO pool cws httpManager $
     runConfigRepositoryIO conn $
     runSourceRepositoryIO conn $
       runMetadataAggregateIO do
