@@ -4,6 +4,7 @@ module Melo.Common.RateLimit where
 
 import Control.Concurrent.Classy
 import Control.Concurrent.TokenLimiter
+import Control.Monad.Primitive
 import Melo.Common.Exception
 import Control.Monad.Base
 import Control.Monad.IO.Class
@@ -14,7 +15,7 @@ class Monad m => RateLimit m where
   waitReady :: m ()
 
 newtype RateLimitIOT m a = RateLimitIOT
-  { runRateLimitIOT :: ReaderT (LimitConfig, RateLimiter) m a
+  { runRateLimitIOT :: ReaderT (Maybe (LimitConfig, RateLimiter)) m a
   }
   deriving newtype (
     Applicative,
@@ -28,7 +29,8 @@ newtype RateLimitIOT m a = RateLimitIOT
     MonadMask,
     MonadThrow,
     MonadTrans,
-    MonadTransControl
+    MonadTransControl,
+    PrimMonad
   )
 
 instance
@@ -42,9 +44,11 @@ instance
   waitReady = lift waitReady
 
 instance MonadIO m => RateLimit (RateLimitIOT m) where
-  waitReady = RateLimitIOT $ do
-    (lc, rl) <- ask
-    liftIO $ waitDebit lc rl 1
+  waitReady = RateLimitIOT
+    ask >>= \case
+      Just (lc, rl) ->
+        liftIO $ waitDebit lc rl 1
+      Nothing -> pure ()
 
 runRateLimitIO ::
   MonadIO m =>
@@ -60,4 +64,12 @@ runRateLimitIO' ::
   RateLimiter ->
   RateLimitIOT m a ->
   m a
-runRateLimitIO' lc rl c = runReaderT (runRateLimitIOT c) (lc, rl)
+runRateLimitIO' lc rl c = runReaderT (runRateLimitIOT c) (Just (lc, rl))
+
+runDynamicRateLimitIO ::
+  MonadIO m =>
+  Maybe LimitConfig ->
+  RateLimitIOT m a ->
+  m a
+runDynamicRateLimitIO (Just lc) c = runRateLimitIO lc c
+runDynamicRateLimitIO Nothing c = runReaderT (runRateLimitIOT c) Nothing

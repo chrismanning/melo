@@ -598,7 +598,8 @@ runSourceIO collectionWatchState pool httpManager =
     . runArtistRepositoryPooledIO pool
     . runTrackArtistNameRepositoryPooledIO pool
     . runTrackRepositoryPooledIO pool
-    . runMusicBrainzServiceUnlimitedIO httpManager
+    . runMusicBrainzServiceIO httpManager
+    . runCachingMusicBrainzService
     . runMultiTrackIO
     . runCollectionRepositoryPooledIO pool
     . runCollectionAggregateIO pool httpManager collectionWatchState

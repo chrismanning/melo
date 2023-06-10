@@ -155,7 +155,7 @@ scanPathIO pool manager cws scanType ref p' =
         . runReleaseRepositoryPooledIO pool
         . runTrackRepositoryPooledIO pool
         . runTrackArtistNameRepositoryPooledIO pool
-        . MB.runMusicBrainzServiceUnlimitedIO manager
+        . MB.runMusicBrainzServiceIO manager
         . runTagMappingRepositoryPooledIO pool
         . MB.runCachingMusicBrainzService
         . runTagMappingAggregate

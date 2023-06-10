@@ -103,7 +103,8 @@ gqlApiIO collectionWatchState pool httpManager rq = do
           . runArtistRepositoryPooledIO pool
           . runTrackArtistNameRepositoryPooledIO pool
           . runTrackRepositoryPooledIO pool
-          . runMusicBrainzServiceUnlimitedIO httpManager
+          . runMusicBrainzServiceIO httpManager
+          . runCachingMusicBrainzService
           . runMultiTrackIO
           . runCollectionRepositoryPooledIO pool
           . runTagMappingAggregate

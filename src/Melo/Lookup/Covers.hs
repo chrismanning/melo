@@ -197,13 +197,15 @@ instance
         let !artist = fromMaybe "" $ release.artists ^? _head . #name
         let !requestObject = SearchRequest { artist, album = release.title, country = "gb", sources = (Bandcamp :| [Qobuz, Tidal]) }
         let !request = initialRequest { method = "POST", requestHeaders = [(hContentType, "application/json")], requestBody = RequestBodyLBS $ encode requestObject }
-        $(logDebug) $ "Cover search request: " <> show request
+        let clientRequestUrl = T.pack requestUri
+        $(logInfoV ['clientRequestUrl]) "Searching for images"
 
         response <- httpLbs request manager
-        results <- if responseStatus response == ok200 then let !bodies = LBS.split 0xA (responseBody response) in
+        results <- if statusIsSuccessful response.responseStatus then let !bodies = LBS.split 0xA (responseBody response) in
               pure $ decode @SearchResult <$> bodies
             else do
-              $(logError) $ "Response from cover search service: " <> show (responseStatus response)
+              let clientResponseStatus = show response.responseStatus
+              $(logErrorV ['clientRequestUrl, 'clientResponseStatus]) "Response received from cover search"
               pure []
         covers <- S.each results
           & S.mapM \case
@@ -220,12 +222,14 @@ instance
     where
       getImageInfo url manager = liftIO $ runResourceT do
         request <- parseRequest $ T.unpack url
-        $(logDebugIO) $ "getImageInfo request: " <> show request
+        let clientRequestUrl = url
+        $(logInfoVIO ['clientRequestUrl]) "Getting image to determine size"
         response <- http request manager
-        $(logDebugIO) $ "getImageInfo response: " <> show (responseStatus response)
+        let clientResponseStatus = show response.responseStatus
+        $(logDebugVIO ['clientResponseStatus]) "HTTP client received response"
         !r <- runConduit $ responseBody response .| sinkImageInfo
         (size, format) <- r
-        $(logDebugIO) $ "getImageInfo size: " <> show size
+        $(logInfoIO) $ "Image size: " <> show size
         let length = lookup hContentLength (responseHeaders response)
         $(logDebugIO) $ "getImageInfo length: " <> show length
         pure ImageInfo {
@@ -251,7 +255,8 @@ instance
           getExt . snd <$> r
         let dest = destDir </> "cover" <> ext
         removePath dest >>= \case
-          Left e -> $(logError) $ "failed to remove existing file " <> show dest <> ": " <> displayException e
+          Left e -> let cause = displayException e in
+            $(logErrorV ['cause]) $ T.pack $ "failed to remove existing file " <> show dest
           _ -> pure ()
         liftIO $ runResourceT do
           response <- http request manager
@@ -266,10 +271,12 @@ instance
           ext <- getExt . snd <$> r
           let dest = destDir </> "cover" <> ext
           removePath dest >>= \case
-            Left e -> $(logError) $ "failed to copy file " <> show srcPath <> " to " <> show dest <> ": " <> displayException e
+            Left e -> let cause = displayException e in
+              $(logErrorV ['cause]) $ T.pack $ "failed to copy file " <> show srcPath <> " to " <> show dest
             _ -> pure ()
           copyPath srcPath (dest <> ".tmp") >>= \case
-            Left e -> $(logError) $ "failed to copy file " <> show srcPath <> " to " <> show dest <> ": " <> displayException e
+            Left e -> let cause = displayException e in
+              $(logErrorV ['cause]) $ T.pack $ "failed to copy file " <> show srcPath <> " to " <> show dest
             _ -> do
               movePath (dest <> ".tmp") dest
               cacheVar <- asks (.copyCoverToDirCache)
@@ -280,7 +287,8 @@ instance
         pure ()
       where
         handleErrors = handleAny \e -> do
-          $(logError) $ "failed to copy cover from " <> show src <> " to " <> show destDir <> ": " <> displayException e
+          let cause = displayException e
+          $(logErrorV ['cause]) $ T.pack $ "failed to copy cover from " <> show src <> " to " <> show destDir
         getExt ConduitImageSize.GIF = ".gif"
         getExt ConduitImageSize.JPG = ".jpg"
         getExt ConduitImageSize.PNG = ".png"

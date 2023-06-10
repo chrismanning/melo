@@ -82,12 +82,13 @@ initApp collectionWatchState pool httpManager =
             runReleaseRepositoryPooledIO pool $
               runArtistNameRepositoryPooledIO pool $
                 runArtistRepositoryPooledIO pool $
-                  MB.runMusicBrainzServiceUnlimitedIO httpManager $
+                  MB.runMusicBrainzServiceIO httpManager $
                     runCollectionRepositoryPooledIO pool $
                       runFileSystemWatcherIO pool collectionWatchState httpManager $
                         runCollectionAggregateIO pool httpManager collectionWatchState $ do
                           insertDefaultMappings
                           initMetadataConfig
+                          MB.initMusicBrainzConfig
                           initCollections
 
 initCollections ::
