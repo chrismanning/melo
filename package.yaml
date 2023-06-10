@@ -195,6 +195,7 @@ tests:
 
 ghc-options:
 - -O0
+- -debug
 - -Wall
 - -Wcompat
 - -fno-warn-name-shadowing

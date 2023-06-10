@@ -112,7 +112,7 @@ instance
           Just path -> do
             readMetadataFile s.kind path >>= \case
               Right mf -> do
-                config <- lift $ getConfigDefault metadataConfigKey
+                config <- getConfigDefault metadataConfigKey
                 let mf' = case s.metadata of
                       Just m ->
                         if config.removeOtherTagTypes

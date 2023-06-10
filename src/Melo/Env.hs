@@ -27,8 +27,6 @@ import System.Exit
 import Text.Casing
 import Text.Read
 
-import Debug.Trace
-
 initEnv :: IO Env
 initEnv = getEnv @Env
 
@@ -151,7 +149,7 @@ instance {-# OVERLAPPABLE #-} (KnownSymbol n, Generic a, GetEnv' (Rep a)) => Get
   getEnv' prefix = M1 . K1 . to <$> getEnv' @(Rep a) (Just (getEnvVarName @n prefix))
 
 getEnvVarName :: forall n. KnownSymbol n => Maybe String -> String
-getEnvVarName prefix = traceShowId $ fromMaybe "" (fmap (<> "_") prefix) <> toScreamingSnake (fromAny $ symbolVal' (proxy# @n))
+getEnvVarName prefix = fromMaybe "" (fmap (<> "_") prefix) <> toScreamingSnake (fromAny $ symbolVal' (proxy# @n))
 
 newtype EnvVar a d = EnvVar { unwrap :: a }
   deriving newtype (Show)

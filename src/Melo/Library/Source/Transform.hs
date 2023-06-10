@@ -865,9 +865,9 @@ extractTrack collectionRef' patterns s@Source {multiTrack = Just MultiTrackDesc 
                   let metadataFile = raw & #metadata .~ m
                   mf <- writeMetadataFile metadataFile dest >>= mapE MetadataTransformError
                   srcs <- importSources (V.singleton (FileSource collectionRef mf))
-                  if V.null srcs
-                    then throwE (ImportFailed (ImportSourceError Nothing))
-                    else pure $ srcs V.! 0
+                  case srcs V.!? 0 of
+                    Just s -> pure s
+                    Nothing -> throwE (ImportFailed (ImportSourceError Nothing))
         Nothing -> pure $ Right s
 extractTrack _ _ src = pure $ Right src
 
@@ -896,7 +896,7 @@ editMetadata ts src = runExceptT do
   editMetadata' (SetMapping mappingName vs) src@Source {metadata = Just metadata'} =
     runExceptT @TransformationError do
       mapping <- getMappingNamed mappingName >>= eitherToError . maybeToRight (UnknownTagMapping mappingName)
-      let metadata = into @SourceMetadata metadata
+      let metadata = into @SourceMetadata metadata'.tags
           current  = metadata' ^. F.tagLens mapping in
         $(logDebugV ['mapping, 'metadata, 'current]) $ "Setting tag to " <> T.pack (show vs)
       let newMetadata = metadata' & F.tagLens mapping .~ vs

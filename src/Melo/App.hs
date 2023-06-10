@@ -41,6 +41,7 @@ app = do
   httpManager <- Http.newTlsManager
   withLogging env.logging httpManager do
     $(logInfoIO) ("Starting melo..." :: String)
+    $(logDebugIO) $ "Env: " <> show env
     let db = env.database
     let connInfo = Hasql.settings db.host.unwrap db.port.unwrap db.user.unwrap db.password.unwrap db.database.unwrap
     let newConnection =

@@ -14,7 +14,6 @@ module Melo.Lookup.Covers (
 
 import Conduit
 import Control.Concurrent.STM (TVar, newTVar, readTVar, modifyTVar')
-import Melo.Common.Exception
 import Control.Lens hiding (from, lens, (<|))
 import Control.Monad.Reader
 import Data.Aeson as A
@@ -33,7 +32,9 @@ import Data.String (IsString)
 import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
+import Melo.Common.Exception
 import Melo.Common.FileSystem
+import Melo.Common.Http
 import Melo.Common.Logging
 import Melo.Common.Monad
 import Melo.Common.Uri
@@ -185,7 +186,7 @@ instance
   ) =>
   CoverService (CoverServiceIOT m)
   where
-  searchForCovers release = do
+  searchForCovers release = handleErrors do
     cacheVar <- asks (.searchForCoversCache)
     cache <- liftIO $ atomically $ readTVar cacheVar
     case cache ^? at release . _Just of
@@ -198,7 +199,7 @@ instance
         let !request = initialRequest { method = "POST", requestHeaders = [(hContentType, "application/json")], requestBody = RequestBodyLBS $ encode requestObject }
         $(logDebug) $ "Cover search request: " <> show request
 
-        response <- liftIO $ httpLbs request manager
+        response <- httpLbs request manager
         results <- if responseStatus response == ok200 then let !bodies = LBS.split 0xA (responseBody response) in
               pure $ decode @SearchResult <$> bodies
             else do
@@ -234,6 +235,10 @@ instance
           height = size.height,
           bytes = fromMaybe 0 (C.unpack <$> length >>= readMaybe)
         }
+      handleErrors = handleHttp \e -> do
+        let cause = show e
+        $(logErrorV ['cause]) ("Failed to search for covers" :: Text)
+        pure []
   copyCoverToDir src destDir = unlessM visited do
     $(logInfo) $ "copying cover from " <> show src <> " to " <> show destDir
     manager <- asks (.httpManager)
