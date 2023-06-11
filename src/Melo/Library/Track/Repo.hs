@@ -109,12 +109,9 @@ runTrackRepositoryPooledIO pool =
         upsert =
           Just
             Upsert
-              { index = \e -> (e.track_number, e.disc_number, e.release_id),
+              { index = (.source_id),
                 set = const,
-                updateWhere = \new old ->
-                  new.track_number ==. old.track_number
-                    &&. new.disc_number ==. old.disc_number
-                    &&. new.release_id ==. old.release_id
+                updateWhere = \_new _old -> lit True
               }
       }
     . runRepositoryIOT
@@ -131,12 +128,9 @@ runTrackRepositoryIO conn =
         upsert =
           Just
             Upsert
-              { index = \e -> (e.track_number, e.disc_number, e.release_id),
+              { index = (.source_id),
                 set = const,
-                updateWhere = \new old ->
-                  new.track_number ==. old.track_number
-                    &&. new.disc_number ==. old.disc_number
-                    &&. new.release_id ==. old.release_id
+                updateWhere = \_new _old -> lit True
               }
       }
     . runRepositoryIOT
