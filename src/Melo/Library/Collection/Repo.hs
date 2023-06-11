@@ -11,10 +11,8 @@ import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
 import Data.Functor.Contravariant
-import Data.Pool
 import Data.Text qualified as T
 import Data.Vector (Vector, empty)
-import Hasql.Connection
 import Melo.Common.NaturalSort
 import Melo.Database.Repo
 import Melo.Database.Repo.IO
@@ -109,31 +107,12 @@ collectionSchema =
           }
     }
 
-runCollectionRepositoryPooledIO :: Pool Connection -> CollectionRepositoryIOT m a -> m a
-runCollectionRepositoryPooledIO pool =
+runCollectionRepositoryIO :: DbConnection -> CollectionRepositoryIOT m a -> m a
+runCollectionRepositoryIO connSrc =
   flip
     runReaderT
     RepositoryHandle
-      { connSrc = Pooled pool,
-        tbl = collectionSchema,
-        pk = \e -> e.id,
-        upsert =
-          Just
-            Upsert
-              { index = \c -> c.root_uri,
-                set = const,
-                updateWhere = \new old -> new.id ==. old.id
-              }
-      }
-    . runRepositoryIOT
-    . runCollectionRepositoryIOT
-
-runCollectionRepositoryIO :: Connection -> CollectionRepositoryIOT m a -> m a
-runCollectionRepositoryIO conn =
-  flip
-    runReaderT
-    RepositoryHandle
-      { connSrc = Single conn,
+      { connSrc,
         tbl = collectionSchema,
         pk = \e -> e.id,
         upsert =

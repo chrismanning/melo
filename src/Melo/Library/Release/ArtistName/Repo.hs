@@ -115,16 +115,9 @@ releaseArtistNameSchema =
           }
     }
 
-runReleaseArtistNameRepositoryPooledIO :: Pool Connection -> ReleaseArtistNameRepositoryIOT m a -> m a
-runReleaseArtistNameRepositoryPooledIO pool =
-  flip
-    runReaderT
-    (Pooled pool)
-    . runReleaseArtistNameRepositoryIOT
-
-runReleaseArtistNameRepositoryIO :: Connection -> ReleaseArtistNameRepositoryIOT m a -> m a
+runReleaseArtistNameRepositoryIO :: DbConnection -> ReleaseArtistNameRepositoryIOT m a -> m a
 runReleaseArtistNameRepositoryIO conn =
   flip
     runReaderT
-    (Single conn)
+    conn
     . runReleaseArtistNameRepositoryIOT

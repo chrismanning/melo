@@ -42,7 +42,7 @@ import Melo.Common.Metadata
 import Melo.Common.Uri
 import Melo.Common.Uuid
 import Melo.Database.Repo as Repo
-import Melo.Database.Repo.IO (selectStream)
+import Melo.Database.Repo.IO (DbConnection(..), selectStream)
 import Melo.Format qualified as F
 import Melo.GraphQL.Where
 import Melo.Library.Release.Aggregate
@@ -54,7 +54,7 @@ import Melo.Library.Artist.Name.Repo
 import Melo.Library.Artist.Repo
 import Melo.Library.Collection.Aggregate
 import Melo.Library.Collection.FileSystem.Scan
-import Melo.Library.Collection.Repo (runCollectionRepositoryPooledIO)
+import Melo.Library.Collection.Repo (runCollectionRepositoryIO)
 import Melo.Library.Collection.Types qualified as Ty
 import Melo.Library.Release.Aggregate as Release
 import Melo.Library.Source.Aggregate
@@ -587,21 +587,21 @@ streamSourceGroupsQuery collectionWatchState pool httpManager collectionRef grou
 
 runSourceIO collectionWatchState pool httpManager =
   runFileSystemIO
-    . runConfigRepositoryPooledIO pool
+    . runConfigRepositoryIO (Pooled pool)
     . runFileSystemWatcherIO pool collectionWatchState httpManager
     . runMetadataAggregateIO
-    . runSourceRepositoryPooledIO pool
-    . runTagMappingRepositoryPooledIO pool
-    . runReleaseRepositoryPooledIO pool
-    . runReleaseArtistNameRepositoryPooledIO pool
-    . runArtistNameRepositoryPooledIO pool
-    . runArtistRepositoryPooledIO pool
-    . runTrackArtistNameRepositoryPooledIO pool
-    . runTrackRepositoryPooledIO pool
+    . runSourceRepositoryIO (Pooled pool)
+    . runTagMappingRepositoryIO (Pooled pool)
+    . runReleaseRepositoryIO (Pooled pool)
+    . runReleaseArtistNameRepositoryIO (Pooled pool)
+    . runArtistNameRepositoryIO (Pooled pool)
+    . runArtistRepositoryIO (Pooled pool)
+    . runTrackArtistNameRepositoryIO (Pooled pool)
+    . runTrackRepositoryIO (Pooled pool)
     . runMusicBrainzServiceIO httpManager
     . runCachingMusicBrainzService
     . runMultiTrackIO
-    . runCollectionRepositoryPooledIO pool
+    . runCollectionRepositoryIO (Pooled pool)
     . runCollectionAggregateIO pool httpManager collectionWatchState
     . runTagMappingAggregate
     . runArtistAggregateIOT

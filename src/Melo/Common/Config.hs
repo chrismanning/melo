@@ -8,11 +8,9 @@ import Data.Aeson qualified as A
 import Data.Default
 import Data.Hashable
 import Data.Maybe
-import Data.Pool
 import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics
-import Hasql.Connection
 import Melo.Common.Exception
 import Melo.Common.Logging
 import Melo.Common.Monad
@@ -126,25 +124,12 @@ configSchema =
           }
     }
 
-runConfigRepositoryPooledIO :: Pool Connection -> ConfigRepositoryIOT m a -> m a
-runConfigRepositoryPooledIO pool =
+runConfigRepositoryIO :: DbConnection -> ConfigRepositoryIOT m a -> m a
+runConfigRepositoryIO connSrc =
   flip
     runReaderT
     RepositoryHandle
-      { connSrc = Pooled pool,
-        tbl = configSchema,
-        pk = (.key),
-        upsert = Nothing
-      }
-    . runRepositoryIOT
-    . runConfigRepositoryIOT
-
-runConfigRepositoryIO :: Connection -> ConfigRepositoryIOT m a -> m a
-runConfigRepositoryIO conn =
-  flip
-    runReaderT
-    RepositoryHandle
-      { connSrc = Single conn,
+      { connSrc,
         tbl = configSchema,
         pk = (.key),
         upsert = Nothing

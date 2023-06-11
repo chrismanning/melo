@@ -16,6 +16,7 @@ import Melo.Common.Logging.Env
 import Melo.Common.Metadata
 import Melo.Common.Uri
 import Melo.Database.Repo
+import Melo.Database.Repo.IO (DbConnection(..))
 import Melo.Env
 import Melo.Library.Artist.Name.Repo
 import Melo.Library.Artist.Repo
@@ -75,15 +76,15 @@ app = do
 initApp :: CollectionWatchState -> Pool Hasql.Connection -> Http.Manager -> IO ()
 initApp collectionWatchState pool httpManager =
   runFileSystemIO $
-    runConfigRepositoryPooledIO pool $
+    runConfigRepositoryIO (Pooled pool) $
       runMetadataAggregateIO $
-        runSourceRepositoryPooledIO pool $
-          runTagMappingRepositoryPooledIO pool $
-            runReleaseRepositoryPooledIO pool $
-              runArtistNameRepositoryPooledIO pool $
-                runArtistRepositoryPooledIO pool $
+        runSourceRepositoryIO (Pooled pool) $
+          runTagMappingRepositoryIO (Pooled pool) $
+            runReleaseRepositoryIO (Pooled pool) $
+              runArtistNameRepositoryIO (Pooled pool) $
+                runArtistRepositoryIO (Pooled pool) $
                   MB.runMusicBrainzServiceIO httpManager $
-                    runCollectionRepositoryPooledIO pool $
+                    runCollectionRepositoryIO (Pooled pool) $
                       runFileSystemWatcherIO pool collectionWatchState httpManager $
                         runCollectionAggregateIO pool httpManager collectionWatchState $ do
                           insertDefaultMappings

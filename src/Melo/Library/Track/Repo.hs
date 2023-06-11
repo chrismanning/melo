@@ -7,8 +7,6 @@ import Control.Concurrent.Classy
 import Melo.Common.Exception
 import Control.Lens (firstOf, (^.))
 import Control.Monad.Reader
-import Data.Pool
-import Hasql.Connection
 import Melo.Common.Monad
 import Melo.Database.Repo
 import Melo.Database.Repo.IO
@@ -98,31 +96,12 @@ trackSchema =
           }
     }
 
-runTrackRepositoryPooledIO :: Pool Connection -> TrackRepositoryIOT m a -> m a
-runTrackRepositoryPooledIO pool =
+runTrackRepositoryIO :: DbConnection -> TrackRepositoryIOT m a -> m a
+runTrackRepositoryIO connSrc =
   flip
     runReaderT
     RepositoryHandle
-      { connSrc = Pooled pool,
-        tbl = trackSchema,
-        pk = (^. #id),
-        upsert =
-          Just
-            Upsert
-              { index = (.source_id),
-                set = const,
-                updateWhere = \_new _old -> lit True
-              }
-      }
-    . runRepositoryIOT
-    . runTrackRepositoryIOT
-
-runTrackRepositoryIO :: Connection -> TrackRepositoryIOT m a -> m a
-runTrackRepositoryIO conn =
-  flip
-    runReaderT
-    RepositoryHandle
-      { connSrc = Single conn,
+      { connSrc,
         tbl = trackSchema,
         pk = (^. #id),
         upsert =

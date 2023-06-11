@@ -1,5 +1,4 @@
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE UnboxedTuples #-}
 
 module Melo.Metadata.Mapping.Repo where
 
@@ -9,8 +8,6 @@ import Control.Foldl (PrimMonad)
 import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
-import Data.Pool
-import Hasql.Connection
 import Melo.Database.Repo
 import Melo.Database.Repo.IO
 import Melo.Metadata.Mapping.Types
@@ -66,31 +63,12 @@ tagMappingSchema =
           }
     }
 
-runTagMappingRepositoryPooledIO :: Pool Connection -> TagMappingRepositoryIOT m a -> m a
-runTagMappingRepositoryPooledIO pool =
+runTagMappingRepositoryIO :: DbConnection -> TagMappingRepositoryIOT m a -> m a
+runTagMappingRepositoryIO connSrc =
   flip
     runReaderT
     RepositoryHandle
-      { connSrc = Pooled pool,
-        tbl = tagMappingSchema,
-        pk = (.name),
-        upsert =
-          Just
-            Upsert
-              { index = (.name),
-                set = const,
-                updateWhere = \new old -> new.name ==. old.name
-              }
-      }
-    . runRepositoryIOT
-    . runTagMappingRepositoryIOT
-
-runTagMappingRepositoryIO :: Connection -> TagMappingRepositoryIOT m a -> m a
-runTagMappingRepositoryIO conn =
-  flip
-    runReaderT
-    RepositoryHandle
-      { connSrc = Single conn,
+      { connSrc,
         tbl = tagMappingSchema,
         pk = (.name),
         upsert =

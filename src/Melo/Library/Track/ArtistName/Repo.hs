@@ -10,10 +10,8 @@ import Control.Lens (firstOf)
 import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
-import Data.Pool
 import Data.Vector (Vector)
 import Data.Vector qualified as V
-import Hasql.Connection
 import Melo.Database.Repo.IO
 import Melo.Library.Artist.Name.Repo (artistNameSchema)
 import Melo.Library.Artist.Name.Types
@@ -112,16 +110,9 @@ trackArtistNameSchema =
           }
     }
 
-runTrackArtistNameRepositoryPooledIO :: Pool Connection -> TrackArtistNameRepositoryIOT m a -> m a
-runTrackArtistNameRepositoryPooledIO pool =
-  flip
-    runReaderT
-    (Pooled pool)
-    . runTrackArtistNameRepositoryIOT
-
-runTrackArtistNameRepositoryIO :: Connection -> TrackArtistNameRepositoryIOT m a -> m a
+runTrackArtistNameRepositoryIO :: DbConnection -> TrackArtistNameRepositoryIOT m a -> m a
 runTrackArtistNameRepositoryIO conn =
   flip
     runReaderT
-    (Single conn)
+    conn
     . runTrackArtistNameRepositoryIOT

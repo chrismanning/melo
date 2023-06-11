@@ -49,6 +49,7 @@ import Melo.Common.Logging
 import Melo.Common.Metadata
 import Melo.Common.Uri
 import Melo.Database.Repo qualified as Repo
+import Melo.Database.Repo.IO (DbConnection(..))
 import Melo.Format.Error qualified as F
 import Melo.Format.Metadata (MetadataFile (..), fileFactoryByExt)
 import Melo.Library.Artist.Aggregate
@@ -147,16 +148,16 @@ scanPathIO pool manager cws scanType ref p' =
                 V.fromList (FileSource ref <$> mfs)
           pure (V.length srcs)
     runImport pool manager =
-      runConfigRepositoryPooledIO pool
-        . runSourceRepositoryPooledIO pool
-        . runArtistRepositoryPooledIO pool
-        . runArtistNameRepositoryPooledIO pool
-        . runReleaseArtistNameRepositoryPooledIO pool
-        . runReleaseRepositoryPooledIO pool
-        . runTrackRepositoryPooledIO pool
-        . runTrackArtistNameRepositoryPooledIO pool
+      runConfigRepositoryIO (Pooled pool)
+        . runSourceRepositoryIO (Pooled pool)
+        . runArtistRepositoryIO (Pooled pool)
+        . runArtistNameRepositoryIO (Pooled pool)
+        . runReleaseArtistNameRepositoryIO (Pooled pool)
+        . runReleaseRepositoryIO (Pooled pool)
+        . runTrackRepositoryIO (Pooled pool)
+        . runTrackArtistNameRepositoryIO (Pooled pool)
         . MB.runMusicBrainzServiceIO manager
-        . runTagMappingRepositoryPooledIO pool
+        . runTagMappingRepositoryIO (Pooled pool)
         . MB.runCachingMusicBrainzService
         . runTagMappingAggregate
         . runFileSystemWatcherIO pool cws manager
@@ -166,7 +167,7 @@ scanPathIO pool manager cws scanType ref p' =
         . runReleaseAggregateIOT
         . runSourceAggregateIOT
     openMetadataFile'' p =
-      runConfigRepositoryPooledIO pool $
+      runConfigRepositoryIO (Pooled pool) $
         runFileSystemWatcherIO pool cws manager $
           runMetadataAggregateIO $
             openMetadataFileByExt p >>= \case
@@ -204,7 +205,7 @@ scanPathIO pool manager cws scanType ref p' =
                 else pure Nothing
       pure imports
     sourceMap :: [FilePath] -> IO (H.HashMap T.Text SourceEntity)
-    sourceMap files = runSourceRepositoryPooledIO pool do
+    sourceMap files = runSourceRepositoryIO (Pooled pool) do
       ss <- V.toList <$> getByUri (V.fromList $ fileUri <$> files)
       pure $ H.fromList $ (\s -> (s.source_uri, s)) <$> ss
 
@@ -365,7 +366,7 @@ handleEvent pool manager cws ref event = unlessM (isLocked cws event.eventPath) 
     FS.WatchedDirectoryRemoved p _ _ -> do
       $(logInfo) $ "watched directory removed " <> T.pack (show p)
       let uri = fileUri p
-      runSourceRepositoryPooledIO pool do
+      runSourceRepositoryIO (Pooled pool) do
         refs <- getKeysByUriPrefix uri
         void $ Repo.delete @SourceEntity refs
     FS.Removed p _ isDir -> do
@@ -373,12 +374,12 @@ handleEvent pool manager cws ref event = unlessM (isLocked cws event.eventPath) 
       if isDir == FS.IsDirectory
         then do
           $(logInfo) $ "directory removed " <> T.pack (show p)
-          runSourceRepositoryPooledIO pool do
+          runSourceRepositoryIO (Pooled pool) do
             refs <- getKeysByUriPrefix uri
             void $ Repo.delete @SourceEntity refs
         else do
           $(logInfo) $ "file removed " <> T.pack (show p)
-          runSourceRepositoryPooledIO pool do
+          runSourceRepositoryIO (Pooled pool) do
             refs <- getKeysByUri (V.singleton uri)
             void $ Repo.delete @SourceEntity refs
     FS.Unknown p _ _ s ->

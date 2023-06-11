@@ -10,10 +10,8 @@ import Control.Lens (firstOf)
 import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
-import Data.Pool
 import Data.Text (Text)
 import Data.Vector (Vector)
-import Hasql.Connection
 import Melo.Database.Repo
 import Melo.Database.Repo.IO
 import Melo.Library.Artist.Name.Types
@@ -85,29 +83,12 @@ artistNameSchema =
           }
     }
 
-runArtistNameRepositoryPooledIO :: Pool Connection -> ArtistNameRepositoryIOT m a -> m a
-runArtistNameRepositoryPooledIO pool =
+runArtistNameRepositoryIO :: DbConnection -> ArtistNameRepositoryIOT m a -> m a
+runArtistNameRepositoryIO connSrc =
   flip
     runReaderT
     RepositoryHandle
-      { connSrc = Pooled pool,
-        tbl = artistNameSchema,
-        pk = (\t -> t.id),
-        upsert = Just Upsert {
-          index = \t -> (t.artist_id, t.name),
-          set = \_new old -> old,
-          updateWhere = \_new _old -> lit True
-        }
-      }
-    . runRepositoryIOT
-    . runArtistNameRepositoryIOT
-
-runArtistNameRepositoryIO :: Connection -> ArtistNameRepositoryIOT m a -> m a
-runArtistNameRepositoryIO conn =
-  flip
-    runReaderT
-    RepositoryHandle
-      { connSrc = Single conn,
+      { connSrc,
         tbl = artistNameSchema,
         pk = (\t -> t.id),
         upsert = Just Upsert {

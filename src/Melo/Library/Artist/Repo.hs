@@ -187,25 +187,12 @@ artistSchema =
           }
     }
 
-runArtistRepositoryPooledIO :: Pool Connection -> ArtistRepositoryIOT m a -> m a
-runArtistRepositoryPooledIO pool =
+runArtistRepositoryIO :: DbConnection -> ArtistRepositoryIOT m a -> m a
+runArtistRepositoryIO connSrc =
   flip
     runReaderT
     RepositoryHandle
-      { connSrc = Pooled pool,
-        tbl = artistSchema,
-        pk = (.id),
-        upsert = Nothing
-      }
-    . runRepositoryIOT
-    . runArtistRepositoryIOT
-
-runArtistRepositoryIO :: Connection -> ArtistRepositoryIOT m a -> m a
-runArtistRepositoryIO conn =
-  flip
-    runReaderT
-    RepositoryHandle
-      { connSrc = Single conn,
+      { connSrc,
         tbl = artistSchema,
         pk = (.id),
         upsert = Nothing

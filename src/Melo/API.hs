@@ -3,6 +3,7 @@
 module Melo.API where
 
 import Control.Concurrent.Classy
+import Control.Exception (evaluate)
 import Control.Monad.IO.Class
 import Data.ByteString.Lazy.Char8
 import Data.Maybe
@@ -24,6 +25,7 @@ import Melo.Common.Metadata
 import Melo.Common.Monad
 import Melo.Common.Uri
 import Melo.Common.Uuid
+import Melo.Database.Repo.IO (DbConnection(..))
 import Melo.Format.Metadata (EmbeddedPicture (..), MetadataFile (..), PictureType (..))
 import Melo.Library.API
 import Melo.Library.Release.Aggregate
@@ -90,23 +92,23 @@ gqlApiIO :: CollectionWatchState -> Pool Connection ->  Http.Manager -> ByteStri
 gqlApiIO collectionWatchState pool httpManager rq = do
   $(logInfo) ("handling graphql request" :: T.Text)
   $(logDebug) $ "graphql request: " <> rq
-  let run =
+  let run connSrc =
         runFileSystemIO
-          . runConfigRepositoryPooledIO pool
+          . runConfigRepositoryIO connSrc
           . runFileSystemWatcherIO pool collectionWatchState httpManager
           . runMetadataAggregateIO
-          . runSourceRepositoryPooledIO pool
-          . runTagMappingRepositoryPooledIO pool
-          . runReleaseRepositoryPooledIO pool
-          . runReleaseArtistNameRepositoryPooledIO pool
-          . runArtistNameRepositoryPooledIO pool
-          . runArtistRepositoryPooledIO pool
-          . runTrackArtistNameRepositoryPooledIO pool
-          . runTrackRepositoryPooledIO pool
+          . runSourceRepositoryIO connSrc
+          . runTagMappingRepositoryIO connSrc
+          . runReleaseRepositoryIO connSrc
+          . runReleaseArtistNameRepositoryIO connSrc
+          . runArtistNameRepositoryIO connSrc
+          . runArtistRepositoryIO connSrc
+          . runTrackArtistNameRepositoryIO connSrc
+          . runTrackRepositoryIO connSrc
           . runMusicBrainzServiceIO httpManager
           . runCachingMusicBrainzService
           . runMultiTrackIO
-          . runCollectionRepositoryPooledIO pool
+          . runCollectionRepositoryIO connSrc
           . runTagMappingAggregate
           . runCollectionAggregateIO pool httpManager collectionWatchState
           . runArtistAggregateIOT
@@ -114,7 +116,11 @@ gqlApiIO collectionWatchState pool httpManager rq = do
           . runReleaseAggregateIOT
           . runSourceAggregateIOT
           . runCoverServiceIO httpManager
-  !rs <- run (gqlApi rq)
+  let !isMutation = "mutation" `isPrefixOf` rq
+  !rs <- if isMutation then
+    withResource pool \conn -> evaluate =<< run (Single conn) (gqlApi rq)
+    else
+      evaluate =<< run (Pooled pool) (gqlApi rq)
   $(logInfo) ("finished handling graphql request" :: T.Text)
   pure rs
 
@@ -198,8 +204,8 @@ api collectionWatchState pool httpManager = do
     collectionId <- param "id"
     mappingNames <- V.fromList <$> param "groupByMappings"
     groupByMappings <-
-      runArtistRepositoryPooledIO pool $
-        runTagMappingRepositoryPooledIO pool $
+      runArtistRepositoryIO (Pooled pool) $
+        runTagMappingRepositoryIO (Pooled pool) $
           runTagMappingAggregate (getMappingsNamed mappingNames)
     orphans <- rescue (param "orphans") (const $ pure False)
     let filt = if orphans then API.Orphaned else API.AllSourceGroups
@@ -215,9 +221,9 @@ instance (PrimMonad m, ScottyError a) => PrimMonad (ActionT a m) where
   primitive = lift . primitive
 
 getSourceFilePathIO :: Pool Connection -> SourceRef -> IO (Maybe FilePath)
-getSourceFilePathIO pool k = withResource pool $ \conn ->
+getSourceFilePathIO pool k =
   runFileSystemIO $
-    runSourceRepositoryIO conn $
+    runSourceRepositoryIO (Pooled pool) $
       getSourceFilePath k
 
 data CoverImage = EmbeddedImage EmbeddedPicture | ExternalImageFile FilePath
@@ -229,8 +235,8 @@ findCoverImageIO ::
   SourceRef -> IO (Maybe CoverImage)
 findCoverImageIO pool httpManager cws k = withResource pool $ \conn ->
   runFileSystemIO $ runFileSystemWatcherIO pool cws httpManager $
-    runConfigRepositoryIO conn $
-    runSourceRepositoryIO conn $
+    runConfigRepositoryIO (Single conn) $
+    runSourceRepositoryIO (Single conn) $
       runMetadataAggregateIO do
         getSource k >>= \case
           Nothing -> do

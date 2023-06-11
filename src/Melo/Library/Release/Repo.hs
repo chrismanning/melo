@@ -10,9 +10,7 @@ import Control.Lens hiding (from)
 import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
-import Data.Pool
 import Data.Vector qualified as V
-import Hasql.Connection
 import Melo.Database.Repo
 import Melo.Database.Repo.IO
 import Melo.Library.Release.Types
@@ -121,31 +119,12 @@ releaseSchema =
           }
     }
 
-runReleaseRepositoryPooledIO :: Pool Connection -> ReleaseRepositoryIOT m a -> m a
-runReleaseRepositoryPooledIO pool =
+runReleaseRepositoryIO :: DbConnection -> ReleaseRepositoryIOT m a -> m a
+runReleaseRepositoryIO connSrc =
   flip
     runReaderT
     RepositoryHandle
-      { connSrc = Pooled pool,
-        tbl = releaseSchema,
-        pk = (.id),
-        upsert =
-          Just
-            Rel8.Upsert
-              { index = (.musicbrainz_id),
-                set = \new old -> new & #id .~ old.id,
-                updateWhere = \new old -> new.musicbrainz_id ==. old.musicbrainz_id
-              }
-      }
-    . runRepositoryIOT
-    . runReleaseRepositoryIOT
-
-runReleaseRepositoryIO :: Connection -> ReleaseRepositoryIOT m a -> m a
-runReleaseRepositoryIO conn =
-  flip
-    runReaderT
-    RepositoryHandle
-      { connSrc = Single conn,
+      { connSrc,
         tbl = releaseSchema,
         pk = (.id),
         upsert =
