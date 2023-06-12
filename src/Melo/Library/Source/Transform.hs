@@ -91,7 +91,12 @@ data TransformAction where
 deriving instance Show TransformAction
 
 evalTransformActions :: MonadSourceTransform m => Vector TransformAction -> Source -> m (Either TransformationError Source)
-evalTransformActions ts = foldl' (\b a -> b >=/> evalTransformAction a) (pure . Right) (optimiseTransformActions ts)
+evalTransformActions ts s = lockSource s $
+  foldl' (\b a -> b >=/> evalTransformAction a) (pure . Right) (optimiseTransformActions ts) s
+  where
+    lockSource s m = case uriToFilePath s.source of
+      Just p -> lockPathsDuring (p :| []) m
+      Nothing -> m
 
 optimiseTransformActions :: Vector TransformAction -> Vector TransformAction
 optimiseTransformActions ts = V.fromList $ impl $ V.toList ts
@@ -652,6 +657,20 @@ instance
   copyCoverToDir src dest = VirtualArtistRepoT do
     $(logDebug) ("Preview copyCoverToDir VirtualArtistRepoT" :: String)
     Covers.copyCoverToDir src dest
+
+instance Logging m => FileSystemWatcher (TransformPreviewT m) where
+  startWatching _ _ = $(logDebug) ("Preview startWarching TransformPreviewT" :: String)
+  stopWatching _ = $(logDebug) ("Preview stopWatching TransformPreviewT" :: String)
+  lockPathsDuring _ m = do
+    $(logDebug) ("Preview lockPathsDuring TransformPreviewT" :: String)
+    m
+
+instance Logging m => FileSystemWatcher (VirtualArtistRepoT m) where
+  startWatching _ _ = $(logDebug) ("Preview startWarching VirtualArtistRepoT" :: String)
+  stopWatching _ = $(logDebug) ("Preview stopWatching VirtualArtistRepoT" :: String)
+  lockPathsDuring _ m = do
+    $(logDebug) ("Preview lockPathsDuring VirtualArtistRepoT" :: String)
+    m
 
 data TransformationError
   = MoveTransformError SourceFileManipError

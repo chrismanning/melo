@@ -296,7 +296,7 @@ instance
           STM.atomically $ STM.modifyTVar' watchState.locks (lockPaths ps)
           $(logInfoIO) $ "Unwatching paths " <> show (NE.toList ps)
       )
-      ( \_ -> liftIO $ do
+      ( \_ -> liftIO $ forkIO do
           threadDelay 10000
           $(logInfoIO) $ "Re-watching paths " <> show (NE.toList ps)
           STM.atomically $ STM.modifyTVar' watchState.locks (unlockPaths ps)
