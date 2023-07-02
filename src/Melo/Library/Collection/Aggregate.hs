@@ -5,7 +5,6 @@ module Melo.Library.Collection.Aggregate where
 
 import Control.Concurrent.Classy
 import Control.Foldl (PrimMonad)
-import Control.Lens (firstOf)
 import Control.Monad
 import Control.Monad.Base
 import Control.Monad.Par.IO
@@ -13,7 +12,6 @@ import Control.Monad.Reader
 import Control.Monad.Trans.Control
 import Data.Pool
 import Data.Text qualified as T
-import Data.Vector (Vector, singleton)
 import Hasql.Connection
 import Melo.Common.Exception
 import Melo.Common.FileSystem.Watcher
@@ -77,7 +75,7 @@ instance
   where
   addCollection c@NewFilesystemCollection {..} = do
     $(logInfo) $ "Adding collection " <> name
-    $(logDebug) $ "Adding collection " <> show c
+    $(logDebug) $ "Adding collection " <> showt c
     Repo.insertSingle @CollectionEntity c >>= \case
       Just CollectionTable {..} -> do
         (pool, manager, cws) <- ask
@@ -91,14 +89,14 @@ instance
         case parseURI (T.unpack root_uri) >>= uriToFilePath of
           Just rootPath -> do
             (pool, manager, cws) <- ask
-            $(logInfo) $ "re-scanning collection " <> show id <> " at " <> rootPath
+            $(logInfo) $ "re-scanning collection " <> showt id <> " at " <> showt rootPath
             liftIO $ runParIO $ scanPathIO pool manager cws ScanNewOrModified ref rootPath
-          Nothing -> $(logWarn) $ "collection " <> show id <> " not a local file system"
-      Nothing -> $(logWarn) $ "collection " <> show id <> " not found"
+          Nothing -> $(logWarn) $ "collection " <> showt id <> " not a local file system"
+      Nothing -> $(logWarn) $ "collection " <> showt id <> " not found"
     pure ()
   deleteCollection ref = do
     stopWatching ref
-    firstOf traverse <$> delete @CollectionEntity (singleton ref)
+    firstOf traverse <$> delete @CollectionEntity (pure ref)
 
 getCollectionsByKey :: (CollectionRepository m) => Vector CollectionRef -> m (Vector CollectionEntity)
 getCollectionsByKey = getByKey

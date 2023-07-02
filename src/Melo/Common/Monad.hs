@@ -13,6 +13,7 @@ module Melo.Common.Monad
     module Data.Foldable.Extra,
     forMaybeM,
     (<<|>>),
+    once,
   )
 where
 
@@ -57,3 +58,15 @@ a <<|>> b =
             b' | b' == A.empty -> pure A.empty
             b' -> pure b'
     a' -> pure a'
+
+once :: MonadConc m => m a -> m (m a)
+once action = do
+  mvar <- newEmptyMVar
+  return $ do
+    result <- takeMVar mvar
+    case result of
+      Just val -> return val
+      Nothing -> do
+        val <- action
+        putMVar mvar (Just val)
+        return val

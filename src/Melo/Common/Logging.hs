@@ -4,7 +4,6 @@
 
 module Melo.Common.Logging
   ( Logging (..),
-    LogMessage (..),
     log_,
     logV_,
     logDebug,
@@ -41,14 +40,9 @@ import Control.Concurrent (myThreadId)
 import Control.Concurrent.STM
 import Control.Monad.Reader
 import Data.Aeson as A
-import Data.ByteString (ByteString)
-import Data.ByteString.Lazy qualified as L
 import Data.IORef
 import Data.Map.Strict qualified as M
-import Data.Maybe
 import Data.Text qualified as T
-import Data.Text.Encoding qualified as TE
-import Data.Text.Lazy qualified as LT
 import Katip as K
 import Katip.Core as K
 import Language.Haskell.TH
@@ -56,12 +50,11 @@ import Language.Haskell.TH.Syntax (liftString, qLocation)
 import Language.Haskell.TH.Syntax qualified as TH (Lift (lift))
 import System.IO
 import System.IO.Unsafe
-import Witch
 import Prelude hiding (log)
 
 class Monad m => Logging m where
-  log :: From s LogMessage => Namespace -> Severity -> s -> m ()
-  logV :: From s LogMessage => Namespace -> Severity -> s -> K.SimpleLogPayload -> m ()
+  log :: Namespace -> Severity -> Text -> m ()
+  logV :: Namespace -> Severity -> Text -> K.SimpleLogPayload -> m ()
 
 class LogRet r where
   logVRet :: [Name] -> r
@@ -83,34 +76,17 @@ instance
   log ln sev msg = lift (log ln sev msg)
   logV ln sev msg pl = lift (logV ln sev msg pl)
 
-newtype LogMessage = LogMessage {msg :: T.Text}
-
-instance From T.Text LogMessage where
-  from = LogMessage
-
-instance From LT.Text LogMessage where
-  from = from . LT.toStrict
-
-instance From String LogMessage where
-  from = from . T.pack
-
-instance From ByteString LogMessage where
-  from = from . TE.decodeUtf8
-
-instance From L.ByteString LogMessage where
-  from = from . TE.decodeUtf8 . L.toStrict
-
 instance Logging IO where
   log ns severity msg = logIOImpl' ns severity msg mempty
   logV = logIOImpl'
 
-logImpl :: (From s LogMessage, Logging m) => String -> Int -> s -> m ()
+logImpl :: Logging m => String -> Int -> Text -> m ()
 logImpl ns severity msg = log (Namespace (filter (not . T.null) $ T.split (== '.') $ T.pack ns)) (toEnum severity) msg
 
 foldArgs :: [(String, A.Value)] -> K.SimpleLogPayload
 foldArgs = foldl (\payload (name, value) -> payload <> K.sl (T.pack name) value) mempty
 
-logVImpl :: Logging m => String -> Int -> [(String, A.Value)] -> T.Text -> m ()
+logVImpl :: Logging m => String -> Int -> [(String, A.Value)] -> Text -> m ()
 logVImpl ns severity payload msg = logV (Namespace (filter (not . T.null) $ T.split (== '.') $ T.pack ns)) (toEnum severity) msg (foldArgs payload)
 
 -- Convert a list of Name values to a list of expressions that evaluate to their values
@@ -134,7 +110,7 @@ log_ severity =
 
 logShow :: Severity -> Q Exp
 logShow severity =
-  [|logImpl $(qLocation >>= liftString . loc_module) $(TH.lift $ fromEnum severity) . ((LT.pack . show) :: Show a => a -> LT.Text)|]
+  [|logImpl $(qLocation >>= liftString . loc_module) $(TH.lift $ fromEnum severity) . showt|]
 
 logDebug :: Q Exp
 logDebug = log_ K.DebugS
@@ -172,20 +148,19 @@ logErrorV = logV_ K.ErrorS
 logErrorShow :: Q Exp
 logErrorShow = logShow K.ErrorS
 
-logIOImpl :: (From s LogMessage, MonadIO m) => String -> Int -> s -> m ()
+logIOImpl :: MonadIO m => String -> Int -> Text -> m ()
 logIOImpl ns severity msg =
   let namespace = Namespace (filter (not . T.null) $ T.split (== '.') $ T.pack ns)
    in logIOImpl' namespace (toEnum severity) msg mempty
 
-logVIOImpl :: (MonadIO m) => String -> Int -> [(String, A.Value)] -> T.Text -> m ()
+logVIOImpl :: (MonadIO m) => String -> Int -> [(String, A.Value)] -> Text -> m ()
 logVIOImpl ns severity payload msg =
   let namespace = Namespace (filter (not . T.null) $ T.split (== '.') $ T.pack ns)
    in logIOImpl' namespace (toEnum severity) msg (foldArgs payload)
 
-logIOImpl' :: (From s LogMessage, MonadIO m) => Namespace -> Severity -> s -> SimpleLogPayload -> m ()
-logIOImpl' ns severity msg payload =
-  let (LogMessage s) = from msg
-   in liftIO do
+logIOImpl' :: MonadIO m => Namespace -> Severity -> Text -> SimpleLogPayload -> m ()
+logIOImpl' ns severity s payload =
+  liftIO do
     logEnv@LogEnv{..} <- readIORef logEnv
     item <- Item <$> pure _logEnvApp
                 <*> pure _logEnvEnv
@@ -220,7 +195,7 @@ logVIO severity names =
 
 logShowIO :: Severity -> Q Exp
 logShowIO severity =
-  [|logIOImpl $(qLocation >>= liftString . loc_module) $(TH.lift $ fromEnum severity) . ((LT.pack . show) :: Show a => a -> LT.Text)|]
+  [|logIOImpl $(qLocation >>= liftString . loc_module) $(TH.lift $ fromEnum severity) . showt|]
 
 logDebugIO :: Q Exp
 logDebugIO = logIO K.DebugS

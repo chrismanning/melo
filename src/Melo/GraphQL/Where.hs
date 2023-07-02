@@ -3,7 +3,6 @@
 module Melo.GraphQL.Where where
 
 import Data.Morpheus.Types
-import Data.Text
 import GHC.Generics
 
 data Where

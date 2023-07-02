@@ -3,16 +3,10 @@
 
 module Melo.Library.Artist.Repo where
 
-import Melo.Common.Exception
 import Control.Foldl (impurely, vectorM)
-import Control.Lens hiding (each, from)
 import Data.Coerce
-import Data.Maybe
-import Data.Pool
-import Data.Text (Text)
-import Data.Vector (Vector ())
 import Data.Vector qualified as V
-import Hasql.Connection
+import Melo.Common.Exception
 import Melo.Common.Logging
 import Melo.Common.Monad
 import Melo.Database.Repo as Repo
@@ -28,7 +22,6 @@ import Melo.Library.Track.Types
 import Melo.Lookup.MusicBrainz qualified as MB
 import Rel8
 import Streaming.Prelude qualified as S
-import Witch
 
 class Repository ArtistEntity m => ArtistRepository m where
   getByMusicBrainzId :: MB.MusicBrainzId -> m (Maybe ArtistEntity)
@@ -79,7 +72,10 @@ instance (MonadIO m, PrimMonad m, Logging m) => Repository ArtistEntity (ArtistR
       & S.catMaybes
       & S.mapM (runInsert' connSrc)
       & S.mapMaybeM \case
-        Left e -> $(logWarn) ("Artist insert failed: " <> displayException e) >> pure Nothing
+        Left e -> do
+          let cause = displayException e
+          $(logWarnV ['cause]) "Artist insert failed"
+          pure Nothing
         Right a -> pure $ Just a
       & S.concat
       & impurely S.foldM_ vectorM
@@ -90,7 +86,10 @@ instance (MonadIO m, PrimMonad m, Logging m) => Repository ArtistEntity (ArtistR
       & S.catMaybes
       & S.mapM (runInsert' connSrc)
       & S.mapMaybeM \case
-        Left e -> $(logWarn) ("Artist insert failed: " <> displayException e) >> pure Nothing
+        Left e -> do
+          let cause = displayException e
+          $(logWarnV ['cause]) $ "Artist insert failed"
+          pure Nothing
         Right a -> pure $ Just a
       & S.sum_
   delete = ArtistRepositoryIOT . Repo.delete @ArtistEntity
@@ -103,7 +102,7 @@ insertArtists as tbl returning =
     genIns False
   ]
   where
-    (a, b) = V.unstablePartition (isJust . (.musicBrainzId)) as
+    (a, b) = V.unstablePartition (isn't _Nothing . (.musicBrainzId)) as
     genIns :: Bool -> Maybe (Insert a)
     genIns True | V.null a = Nothing
     genIns False | V.null b = Nothing
@@ -111,7 +110,7 @@ insertArtists as tbl returning =
       Just
         Insert
           { into = tbl,
-            rows = Rel8.values (Witch.from <$> (if incl then a else b)),
+            rows = Rel8.values (Prelude.from <$> (if incl then a else b)),
             onConflict = DoUpdate (partialUpsert incl),
             returning
           }

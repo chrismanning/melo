@@ -6,7 +6,6 @@ import GHC.Generics
 import Melo.Library.Artist.Name.Types (ArtistNameRef (..))
 import Melo.Library.Release.Types (ReleaseRef (..))
 import Rel8
-import Witch
 
 data ReleaseArtistNameTable f = ReleaseArtistNameTable
   { release_id :: Column f ReleaseRef,

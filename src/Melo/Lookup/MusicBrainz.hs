@@ -44,7 +44,6 @@ where
 
 import Control.Concurrent.Classy
 import Control.Concurrent.TokenLimiter
-import Control.Lens hiding (from, lens)
 import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Data.Aeson as A
@@ -55,11 +54,8 @@ import Data.Char
 import Data.Default
 import Data.Generics.Labels ()
 import Data.Map.Strict (Map)
-import Data.Maybe
-import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding
-import Data.Vector (Vector ())
 import Data.Vector qualified as V
 import GHC.Generics (Generic)
 import GHC.Records
@@ -85,16 +81,19 @@ newtype MusicBrainzId = MusicBrainzId
   }
   deriving (Show, Eq, Ord)
   deriving newtype (FromJSON, ToJSON)
+  deriving TextShow via FromStringShow MusicBrainzId
 
 newtype ArtistSearch = ArtistSearch
   { artist :: Text
   }
   deriving stock (Show, Generic, Eq, Ord)
+  deriving TextShow via FromGeneric ArtistSearch
 
 newtype ArtistSearchResult = ArtistSearchResult
   { artists :: Maybe (Vector Artist)
   }
   deriving (Show, Generic, Eq)
+  deriving TextShow via FromGeneric ArtistSearchResult
 
 instance FromJSON ArtistSearchResult
 
@@ -110,6 +109,7 @@ data Artist = Artist
     aliases :: Maybe (Vector ArtistAlias)
   }
   deriving (Show, Generic, Eq)
+  deriving TextShow via FromGeneric Artist
 
 instance Ord Artist where
   a <= b = a.id <= b.id && a.name <= b.name
@@ -127,6 +127,7 @@ data ArtistAlias = ArtistAlias
     type' :: Maybe Text
   }
   deriving (Show, Generic, Eq)
+  deriving TextShow via FromGeneric ArtistAlias
 
 instance FromJSON ArtistAlias where
   parseJSON = withObject "ArtistAlias" $ \v ->
@@ -144,6 +145,7 @@ data Area = Area
     iso3166_1codes :: Maybe (Vector Text)
   }
   deriving (Show, Generic, Eq)
+  deriving TextShow via FromGeneric Area
 
 instance FromJSON Area where
   parseJSON = withObject "Area" $ \v ->
@@ -160,6 +162,7 @@ data CountrySubdivision = CountrySubdivision
     subdivision :: Text
   }
   deriving (Show, Generic, Eq)
+  deriving TextShow via FromGeneric CountrySubdivision
 
 instance FromJSON CountrySubdivision where
   parseJSON (String s) = case T.split (== '-') s of
@@ -184,6 +187,7 @@ data ReleaseSearch = ReleaseSearch
     catNum :: Maybe Text
   }
   deriving (Show, Generic, Eq, Ord)
+  deriving TextShow via FromGeneric ReleaseSearch
 
 instance Default ReleaseSearch
 
@@ -191,6 +195,7 @@ newtype ReleaseSearchResult = ReleaseSearchResult
   { releases :: Maybe (Vector Release)
   }
   deriving (Show, Generic, Eq)
+  deriving TextShow via FromGeneric ReleaseSearchResult
 
 instance FromJSON ReleaseSearchResult
 
@@ -204,6 +209,7 @@ data Release = Release
     labelInfo :: Maybe (Vector LabelInfo)
   }
   deriving (Show, Generic, Eq)
+  deriving TextShow via FromGeneric Release
 
 instance FromJSON Release where
   parseJSON = genericParseJSON mbAesonOptions
@@ -213,6 +219,7 @@ data ArtistCredit = ArtistCredit
     artist :: Artist
   }
   deriving (Show, Generic, Eq, Ord)
+  deriving TextShow via FromGeneric ArtistCredit
 
 instance FromJSON ArtistCredit where
   parseJSON = genericParseJSON mbAesonOptions
@@ -226,6 +233,7 @@ data LabelInfo = LabelInfo
     label :: Maybe Label
   }
   deriving (Show, Generic, Eq)
+  deriving TextShow via FromGeneric LabelInfo
 
 instance FromJSON LabelInfo where
   parseJSON = genericParseJSON mbAesonOptions
@@ -235,6 +243,7 @@ data Label = Label
     name :: Text
   }
   deriving (Show, Generic, Eq)
+  deriving TextShow via FromGeneric Label
 
 instance FromJSON Label where
   parseJSON = genericParseJSON mbAesonOptions
@@ -243,6 +252,7 @@ newtype ReleaseGroupSearchResult = ReleaseGroupSearchResult
   { releaseGroups :: Maybe (Vector ReleaseGroup)
   }
   deriving (Show, Generic, Eq)
+  deriving TextShow via FromGeneric ReleaseGroupSearchResult
 
 instance FromJSON ReleaseGroupSearchResult where
   parseJSON = genericParseJSON mbAesonOptions
@@ -256,6 +266,7 @@ data ReleaseGroup = ReleaseGroup
     score :: Maybe Int
   }
   deriving (Show, Generic, Eq)
+  deriving TextShow via FromGeneric ReleaseGroup
 
 instance FromJSON ReleaseGroup where
   parseJSON = genericParseJSON mbAesonOptions
@@ -270,6 +281,7 @@ data RecordingSearch = RecordingSearch
     isrc :: Maybe Text
   }
   deriving (Show, Generic, Eq, Ord)
+  deriving TextShow via FromGeneric RecordingSearch
 
 instance Default RecordingSearch
 
@@ -277,6 +289,7 @@ newtype RecordingSearchResult = RecordingSearchResult
   { recordings :: Maybe (Vector Recording)
   }
   deriving (Show, Generic, Eq)
+  deriving TextShow via FromGeneric RecordingSearchResult
 
 instance FromJSON RecordingSearchResult
 
@@ -288,6 +301,7 @@ data Recording = Recording
     releases :: Maybe (Vector Release)
   }
   deriving (Show, Generic, Eq)
+  deriving TextShow via FromGeneric Recording
 
 instance FromJSON Recording where
   parseJSON = genericParseJSON mbAesonOptions
@@ -365,7 +379,7 @@ getReleaseByAlbum m = do
   let albumArtists = m.tag M.albumArtist
   let date = m.tagHead M.originalReleaseYear <&> truncateDate
   let catNum = m.tagHead M.catalogNumber
-  if isJust albumTitle && not (null albumArtists) && isJust catNum
+  if isn't _Nothing albumTitle && not (null albumArtists) && isn't _Nothing catNum
     then
       find perfectScore
         <$> searchReleases def {albumArtists = Just (toList albumArtists), albumTitle, date, catNum}
@@ -392,7 +406,7 @@ getReleaseGroupByAlbum m = do
   let albumTitle = m.tagHead M.album
   let albumArtists = m.tag M.albumArtist
   let date = m.tagHead M.originalReleaseYear <&> truncateDate
-  if isJust albumTitle && not (null albumArtists)
+  if isn't _Nothing albumTitle && not (null albumArtists)
     then
       find perfectScore
         <$> searchReleaseGroups def {albumArtists = Just (toList albumArtists), albumTitle, date}
@@ -421,7 +435,7 @@ getRecordingByReleaseIdTags m = do
   let title = m.tagHead M.trackTitle
   let releaseId = m.tagHead releaseIdTag
   let releaseGroupId = m.tagHead releaseGroupIdTag
-  if isJust releaseId || isJust releaseGroupId
+  if isn't _Nothing releaseId || isn't _Nothing releaseGroupId
     then
       find perfectScore
         <$> searchRecordings
@@ -442,7 +456,7 @@ getRecordingByTrack m = do
   let trackNumber = m.tagHead M.trackNumber
   let artists = toList $ m.tag M.artist
   let isrc = m.tagHead M.isrc
-  if isJust title && (isJust album || not (null artists))
+  if isn't _Nothing title && (isn't _Nothing album || not (null artists))
     then find perfectScore <$> searchRecordings def {title, album, trackNumber, isrc, artists = Just artists}
     else pure Nothing
 
@@ -528,7 +542,7 @@ instance
         mbHttp @ReleaseSearchResult url >>= \case
           Just r -> pure $ fromMaybe V.empty $ r.releases
           Nothing -> do
-            $(logWarn) ("no matching releases found" :: String)
+            $(logWarn) "no matching releases found"
             pure V.empty
   searchReleaseGroups search = do
     waitReady
@@ -544,7 +558,7 @@ instance
         mbHttp @ReleaseGroupSearchResult url >>= \case
           Just r -> pure $ fromMaybe V.empty r.releaseGroups
           Nothing -> do
-            $(logWarn) ("no matching release groups found" :: String)
+            $(logWarn) "no matching release groups found"
             pure V.empty
   searchArtists search = do
     waitReady
@@ -552,7 +566,7 @@ instance
     mbHttp @ArtistSearchResult (T.unpack url) >>= \case
       Just r -> pure $ fromMaybe V.empty $ r.artists
       Nothing -> do
-        $(logError) ("no matching artists found" :: String)
+        $(logError) "no matching artists found"
         pure V.empty
   searchRecordings search = do
     waitReady
@@ -572,7 +586,7 @@ instance
         mbHttp @RecordingSearchResult url >>= \case
           Just r -> pure $ fromMaybe V.empty $ r.recordings
           Nothing -> do
-            $(logError) ("no matching recordings found" :: String)
+            $(logError) "no matching recordings found"
             pure V.empty
   getArtist artistId = do
     waitReady
@@ -580,7 +594,7 @@ instance
     mbHttp url >>= \case
       Just r -> pure r
       Nothing -> do
-        $(logError) $ "failed to get artist " <> show artistId.mbid
+        $(logError) $ "failed to get artist " <> showt artistId.mbid
         pure Nothing
   getArtistReleaseGroups artistId = do
     waitReady
@@ -594,7 +608,7 @@ instance
     mbHttp (C8.unpack url) >>= \case
       Just r -> pure r
       Nothing -> do
-        $(logError) $ "failed to get release groups for artist " <> show artistId.mbid
+        $(logError) $ "failed to get release groups for artist " <> showt artistId.mbid
         pure V.empty
   getArtistReleases artistId = do
     waitReady
@@ -608,7 +622,7 @@ instance
     mbHttp (C8.unpack url) >>= \case
       Just r -> pure r
       Nothing -> do
-        $(logError) $ "failed to get releases for artist " <> show artistId.mbid
+        $(logError) $ "failed to get releases for artist " <> showt artistId.mbid
         pure V.empty
   getArtistRecordings artistId = do
     waitReady
@@ -621,7 +635,7 @@ instance
     mbHttp (C8.unpack url) >>= \case
       Just r -> pure r
       Nothing -> do
-        $(logError) $ "failed to get recordings for artist " <> show artistId.mbid
+        $(logError) $ "failed to get recordings for artist " <> showt artistId.mbid
         pure V.empty
   getRelease releaseId = do
     waitReady
@@ -633,7 +647,7 @@ instance
     mbHttp (C8.unpack url) >>= \case
       Just r -> pure r
       Nothing -> do
-        $(logError) $ "failed to get release " <> show releaseId.mbid
+        $(logError) $ "failed to get release " <> showt releaseId.mbid
         pure Nothing
   getReleaseGroup releaseGroupId = do
     waitReady
@@ -645,7 +659,7 @@ instance
     mbHttp (C8.unpack url) >>= \case
       Just r -> pure r
       Nothing -> do
-        $(logError) $ "failed to get release group " <> show releaseGroupId.mbid
+        $(logError) $ "failed to get release group " <> showt releaseGroupId.mbid
         pure Nothing
   getRecording recordingId = do
     waitReady
@@ -653,13 +667,14 @@ instance
     mbHttp (T.unpack url) >>= \case
       Just r -> pure r
       Nothing -> do
-        $(logError) $ "failed to get recording " <> show recordingId.mbid
+        $(logError) $ "failed to get recording " <> showt recordingId.mbid
         pure Nothing
 
 data MusicBrainzConfig = MusicBrainzConfig
   { baseUrl :: String
   }
   deriving (Show, Eq, Generic)
+  deriving TextShow via FromGeneric MusicBrainzConfig
 
 instance Default MusicBrainzConfig where
   def =

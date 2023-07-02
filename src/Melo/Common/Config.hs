@@ -7,8 +7,6 @@ module Melo.Common.Config where
 import Data.Aeson qualified as A
 import Data.Default
 import Data.Hashable
-import Data.Maybe
-import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics
 import Melo.Common.Exception
@@ -17,7 +15,6 @@ import Melo.Common.Monad
 import Melo.Database.Repo as Repo
 import Melo.Database.Repo.IO
 import Rel8
-import Witch
 
 data ConfigTable f = ConfigTable
   { key :: Column f Text,
@@ -44,6 +41,7 @@ newtype ConfigKey v = ConfigKey
   }
   deriving (Show, Eq, Ord, Generic)
   deriving newtype (Hashable, A.ToJSON)
+  deriving TextShow via FromGeneric (ConfigKey v)
 
 type ConfigValue = A.Value
 

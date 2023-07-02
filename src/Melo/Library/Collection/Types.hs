@@ -5,14 +5,12 @@ module Melo.Library.Collection.Types where
 import Data.Hashable
 import Data.Morpheus.Kind
 import Data.Morpheus.Types as M
-import Data.Text (Text)
 import qualified Data.Text as T
 import Data.UUID
 import GHC.Generics
 import Melo.Common.Uri
 import Melo.Database.Repo
 import Rel8
-import Witch
 
 data CollectionTable f = CollectionTable
   { id :: Column f CollectionRef,
@@ -25,10 +23,12 @@ data CollectionTable f = CollectionTable
 
 type CollectionEntity = CollectionTable Result
 deriving instance Show CollectionEntity
+deriving via (FromGeneric CollectionEntity) instance TextShow CollectionEntity
 
 newtype CollectionRef = CollectionRef { unCollectionRef :: UUID}
   deriving (Show, Eq, Ord, Generic)
   deriving newtype (DBType, DBEq, Hashable)
+  deriving TextShow via FromGeneric CollectionRef
 
 instance GQLType CollectionRef where
   type KIND CollectionRef = SCALAR
@@ -56,12 +56,13 @@ data NewCollection = NewFilesystemCollection
     watch :: Bool
   }
   deriving (Show, Eq, Generic, GQLType)
+  deriving TextShow via FromGeneric NewCollection
 
 instance From NewCollection (CollectionTable Expr) where
   from c@NewFilesystemCollection {name, watch} =
     CollectionTable
       { id = nullaryFunction "uuid_generate_v4",
-        root_uri = lit $ T.pack $ show $ rootUri c,
+        root_uri = lit $ showt $ rootUri c,
         name = lit name,
         watch = lit watch,
         kind = lit $ kind c

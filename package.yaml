@@ -17,6 +17,8 @@ dependencies:
 
 library:
   source-dirs: src
+  other-modules:
+  - Prelude
   dependencies:
   - melo-format
   - abstract-par
@@ -120,6 +122,8 @@ library:
   - template-haskell
   - text
 #  - text-icu
+  - text-show
+  - text-show-instances
   - time
   - token-limiter
   - transformers
@@ -130,6 +134,7 @@ library:
   - utf8-string
   - uuid
   - vector
+  - vector-algorithms
   - wai
   - wai-cors
   - wai-extra
@@ -138,6 +143,7 @@ library:
   - wave
   - websockets
   - witch
+  - witherable
 
 executables:
   melo-api:
@@ -147,6 +153,16 @@ executables:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
+    dependencies:
+      - melo
+  melo-runner:
+    source-dirs: app/runner
+    main: Main.hs
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    - -debug
     dependencies:
       - melo
 

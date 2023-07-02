@@ -5,10 +5,7 @@ module Melo.Library.Release.Aggregate where
 
 import Control.Applicative
 import Control.Foldl (impurely, vectorM)
-import Control.Lens hiding (from, lens)
-import Data.Maybe
-import Data.Text qualified as T
-import Data.Vector (Vector (), (!))
+import Data.Vector ((!))
 import Data.Vector qualified as V
 import Melo.Common.Exception
 import Melo.Common.Logging
@@ -30,7 +27,6 @@ import Melo.Library.Track.Aggregate
 import Melo.Lookup.MusicBrainz qualified as MB
 import Melo.Metadata.Mapping.Aggregate
 import Streaming.Prelude qualified as S
-import Witch
 
 class Monad m => ReleaseAggregate m where
   importReleases :: Vector Source -> m (Vector Release)
@@ -115,7 +111,7 @@ importReleasesImpl srcs =
     & handleException
   where
     handleException =
-      let sources = srcs <&> (show . (.ref))
+      let sources = srcs <&> (showt . (.ref))
        in handleAny \e -> do
             let cause = displayException e
             $(logErrorV ['sources, 'cause]) "failed to import releases from sources"
@@ -136,24 +132,24 @@ importReleasesImpl srcs =
       Just newRelease -> handleAny
         ( \e -> do
             let cause = displayException e
-            let sources = fmap (show . (.ref)) srcs
+            let sources = fmap (showt . (.ref)) srcs
             $(logErrorV ['sources, 'cause, 'newRelease]) "failed to import MusicBrainz release"
             pure mempty
         )
         do
-          $(logDebug) $ "Importing musicbrainz release for sources: " <> show (srcs <&> (.ref))
+          $(logDebug) $ "Importing musicbrainz release for sources: " <> showt (srcs <&> (.ref))
           release <-
             fmap join (traverse Release.getByMusicBrainzId (mbRelease ^? _Just . #id))
               <<|>> fmap join (traverse Release.getByMusicBrainzId (mbReleaseGroup ^? _Just . #id))
               <<|>> insertSingle @ReleaseEntity newRelease
           let artistCredits = mbRelease ^? _Just . #artistCredit . _Just <|> mbReleaseGroup ^? _Just . #artistCredit . _Just
-          $(logDebug) $ "Artist credits for release " <> T.pack (show newRelease.title) <> ": " <> T.pack (show artistCredits)
+          $(logDebug) $ "Artist credits for release " <> showt newRelease.title <> ": " <> showt artistCredits
           artistNames <- case artistCredits of
             Just as -> V.mapMaybeM importArtistCredit as
             _ -> pure V.empty
           case release of
             Just release -> do
-              $(logInfo) $ "Found release " <> T.pack (show release.title) <> " (id: " <> T.pack (show release.id) <> ")"
+              $(logInfo) $ "Found release " <> showt release.title <> " (id: " <> showt release.id <> ")"
               let mk a = ReleaseArtistNameTable {release_id = release.id, artist_name_id = a.id}
               _ <- ReleaseArtist.insert' (mk <$> artistNames)
               let release' = mkRelease (V.toList artistNames) release
@@ -163,12 +159,12 @@ importReleasesImpl srcs =
     importReleasesFromMetadata srcs = handleAny
       ( \e -> do
           let cause = displayException e
-          let sources = fmap (show . (.ref)) srcs
+          let sources = fmap (showt . (.ref)) srcs
           $(logErrorV ['sources, 'cause]) "failed to import release from metadata"
           pure mempty
       )
       do
-        $(logDebug) $ "Importing releases for sources: " <> show (srcs <&> (.ref))
+        $(logDebug) $ "Importing releases for sources: " <> showt (srcs <&> (.ref))
         S.each srcs
           & S.mapMaybeM (\src -> fmap (src,) <$> singleMapping "release_title" src)
           & S.groupBy (\(_, releaseTitleA) (_, releaseTitleB) -> releaseTitleA == releaseTitleB)
@@ -195,11 +191,11 @@ importReleasesImpl srcs =
       releaseArtistNames <- importReleaseArtists src release
       case mkRelease releaseArtistNames <$> release of
         Just release' -> do
-          $(logInfo) $ "Imported " <> show release'
+          $(logInfo) $ "Imported " <> showt release'
           _tracks <- importReleaseTracks srcs release'
           pure (Just release')
         Nothing -> do
-          $(logWarn) $ "No release found for source " <> show src.ref
+          $(logWarn) $ "No release found for source " <> showt src.ref
           pure Nothing
 
     importReleaseArtists :: Source -> Maybe ReleaseEntity -> m (Vector ArtistNameEntity)
@@ -216,7 +212,7 @@ importReleasesImpl srcs =
       releaseArtists <- resolveMappingNamed "release_artist" src
       if V.length artists < V.length releaseArtists
         then do
-          $(logInfo) $ "No release artist MusicBrainz info found for source " <> show src
+          $(logInfo) $ "No release artist MusicBrainz info found for source " <> showt src
           forMaybeM releaseArtists \releaseArtist -> runMaybeT do
             artist <- MaybeT $ insertSingle @ArtistEntity (mkNewArtist releaseArtist)
             artistName <- MaybeT $ insertSingle @ArtistNameEntity (NewArtistName artist.id releaseArtist)

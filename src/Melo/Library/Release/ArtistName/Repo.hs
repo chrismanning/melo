@@ -6,14 +6,10 @@ module Melo.Library.Release.ArtistName.Repo where
 import Control.Concurrent.Classy
 import Melo.Common.Exception
 import Control.Foldl (PrimMonad)
-import Control.Lens (firstOf)
 import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
-import Data.Pool
-import Data.Vector (Vector)
 import Data.Vector qualified as V
-import Hasql.Connection
 import Melo.Database.Repo.IO
 import Melo.Library.Release.ArtistName.Types
 import Melo.Library.Release.Types (ReleaseRef (..))
@@ -24,7 +20,6 @@ import Melo.Library.Artist.Name.Types
   )
 import Rel8 (Expr, Query, lit, (==.))
 import Rel8 qualified
-import Witch
 
 class Monad m => ReleaseArtistNameRepository m where
   getReleaseArtistNames :: ReleaseRef -> m (Vector ArtistNameEntity)

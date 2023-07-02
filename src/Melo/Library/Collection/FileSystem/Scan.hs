@@ -28,12 +28,8 @@ import Data.ByteString ((!?))
 import Data.ByteString qualified as BS
 import Data.ByteString.Char8 (ByteString, pack)
 import Data.Char
-import Data.Foldable
-import Data.Functor ((<&>))
 import Data.HashMap.Strict qualified as H
-import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NE
-import Data.Maybe
 import Data.Monoid
 import Data.Pool
 import Data.Text qualified as T
@@ -46,7 +42,7 @@ import Melo.Common.Config
 import Melo.Common.Exception
 import Melo.Common.FileSystem.Watcher
 import Melo.Common.Logging
-import Melo.Common.Metadata
+import Melo.Metadata.Aggregate
 import Melo.Common.Uri
 import Melo.Database.Repo qualified as Repo
 import Melo.Database.Repo.IO (DbConnection(..))
@@ -93,16 +89,16 @@ scanPathIO ::
 scanPathIO pool manager cws scanType ref p' =
   do
     p <- Dir.canonicalizePath p'
-    $(logInfoIO) $ "Scanning " <> show p
+    $(logInfoIO) $ "Scanning " <> showt p
     if scanType == ScanNewOrModified
-      then $(logDebugIO) $ "Looking for updated/new files in " <> show p
-      else $(logDebugIO) $ "Looking for files in " <> show p
+      then $(logDebugIO) $ "Looking for updated/new files in " <> showt p
+      else $(logDebugIO) $ "Looking for files in " <> showt p
     isDir <- Dir.doesDirectoryExist p
     isFile <- Dir.doesFileExist p
     srcs <-
       if isDir
         then do
-          $(logDebugIO) $ p <> " is directory; recursing..."
+          $(logDebugIO) $ showt p <> " is directory; recursing..."
           entries <- Dir.listDirectory p
           dirs <- filterM Dir.doesDirectoryExist ((p </>) <$> entries)
 
@@ -113,7 +109,7 @@ scanPathIO pool manager cws scanType ref p' =
           case cuefiles of
             [] -> handleScanErrors files $ importTransaction files
             [cuefile] -> do
-              $(logDebugIO) $ "Cue file found " <> show cuefile
+              $(logDebugIO) $ "Cue file found " <> showt cuefile
               liftIO $
                 handleAny (logShow files >=> \_ -> handleScanErrors files $ importTransaction files) $
                   V.length
@@ -123,13 +119,13 @@ scanPathIO pool manager cws scanType ref p' =
                       ( openCueFile cuefile <&> (CueFileImportSource ref <$>) >>= importSources
                       )
             _ -> do
-              $(logWarnIO) $ "Multiple cue file found in " <> show p <> "; skipping..."
+              $(logWarnIO) $ "Multiple cue file found in " <> showt p <> "; skipping..."
               pure 0
         else
           if isFile
             then liftIO $ handleScanErrors [p] $ importTransaction [p]
             else pure 0
-    $(logInfoIO) $ show srcs <> " sources imported from path " <> show p
+    $(logInfoIO) $ showt srcs <> " sources imported from path " <> showt p
     pure ()
   where
     handleScanErrors :: (MonadIO m) => [FilePath] -> IO Int -> m Int
@@ -139,9 +135,9 @@ scanPathIO pool manager cws scanType ref p' =
       filterImports files >>= \case
         [] -> pure 0
         files -> do
-          $(logDebugIO) $ T.pack $ "Importing " <> show files
+          $(logDebugIO) $ "Importing " <> showt files
           mfs <- catMaybes <$> mapM openMetadataFile'' files
-          $(logDebugIO) $ T.pack $ "Opened " <> show (mfs <&> \mf -> mf.filePath)
+          $(logDebugIO) $ "Opened " <> showt (mfs <&> \mf -> mf.filePath)
           srcs <-
             runImport pool manager $
               importSources $
@@ -173,19 +169,22 @@ scanPathIO pool manager cws scanType ref p' =
             openMetadataFileByExt p >>= \case
               Right mf -> pure $ Just mf
               Left e@F.UnknownFormat -> do
-                $(logWarnIO) $ "Could not open by extension " <> p <> ": " <> show e
+                let cause = displayException e
+                $(logWarnVIO ['cause]) $ "Could not open by extension " <> showt p
                 openMetadataFile p >>= \case
                   Left e -> do
-                    $(logErrorIO) $ "Could not open " <> p <> ": " <> show e
+                    let cause = displayException e
+                    $(logErrorVIO ['cause]) $ "Could not open " <> showt p
                     pure Nothing
                   Right mf -> pure $ Just mf
               Left e -> do
-                $(logErrorIO) $ "Could not open by extension " <> p <> ": " <> show e
+                let cause = displayException e
+                $(logErrorVIO ['cause]) $ "Could not open by extension " <> showt p
                 pure Nothing
     logShow :: [FilePath] -> SomeException -> IO ()
     logShow filePaths e =
       let !cause = displayException e
-       in $(logErrorVIO ['filePaths]) $ "error during scan: " <> T.pack cause
+       in $(logErrorVIO ['filePaths, 'cause]) "error during scan"
     filterImports :: [FilePath] -> IO [FilePath]
     filterImports files | scanType == ScanAll = pure files
     filterImports files = do
@@ -193,18 +192,18 @@ scanPathIO pool manager cws scanType ref p' =
       ss <- sourceMap files
       imports <-
         catMaybes <$> forM files \p ->
-          case H.lookup (T.pack $ show $ fileUri p) ss of
+          case H.lookup (showt $ fileUri p) ss of
             Just s -> do
               mtime <- utcToLocalTime tz <$> Dir.getModificationTime p
               if mtime > s.scanned
                 then pure $ Just p
                 else pure Nothing
             Nothing ->
-              if isJust $ fileFactoryByExt p
+              if isn't _Nothing $ fileFactoryByExt p
                 then pure $ Just p
                 else pure Nothing
       pure imports
-    sourceMap :: [FilePath] -> IO (H.HashMap T.Text SourceEntity)
+    sourceMap :: [FilePath] -> IO (H.HashMap Text SourceEntity)
     sourceMap files = runSourceRepositoryIO (Pooled pool) do
       ss <- V.toList <$> getByUri (V.fromList $ fileUri <$> files)
       pure $ H.fromList $ (\s -> (s.source_uri, s)) <$> ss
@@ -254,7 +253,7 @@ instance
   where
   startWatching ref p = do
     (pool, watchState, manager) <- ask
-    $(logInfo) $ "starting to watch path " <> p
+    $(logInfo) $ "starting to watch path " <> showt p
     let conf = FS.defaultConfig {FS.confThreadingMode = ThreadPerWatch, FS.confOnHandlerException = handleException}
     void $
       liftIO $
@@ -265,7 +264,7 @@ instance
                 events <- STM.atomically SM.empty
                 let handler e = unlessM (isLocked watchState e.eventPath) do
                       tid <- forkIO do
-                        $(logDebugIO) $ "FileSystem event received; waiting for 100ms: " <> show e
+                        $(logDebugIO) $ "FileSystem event received; waiting for 100ms: " <> from (show e)
                         tid <- myThreadId
                         threadDelay 100000
                         latest <- STM.atomically do
@@ -274,7 +273,7 @@ instance
                               SM.delete e.eventPath events
                               pure True
                             _ -> pure False
-                        $(logDebugIO) $ "Event is latest after 100ms: " <> show latest
+                        $(logDebugIO) $ "Event is latest after 100ms: " <> showt latest
                         when latest do
                           handleEvent pool manager watchState ref e
                       STM.atomically $ SM.insert e.eventPath (e, tid) events
@@ -282,7 +281,9 @@ instance
                 STM.atomically $ STM.modifyTVar' watchState.stoppers (H.insert ref stop)
                 forever $ threadDelay 1000000
     where
-      handleException (SomeException e) = $(logErrorIO) $ "Failure occured in filesystem watcher thread: " <> displayException e
+      handleException (SomeException e) = do
+        let cause = displayException e
+        $(logErrorVIO ['cause]) "Failure occured in filesystem watcher thread"
   stopWatching ref = do
     (_pool, watchState, _) <- ask
     stoppers' <- liftIO $ STM.atomically $ STM.readTVar watchState.stoppers
@@ -294,11 +295,11 @@ instance
     bracket
       ( liftIO $ do
           STM.atomically $ STM.modifyTVar' watchState.locks (lockPaths ps)
-          $(logInfoIO) $ "Unwatching paths " <> show (NE.toList ps)
+          $(logInfoIO) $ "Unwatching paths " <> showt (NE.toList ps)
       )
       ( \_ -> liftIO $ forkIO do
           threadDelay 10000
-          $(logInfoIO) $ "Re-watching paths " <> show (NE.toList ps)
+          $(logInfoIO) $ "Re-watching paths " <> showt (NE.toList ps)
           STM.atomically $ STM.modifyTVar' watchState.locks (unlockPaths ps)
       )
       (const m)
@@ -307,6 +308,7 @@ data FilePathLocks = FilePathLocks
   { lockCounter :: Trie (Sum Int)
   }
   deriving (Show)
+  deriving TextShow via FromStringShow FilePathLocks
 
 instance Semigroup FilePathLocks where
   a <> b = FilePathLocks (a.lockCounter <> b.lockCounter)
@@ -350,21 +352,21 @@ handleEvent pool manager cws ref event = unlessM (isLocked cws event.eventPath) 
     FS.Added p _ FS.IsDirectory -> do
       -- skip added directories to avoid reading half-written files
       -- the files should get their own events when finished writing (after debounced)
-      $(logInfo) $ "directory added; skipping " <> T.pack (show p)
+      $(logInfo) $ "directory added; skipping " <> showt p
     FS.Added p _ FS.IsFile -> do
-      $(logInfo) $ "file added; scanning " <> T.pack (show p)
+      $(logInfo) $ "file added; scanning " <> showt p
       liftIO $ runParIO (scanPathIO pool manager cws ScanAll ref p)
       pure ()
     FS.Modified p _ _ -> do
-      $(logInfo) $ "file/directory modified; scanning " <> T.pack (show p)
+      $(logInfo) $ "file/directory modified; scanning " <> showt p
       liftIO $ runParIO (scanPathIO pool manager cws ScanNewOrModified ref p)
       pure ()
     FS.ModifiedAttributes p _ _ -> do
-      $(logInfo) $ "file/directory attributes modified; scanning " <> T.pack (show p)
+      $(logInfo) $ "file/directory attributes modified; scanning " <> showt p
       liftIO $ runParIO (scanPathIO pool manager cws ScanNewOrModified ref p)
       pure ()
     FS.WatchedDirectoryRemoved p _ _ -> do
-      $(logInfo) $ "watched directory removed " <> T.pack (show p)
+      $(logInfo) $ "watched directory removed " <> showt p
       let uri = fileUri p
       runSourceRepositoryIO (Pooled pool) do
         refs <- getKeysByUriPrefix uri
@@ -373,17 +375,17 @@ handleEvent pool manager cws ref event = unlessM (isLocked cws event.eventPath) 
       let uri = fileUri p
       if isDir == FS.IsDirectory
         then do
-          $(logInfo) $ "directory removed " <> T.pack (show p)
+          $(logInfo) $ "directory removed " <> showt p
           runSourceRepositoryIO (Pooled pool) do
             refs <- getKeysByUriPrefix uri
             void $ Repo.delete @SourceEntity refs
         else do
-          $(logInfo) $ "file removed " <> T.pack (show p)
+          $(logInfo) $ "file removed " <> showt p
           runSourceRepositoryIO (Pooled pool) do
             refs <- getKeysByUri (V.singleton uri)
             void $ Repo.delete @SourceEntity refs
     FS.Unknown p _ _ s ->
-      $(logWarn) $ "unknown file system event on path " <> T.pack (show p) <> ": " <> T.pack s
+      $(logWarn) $ "unknown file system event on path " <> showt p <> ": " <> T.pack s
 
 isLocked :: CollectionWatchState -> FilePath -> IO Bool
 isLocked watchState p = do

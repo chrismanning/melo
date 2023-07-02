@@ -2,7 +2,6 @@
 
 module Melo.Library.Genre.Types where
 
-import Data.Text
 import Data.UUID
 import GHC.Generics hiding (from)
 import Melo.Database.Repo
@@ -16,7 +15,6 @@ import Rel8 (
   nullaryFunction,
   lit,
   )
-import Witch
 
 data GenreTable f = GenreTable
   { id :: Column f GenreRef,
@@ -30,6 +28,7 @@ type Genre = GenreTable Result
 newtype GenreRef = GenreRef UUID
   deriving (Show, Eq, Ord)
   deriving newtype (DBType, DBEq)
+  deriving TextShow via FromStringShow GenreRef
 
 instance From GenreRef UUID where
   from (GenreRef uuid) = uuid 
@@ -44,6 +43,7 @@ data NewGenre = NewGenre
     description :: Maybe Text
   }
   deriving (Generic, Eq, Show)
+  deriving TextShow via FromGeneric NewGenre
 
 instance From NewGenre (GenreTable Expr) where
   from NewGenre { name, description } = GenreTable {

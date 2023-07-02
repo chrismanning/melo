@@ -2,12 +2,14 @@
 {-# LANGUAGE PolyKinds #-}
 
 module Melo.Format.Metadata
-  ( SupportedFormats,
+  ( SupportedMetadataFormats,
     Metadata (..),
     MetadataFile (..),
     MetadataId (..),
     MetadataFileFactory (..),
     MetadataFileId (..),
+    MetadataFormatDesc (..),
+    MetadataFormat (..),
     EmbeddedPicture (..),
     PictureType (..),
     openMetadataFile,
@@ -41,8 +43,6 @@ import Melo.Format.Vorbis
 import Melo.Format.Wav (wav)
 import Melo.Format.WavPack (WavPack, wavPack)
 import System.FilePath
-
-type SupportedFormats = '[Flac, MP3, OggVorbis, WavPack]
 
 metadataFileFactoriesIO :: [MetadataFileFactory IO]
 metadataFileFactoriesIO = [flac, mp3, oggVorbis, wavPack, wav]
@@ -89,8 +89,8 @@ class MetadataFactory (a :: [Type]) where
   mk' :: MetadataId -> Tags -> Maybe Metadata
 
 instance (MetadataFactory fs, MetadataFormat f) => MetadataFactory (f ': fs) where
-  mk' mid tags =
-    if (metadataFormat @f).formatId == mid
+  mk' mid tags = let m = metadataFormat @f in
+    if m.formatId == mid
       then Just $ metadataFactory @f tags
       else mk' @fs mid tags
 

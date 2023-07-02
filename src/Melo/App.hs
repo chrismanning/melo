@@ -13,7 +13,7 @@ import Melo.Common.FileSystem
 import Melo.Common.FileSystem.Watcher
 import Melo.Common.Logging
 import Melo.Common.Logging.Env
-import Melo.Common.Metadata
+import Melo.Metadata.Aggregate
 import Melo.Common.Uri
 import Melo.Database.Repo
 import Melo.Database.Repo.IO (DbConnection(..))
@@ -41,8 +41,8 @@ app = do
   env <- initEnv
   httpManager <- Http.newTlsManager
   withLogging env.logging httpManager do
-    $(logInfoIO) ("Starting melo..." :: String)
-    $(logDebugIO) $ "Env: " <> show env
+    $(logInfoIO) "Starting melo..."
+    $(logDebugIO) $ "Env: " <> showt env
     let db = env.database
     let connInfo = Hasql.settings db.host.unwrap db.port.unwrap db.user.unwrap db.password.unwrap db.database.unwrap
     let newConnection =
@@ -55,7 +55,7 @@ app = do
     catchAny
       (withResource pool (const $ pure ()))
       ( \e -> do
-          $(logErrorIO) $ "error acquiring database connection: " <> show e
+          $(logErrorIO) $ "error acquiring database connection: " <> showt e
           hPutStrLn stderr $ "error acquiring database connection: " <> show e
           exitFailure
       )
@@ -65,10 +65,10 @@ app = do
       catchAny
         (initApp collectionWatchState pool httpManager)
         ( \e -> do
-            $(logErrorIO) $ "error initialising app: " <> show e
+            $(logErrorIO) $ "error initialising app: " <> showt e
             exitFailure
         )
-    $(logInfoIO) ("starting web server" :: String)
+    $(logInfoIO) "starting web server"
 
     let opts = def {settings = setHost "*6" $ setPort env.server.port.unwrap defaultSettings}
     scottyOptsT opts Prelude.id (api collectionWatchState pool httpManager)
@@ -100,7 +100,7 @@ initCollections ::
   ) =>
   m ()
 initCollections = do
-  $(logInfo) ("initialising collections" :: String)
+  $(logInfo) "initialising collections"
   collections <- getAll @CollectionEntity
   forM_ collections $ \c@CollectionTable {..} -> do
     $(logDebugShow) c
@@ -109,4 +109,4 @@ initCollections = do
         Just rootPath -> startWatching id rootPath
         Nothing -> pure ()
     rescanCollection id
-  $(logInfo) ("collections initialised" :: String)
+  $(logInfo) "collections initialised"

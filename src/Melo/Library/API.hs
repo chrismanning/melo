@@ -7,7 +7,6 @@ import Control.Monad.Reader
 import Data.Kind
 import Data.Morpheus.Types
 import Data.Typeable
-import Data.Vector (Vector)
 import GHC.Generics hiding (from)
 import GHC.OverloadedLabels ()
 import Melo.Common.Config

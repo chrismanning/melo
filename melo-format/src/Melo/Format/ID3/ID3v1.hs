@@ -62,7 +62,7 @@ data ID3v1 = ID3v1
 
 instance MetadataFormat ID3v1 where
   metadataFormat =
-    MetadataFormat
+    MetadataFormatDesc
       { formatId = id3v1Id,
         formatDesc = let (MetadataId k) = id3v1Id in k
       }

@@ -5,8 +5,6 @@ import Control.Monad
 import Data.Aeson as A
 import Data.Aeson.KeyMap qualified as A
 import Data.ByteString.Lazy.Char8 hiding (hPutStrLn)
-import Data.Functor
-import Data.List.NonEmpty as NE hiding ((!!))
 import Data.Text as T
 import Data.Text.Encoding as T
 import Data.Text.Lazy qualified as LT
@@ -20,7 +18,6 @@ import Network.HTTP.Client as Http
 import Network.HTTP.Types as Http
 import System.Exit
 import System.IO
-import Witch
 
 mkLokiScribe :: LokiConfig -> Http.Manager -> IO (Maybe Scribe)
 mkLokiScribe config manager = case config.url of
@@ -72,7 +69,7 @@ mkLokiScribe config manager = case config.url of
         ("message", A.String $ buildMessage item._itemMessage),
         ("pid", A.String $ processIDToText item._itemProcess),
         ("level", A.String $ renderSeverity item._itemSeverity),
-        ("namespace", A.String (T.intercalate "." $ Prelude.tail item._itemNamespace.unNamespace)),
+        ("namespace", A.String (T.intercalate "." (item._itemNamespace.unNamespace ^. _tail))),
         ("tid", A.String (getThreadIdText $ item._itemThread))
         ] <> toObject item._itemPayload
       buildMessage (LogStr b) = LT.toStrict $ LTB.toLazyText b
@@ -118,7 +115,7 @@ newtype LokiTimestamp = LokiTimestamp { u :: Text }
   deriving newtype (ToJSON)
 
 instance From SystemTime LokiTimestamp where
-  from t = LokiTimestamp $ T.pack $ show (t.systemSeconds * 1_000_000_000 + fromIntegral t.systemNanoseconds)
+  from t = LokiTimestamp $ showt (t.systemSeconds * 1_000_000_000 + fromIntegral t.systemNanoseconds)
 
 data PushResponse = PushResponse {}
   deriving (Generic)

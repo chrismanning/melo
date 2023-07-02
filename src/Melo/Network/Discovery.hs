@@ -15,12 +15,8 @@ import Data.ByteString qualified as BS
 import Data.ByteString.Builder
 import Data.ByteString.Char8 qualified as C8
 import Data.ByteString.Lazy (toStrict)
-import Data.Foldable (find)
-import Data.Functor
 import Data.IP
-import Data.Maybe
 import Data.String
-import Data.Text (Text)
 import Data.Text.Encoding
 import Data.Unique
 import Data.Word (Word16)
@@ -38,12 +34,14 @@ class Monad m => NetworkDiscovery m where
 newtype DiscoverServiceName = DiscoverServiceName Text
   deriving (Show, Eq)
   deriving newtype (IsString)
+  deriving TextShow via FromStringShow DiscoverServiceName
 
 data Service = Service
   { name :: ServiceName,
     addr :: SockAddr
   }
   deriving (Show, Eq)
+  deriving TextShow via FromStringShow Service
 
 instance
   {-# OVERLAPPABLE #-}
@@ -93,7 +91,8 @@ instance (MonadIO m) => NetworkDiscovery (NetworkDiscoveryIOT m) where
             case decode buf of
               Left e -> throwIO e
               Right msg@(DNSMessage {header = DNSHeader {identifier = responseId}, ..}) | responseId == identifier -> do
-                $(logDebugShowIO) msg
+                let response = show msg
+                $(logDebugVIO ['response]) "Received mDNS response"
                 case find (\ResourceRecord {rrtype} -> rrtype == DNS.SRV) additional of
                   Just ResourceRecord {rdata = (RD_SRV _ _ port _), rrname = srvname} ->
                     pure $
@@ -108,13 +107,16 @@ instance (MonadIO m) => NetworkDiscovery (NetworkDiscoveryIOT m) where
       extractAddress (RD_AAAA address) port = Just $ SockAddrInet6 port 0 (toHostAddress6 address) 0
       extractAddress _ _ = Nothing
       logAndContinue e = do
-        $(logErrorIO) $ "mDNS error: " <> show e
+        $(logErrorIO) $ "mDNS error: " <> showt e
         pure mempty
 
 newtype Timeout = Timeout Unique deriving (Eq, Typeable)
 
 instance Show Timeout where
   show _ = "<<timeout>>"
+
+instance TextShow Timeout where
+  showb _ = "<<timeout>>"
 
 instance Exception Timeout
 
@@ -159,6 +161,7 @@ data MulticastDNSQuestion = MulticastDNSQuestion
     unicastResponse :: !UnicastResponse
   }
   deriving (Show, Eq)
+  deriving TextShow via FromStringShow MulticastDNSQuestion
 
 data DNSRecordType
   = A
@@ -167,9 +170,11 @@ data DNSRecordType
   | SRV
   | TXT
   deriving (Show, Eq)
+  deriving TextShow via FromStringShow DNSRecordType
 
 data UnicastResponse = UnicastResponse | MulticastResponse
   deriving (Show, Eq)
+  deriving TextShow via FromStringShow UnicastResponse
 
 encodeMulticastDNSQuestion :: Word16 -> MulticastDNSQuestion -> ByteString
 encodeMulticastDNSQuestion identifier MulticastDNSQuestion {..} =

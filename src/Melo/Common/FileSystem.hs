@@ -56,6 +56,7 @@ data FileManipError
   | SourceDoesNotExist
   | FileManipIOError IOError
   deriving (Show)
+  deriving TextShow via FromStringShow FileManipError
 
 instance Exception FileManipError
 
@@ -64,6 +65,7 @@ data RemoveError
   | DirectoryDoesNotExist
   | RemoveIOError IOError
   deriving (Show)
+  deriving TextShow via FromStringShow RemoveError
 
 instance Exception RemoveError
 
@@ -114,7 +116,7 @@ instance
         listDirectory dir >>= \case
           [] -> do
             liftIO $ Dir.removeDirectory dir
-            $(logInfo) $ "Removed directory " <> show dir
+            $(logInfo) $ "Removed directory " <> showt dir
             pure ()
           es -> forM_ es removeEmptyDirectories
         )

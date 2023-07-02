@@ -7,7 +7,7 @@ import Control.Applicative hiding (many, some)
 import Control.Concurrent.Classy
 import Melo.Common.Exception as E hiding (try)
 import Control.Foldl qualified as Fold
-import Control.Lens hiding (from)
+import Control.Lens (to)
 import Control.Monad.Except
 import Control.Monad.State.Class
 import Control.Monad.Trans.Except
@@ -15,22 +15,17 @@ import Control.Monad.Trans.State.Strict (StateT, evalStateT)
 import Data.Char
 import Data.Default
 import Data.Either.Combinators
-import Data.Foldable
 import Data.HashMap.Strict qualified as H
-import Data.List.NonEmpty (NonEmpty (..), nonEmpty)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe
-import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Vector (Vector)
 import Data.Vector qualified as V
 import Data.Void (Void)
 import GHC.Generics hiding (from, to)
 import Melo.Common.FileSystem as FS
 import Melo.Common.FileSystem.Watcher
 import Melo.Common.Logging
-import Melo.Common.Metadata
+import Melo.Metadata.Aggregate
 import Melo.Common.Monad
 import Melo.Common.Uri
 import Melo.Common.Uuid
@@ -70,7 +65,6 @@ import System.IO (TextEncoding)
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import Text.Printf
-import Witch
 
 type Transform m = Source -> m (Either TransformationError Source)
 
@@ -89,6 +83,7 @@ data TransformAction where
   ConvertFileFormat :: F.MetadataFileId -> TransformAction
 
 deriving instance Show TransformAction
+deriving via (FromStringShow TransformAction) instance TextShow TransformAction
 
 evalTransformActions :: MonadSourceTransform m => Vector TransformAction -> Source -> m (Either TransformationError Source)
 evalTransformActions ts s = lockSource s $
@@ -118,7 +113,7 @@ evalTransformAction (EditMetadata metadataTransformations) src = mapLeft from <$
 evalTransformAction MusicBrainzLookup src = musicBrainzLookup src
 evalTransformAction (CopyCoverImage coverUrl) src = copyCoverImage coverUrl src
 evalTransformAction (ConvertMetadataFormat mid) src = convertMetadataFormat mid src
-evalTransformAction t _ = pure $ Left (UnsupportedTransform (show t))
+evalTransformAction t _ = pure $ Left (UnsupportedTransform (showt t))
 
 type MonadSourceTransform m =
   ( CollectionRepository m,
@@ -199,33 +194,34 @@ instance MonadSourceTransform m => FileSystem (TransformPreviewT m) where
   listDirectory = lift . listDirectory
   canonicalizePath = lift . canonicalizePath
   readFile p = lift $ do
-    $(logDebug) ("readFile called with " <> p)
+    $(logDebug) ("readFile called with " <> showt p)
     FS.readFile p
   movePath _ _ = lift $ do
-    $(logDebug) ("Preview movePath called" :: String)
+    $(logDebug) "Preview movePath called"
     pure $ Right ()
   copyPath _ _ = lift $ do
-    $(logDebug) ("Preview copyPath called" :: String)
+    $(logDebug) "Preview copyPath called"
     pure $ Right ()
   removePath _ = lift $ do
-    $(logDebug) ("Preview removePath called" :: String)
+    $(logDebug) "Preview removePath called"
     pure $ Right ()
   removeEmptyDirectories _ = lift $ do
-    $(logDebug) ("Preview removeEmptyDirectories called" :: String)
+    $(logDebug) "Preview removeEmptyDirectories called"
     pure ()
 
 instance MonadSourceTransform m => MetadataAggregate (TransformPreviewT m) where
   openMetadataFile _p = do
-    $(logDebug) ("Preview openMetadataFile called" :: String)
+    $(logDebug) "Preview openMetadataFile called"
     lift $ openMetadataFile _p
   openMetadataFileByExt = lift . openMetadataFileByExt
   readMetadataFile mid p = lift $ readMetadataFile mid p
   writeMetadataFile mf _p = lift $ do
-    $(logDebug) ("Preview writeMetadataFile called" :: String)
+    $(logDebug) "Preview writeMetadataFile called"
     pure $ Right mf
   chooseMetadata ms = lift $ do
-    $(logDebug) ("Preview chooseMetadata called" :: String)
+    $(logDebug) "Preview chooseMetadata called"
     chooseMetadata ms
+  metadataFactory = lift . metadataFactory
 
 instance MonadSourceTransform m => MultiTrack (TransformPreviewT m) where
   extractTrackTo cuefile dest =
@@ -246,7 +242,7 @@ instance
   TagMappingAggregate (TransformPreviewT m)
   where
   resolveMappingNamed n s = TransformPreviewT do
-    $(logDebug) $ "Preview resolveMappingNamed " <> show n <> " TransformPreviewT"
+    $(logDebug) $ "Preview resolveMappingNamed " <> showt n <> " TransformPreviewT"
     resolveMappingNamed n s
   getMappingNamed = lift . getMappingNamed
   getMappingsNamed = lift . getMappingsNamed
@@ -262,16 +258,17 @@ deriving instance (MonadState VirtualEntities m) => MonadState VirtualEntities (
 
 instance MonadSourceTransform m => MetadataAggregate (VirtualArtistRepoT m) where
   openMetadataFile _p = do
-    $(logDebug) ("Preview openMetadataFile called" :: String)
+    $(logDebug) "Preview openMetadataFile called"
     lift $ openMetadataFile _p
   openMetadataFileByExt = lift . openMetadataFileByExt
   readMetadataFile mid p = lift $ readMetadataFile mid p
   writeMetadataFile mf _p = lift $ do
-    $(logDebug) ("Preview writeMetadataFile called" :: String)
+    $(logDebug) "Preview writeMetadataFile called"
     pure $ Right mf
   chooseMetadata ms = lift $ do
-    $(logDebug) ("Preview chooseMetadata called" :: String)
+    $(logDebug) "Preview chooseMetadata called"
     chooseMetadata ms
+  metadataFactory = lift . metadataFactory
 
 instance
   ( Repo.Repository SourceEntity m,
@@ -282,12 +279,12 @@ instance
   getAll = lift $ Repo.getAll @SourceEntity
   getByKey = lift . Repo.getByKey @SourceEntity
   insert es = do
-    $(logDebug) ("Preview insert @SourceEntity called" :: String)
+    $(logDebug) "Preview insert @SourceEntity called"
     pure (from <$> es)
   insert' = pure . V.length
   delete _ = pure V.empty
   update e = lift $ do
-    $(logDebug) ("Preview update @SourceEntity called" :: String)
+    $(logDebug) "Preview update @SourceEntity called"
     pure e
   update' = void . Repo.update
 
@@ -315,22 +312,22 @@ instance
   Repo.Repository ArtistEntity (VirtualArtistRepoT m)
   where
   getAll = VirtualArtistRepoT do
-    $(logDebug) ("Preview getAll @ArtistEntity called" :: String)
+    $(logDebug) "Preview getAll @ArtistEntity called"
     artists <- uses #artists Map.elems
     all <- Repo.getAll
     pure $ V.fromList artists <> all
   getByKey keys = VirtualArtistRepoT do
-    $(logDebug) ("Preview getByKey @ArtistEntity called" :: String)
+    $(logDebug) "Preview getByKey @ArtistEntity called"
     artists <- gets (.artists)
     V.catMaybes <$> forM keys \key -> case Map.lookup key artists of
       Just v -> pure $ Just v
       Nothing -> Repo.getSingle key
   insert newArtists = do
-    $(logDebug) ("Preview insert @ArtistEntity called" :: String)
+    $(logDebug) "Preview insert @ArtistEntity called"
     forM newArtists \newArtist -> do
       artist <- case newArtist.musicBrainzId of
         Just mbid -> Artist.getByMusicBrainzId mbid
-        Nothing -> V.find (\a -> isNothing a.musicbrainz_id) <$> getByName newArtist.name
+        Nothing -> V.find (\a -> isn't _Just a.musicbrainz_id) <$> getByName newArtist.name
       case artist of
         Just artist -> do
           let artist' = mergeArtist artist newArtist
@@ -344,10 +341,10 @@ instance
   insert' newArtists = Repo.insert @ArtistEntity newArtists <&> V.length
   delete _ = pure V.empty
   update e = do
-    $(logDebug) ("Preview update @ArtistEntity called" :: String)
+    $(logDebug) "Preview update @ArtistEntity called"
     pure e
   update' _ = do
-    $(logDebug) ("Preview update' @ArtistEntity called" :: String)
+    $(logDebug) "Preview update' @ArtistEntity called"
     pure ()
 
 instance
@@ -367,16 +364,16 @@ instance
       Just artist -> pure (Just artist)
       Nothing -> Artist.getByMusicBrainzId mbid
   getReleaseArtists releaseRef = do
-    $(logDebug) ("Preview getReleaseArtists called" :: String)
+    $(logDebug) "Preview getReleaseArtists called"
     artistNames <- getReleaseArtistNames releaseRef
     releaseArtists <- V.mapMaybeM (\artistName -> fmap (,artistName) <$> Repo.getSingle @ArtistEntity artistName.artist_id) artistNames
     if V.null releaseArtists
       then VirtualArtistRepoT $ getReleaseArtists releaseRef
       else pure releaseArtists
   getSourceReleaseArtists srcRef = fmap (fromMaybe V.empty) $ runMaybeT do
-    $(logDebug) ("Preview getSourceReleaseArtists called" :: String)
+    $(logDebug) "Preview getSourceReleaseArtists called"
     track <- MaybeT $ Track.getBySrcRef srcRef
-    $(logDebug) $ "track: " <> show track
+    $(logDebug) $ "track: " <> showt track
     getReleaseArtists track.release_id
   getByName name = VirtualArtistRepoT do
     artists <- uses #artists Map.elems
@@ -393,28 +390,28 @@ instance
   Repo.Repository ArtistNameEntity (VirtualArtistRepoT m)
   where
   getAll = VirtualArtistRepoT do
-    $(logDebug) ("Preview getAll @ArtistNameEntity called" :: String)
+    $(logDebug) "Preview getAll @ArtistNameEntity called"
     artistNames <- uses #artistNames Map.elems
     all <- Repo.getAll
     pure $ V.fromList artistNames <> all
   getByKey keys = VirtualArtistRepoT do
-    $(logDebug) ("Preview getByKey @ArtistNameEntity called" :: String)
+    $(logDebug) "Preview getByKey @ArtistNameEntity called"
     artistNames <- gets (.artistNames)
     V.catMaybes <$> forM keys \key -> case Map.lookup key artistNames of
       Just v -> pure $ Just v
       Nothing -> Repo.getSingle key
   insert = mapM \a -> do
-    $(logDebug) ("Preview insert @ArtistNameEntity called" :: String)
+    $(logDebug) "Preview insert @ArtistNameEntity called"
     id <- generateV4
     let artistName = fromNewArtistName a id
     #artistNames . at artistName.id <?= artistName
   insert' artistNames = Repo.insert @ArtistNameEntity artistNames <&> V.length
   delete _ = pure V.empty
   update e = lift $ do
-    $(logDebug) ("Preview update @ArtistNameEntity called" :: String)
+    $(logDebug) "Preview update @ArtistNameEntity called"
     pure e
   update' _ = lift $ do
-    $(logDebug) ("Preview update' @ArtistNameEntity called" :: String)
+    $(logDebug) "Preview update' @ArtistNameEntity called"
     pure ()
 
 instance
@@ -445,31 +442,31 @@ instance
   Repo.Repository ReleaseEntity (VirtualArtistRepoT m)
   where
   getAll = VirtualArtistRepoT do
-    $(logDebug) ("Preview getAll @ReleaseEntity called" :: String)
+    $(logDebug) "Preview getAll @ReleaseEntity called"
     releases <- uses #releases Map.elems
     all <- Repo.getAll
     pure $ V.fromList releases <> all
   getByKey keys = VirtualArtistRepoT do
-    $(logDebug) ("Preview getByKey @ReleaseEntity called" :: String)
+    $(logDebug) "Preview getByKey @ReleaseEntity called"
     releases <- gets (.releases)
     V.catMaybes <$> forM keys \key -> case Map.lookup key releases of
       Just v -> pure $ Just v
       Nothing -> Repo.getSingle key
   insert = mapM \a -> do
-    $(logDebug) ("Preview insert @ReleaseEntity called" :: String)
+    $(logDebug) "Preview insert @ReleaseEntity called"
     id <- generateV4
     let release = fromNewRelease a id
     as <- #releases . at release.id <?= release
     x <- gets (.releases)
-    $(logDebug) $ "Preview releases inserted: " <> show x
+    $(logDebug) $ "Preview releases inserted: " <> showt x
     pure as
   insert' releases = Repo.insert @ReleaseEntity releases <&> V.length
   delete _ = pure V.empty
   update e = lift $ do
-    $(logDebug) ("Preview update @ReleaseEntity called" :: String)
+    $(logDebug) "Preview update @ReleaseEntity called"
     pure e
   update' _ = lift $ do
-    $(logDebug) ("Preview update' @ReleaseEntity called" :: String)
+    $(logDebug) "Preview update' @ReleaseEntity called"
     pure ()
 
 instance
@@ -495,7 +492,7 @@ instance
   ReleaseArtistNameRepository (VirtualArtistRepoT m)
   where
   getReleaseArtistNames releaseRef = VirtualArtistRepoT do
-    $(logDebug) ("Preview getReleaseArtistNames called" :: String)
+    $(logDebug) "Preview getReleaseArtistNames called"
     releaseArtists <- gets (.releaseArtists)
     artistNames <- gets (.artistNames)
     case filter (\a -> a.release_id == releaseRef) releaseArtists of
@@ -505,7 +502,7 @@ instance
           V.fromList $
             mapMaybe (\releaseArtist -> Map.lookup releaseArtist.artist_name_id artistNames) releaseArtists
   insert as = do
-    $(logDebug) ("Preview insert @ReleaseArtistNameEntity called" :: String)
+    $(logDebug) "Preview insert @ReleaseArtistNameEntity called"
     #releaseArtists <>= V.toList as
     pure as
   insert' releaseArtists = ReleaseArtist.insert releaseArtists <&> V.length
@@ -519,28 +516,28 @@ instance
   Repo.Repository TrackEntity (VirtualArtistRepoT m)
   where
   getAll = VirtualArtistRepoT do
-    $(logDebug) ("Preview getAll @TrackEntity called" :: String)
+    $(logDebug) "Preview getAll @TrackEntity called"
     tracks <- uses #tracks Map.elems
     all <- Repo.getAll
     pure $ V.fromList tracks <> all
   getByKey keys = VirtualArtistRepoT do
-    $(logDebug) ("Preview getByKey @TrackEntity called" :: String)
+    $(logDebug) "Preview getByKey @TrackEntity called"
     tracks <- gets (.tracks)
     V.catMaybes <$> forM keys \key -> case Map.lookup key tracks of
       Just v -> pure $ Just v
       Nothing -> Repo.getSingle key
   insert = mapM \t -> do
-    $(logDebug) ("Preview insert @TrackEntity called" :: String)
+    $(logDebug) "Preview insert @TrackEntity called"
     id <- generateV4
     let track = fromNewTrack t id
     #tracks . at track.id <?= track
   insert' tracks = Repo.insert @TrackEntity tracks <&> V.length
   delete _ = pure V.empty
   update = mapM \track -> do
-    $(logDebug) ("Preview update @TrackEntity called" :: String)
+    $(logDebug) "Preview update @TrackEntity called"
     #tracks . at track.id <?= track
   update' = mapM_ \track -> do
-    $(logDebug) ("Preview update' @TrackEntity called" :: String)
+    $(logDebug) "Preview update' @TrackEntity called"
     #tracks . at track.id ?= track
 
 instance
@@ -570,7 +567,7 @@ instance
   TrackArtistNameRepository (VirtualArtistRepoT m)
   where
   getTrackArtistNames trackRef = VirtualArtistRepoT do
-    $(logDebug) ("Preview getTrackArtistNames called" :: String)
+    $(logDebug) "Preview getTrackArtistNames called"
     trackArtists <- gets (.trackArtists)
     artistNames <- gets (.artistNames)
     case filter (\a -> a.track_id == trackRef) trackArtists of
@@ -580,7 +577,7 @@ instance
           V.fromList $
             mapMaybe (\trackArtist -> Map.lookup trackArtist.artist_name_id artistNames) trackArtists
   insert ts = do
-    $(logDebug) ("Preview insert @TrackArtistNameEntity called" :: String)
+    $(logDebug) "Preview insert @TrackArtistNameEntity called"
     #trackArtists <>= V.toList ts
     pure ts
   insert' trackArtists = TrackArtist.insert trackArtists <&> V.length
@@ -592,7 +589,7 @@ instance
   TagMappingAggregate (VirtualArtistRepoT m)
   where
   resolveMappingNamed n s = VirtualArtistRepoT do
-    $(logDebug) $ "Preview resolveMappingNamed " <> show n <> " VirtualArtistRepoT"
+    $(logDebug) $ "Preview resolveMappingNamed " <> showt n <> " VirtualArtistRepoT"
     resolveMappingNamed n s
   getMappingNamed = lift . getMappingNamed
   getMappingsNamed = lift . getMappingsNamed
@@ -626,10 +623,10 @@ instance
   ReleaseAggregate (TransformPreviewT m)
   where
   importReleases srcs = do
-    $(logDebug) ("Preview importReleases called" :: String)
+    $(logDebug) "Preview importReleases called"
     importReleasesImpl srcs
   getRelease ref = TransformPreviewT do
-    $(logDebug) ("Preview getRelease called" :: String)
+    $(logDebug) "Preview getRelease called"
     Release.getRelease ref
 
 instance
@@ -639,10 +636,10 @@ instance
   Covers.CoverService (TransformPreviewT m)
   where
   searchForCovers ref = TransformPreviewT do
-    $(logDebug) ("Preview searchForCovers TransformPreviewT" :: String)
+    $(logDebug) "Preview searchForCovers TransformPreviewT"
     Covers.searchForCovers ref
   copyCoverToDir src dest = TransformPreviewT do
-    $(logDebug) ("Preview copyCoverToDir TransformPreviewT" :: String)
+    $(logDebug) "Preview copyCoverToDir TransformPreviewT"
     Covers.copyCoverToDir src dest
 
 instance
@@ -652,24 +649,24 @@ instance
   Covers.CoverService (VirtualArtistRepoT m)
   where
   searchForCovers ref = VirtualArtistRepoT do
-    $(logDebug) ("Preview searchForCovers VirtualArtistRepoT" :: String)
+    $(logDebug) "Preview searchForCovers VirtualArtistRepoT"
     Covers.searchForCovers ref
   copyCoverToDir src dest = VirtualArtistRepoT do
-    $(logDebug) ("Preview copyCoverToDir VirtualArtistRepoT" :: String)
+    $(logDebug) "Preview copyCoverToDir VirtualArtistRepoT"
     Covers.copyCoverToDir src dest
 
 instance Logging m => FileSystemWatcher (TransformPreviewT m) where
-  startWatching _ _ = $(logDebug) ("Preview startWarching TransformPreviewT" :: String)
-  stopWatching _ = $(logDebug) ("Preview stopWatching TransformPreviewT" :: String)
+  startWatching _ _ = $(logDebug) "Preview startWarching TransformPreviewT"
+  stopWatching _ = $(logDebug) "Preview stopWatching TransformPreviewT"
   lockPathsDuring _ m = do
-    $(logDebug) ("Preview lockPathsDuring TransformPreviewT" :: String)
+    $(logDebug) "Preview lockPathsDuring TransformPreviewT"
     m
 
 instance Logging m => FileSystemWatcher (VirtualArtistRepoT m) where
-  startWatching _ _ = $(logDebug) ("Preview startWarching VirtualArtistRepoT" :: String)
-  stopWatching _ = $(logDebug) ("Preview stopWatching VirtualArtistRepoT" :: String)
+  startWatching _ _ = $(logDebug) "Preview startWarching VirtualArtistRepoT"
+  stopWatching _ = $(logDebug) "Preview stopWatching VirtualArtistRepoT"
   lockPathsDuring _ m = do
-    $(logDebug) ("Preview lockPathsDuring VirtualArtistRepoT" :: String)
+    $(logDebug) "Preview lockPathsDuring VirtualArtistRepoT"
     m
 
 data TransformationError
@@ -682,10 +679,11 @@ data TransformationError
   | ImportFailed SourceError
   | MultiTrackError MultiTrackError
   | SourceConversionError (TryFromException SourceEntity Source)
-  | UnsupportedTransform String
+  | UnsupportedTransform Text
   | MetadataConversionError F.MetadataId F.MetadataId
   | UnknownLength
   deriving (Show)
+  deriving TextShow via FromStringShow TransformationError
 
 instance Exception TransformationError
 
@@ -717,26 +715,25 @@ moveSourceWithPattern collectionRef pats src@Source {ref, source} =
         Just destPath | destPath == srcPath -> pure $ Right src
         Just destPath -> lockPathsDuring (srcPath :| [destPath]) do
           let SourceRef id = ref
-          $(logInfo) $ "moving source " <> show id <> " from " <> srcPath <> " to " <> destPath
+          $(logInfo) $ "moving source " <> showt id <> " from " <> showt srcPath <> " to " <> showt destPath
           movePath srcPath destPath >>= \case
             Left e -> pure $ Left (from e)
             Right _ -> do
-              $(logInfo) $ "successfully moved source " <> show id <> " from " <> srcPath <> " to " <> destPath
+              $(logInfo) $ "successfully moved source " <> showt id <> " from " <> showt srcPath <> " to " <> showt destPath
               findCoverImage (takeDirectory srcPath) >>= \case
                 Nothing -> pure ()
                 Just imagePath -> do
                   let destImagePath = replaceDirectory imagePath (takeDirectory destPath)
                   movePath imagePath destImagePath >>= \case
-                    Left e ->
-                      $(logError) $
+                    Left e -> do
+                      let cause = displayException e
+                      $(logErrorV ['cause]) $
                         "failed to move cover image "
-                          <> takeFileName imagePath
+                          <> showt (takeFileName imagePath)
                           <> " for source "
-                          <> show id
-                          <> ": "
-                          <> displayException e
+                          <> showt id
                     Right _ ->
-                      $(logInfo) $ "successfully moved cover image " <> takeFileName imagePath <> " for source " <> show id
+                      $(logInfo) $ "successfully moved cover image " <> showt (takeFileName imagePath) <> " for source " <> showt id
               void $ removeEmptyDirectories (takeDirectory srcPath)
               let movedSrc = src & #source .~ fileUri destPath
               Repo.updateSingle @SourceEntity (from movedSrc) >>= \case
@@ -815,7 +812,7 @@ parseMovePattern s = nonEmptyRight =<< mapLeft Just (parse terms "" s)
     term = try format <|> try group <|> try literal
     format = do
       void (char '%')
-      padZero <- isJust <$> optional (char '0')
+      padZero <- isn't _Nothing <$> optional (char '0')
       width <- fmap (: []) <$> optional digitChar
       mapping' <- mapping
       case width of
@@ -827,10 +824,9 @@ parseMovePattern s = nonEmptyRight =<< mapLeft Just (parse terms "" s)
     mapping = T.pack <$> some (letterChar <|> char '_') <?> "mapping"
     group = do
       void (char '[')
-      terms' <- someTill term (char ']')
-      case nonEmpty terms' of
-        Just terms'' -> pure $ GroupPattern terms''
-        Nothing -> fail "no terms in group"
+      someTill term (char ']') >>= \case
+        (t : ts) -> pure $ GroupPattern (t :| ts)
+        [] -> fail "no terms in group"
     literal =
       LiteralPattern
         <$> ( some
@@ -874,12 +870,12 @@ extractTrack collectionRef' patterns s@Source {multiTrack = Just MultiTrackDesc 
                             pictures = mf.pictures
                           }
                   raw <- extractTrackTo cuefile dest >>= mapE MultiTrackError
-                  $(logDebug) $ "Mappings: " <> show mappings
+                  $(logDebug) $ "Mappings: " <> showt mappings
                   let vc =
                         fromMaybe (F.metadataFactory @F.VorbisComments F.emptyTags) $
                           F.convert' F.vorbisCommentsId metadata mappings
-                  $(logDebug) $ "Original metadata: " <> show metadata
-                  $(logDebug) $ "Converted metadata: " <> show vc
+                  $(logDebug) $ "Original metadata: " <> showt metadata
+                  $(logDebug) $ "Converted metadata: " <> showt vc
                   let m = H.fromList [(F.vorbisCommentsId, vc)]
                   let metadataFile = raw & #metadata .~ m
                   mf <- writeMetadataFile metadataFile dest >>= mapE MetadataTransformError
@@ -902,6 +898,7 @@ data MetadataTransformation
   | RemoveTags {key :: Text}
   | RemoveAll
   deriving (Show)
+  deriving TextShow via FromStringShow MetadataTransformation
 
 editMetadata :: MonadSourceTransform m => Vector MetadataTransformation -> Source -> m (Either TransformationError Source)
 editMetadata _ src@Source {metadata = Nothing} = pure $ Right src
@@ -917,7 +914,7 @@ editMetadata ts src = runExceptT do
       mapping <- getMappingNamed mappingName >>= eitherToError . maybeToRight (UnknownTagMapping mappingName)
       let metadata = into @SourceMetadata metadata'.tags
           current  = metadata' ^. F.tagLens mapping in
-        $(logDebugV ['mapping, 'metadata, 'current]) $ "Setting tag to " <> T.pack (show vs)
+        $(logDebugV ['mapping, 'metadata, 'current]) $ "Setting tag to " <> showt vs
       let newMetadata = metadata' & F.tagLens mapping .~ vs
       pure (src & #metadata .~ Just newMetadata)
   editMetadata' (RemoveMappings mappings) src = flatten <$> (forM mappings $ \mapping -> editMetadata' (SetMapping mapping V.empty) src)
@@ -950,15 +947,15 @@ editMetadata ts src = runExceptT do
 
 musicBrainzLookup :: MonadSourceTransform m => Source -> m (Either TransformationError Source)
 musicBrainzLookup src@Source {metadata = Nothing} = do
-  $(logDebug) $ "No Metadata; Cannot lookup MusicBrainz by metadata for source " <> show src.ref
+  $(logDebug) $ "No Metadata; Cannot lookup MusicBrainz by metadata for source " <> showt src.ref
   pure $ Right src
 musicBrainzLookup src@Source {metadata = Just metadata} = (flip evalStateT) metadata do
   get >>= MB.getReleaseAndGroup >>= \case
     (Nothing, Nothing) -> do
-      $(logInfo) $ "No release or release-group found for source " <> show src.ref
+      $(logInfo) $ "No release or release-group found for source " <> showt src.ref
       pure ()
     (releaseGroup, Just release) -> do
-      $(logInfo) $ "release found for source " <> show src.ref
+      $(logInfo) $ "release found for source " <> showt src.ref
       F.tagLens MB.releaseIdTag .= V.singleton release.id.mbid
       case releaseGroup ^? _Just . #id . coerced of
         Just releaseGroupId -> F.tagLens MB.releaseGroupIdTag .= V.singleton releaseGroupId
@@ -969,7 +966,7 @@ musicBrainzLookup src@Source {metadata = Just metadata} = (flip evalStateT) meta
         Just catNum -> F.tagLens M.catalogNumber .= V.singleton catNum
         _ -> pure ()
     (Just releaseGroup, Nothing) -> do
-      $(logInfo) $ "release-group found for source " <> show src.ref
+      $(logInfo) $ "release-group found for source " <> showt src.ref
       F.tagLens MB.releaseGroupIdTag .= V.singleton releaseGroup.id.mbid
   get >>= MB.getRecordingFromMetadata >>= \case
     Just recording -> do
@@ -978,7 +975,7 @@ musicBrainzLookup src@Source {metadata = Just metadata} = (flip evalStateT) meta
       F.tagLens MB.artistIdTag .= V.fromList trackArtists
     _ -> pure ()
   newMetadata <- get
-  $(logDebug) $ "Updating source with musicbrainz metadata " <> show newMetadata
+  $(logDebug) $ "Updating source with musicbrainz metadata " <> showt newMetadata
   mapLeft ImportFailed <$> updateSource (src & #metadata .~ Just newMetadata)
 
 copyCoverImage :: MonadSourceTransform m => URI -> Source -> m (Either TransformationError Source)

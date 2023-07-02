@@ -4,10 +4,7 @@
 module Melo.Library.Artist.Aggregate where
 
 import Control.Applicative
-import Control.Lens hiding (from, lens)
 import Control.Monad.State.Strict
-import Data.Maybe
-import Data.Vector (Vector)
 import Data.Vector qualified as V
 import Melo.Common.Exception
 import Melo.Common.Logging
@@ -18,7 +15,6 @@ import Melo.Library.Artist.Name.Types
 import Melo.Library.Artist.Repo
 import Melo.Library.Artist.Types
 import Melo.Lookup.MusicBrainz qualified as MB
-import Witch
 
 class Monad m => ArtistAggregate m where
   importArtistCredit :: MB.ArtistCredit -> m (Maybe ArtistNameEntity)
@@ -83,7 +79,7 @@ instance
               pure (artistName <|> V.find (\a -> a.name == alias) names)
             Nothing -> getAlias artist.id artist.name
         Nothing -> do
-          $(logError) $ "Unable to find MusicBrainz artist with MBID " <> show artistCredit.artist.id.mbid
+          $(logError) $ "Unable to find MusicBrainz artist with MBID " <> showt artistCredit.artist.id.mbid
           pure Nothing
   importMusicBrainzArtist mbArtist =
     insertSingle @ArtistEntity (from mbArtist) <<|>> getByMusicBrainzId mbArtist.id >>= \case

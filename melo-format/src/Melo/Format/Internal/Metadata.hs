@@ -86,7 +86,7 @@ class MetadataFormat a where
 
 metadataFactory :: forall a. MetadataFormat a => Tags -> Metadata
 metadataFactory tags =
-  let MetadataFormat {..} = metadataFormat @a
+  let MetadataFormatDesc {..} = metadataFormat @a
    in Metadata
         { formatId,
           formatDesc,
@@ -94,7 +94,7 @@ metadataFactory tags =
           mappingSelector = fieldMappingSelector @a
         }
 
-data MetadataFormatDesc = MetadataFormat
+data MetadataFormatDesc = MetadataFormatDesc
   { formatId :: !MetadataId,
     formatDesc :: !Text
   }

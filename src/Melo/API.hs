@@ -6,11 +6,9 @@ import Control.Concurrent.Classy
 import Control.Exception (evaluate)
 import Control.Monad.IO.Class
 import Data.ByteString.Lazy.Char8
-import Data.Maybe
 import Data.Morpheus
 import Data.Morpheus.Types
 import Data.Pool
-import Data.Text qualified as T
 import Data.Text.Lazy qualified as LT
 import Data.UUID (fromASCIIBytes)
 import Data.Vector qualified as V
@@ -21,7 +19,7 @@ import Melo.Common.Exception
 import Melo.Common.FileSystem
 import Melo.Common.FileSystem.Watcher
 import Melo.Common.Logging
-import Melo.Common.Metadata
+import Melo.Metadata.Aggregate
 import Melo.Common.Monad
 import Melo.Common.Uri
 import Melo.Common.Uuid
@@ -48,6 +46,7 @@ import Melo.Library.Track.ArtistName.Repo
 import Melo.Library.Track.Repo
 import Melo.Lookup.Covers
 import Melo.Lookup.MusicBrainz
+import Melo.Metadata.API
 import Melo.Metadata.Mapping.Aggregate
 import Melo.Metadata.Mapping.Repo
 import Network.HTTP.Types.Status
@@ -57,7 +56,8 @@ import System.FilePath (takeDirectory, takeFileName)
 import Web.Scotty.Trans
 
 data Query m = Query
-  { library :: m (LibraryQuery m)
+  { library :: m (LibraryQuery m),
+    metadata :: m (MetadataQuery m)
   }
   deriving (Generic)
 
@@ -81,7 +81,10 @@ instance Typeable m => GQLType (Mutation m)
 rootResolver :: ResolverE m => RootResolver m () Query Mutation Undefined
 rootResolver =
   defaultRootResolver
-    { queryResolver = Query {library = resolveLibrary},
+    { queryResolver = Query
+      { library = resolveLibrary,
+        metadata = resolveMetadata
+      },
       mutationResolver = Mutation {library = libraryMutation}
     }
 
@@ -90,8 +93,8 @@ gqlApi = interpreter (rootResolver)
 
 gqlApiIO :: CollectionWatchState -> Pool Connection ->  Http.Manager -> ByteString -> IO ByteString
 gqlApiIO collectionWatchState pool httpManager rq = do
-  $(logInfo) ("handling graphql request" :: T.Text)
-  $(logDebug) $ "graphql request: " <> rq
+  $(logInfo) "handling graphql request"
+  $(logDebug) $ "graphql request: " <> showt rq
   let run connSrc =
         runFileSystemIO
           . runConfigRepositoryIO connSrc
@@ -121,7 +124,7 @@ gqlApiIO collectionWatchState pool httpManager rq = do
     withResource pool \conn -> evaluate =<< run (Single conn) (gqlApi rq)
     else
       evaluate =<< run (Pooled pool) (gqlApi rq)
-  $(logInfo) ("finished handling graphql request" :: T.Text)
+  $(logInfo) "finished handling graphql request"
   pure rs
 
 type ResolverE m =
@@ -175,10 +178,10 @@ api collectionWatchState pool httpManager = do
       Just uuid -> do
         liftIO (getSourceFilePathIO pool (SourceRef uuid)) >>= \case
           Nothing -> do
-            $(logWarnIO) $ "No local file found for source " <> show uuid
+            $(logWarnIO) $ "No local file found for source " <> showt uuid
             status notFound404
           Just path -> do
-            $(logInfoIO) $ "Opening file '" <> path <> "' for streaming"
+            $(logInfoIO) $ "Opening file " <> showt path <> " for streaming"
             file path
             let fileName' = LT.pack $ takeFileName path
             setHeader "Content-Disposition" ("attachment; filename=\"" <> fileName' <> "\"")
@@ -189,15 +192,15 @@ api collectionWatchState pool httpManager = do
       Just uuid -> do
         liftIO (findCoverImageIO pool httpManager collectionWatchState (SourceRef uuid)) >>= \case
           Nothing -> do
-            $(logWarnIO) $ "No cover image found for source " <> srcId
+            $(logWarnIO) $ "No cover image found for source " <> showt srcId
             status notFound404
           Just (ExternalImageFile path) -> do
-            $(logInfoIO) $ "Found cover image " <> path <> " for source " <> show uuid
+            $(logInfoIO) $ "Found cover image " <> showt path <> " for source " <> showt uuid
             file path
             let fileName' = LT.pack $ takeFileName path
             setHeader "Content-Disposition" ("attachment; filename=\"" <> fileName' <> "\"")
           Just (EmbeddedImage pic) -> do
-            $(logInfoIO) $ "Found embedded cover image for source " <> show uuid
+            $(logInfoIO) $ "Found embedded cover image for source " <> showt uuid
             setHeader "Content-Type" (LT.fromStrict pic.mimeType)
             raw (fromStrict pic.pictureData)
   post "/collection/:id/source_groups" do
@@ -215,10 +218,6 @@ api collectionWatchState pool httpManager = do
       Just uuid ->
         stream $
           API.streamSourceGroupsQuery collectionWatchState pool httpManager (CollectionRef uuid) groupByMappings filt rq
-
-instance (PrimMonad m, ScottyError a) => PrimMonad (ActionT a m) where
-  type PrimState (ActionT a m) = PrimState m
-  primitive = lift . primitive
 
 getSourceFilePathIO :: Pool Connection -> SourceRef -> IO (Maybe FilePath)
 getSourceFilePathIO pool k =
@@ -240,21 +239,22 @@ findCoverImageIO pool httpManager cws k = withResource pool $ \conn ->
       runMetadataAggregateIO do
         getSource k >>= \case
           Nothing -> do
-            $(logWarn) $ "No source found for ref " <> show k
+            $(logWarn) $ "No source found for ref " <> showt k
             pure Nothing
           Just src -> case uriToFilePath src.source of
             Nothing -> do
-              $(logWarn) $ "No local file found for source " <> show k
+              $(logWarn) $ "No local file found for source " <> showt k
               pure Nothing
             Just path -> do
-              $(logInfo) $ "Locating cover image for source " <> show k <> " at path " <> show path
+              $(logInfo) $ "Locating cover image for source " <> showt k <> " at path " <> showt path
               let dir = takeDirectory path
               findCoverImage dir >>= \case
                 Just imgPath -> pure $ Just $ ExternalImageFile imgPath
                 Nothing -> do
                   openMetadataFile path >>= \case
                     Left e -> do
-                      $(logWarn) $ "Could not look for embedded image in file " <> show path <> ": " <> displayException e
+                      let cause = displayException e
+                      $(logWarnV ['cause]) $ "Could not look for embedded image in file " <> showt path
                       pure Nothing
                     Right mf -> do
                       let coverKey = fromMaybe FrontCover src.cover

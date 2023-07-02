@@ -11,8 +11,6 @@ import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
 import Data.Functor.Contravariant
-import Data.Text qualified as T
-import Data.Vector (Vector, empty)
 import Melo.Common.NaturalSort
 import Melo.Database.Repo
 import Melo.Database.Repo.IO
@@ -86,10 +84,10 @@ sortByUri :: Vector CollectionEntity -> Vector CollectionEntity
 sortByUri = sortVectorNaturalBy (\e -> e.root_uri)
 
 instance MonadIO m => CollectionRepository (CollectionRepositoryIOT m) where
-  getByUri us | null us = pure empty
+  getByUri us | null us = pure mempty
   getByUri fs = do
     RepositoryHandle {connSrc, tbl} <- ask
-    let q = Rel8.filter (\c -> c.root_uri `in_` fmap (lit . T.pack . show) fs) =<< Rel8.each tbl
+    let q = Rel8.filter (\c -> c.root_uri `in_` fmap (lit . showt) fs) =<< Rel8.each tbl
     runSelect connSrc $ orderByUri q
 
 collectionSchema :: TableSchema (CollectionTable Name)

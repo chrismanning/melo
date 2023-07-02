@@ -2,15 +2,11 @@
 
 module Melo.Library.Release.Types where
 
-import Control.Lens hiding (from)
 import Hasql.Decoders qualified as Hasql
 import Data.Aeson qualified as A
-import Data.Foldable
 import Data.Hashable
-import Data.Maybe
 import Data.Morpheus.Kind
 import Data.Morpheus.Types as M
-import Data.Text (Text)
 import Data.Time
 import Data.UUID
 import GHC.Generics
@@ -19,7 +15,6 @@ import Melo.Library.Artist.Name.Types
 import Melo.Lookup.MusicBrainz qualified as MB
 import Opaleye.Internal.HaskellDB.PrimQuery (Literal (..), PrimExpr (..))
 import Rel8
-import Witch
 
 data ReleaseTable f = ReleaseTable
   { id :: Column f ReleaseRef,
@@ -38,6 +33,7 @@ data ReleaseTable f = ReleaseTable
 type ReleaseEntity = ReleaseTable Result
 
 deriving instance Show ReleaseEntity
+deriving via (FromGeneric ReleaseEntity) instance TextShow ReleaseEntity
 
 deriving instance Eq ReleaseEntity
 
@@ -49,6 +45,7 @@ instance Entity ReleaseEntity where
 newtype ReleaseRef = ReleaseRef UUID
   deriving (Show, Eq, Ord, Generic)
   deriving newtype (DBType, DBEq, Hashable)
+  deriving TextShow via FromGeneric ReleaseRef
 
 instance GQLType ReleaseRef where
   type KIND ReleaseRef = SCALAR
@@ -73,6 +70,7 @@ data ReleaseKind
   | CompilationKind
   | OtherKind
   deriving (Show, Eq, Ord, Generic, Hashable)
+  deriving TextShow via FromGeneric ReleaseKind
 
 instance A.ToJSON ReleaseKind where
   toEncoding = A.genericToEncoding A.defaultOptions
@@ -112,6 +110,7 @@ data Release = Release
     kind :: ReleaseKind
   }
   deriving (Show, Eq, Generic, Hashable)
+  deriving TextShow via FromGeneric Release
 
 mkRelease :: Foldable f => f ArtistNameEntity -> ReleaseEntity -> Release
 mkRelease releaseArtists e =
@@ -136,6 +135,7 @@ data NewRelease = NewRelease
     kind :: ReleaseKind
   }
   deriving (Generic, Eq, Ord, Show)
+  deriving TextShow via FromGeneric NewRelease
 
 instance A.ToJSON NewRelease where
   toEncoding = A.genericToEncoding A.defaultOptions

@@ -6,12 +6,9 @@ module Melo.Library.Artist.Name.Repo where
 import Control.Concurrent.Classy
 import Melo.Common.Exception
 import Control.Foldl (PrimMonad)
-import Control.Lens (firstOf)
 import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
-import Data.Text (Text)
-import Data.Vector (Vector)
 import Melo.Database.Repo
 import Melo.Database.Repo.IO
 import Melo.Library.Artist.Name.Types

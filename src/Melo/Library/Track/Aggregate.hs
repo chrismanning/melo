@@ -4,14 +4,9 @@
 module Melo.Library.Track.Aggregate where
 
 import Control.Applicative
-import Control.Lens hiding (from, lens)
 import Data.Attoparsec.Text
-import Data.Foldable.Extra
 import Data.Int (Int16)
-import Data.Maybe
-import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Vector (Vector)
 import Data.Vector qualified as V
 import GHC.Generics hiding (from)
 import Melo.Common.Exception
@@ -86,7 +81,7 @@ instance
     where
       importSourceTrack :: Source -> m (Maybe TrackEntity)
       importSourceTrack src = do
-        $(logDebug) $ "Importing track from source " <> show src.ref
+        $(logDebug) $ "Importing track from source " <> showt src.ref
         Track.getBySrcRef src.ref >>= \case
           Just track -> updateSingle (track {release_id = release.ref})
           Nothing -> insertSingle (mkNewTrack release.ref Nothing src)
@@ -96,18 +91,18 @@ instance
         trackArtists <- resolveMappingNamed "track_artist" src
         if releaseArtists == trackArtists
           then do
-            $(logDebug) $ "Track artists same as release artists for source " <> show src.ref
+            $(logDebug) $ "Track artists same as release artists for source " <> showt src.ref
             releaseArtists <- getReleaseArtists release.ref
             let artistNames = releaseArtists <&> (^. _2 . #id)
             void $ TrackArtist.insert' (TrackArtistNameTable track.id <$> artistNames)
           else do
-            $(logDebug) $ "Track artists differ from release artists for source " <> show src.ref
+            $(logDebug) $ "Track artists differ from release artists for source " <> showt src.ref
             unlessM (importArtistsByRecording src track) do
               let mbArtistIds = MB.MusicBrainzId <$> fromMaybe V.empty (src.metadata ^? _Just . tagLens MB.artistIdTag)
               importArtistsByMetadata src track trackArtists mbArtistIds
       importArtistsByMetadata src _track trackArtists mbArtistIds
         | V.length mbArtistIds /= V.length trackArtists =
-            $(logWarn) $ "Invalid track artist MusicBrainz info found for source " <> show src
+            $(logWarn) $ "Invalid track artist MusicBrainz info found for source " <> showt src
       importArtistsByMetadata _src track trackArtists mbArtistIds =
         V.forM_ mbArtistIds $ \mbid ->
           MB.getArtist mbid >>= \case
@@ -119,10 +114,10 @@ instance
                       Just artistName ->
                         void $ TrackArtist.insertSingle (TrackArtistNameTable track.id artistName.id)
                       Nothing ->
-                        $(logWarn) $ "No artist name matching " <> show trackArtist <> " for artist " <> show artist.id
-                Nothing -> $(logWarn) ("No artist imported" :: String)
+                        $(logWarn) $ "No artist name matching " <> showt trackArtist <> " for artist " <> showt artist.id
+                Nothing -> $(logWarn) "No artist imported"
             Nothing ->
-              $(logWarn) $ "No MusicBrainz artist found with MBID " <> show mbid.mbid
+              $(logWarn) $ "No MusicBrainz artist found with MBID " <> showt mbid.mbid
       importArtistsByRecording src track =
         join <$> traverse MB.getRecordingFromMetadata src.metadata >>= \case
           Just mbRecording ->
@@ -132,10 +127,10 @@ instance
                 TrackArtist.insert' (TrackArtistNameTable track.id . (.id) <$> artistNames)
                 pure True
               Nothing -> do
-                $(logDebug) $ "No artist credits for recording " <> show mbRecording.id.mbid
+                $(logDebug) $ "No artist credits for recording " <> showt mbRecording.id.mbid
                 pure False
           Nothing -> do
-            $(logDebug) $ "No recording for track " <> show track.id
+            $(logDebug) $ "No recording for track " <> showt track.id
             pure False
 
 mkNewTrack :: ReleaseRef -> Maybe MB.MusicBrainzId -> Source -> NewTrack

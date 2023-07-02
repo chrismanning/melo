@@ -169,7 +169,7 @@ vorbisCommentsId = MetadataId "VorbisComments"
 
 instance MetadataFormat VorbisComments where
   metadataFormat =
-    MetadataFormat
+    MetadataFormatDesc
       { formatId = vorbisCommentsId,
         formatDesc = "Vorbis Comments"
       }

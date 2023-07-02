@@ -3,19 +3,16 @@
 module Melo.Library.Artist.Types where
 
 import Control.Applicative
-import Control.Lens
+import Control.Lens (to)
 import Country
 import Data.Hashable
-import Data.Maybe
 import Data.Morpheus.Types as M
 import Data.Morpheus.Kind
-import Data.Text (Text)
 import Data.UUID
 import GHC.Generics hiding (from, to)
 import Melo.Database.Repo
 import qualified Melo.Lookup.MusicBrainz as MB
 import Rel8
-import Witch
 
 data ArtistTable f = ArtistTable
   { id :: Column f ArtistRef,
@@ -31,6 +28,7 @@ data ArtistTable f = ArtistTable
 type ArtistEntity = ArtistTable Result
 
 deriving instance Show ArtistEntity
+deriving via (FromGeneric ArtistEntity) instance TextShow ArtistEntity
 deriving instance Eq ArtistEntity
 deriving instance Ord ArtistEntity
 
@@ -42,6 +40,7 @@ instance Entity ArtistEntity where
 newtype ArtistRef = ArtistRef UUID
   deriving (Show, Eq, Ord, Generic)
   deriving newtype (DBType, DBEq, Hashable)
+  deriving TextShow via FromGeneric ArtistRef
 
 instance GQLType ArtistRef where
   type KIND ArtistRef = SCALAR
@@ -69,6 +68,7 @@ data Artist = Artist
     shortBiography :: Maybe Text
   }
   deriving (Generic, Show)
+  deriving TextShow via FromGeneric Artist
 
 mkArtist :: ArtistEntity -> [Text] -> Artist
 mkArtist dbArtist names =
@@ -94,6 +94,7 @@ data ArtistId
       { spotifyArtistId :: Text
       }
   deriving (Show, Eq)
+  deriving TextShow via FromStringShow ArtistId
 
 data NewArtist = NewArtist
   { name :: Text,
@@ -104,6 +105,7 @@ data NewArtist = NewArtist
     musicBrainzId :: Maybe MB.MusicBrainzId
   }
   deriving (Generic, Eq, Ord, Show)
+  deriving TextShow via FromGeneric NewArtist
 
 instance From NewArtist (ArtistTable Expr) where
   from a =

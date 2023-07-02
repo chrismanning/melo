@@ -6,11 +6,9 @@ module Melo.Library.Track.ArtistName.Repo where
 import Control.Concurrent.Classy
 import Melo.Common.Exception
 import Control.Foldl (PrimMonad)
-import Control.Lens (firstOf)
 import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
-import Data.Vector (Vector)
 import Data.Vector qualified as V
 import Melo.Database.Repo.IO
 import Melo.Library.Artist.Name.Repo (artistNameSchema)
@@ -22,7 +20,6 @@ import Melo.Library.Track.ArtistName.Types
 import Melo.Library.Track.Types
 import Rel8 (lit, (&&.), (==.))
 import Rel8 qualified
-import Witch
 
 class Monad m => TrackArtistNameRepository m where
   getTrackArtistNames :: TrackRef -> m (Vector ArtistNameEntity)

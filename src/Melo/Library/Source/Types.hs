@@ -4,7 +4,7 @@ module Melo.Library.Source.Types where
 
 import BinaryParser as BP
 import Control.Applicative
-import Control.Lens hiding (from, (.=))
+import Control.Lens (to)
 import Control.Monad
 import Data.Aeson hiding (Result)
 import Data.Bits
@@ -16,25 +16,20 @@ import Data.Fixed
 import Data.HashMap.Strict qualified as H
 import Data.Hashable
 import Data.Int
-import Data.Maybe
 import Data.Morpheus.Kind
 import Data.Morpheus.Types as M
-import Data.List.NonEmpty (NonEmpty)
 import Data.Range (Range (..))
 import Data.Range qualified as R
-import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time.Clock (NominalDiffTime ())
 import Data.Time.Format.ISO8601
 import Data.Time.LocalTime
 import Data.UUID
 import Data.UUID.V4
-import Data.Vector (Vector ())
 import Data.Vector qualified as V
 import GHC.Generics hiding (from, to)
 import Hasql.Decoders qualified as Hasql
 import Melo.Common.FileSystem
-import Melo.Common.Metadata
 import Melo.Common.Uri
 import Melo.Database.Repo (Entity (..))
 import Melo.Format.Info
@@ -59,7 +54,7 @@ import Rel8
   )
 import System.IO.Unsafe
 import Text.Read
-import Witch
+import Prelude hiding ((.=))
 
 -- TODO source attributes/flags - no linked artist, album, track - missing certain tags
 
@@ -80,8 +75,7 @@ data SourceTable f = SourceTable
 type SourceEntity = SourceTable Result
 
 deriving instance Show SourceEntity
-
-deriving newtype instance Show (JSONBEncoded SourceMetadata)
+deriving via (FromGeneric SourceEntity) instance TextShow SourceEntity
 
 instance Entity SourceEntity where
   type NewEntity SourceEntity = NewSource
@@ -91,13 +85,14 @@ instance Entity SourceEntity where
 newtype PictureTypeWrapper = PictureTypeWrapper PictureType
   deriving (Generic, Show, Eq)
   deriving DBType via ReadShow PictureType
+  deriving TextShow via FromGeneric PictureTypeWrapper
 
 instance GQLType PictureTypeWrapper where
   type KIND PictureTypeWrapper = SCALAR
 
 instance EncodeScalar PictureTypeWrapper where
   encodeScalar (PictureTypeWrapper pictureType) =
-    M.String $ T.pack $ show pictureType
+    M.String $ showt pictureType
 
 instance DecodeScalar PictureTypeWrapper where
   decodeScalar (M.String s) =
@@ -106,6 +101,7 @@ instance DecodeScalar PictureTypeWrapper where
 
 newtype IntervalRange = IntervalRange (Range CalendarDiffTime)
   deriving (Show, Eq)
+  deriving TextShow via FromStringShow IntervalRange
 
 rangeLength :: IntervalRange -> Maybe NominalDiffTime
 rangeLength (IntervalRange r) = rangeLength' r
@@ -215,6 +211,7 @@ getCurrentLocalTime = zonedTimeToLocalTime <$> getZonedTime
 newtype SourceMetadata = SourceMetadata {tags :: Vector TagPair}
   deriving (Show, Eq, Generic)
   deriving (DBType) via JSONBEncoded SourceMetadata
+  deriving TextShow via FromGeneric SourceMetadata
 
 instance From Tags SourceMetadata where
   from (Tags tags) = SourceMetadata (uncurry TagPair <$> tags)
@@ -227,6 +224,7 @@ data TagPair = TagPair
     value :: Text
   }
   deriving (Show, Eq, Generic, GQLType)
+  deriving TextShow via FromGeneric TagPair
 
 instance ToJSON TagPair where
   toJSON t = object ["key" .= t.key, "value" .= t.value]
@@ -246,6 +244,7 @@ data NewImportSource
   = FileSource CollectionRef MetadataFile
   | CueFileImportSource CollectionRef CueFileSource
   deriving (Eq, Show)
+  deriving TextShow via FromStringShow NewImportSource
 
 data CueFileSource = CueFileSource
   { metadata :: Metadata,
@@ -258,6 +257,7 @@ data CueFileSource = CueFileSource
     pictures :: [(PictureType, EmbeddedPicture)]
   }
   deriving (Eq, Show, Generic)
+  deriving TextShow via FromGeneric CueFileSource
 
 data MetadataImportSource = MetadataImportSource
   { metadata :: Maybe Metadata,
@@ -270,6 +270,7 @@ data MetadataImportSource = MetadataImportSource
     cover :: Maybe PictureType
   }
   deriving (Show, Generic)
+  deriving TextShow via FromStringShow MetadataImportSource
 
 getSourceUri :: NewImportSource -> URI
 getSourceUri (FileSource _ f) = fileUri f.filePath
@@ -316,9 +317,11 @@ data NewSource = NewSource
     cover :: Maybe PictureType
   }
   deriving (Show, Eq, Generic)
+  deriving TextShow via FromGeneric NewSource
 
 data AudioRange = TimeRange (Range CalendarDiffTime)
   deriving (Eq, Show)
+  deriving TextShow via FromStringShow AudioRange
 
 instance From AudioRange IntervalRange where
   from (TimeRange r) = IntervalRange r
@@ -335,7 +338,7 @@ instance From MetadataImportSource NewSource where
       { kind = coerce ms.metadataFileId,
         metadataFormat = coerce $ fromMaybe nullMetadata (ms.metadata <&> (.formatId)),
         tags = fromMaybe emptyTags (ms.metadata <&> (.tags)),
-        source = T.pack $ show $ ms.src,
+        source = showt $ ms.src,
         idx = ms.idx,
         range = ms.range,
         collection = ms.collection,
@@ -345,6 +348,7 @@ instance From MetadataImportSource NewSource where
 newtype SourceRef = SourceRef {unSourceRef :: UUID}
   deriving (Generic)
   deriving newtype (Show, Eq, Ord, DBType, DBEq, Hashable)
+  deriving TextShow via FromGeneric SourceRef
 
 instance GQLType SourceRef where
   type KIND SourceRef = SCALAR
@@ -372,6 +376,7 @@ data Source = Source
     cover :: Maybe PictureType
   }
   deriving (Generic, Show, Eq)
+  deriving TextShow via FromGeneric Source
 
 instance TryFrom SourceEntity Source where
   tryFrom s = maybeToRight (TryFromException s Nothing) do
@@ -417,6 +422,7 @@ data MultiTrackDesc = MultiTrackDesc
     range :: AudioRange
   }
   deriving (Generic, Show, Eq)
+  deriving TextShow via FromGeneric MultiTrackDesc
 
 instance From Source SourceEntity where
   from Source {..} =
@@ -425,7 +431,7 @@ instance From Source SourceEntity where
         kind = coerce kind,
         metadata_format = coerce $ fromMaybe nullMetadata (metadata ^? _Just . (to (.formatId))),
         metadata = JSONBEncoded $ from $ fromMaybe emptyTags (metadata ^? _Just . (to (.tags))),
-        source_uri = T.pack $ show source,
+        source_uri = showt source,
         idx = fromMaybe (-1) (multiTrack ^? _Just . #idx),
         time_range = (from <$> multiTrack ^? _Just . #range)
           <|> (IntervalRange . R.ubi . calendarTimeTime <$> length),
@@ -444,6 +450,7 @@ data ImportStats = ImportStats
     genresImported :: Natural
   }
   deriving (Eq, Show, Generic)
+  deriving TextShow via FromGeneric ImportStats
 
 instance Semigroup ImportStats where
   a <> b =
@@ -472,6 +479,7 @@ data SourcePathPattern
   | DefaultPattern SourcePathPattern SourcePathPattern
   | PrintfPattern String SourcePathPattern
   deriving (Show, Eq)
+  deriving TextShow via FromStringShow SourcePathPattern
 
 data SourceFileManipError
   = FileSystemFileManipError FileManipError
@@ -482,6 +490,7 @@ data SourceFileManipError
   | WrongCollection
   | ConversionError (TryFromException SourceEntity Source)
   deriving (Show)
+  deriving TextShow via FromStringShow SourceFileManipError
 
 instance From FileManipError SourceFileManipError where
   from = FileSystemFileManipError

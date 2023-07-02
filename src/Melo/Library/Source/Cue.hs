@@ -2,22 +2,18 @@ module Melo.Library.Source.Cue where
 
 import Control.Applicative
 import Melo.Common.Exception
-import Control.Lens hiding (from)
 import Control.Monad
 import Control.Monad.IO.Class
 import Data.ByteString qualified as B
 import Data.List.NonEmpty qualified as NE
 import Data.Map qualified as M
-import Data.Maybe
 import Data.Range
-import Data.Text qualified as T
 import Data.Time
-import Data.Vector (Vector, fromList)
 import Data.Vector qualified as V
 import GHC.Natural (naturalToInteger)
 import Melo.Common.Config
 import Melo.Common.FileSystem.Watcher
-import Melo.Common.Metadata
+import Melo.Metadata.Aggregate
 import Melo.Format.Info
 import Melo.Format.Mapping qualified as Mapping
 import Melo.Format.Metadata
@@ -57,8 +53,8 @@ openCueFile cueFilePath = do
             let rem = M.fromList $ bimap unCueText unCueText <$> cueRem
             let tags =
                   catMaybes
-                    [ Just ("TRACKNUMBER", T.pack $ show trackNum),
-                      Just ("TOTAL_TRACKS", T.pack $ show $ Prelude.length cueTracks''),
+                    [ Just ("TRACKNUMBER", showt trackNum),
+                      Just ("TOTAL_TRACKS", showt $ Prelude.length cueTracks''),
                       ("PERFORMER",) . unCueText <$> (cueTrackPerformer <|> cuePerformer),
                       ("TITLE",) . unCueText <$> cueTrackTitle,
                       ("ALBUM_PERFORMER",) . unCueText <$> (cuePerformer <|> cueTrackPerformer),
@@ -91,7 +87,7 @@ openCueFile cueFilePath = do
                       cueFilePath
                     }, totalFileLength)
               Nothing -> error "file has no length"
-      pure $ fromList $ squashTimeRanges processedTracks
+      pure $ V.fromList $ squashTimeRanges processedTracks
       where
         cueTimeRange (CueTime frames) = TimeRange (LowerBoundRange (Bound (framesToTime frames) Inclusive))
         framesToTime frames = CalendarDiffTime 0 (fromInteger (naturalToInteger frames) / 75.0)

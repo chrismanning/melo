@@ -6,7 +6,6 @@ import GHC.Generics
 import Melo.Library.Artist.Name.Types (ArtistNameRef (..))
 import Melo.Library.Track.Types (TrackRef (..))
 import Rel8
-import Witch
 
 data TrackArtistNameTable f = TrackArtistNameTable
   { track_id :: Column f TrackRef,

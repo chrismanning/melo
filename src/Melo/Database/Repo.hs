@@ -5,12 +5,10 @@
 module Melo.Database.Repo where
 
 import Melo.Common.Exception (Exception)
-import Control.Lens
 import Control.Monad
 import Control.Monad.Trans
 import Data.ByteString (ByteString)
 import Data.Kind
-import Data.Vector (Vector, singleton)
 import Data.Vector.Lens ()
 
 class Entity e where
@@ -28,19 +26,19 @@ class (Monad m, Entity e) => Repository e m where
   update' :: Vector e -> m ()
 
 getSingle :: forall e m. Repository e m => PrimaryKey e -> m (Maybe e)
-getSingle k = firstOf traverse <$> getByKey (singleton k)
+getSingle k = firstOf traverse <$> getByKey (pure k)
 
 insertSingle :: forall e m. Repository e m => NewEntity e -> m (Maybe e)
-insertSingle e = firstOf traverse <$> insert (singleton e)
+insertSingle e = firstOf traverse <$> insert (pure e)
 
 insertSingle' :: forall e m. Repository e m => NewEntity e -> m ()
-insertSingle' e = void $ insert @e (singleton e)
+insertSingle' e = void $ insert @e (pure e)
 
 updateSingle :: forall e m. Repository e m => e -> m (Maybe e)
-updateSingle e = firstOf traverse <$> update (singleton e)
+updateSingle e = firstOf traverse <$> update (pure e)
 
 updateSingle' :: forall e m. Repository e m => e -> m ()
-updateSingle' e = void $ update @e (singleton e)
+updateSingle' e = void $ update @e (pure e)
 
 instance
   {-# OVERLAPPABLE #-}
@@ -59,4 +57,6 @@ instance
   update' = lift . update'
 
 data DatabaseError = ConnectionError (Maybe ByteString)
+  | OtherDatabaseError
   deriving (Show, Exception)
+  deriving TextShow via FromStringShow DatabaseError

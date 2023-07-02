@@ -4,25 +4,19 @@
 module Melo.Database.Repo.IO where
 
 import Melo.Common.Exception
-import Control.Foldl (PrimMonad)
-import Control.Monad.Base
-import Control.Monad.Conc.Class
-import Control.Monad.Reader
-import Control.Monad.Trans.Control
 import Data.Kind
-import Data.Maybe
 import Data.Pool
-import Data.Vector (Vector, empty, fromList)
+import Data.Vector (fromList)
 import Hasql.Connection
 import Hasql.CursorTransactionIO
 import Hasql.Session
 import Hasql.Streaming
 import Melo.Common.Logging
+import Melo.Common.Monad
 import Melo.Database.Repo
 import qualified Rel8
 import Rel8 ((==.))
 import Streaming.Prelude (Stream, Of)
-import Witch
 
 data DbConnection = Single Connection | Pooled (Pool Connection)
 
@@ -77,7 +71,7 @@ instance
       all <- Rel8.each tbl
       Rel8.where_ $ pk all `Rel8.in_` keys
       pure all
-  insert es | null es = pure empty
+  insert es | null es = pure mempty
   insert es = do
     RepositoryHandle {connSrc, tbl, upsert} <- ask
     fromList <$> runInsert
@@ -99,7 +93,7 @@ instance
           onConflict = fromMaybe Rel8.Abort (Rel8.DoUpdate <$> upsert),
           returning = fromIntegral <$> Rel8.NumberOfRowsAffected
         }
-  delete ks | null ks = pure empty
+  delete ks | null ks = pure mempty
   delete ks = do
     RepositoryHandle {connSrc, tbl, pk} <- ask
     let keys = Rel8.lit <$> ks
@@ -109,12 +103,14 @@ instance
       deleteWhere = \_ row -> pk row `Rel8.in_` keys,
       returning = Rel8.Projection pk
     }
-    $(logDebugIO) $ Rel8.showDelete d
+    do
+      let statement = Rel8.showDelete d
+      $(logDebugVIO ['statement]) "Executing DELETE"
     let session = statement () $ Rel8.delete d
     fromList <$> case connSrc of
       Single conn' -> liftIO $ run session conn' >>= either throwIO pure
       Pooled pool -> liftIO $ withResource pool $ \conn -> run session conn >>= either throwIO pure
-  update es | null es = pure empty
+  update es | null es = pure mempty
   update es = do
     us <- forM es $ \e ->
       doUpdate (from e) (Rel8.Projection (\x -> x))
@@ -139,22 +135,26 @@ doUpdate e ret = do
     updateWhere = \_ row -> pk row ==. Rel8.litExpr (pk e),
     returning = ret
   }
-  $(logDebugIO) $ Rel8.showUpdate u
+  do
+    let statement = Rel8.showUpdate u
+    $(logDebugVIO ['statement]) "Executing UPDATE"
   let session = statement () $ Rel8.update u
   case connSrc of
     Single conn' -> liftIO do
       run session conn' >>= \case
         Left e -> do
-          -- TODO add `Rel8.showUpdate u` as context with katip
-          $(logErrorIO) $ displayException e
+          let statement = Rel8.showUpdate u
+          let cause = displayException e
+          $(logErrorVIO ['statement, 'cause]) "UPDATE failed"
           throwIO e
         Right r -> pure r
     Pooled pool -> liftIO do
       withResource pool $ \conn ->
         run session conn >>= \case
           Left e -> do
-            -- TODO add `Rel8.showUpdate u` as context with katip
-            $(logErrorIO) $ displayException e
+            let statement = Rel8.showUpdate u
+            let cause = displayException e
+            $(logErrorVIO ['statement, 'cause]) "UPDATE failed"
             throwIO e
           Right r -> pure r
 
@@ -164,7 +164,9 @@ runSelect ::
   Rel8.Query exprs ->
   m (Vector (Rel8.FromExprs exprs))
 runSelect connSrc q = do
---  $(logDebugIO) $ Rel8.showQuery q
+  do
+    let statement = Rel8.showQuery q
+    $(logDebugVIO ['statement]) "Executing SELECT"
   let session = statement () $ Rel8.selectVector q
   case connSrc of
     Single conn' -> liftIO $ run session conn' >>= either throwIO pure
@@ -177,7 +179,9 @@ selectStream q = streamingQuery (Rel8.select q) ()
 
 runInsert :: MonadIO m => DbConnection -> Rel8.Insert a -> m a
 runInsert connSrc i = do
---  $(logDebugIO) $ Rel8.showInsert i
+  do
+    let statement = Rel8.showInsert i
+    $(logDebugVIO ['statement]) "Executing INSERT"
   let session = statement () $ Rel8.insert i
   case connSrc of
     Single conn' -> liftIO $ run session conn' >>= either throwIO pure
@@ -185,7 +189,9 @@ runInsert connSrc i = do
 
 runInsert' :: MonadIO m => DbConnection -> Rel8.Insert a -> m (Either QueryError a)
 runInsert' connSrc i = do
---  $(logDebugIO) $ Rel8.showInsert i
+  do
+    let statement = Rel8.showInsert i
+    $(logDebugVIO ['statement]) "Executing INSERT"
   let session = statement () $ Rel8.insert i
   case connSrc of
     Single conn' -> liftIO $ run session conn'

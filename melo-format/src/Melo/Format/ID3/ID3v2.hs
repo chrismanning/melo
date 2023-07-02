@@ -87,7 +87,7 @@ id3v23Id = MetadataId "ID3v2_3"
 
 instance MetadataFormat ID3v2_3 where
   metadataFormat =
-    MetadataFormat
+    MetadataFormatDesc
       { formatId = id3v23Id,
         formatDesc = "ID3v2.3"
       }
@@ -119,7 +119,7 @@ id3v24Id = MetadataId "ID3v2_4"
 
 instance MetadataFormat ID3v2_4 where
   metadataFormat =
-    MetadataFormat
+    MetadataFormatDesc
       { formatId = id3v24Id,
         formatDesc = "ID3v2.4"
       }

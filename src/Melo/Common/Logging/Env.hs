@@ -1,10 +1,7 @@
 module Melo.Common.Logging.Env where
 
 import Control.Exception.Safe
-import Control.Lens ((&),(.~))
 import Data.IORef
-import Data.Maybe
-import Data.Text
 import Katip
 import Melo.Env
 import Melo.Common.Logging
@@ -17,10 +14,10 @@ withLogging :: LoggingConfig -> Http.Manager -> IO () -> IO ()
 withLogging config manager m = do
   stdoutScribe <- mkHandleScribe ColorIfTerminal stdout (permitItem DebugS) V2
   modifyRefM logEnv (registerScribe "stdout" stdoutScribe defaultScribeSettings)
-  $(logDebug) $ "Logging config: " <> show config
+  $(logDebug) $ "Logging config: " <> showt config
   mkLokiScribe config.loki manager >>= \case
     Just lokiScribe -> do
-      $(logInfo) ("Initialising loki scribe" :: Text)
+      $(logInfo) "Initialising loki scribe"
       let bufferSize = fromMaybe (1024 * 1024) (fromIntegral <$> config.loki.bufferSize)
       modifyRefM logEnv (registerScribe "loki" lokiScribe (defaultScribeSettings & scribeBufferSize .~ bufferSize))
       finally (handle logFatalError m) (readIORef logEnv >>= closeScribes)

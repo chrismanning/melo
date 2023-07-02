@@ -7,7 +7,6 @@ import Melo.Common.Exception
 import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
-import Data.Text (Text)
 import Melo.Database.Repo
 import Melo.Database.Repo.IO
 import Melo.Library.Artist.Types

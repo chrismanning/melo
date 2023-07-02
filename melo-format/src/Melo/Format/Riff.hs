@@ -44,7 +44,7 @@ getInfoPair = do
 
 instance MetadataFormat RiffInfo where
   metadataFormat =
-    MetadataFormat
+    MetadataFormatDesc
       { formatId = riffId,
         formatDesc = "RIFF LIST INFO"
       }

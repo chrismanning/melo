@@ -8,7 +8,6 @@ import Control.Concurrent.Classy
 import Melo.Common.Exception (displayException, throwIO, toException)
 import Melo.Common.Exception qualified as E
 import Control.Foldl qualified as Fold
-import Control.Lens hiding (from, lens, (|>))
 import Control.Monad
 import Control.Monad.IO.Class
 import Data.Binary.Builder (append, fromByteString, putStringUtf8)
@@ -19,16 +18,13 @@ import Data.Either.Combinators
 import Data.Generics.Labels ()
 import Data.Kind
 import Data.Map.Strict qualified as Map
-import Data.Maybe
 import Data.Morpheus
 import Data.Morpheus.Types
 import Data.Pool
-import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time.Clock
 import Data.Typeable
 import Data.UUID (fromText, toText)
-import Data.Vector (Vector)
 import Data.Vector qualified as V
 import GHC.Generics hiding (from)
 import Hasql.Connection
@@ -38,7 +34,7 @@ import Hasql.TransactionIO.Sessions
 import Melo.Common.Config
 import Melo.Common.FileSystem
 import Melo.Common.Logging
-import Melo.Common.Metadata
+import Melo.Metadata.Aggregate
 import Melo.Common.Uri
 import Melo.Common.Uuid
 import Melo.Database.Repo as Repo
@@ -77,12 +73,12 @@ import Rel8 (JSONBEncoded (..), (&&.), (==.))
 import Rel8 qualified
 import Streaming.Prelude qualified as S
 import System.FilePath as P
-import Witch
 
 data SourceEvent
   = SourceAdded (Ty.Source)
   | SourceRemoved (Ty.SourceRef)
   deriving (Show, Eq)
+  deriving TextShow via FromStringShow SourceEvent
 
 resolveSources ::
   ( Tr.MonadSourceTransform m,
@@ -320,6 +316,7 @@ data MappedTag = MappedTag
     values :: Vector Text
   }
   deriving (Show, Eq, Ord, Generic, GQLType)
+  deriving TextShow via FromGeneric MappedTag
 
 data MappedTagsArgs = MappedTagsArgs
   { mappings :: Vector Text
@@ -425,6 +422,7 @@ data ImageInfo = ImageInfo
     bytes :: Int
   }
   deriving (Show, Eq, Generic)
+  deriving TextShow via FromGeneric ImageInfo
 
 instance GQLType ImageInfo
 
@@ -532,7 +530,7 @@ mkSrcGroup s =
             }
           where
             sources = fst <$> ss
-            src = head sources
+            src = fromMaybe undefined $ sources ^? _head
             groupParentUri = getParentUri src.sourceUri
             coverImage = src.coverImage
 
@@ -568,20 +566,20 @@ streamSourceGroupsQuery collectionWatchState pool httpManager collectionRef grou
     streamSession :: Connection -> IO (Either QueryError ())
     streamSession conn = do
       let q = sourcesForCollection collectionRef
-      $(logInfoIO) $ show (Rel8.showQuery q)
+      $(logInfoIO) $ showt (Rel8.showQuery q)
       flip run conn $
         transactionIO ReadCommitted ReadOnly NotDeferrable $
           cursorTransactionIO $
             processStream (selectStream q)
     processStream :: MonadIO m => S.Stream (S.Of Ty.SourceEntity) m () -> m ()
     processStream s = do
-      $(logInfoIO) $ "Starting streaming sources from collection " <> show collectionRef
+      $(logInfoIO) $ "Starting streaming sources from collection " <> showt collectionRef
       let runIO = liftIO . runSourceIO collectionWatchState pool httpManager
       s
         & groupSources' groupByMappings
         & S.mapM (\srcGrp -> runIO $ interpreter (mkRoot srcGrp) (L.toStrict rq))
         & S.mapM_ sendFlush
-      $(logInfoIO) $ "Finished streaming sources from collection " <> show collectionRef
+      $(logInfoIO) $ "Finished streaming sources from collection " <> showt collectionRef
     sendFlush :: MonadIO m => BS.ByteString -> m ()
     sendFlush = (liftIO . (const flush)) <=< liftIO . sendChunk . (`append` (putStringUtf8 "\n\n")) . fromByteString
 
@@ -613,7 +611,7 @@ runSourceIO collectionWatchState pool httpManager =
 getParentUri :: Text -> Text
 getParentUri srcUri = case parseURI (T.unpack srcUri) of
   Just uri -> case uriScheme uri of
-    "file:" -> T.pack $ show $ fileUri $ takeDirectory $ unEscapeString (uriPath uri)
+    "file:" -> showt $ fileUri $ takeDirectory $ unEscapeString (uriPath uri)
     _ -> srcUri
   Nothing -> srcUri
 
@@ -655,6 +653,7 @@ data Transform
   | CopyCoverImage {url :: Text}
   | ConvertMetadataFormat {targetId :: Text}
   deriving (Show, Generic, GQLType)
+  deriving TextShow via FromGeneric Transform
 
 data MetadataTransformation
   = SetMapping {mapping :: Text, values :: Vector Text}
@@ -665,6 +664,7 @@ data MetadataTransformation
   | RemoveTags {key :: Text}
   | RemoveAll
   deriving (Show, Generic, GQLType)
+  deriving TextShow via FromGeneric MetadataTransformation
 
 previewTransformSourceImpl ::
   forall m e o.
@@ -683,7 +683,7 @@ previewTransformSourceImpl ::
   Vector Transform ->
   m (UpdateSourceResult (Resolver o e m))
 previewTransformSourceImpl s ts = do
-  $(logDebug) $ "Preview; Transforming source " <> show s.id <> " with " <> show ts
+  $(logDebug) $ "Preview; Transforming source " <> showt s.id <> " with " <> showt ts
   E.catchAny
     ( case tryFrom s of
         Left e -> E.throwM (into @Tr.TransformationError e)
@@ -694,8 +694,9 @@ previewTransformSourceImpl s ts = do
               pure $ UpdatedSource (enrichSourceEntity (from s''))
     )
     ( \e -> do
-        $(logError) $ E.displayException e
-        pure $ FailedSourceUpdate s.id (T.pack $ E.displayException e)
+        let cause = displayException e
+        $(logErrorV ['cause]) "Preview; Transform failed"
+        pure $ FailedSourceUpdate s.id (from $ E.displayException e)
     )
   where
     interpretTransforms :: Vector Transform -> Vector Tr.TransformAction
@@ -718,7 +719,7 @@ transformSourcesImpl ::
   ResolverM e m (UpdatedSources (Resolver MUTATION e m))
 transformSourcesImpl (TransformSourcesArgs ts where') = do
   es <- resolveSourceEntities where'
-  $(logDebug) $ "Transforming sources " <> show (es <&> \e -> e.id) <> " with " <> show ts
+  $(logDebug) $ "Transforming sources " <> showt (es <&> \e -> e.id) <> " with " <> showt ts
   ss <- lift $ forM es $ \s ->
     case tryFrom s of
       Left e -> pure $ Left (s.id, into @Tr.TransformationError e)
@@ -726,8 +727,9 @@ transformSourcesImpl (TransformSourcesArgs ts where') = do
   lift $ fork $ void $ importReleases (V.mapMaybe rightToMaybe ss)
   forM ss \case
     Left (id, e) -> do
-      $(logError) $ E.displayException e
-      pure $ FailedSourceUpdate id (T.pack $ E.displayException e)
+      let cause = displayException e
+      $(logErrorV ['cause]) "Transform failed"
+      pure $ FailedSourceUpdate id (from $ E.displayException e)
     Right s -> pure $ UpdatedSource (enrichSourceEntity @m @MUTATION (from s))
   where
     interpretTransforms :: Vector Transform -> Vector Tr.TransformAction

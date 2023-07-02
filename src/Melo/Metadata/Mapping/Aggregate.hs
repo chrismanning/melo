@@ -4,18 +4,14 @@
 module Melo.Metadata.Mapping.Aggregate where
 
 import Control.Foldl qualified as F
-import Control.Lens
 import Country
-import Data.Coerce
 import Data.Map.Strict as Map
-import Data.Text (Text)
-import Data.Vector (Vector)
 import Data.Vector qualified as V
 import Melo.Common.Exception
 import Melo.Common.Logging
 import Melo.Common.Monad
 import Melo.Database.Repo as Repo
-import Melo.Format.Mapping as M
+import Melo.Format.Mapping qualified as M
 import Melo.Library.Artist.Repo
 import Melo.Library.Artist.Types
 import Melo.Library.Source.Types
@@ -101,34 +97,34 @@ instance
 runTagMappingAggregate :: TagMappingRepository m => TagMappingAggregateT m a -> m a
 runTagMappingAggregate (TagMappingAggregateT m) = do
   all <- getAll @TagMappingEntity
-  let mappings = Map.fromList $ fmap (\e -> (e.name, e.tagMapping)) $ V.toList all
+  let mappings = Map.fromList $ fmap (\e -> (e.name, from e.tagMapping)) $ V.toList all
   runReaderT m mappings
 
 insertDefaultMappings :: (MonadCatch m, TagMappingRepository m) => m ()
 insertDefaultMappings = void (insert' @TagMappingEntity defaultMappings) `catchIO` (\_ -> pure ())
 
-defaultMappings :: Vector NewTagMapping
+defaultMappings :: Vector TagMapping
 defaultMappings =
   V.fromList
-    [ NewTagMapping "release_artist" $ coerce M.albumArtist,
-      NewTagMapping "track_artist" $ coerce M.artist,
-      NewTagMapping "artist" $ coerce M.artist,
-      NewTagMapping "track_title" $ coerce M.trackTitle,
-      NewTagMapping "title" $ coerce M.trackTitle,
-      NewTagMapping "release_title" $ coerce M.album,
-      NewTagMapping "album" $ coerce M.album,
-      NewTagMapping "track_number" $ coerce M.trackNumber,
-      NewTagMapping "tracknumber" $ coerce M.trackNumber,
-      NewTagMapping "genre" $ coerce M.genre,
-      NewTagMapping "year" $ coerce M.year,
-      NewTagMapping "release_year" $ coerce M.year,
-      NewTagMapping "original_release_year" $ coerce M.originalReleaseYear,
-      NewTagMapping "total_tracks" $ coerce M.totalTracks,
-      NewTagMapping "totaltracks" $ coerce M.totalTracks,
-      NewTagMapping "disc_number" $ coerce M.discNumberTag,
-      NewTagMapping "disc" $ coerce M.discNumberTag,
-      NewTagMapping "total_discs" $ coerce M.totalDiscs,
-      NewTagMapping "totaldiscs" $ coerce M.totalDiscs,
-      NewTagMapping "catalogue_number" $ coerce M.catalogueNumber,
-      NewTagMapping "catalog_number" $ coerce M.catalogNumber
+    [ fromTagMapping "release_artist" M.albumArtist,
+      fromTagMapping "track_artist" M.artist,
+      fromTagMapping "artist" M.artist,
+      fromTagMapping "track_title" M.trackTitle,
+      fromTagMapping "title" M.trackTitle,
+      fromTagMapping "release_title" M.album,
+      fromTagMapping "album" M.album,
+      fromTagMapping "track_number" M.trackNumber,
+      fromTagMapping "tracknumber" M.trackNumber,
+      fromTagMapping "genre" M.genre,
+      fromTagMapping "year" M.year,
+      fromTagMapping "release_year" M.year,
+      fromTagMapping "original_release_year" M.originalReleaseYear,
+      fromTagMapping "total_tracks" M.totalTracks,
+      fromTagMapping "totaltracks" M.totalTracks,
+      fromTagMapping "disc_number" M.discNumberTag,
+      fromTagMapping "disc" M.discNumberTag,
+      fromTagMapping "total_discs" M.totalDiscs,
+      fromTagMapping "totaldiscs" M.totalDiscs,
+      fromTagMapping "catalogue_number" M.catalogueNumber,
+      fromTagMapping "catalog_number" M.catalogNumber
     ]

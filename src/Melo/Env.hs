@@ -16,7 +16,6 @@ where
 
 import Data.ByteString.Char8 qualified as C8
 import Data.Either.Combinators
-import Data.Maybe
 import Data.Time.Clock
 import Data.Word
 import GHC.Exts
@@ -26,6 +25,7 @@ import System.Environment (lookupEnv)
 import System.Exit
 import Text.Casing
 import Text.Read
+import Prelude hiding (Text)
 
 initEnv :: IO Env
 initEnv = getEnv @Env
@@ -36,6 +36,7 @@ data Env = Env
     logging :: LoggingConfig
   }
   deriving (Show, Generic)
+  deriving TextShow via FromGeneric Env
 
 instance GetEnv Env
 
@@ -43,6 +44,7 @@ data Server = Server
   { port :: EnvVar Int 5000
   }
   deriving (Show, Generic)
+  deriving TextShow via FromGeneric Server
 
 data Database = Database
   { host :: EnvVar C8.ByteString "localhost",
@@ -53,23 +55,27 @@ data Database = Database
     pool :: DatabaseConnectionPool
   }
   deriving (Show, Generic)
+  deriving TextShow via FromGeneric Database
 
 data DatabaseConnectionPool = DatabaseConnectionPool
   { maxIdleTime :: EnvVar NominalDiffTime 20,
     maxConnections :: EnvVar Int 10
   }
   deriving (Show, Generic)
+  deriving TextShow via FromGeneric DatabaseConnectionPool
 
 data LoggingConfig = Logging
   { loki :: LokiConfig
   }
   deriving (Show, Generic)
+  deriving TextShow via FromGeneric LoggingConfig
 
 data LokiConfig = LokiConfig
   { url :: Maybe String
   , bufferSize :: Maybe Natural
   }
   deriving (Show, Generic)
+  deriving TextShow via FromGeneric LokiConfig
 
 class GetEnv a where
   getEnv :: IO a
@@ -152,4 +158,4 @@ getEnvVarName :: forall n. KnownSymbol n => Maybe String -> String
 getEnvVarName prefix = fromMaybe "" (fmap (<> "_") prefix) <> toScreamingSnake (fromAny $ symbolVal' (proxy# @n))
 
 newtype EnvVar a d = EnvVar { unwrap :: a }
-  deriving newtype (Show)
+  deriving newtype (Show, TextShow)

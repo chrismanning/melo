@@ -6,7 +6,6 @@ module Melo.Library.Release.Repo where
 import Control.Concurrent.Classy
 import Melo.Common.Exception
 import Control.Foldl (PrimMonad)
-import Control.Lens hiding (from)
 import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
@@ -17,7 +16,6 @@ import Melo.Library.Release.Types
 import Melo.Lookup.MusicBrainz qualified as MB
 import Rel8 (Expr, Query, lit, (==.), (||.))
 import Rel8 qualified
-import Witch
 
 class Repository ReleaseEntity m => ReleaseRepository m where
   getByMusicBrainzId :: MB.MusicBrainzId -> m (Maybe ReleaseEntity)

@@ -16,11 +16,10 @@ import Data.Conduit.Audio
 import Data.Conduit.Audio.Sndfile
 import Data.Either.Combinators
 import Data.Int
-import Data.List.NonEmpty (NonEmpty(..))
 import Data.Range
 import Data.Time
 import Melo.Common.FileSystem.Watcher
-import Melo.Common.Metadata
+import Melo.Metadata.Aggregate
 import Melo.Format.Error
 import Melo.Format.Metadata (MetadataFile)
 import Melo.Library.Source.Types
@@ -36,6 +35,7 @@ data MultiTrackError
   | DecoderError String
   | MetadataError MetadataException
   deriving (Show)
+  deriving TextShow via FromStringShow MultiTrackError
 
 instance Exception MultiTrackError
 

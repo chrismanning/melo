@@ -26,8 +26,8 @@ import Data.Vector.Lens
 import Melo.Common.FileSystem
 import Melo.Library.Collection.FileSystem.WatchService
 import Melo.Common.Logging
-import Melo.Common.Metadata
-import Melo.Common.Metadata.Mock
+import Melo.Metadata.Aggregate
+import Melo.Metadata.Aggregate.Mock
 import Melo.Common.Uri
 import Melo.Database.Repo.Fake
 import Melo.Format.Flac

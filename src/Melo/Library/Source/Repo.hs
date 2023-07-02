@@ -5,14 +5,9 @@ module Melo.Library.Source.Repo where
 
 import Control.Concurrent.Classy
 import Melo.Common.Exception
-import Control.Foldl (PrimMonad)
-import Control.Monad.Base
-import Control.Monad.Reader
-import Control.Monad.Trans.Control
 import Data.Functor.Contravariant
-import Data.Text qualified as T
-import Data.Vector (Vector, empty)
 import Melo.Common.NaturalSort
+import Melo.Common.Monad
 import Melo.Common.Uri
 import Melo.Database.Repo
 import Melo.Database.Repo.IO
@@ -95,11 +90,11 @@ instance
   (MonadIO m) =>
   SourceRepository (SourceRepositoryIOT m)
   where
-  getByUri us | null us = pure empty
+  getByUri us | null us = pure mempty
   getByUri us = do
     RepositoryHandle {connSrc, tbl} <- ask
     runSelect connSrc do
-      let us' = Rel8.lit . T.pack . show <$> us
+      let us' = Rel8.lit . showt <$> us
       srcs <- orderByUri $ Rel8.each tbl
       Rel8.where_ $ srcs.source_uri `Rel8.in_` us'
       pure srcs
@@ -107,13 +102,13 @@ instance
     RepositoryHandle {connSrc, tbl} <- ask
     runSelect connSrc do
       srcs <- orderByUri $ Rel8.each tbl
-      Rel8.where_ (srcs.source_uri `startsWith` Rel8.lit (T.pack $ show prefix))
+      Rel8.where_ (srcs.source_uri `startsWith` Rel8.lit (showt prefix))
       pure srcs
-  getKeysByUri us | null us = pure empty
+  getKeysByUri us | null us = pure mempty
   getKeysByUri us = do
     RepositoryHandle {connSrc, tbl, pk} <- ask
     runSelect connSrc do
-      let us' = Rel8.lit . T.pack . show <$> us
+      let us' = Rel8.lit . showt <$> us
       srcs <- Rel8.each tbl
       Rel8.where_ $ srcs.source_uri `Rel8.in_` us'
       pure (pk srcs)
@@ -121,7 +116,7 @@ instance
     RepositoryHandle {connSrc, tbl, pk} <- ask
     runSelect connSrc do
       srcs <- Rel8.each tbl
-      Rel8.where_ (srcs.source_uri `startsWith` Rel8.lit (T.pack $ show prefix))
+      Rel8.where_ (srcs.source_uri `startsWith` Rel8.lit (showt prefix))
       pure (pk srcs)
   getCollectionSources collectionRef = do
     RepositoryHandle {connSrc, tbl} <- ask

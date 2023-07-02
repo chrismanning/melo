@@ -57,7 +57,7 @@ newtype APEv1 = APEv1 (Vector TagItem)
 
 instance MetadataFormat APEv1 where
   metadataFormat =
-    MetadataFormat
+    MetadataFormatDesc
       { formatId = apeV1Id,
         formatDesc = "APEv1"
       }
@@ -124,7 +124,7 @@ newtype APEv2 = APEv2 (Vector TagItem)
 
 instance MetadataFormat APEv2 where
   metadataFormat =
-    MetadataFormat
+    MetadataFormatDesc
       { formatId = apeV2Id,
         formatDesc = "APEv2"
       }

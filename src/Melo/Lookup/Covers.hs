@@ -14,7 +14,6 @@ module Melo.Lookup.Covers (
 
 import Conduit
 import Control.Concurrent.STM (TVar, newTVar, readTVar, modifyTVar')
-import Control.Lens hiding (from, lens, (<|))
 import Control.Monad.Reader
 import Data.Aeson as A
 import Data.Aeson.Types
@@ -24,12 +23,9 @@ import Data.Conduit.ImageSize (sinkImageInfo)
 import Data.Conduit.ImageSize qualified as ConduitImageSize
 import Data.Foldable qualified as F
 import Data.List.Extra (lower)
-import Data.List.NonEmpty as NE
 import Data.HashMap.Strict qualified as Map
 import Data.HashSet qualified as Set
-import Data.Maybe as M
 import Data.String (IsString)
-import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Melo.Common.Exception
@@ -44,7 +40,6 @@ import Network.HTTP.Types
 import Streaming.Prelude qualified as S
 import System.FilePath
 import Text.Read hiding (lift)
-import Witch
 
 class Monad m => CoverService m where
   searchForCovers :: Release -> m [Cover]
@@ -113,6 +108,7 @@ data CoverSource
   | Qobuz
   | Tidal
   deriving (Show)
+  deriving TextShow via FromStringShow CoverSource
 
 instance ToJSON CoverSource where
   toJSON Bandcamp = toJSON @String "bandcamp"
@@ -139,6 +135,7 @@ data SearchResult
         source :: CoverSource
       }
   deriving (Generic, Show)
+  deriving TextShow via FromGeneric SearchResult
 
 instance FromJSON SearchResult where
   parseJSON =
@@ -217,7 +214,7 @@ instance
           & S.catMaybes
           & S.toList_
         liftIO $ atomically $ modifyTVar' cacheVar (at release ?~ covers)
-        $(logInfo) $ ("Found " <> T.pack (show (F.length covers)) <> " covers for release " <> release.title)
+        $(logInfo) $ "Found " <> showt (F.length covers) <> " covers for release " <> release.title
         pure covers
     where
       getImageInfo url manager = liftIO $ runResourceT do
@@ -229,9 +226,9 @@ instance
         $(logDebugVIO ['clientResponseStatus]) "HTTP client received response"
         !r <- runConduit $ responseBody response .| sinkImageInfo
         (size, format) <- r
-        $(logInfoIO) $ "Image size: " <> show size
+        $(logInfoIO) $ "Image size: " <> T.pack (show size)
         let length = lookup hContentLength (responseHeaders response)
-        $(logDebugIO) $ "getImageInfo length: " <> show length
+        $(logDebugIO) $ "getImageInfo length: " <> showt length
         pure ImageInfo {
           url,
           format = from format,
@@ -241,10 +238,10 @@ instance
         }
       handleErrors = handleHttp \e -> do
         let cause = show e
-        $(logErrorV ['cause]) ("Failed to search for covers" :: Text)
+        $(logErrorV ['cause]) "Failed to search for covers"
         pure []
   copyCoverToDir src destDir = unlessM visited do
-    $(logInfo) $ "copying cover from " <> show src <> " to " <> show destDir
+    $(logInfo) $ "copying cover from " <> showt src <> " to " <> showt destDir
     manager <- asks (.httpManager)
     handleErrors $ case uriScheme src of
       s | s == "http:" || s == "https:" -> do
@@ -256,7 +253,7 @@ instance
         let dest = destDir </> "cover" <> ext
         removePath dest >>= \case
           Left e -> let cause = displayException e in
-            $(logErrorV ['cause]) $ T.pack $ "failed to remove existing file " <> show dest
+            $(logErrorV ['cause]) $ "failed to remove existing file " <> showt dest
           _ -> pure ()
         liftIO $ runResourceT do
           response <- http request manager
@@ -272,23 +269,23 @@ instance
           let dest = destDir </> "cover" <> ext
           removePath dest >>= \case
             Left e -> let cause = displayException e in
-              $(logErrorV ['cause]) $ T.pack $ "failed to copy file " <> show srcPath <> " to " <> show dest
+              $(logErrorV ['cause]) $ "failed to copy file " <> showt srcPath <> " to " <> showt dest
             _ -> pure ()
           copyPath srcPath (dest <> ".tmp") >>= \case
             Left e -> let cause = displayException e in
-              $(logErrorV ['cause]) $ T.pack $ "failed to copy file " <> show srcPath <> " to " <> show dest
+              $(logErrorV ['cause]) $ "failed to copy file " <> showt srcPath <> " to " <> showt dest
             _ -> do
               movePath (dest <> ".tmp") dest
               cacheVar <- asks (.copyCoverToDirCache)
               liftIO $ atomically $ modifyTVar' cacheVar (Set.insert (show src, destDir))
               pure ()
       scheme -> do
-        $(logWarn) $ "unsupported scheme " <> show scheme <> " in cover url"
+        $(logWarn) $ "unsupported scheme " <> showt scheme <> " in cover url"
         pure ()
       where
         handleErrors = handleAny \e -> do
           let cause = displayException e
-          $(logErrorV ['cause]) $ T.pack $ "failed to copy cover from " <> show src <> " to " <> show destDir
+          $(logErrorV ['cause]) $ "failed to copy cover from " <> showt src <> " to " <> showt destDir
         getExt ConduitImageSize.GIF = ".gif"
         getExt ConduitImageSize.JPG = ".jpg"
         getExt ConduitImageSize.PNG = ".png"

@@ -5,13 +5,11 @@ module Melo.Library.Artist.Name.Types where
 import Data.Hashable
 import Data.Morpheus.Kind
 import Data.Morpheus.Types as M
-import Data.Text
 import Data.UUID
 import GHC.Generics
 import Melo.Database.Repo
 import Melo.Library.Artist.Types
 import Rel8
-import Witch
 
 data ArtistNameTable f = ArtistNameTable
   { id :: Column f ArtistNameRef,
@@ -23,6 +21,7 @@ data ArtistNameTable f = ArtistNameTable
 type ArtistNameEntity = ArtistNameTable Result
 
 deriving instance Show ArtistNameEntity
+deriving via (FromGeneric ArtistNameEntity) instance TextShow ArtistNameEntity
 
 deriving instance Ord ArtistNameEntity
 
@@ -40,6 +39,7 @@ data NewArtistName = NewArtistName
     name :: Text
   }
   deriving (Show, Eq, Generic)
+  deriving TextShow via FromGeneric NewArtistName
 
 instance From NewArtistName (ArtistNameTable Expr) where
   from n =
@@ -60,6 +60,7 @@ fromNewArtistName n ref =
 newtype ArtistNameRef = ArtistNameRef UUID
   deriving (Show, Eq, Ord, Generic)
   deriving newtype (DBType, DBEq, Hashable)
+  deriving TextShow via FromGeneric ArtistNameRef
 
 instance GQLType ArtistNameRef where
   type KIND ArtistNameRef = SCALAR

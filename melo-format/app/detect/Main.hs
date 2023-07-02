@@ -57,7 +57,7 @@ printTags f = do
     psl $ "Length: " <> T.pack (formatTime defaultTimeLocale "%-3Ess" len)
   forM_ (toList f.metadata) $ \metadata -> do
     putLine
-    psl $ "Tags - " <> formatDesc metadata
+    psl $ "Tags - " <> metadata.formatDesc
     putLine
     printTag "Track#" (metadata.tagHead trackNumber)
     printTag "Track Title" (metadata.tagHead trackTitle)

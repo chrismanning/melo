@@ -17,10 +17,10 @@ withTransaction pool runner t =
   E.mask $ \restore -> do
     (conn, localPool) <- liftIO $ takeResource pool
     liftIO $ run begin conn >>= either throwIO pure
-    $(logDebugIO) ("transaction begun" :: String)
+    $(logDebugIO) "transaction begun"
     r <- restore (runner conn t) `E.onException` cleanUp conn localPool
     liftIO $ run commit conn >>= either throwIO pure
-    $(logDebugIO) ("transaction committed" :: String)
+    $(logDebugIO) "transaction committed"
     liftIO $ putResource localPool conn
     return r
   where
@@ -30,5 +30,5 @@ withTransaction pool runner t =
     cleanUp conn localPool =
       liftIO $ do
         run rollback conn >>= either throwIO pure
-        $(logWarnIO) ("transaction rolled back" :: String)
+        $(logWarnIO) "transaction rolled back"
         putResource localPool conn

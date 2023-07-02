@@ -4,7 +4,6 @@ module Melo.Common.FileSystem.Watcher where
 
 import Control.Monad.Trans
 import Control.Monad.Trans.Control
-import Data.List.NonEmpty
 import Melo.Library.Collection.Types (CollectionRef)
 
 class Monad m => FileSystemWatcher m where

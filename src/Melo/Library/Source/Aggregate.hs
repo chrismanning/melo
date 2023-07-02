@@ -3,9 +3,8 @@
 
 module Melo.Library.Source.Aggregate where
 
-import Control.Applicative hiding (empty)
+import Control.Applicative
 import Control.Foldl (PrimMonad, impurely, vectorM)
-import Control.Lens hiding (from)
 import Control.Monad
 import Control.Monad.Base
 import Control.Monad.Conc.Class
@@ -15,17 +14,15 @@ import Control.Monad.Trans.Except
 import Control.Monad.Trans.Identity
 import Data.Char
 import Data.Either.Combinators (mapLeft)
-import Data.Foldable
 import Data.Range qualified as R
 import Data.Text qualified as T
 import Data.Time.LocalTime
-import Data.Vector (Vector, empty, singleton)
 import Data.Vector qualified as V
 import Melo.Common.Config
 import Melo.Common.Exception
 import Melo.Common.FileSystem
 import Melo.Common.Logging
-import Melo.Common.Metadata
+import Melo.Metadata.Aggregate
 import Melo.Common.Uri
 import Melo.Common.Vector
 import Melo.Database.Repo as Repo
@@ -37,8 +34,6 @@ import Melo.Library.Source.Types
 import Streaming.Prelude qualified as S
 import System.FilePath as P
 
-import Witch
-
 class Monad m => SourceAggregate m where
   importSources :: Vector NewImportSource -> m (Vector Source)
   updateSource :: Source -> m (Either SourceError Source)
@@ -47,6 +42,7 @@ data SourceError
   = ImportSourceError (Maybe SomeException)
   | UpdateSourceError (Maybe SomeException)
   deriving (Show)
+  deriving TextShow via FromStringShow SourceError
 
 instance Exception SourceError
 
@@ -90,20 +86,20 @@ instance
   ) =>
   SourceAggregate (SourceAggregateIOT m)
   where
-  importSources ss | null ss = pure empty
+  importSources ss | null ss = pure mempty
   importSources ss = do
-    $(logDebug) $ "Importing " <> show (V.length ss) <> " sources"
+    $(logDebug) $ "Importing " <> showt (V.length ss) <> " sources"
     metadataSources <- S.each ss & S.mapMaybeM transformImportSource & impurely S.foldM_ vectorM
-    $(logDebug) $ "Importing " <> show (V.length metadataSources) <> " metadata sources"
+    $(logDebug) $ "Importing " <> showt (V.length metadataSources) <> " metadata sources"
     srcs <- rights . fmap tryFrom <$> insert @SourceEntity (fmap (from @MetadataImportSource) metadataSources)
-    let sources = fmap (show . (.ref)) srcs
-    $(logDebugV ['sources]) ("Imported sources" :: T.Text)
+    let sources = fmap (showt . (.ref)) srcs
+    $(logDebugV ['sources]) "Imported sources"
     -- TODO publish sources imported event
     fork $ void $ importReleases srcs
     pure srcs
   updateSource s = do
     e <- runExceptT (writeMetadata >> updateDB)
-    void $ importReleases (V.singleton s)
+    void $ importReleases (pure s)
     pure e
     where
       writeMetadata =
@@ -122,11 +118,13 @@ instance
                       Nothing -> mf
                 writeMetadataFile mf' mf'.filePath >>= \case
                   Left e -> do
-                    $(logWarn) $ "Failed to write metadata file " <> displayException e
+                    let cause = displayException e
+                    $(logWarnV ['cause]) "Failed to write metadata file"
                     throwE (UpdateSourceError $ Just $ SomeException e)
                   Right _ -> pure ()
               Left e -> do
-                $(logWarn) $ "Failed to read metadata file " <> displayException e
+                let cause = displayException e
+                $(logWarnV ['cause]) "Failed to read metadata file"
                 throwE (UpdateSourceError $ Just $ SomeException e)
       updateDB :: ExceptT SourceError (SourceAggregateIOT m) Source
       updateDB =
@@ -162,7 +160,7 @@ getAllSources = rights <$> fmap tryFrom <$> Repo.getAll @SourceEntity
 
 getSource :: SourceRepository m => SourceRef -> m (Maybe Source)
 getSource key = do
-  srcs <- Repo.getByKey @SourceEntity (singleton key)
+  srcs <- Repo.getByKey @SourceEntity (pure key)
   pure $ firstOf traverse $ rights $ tryFrom <$> srcs
 
 getSourcesByUriPrefix ::
