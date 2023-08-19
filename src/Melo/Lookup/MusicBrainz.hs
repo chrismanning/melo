@@ -4,9 +4,7 @@
 
 module Melo.Lookup.MusicBrainz
   ( MusicBrainzId (..),
-    runMusicBrainzServiceIO,
     MusicBrainzService (..),
-    MusicBrainzServiceIOT (..),
     Artist (..),
     ArtistAlias (..),
     Area (..),
@@ -20,7 +18,6 @@ module Melo.Lookup.MusicBrainz
     ReleaseGroup (..),
     LabelInfo (..),
     Label (..),
-    CachingMusicBrainzServiceT (..),
     artistIdTag,
     originalArtistIdTag,
     albumArtistIdTag,
@@ -37,15 +34,14 @@ module Melo.Lookup.MusicBrainz
     getRecordingFromMetadata,
     truncateDate,
     (<<|>>),
-    runCachingMusicBrainzService,
     initMusicBrainzConfig,
   )
 where
 
 import Control.Concurrent.Classy
 import Control.Concurrent.TokenLimiter
+import Control.Concurrent.STM.Map as SM
 import Control.Monad.Reader
-import Control.Monad.State.Strict
 import Data.Aeson as A
 import Data.Aeson.Casing (trainCase)
 import Data.Aeson.Types
@@ -53,7 +49,7 @@ import Data.ByteString.Char8 qualified as C8
 import Data.Char
 import Data.Default
 import Data.Generics.Labels ()
-import Data.Map.Strict (Map)
+import Data.Hashable
 import Data.Text qualified as T
 import Data.Text.Encoding
 import Data.Vector qualified as V
@@ -61,10 +57,10 @@ import GHC.Generics (Generic)
 import GHC.Records
 import Melo.Common.Config
 import Melo.Common.Exception
-import Melo.Common.Http
+import Melo.Common.Http as Http
 import Melo.Common.Logging
 import Melo.Common.Monad
-import Melo.Common.RateLimit
+import Melo.Common.Tracing
 import Melo.Format.Mapping
   ( FieldMappings (..),
     TagMapping (..),
@@ -80,13 +76,14 @@ newtype MusicBrainzId = MusicBrainzId
   { mbid :: Text
   }
   deriving (Show, Eq, Ord)
-  deriving newtype (FromJSON, ToJSON)
+  deriving newtype (FromJSON, ToJSON, Hashable)
   deriving TextShow via FromStringShow MusicBrainzId
 
 newtype ArtistSearch = ArtistSearch
   { artist :: Text
   }
   deriving stock (Show, Generic, Eq, Ord)
+  deriving newtype (Hashable)
   deriving TextShow via FromGeneric ArtistSearch
 
 newtype ArtistSearchResult = ArtistSearchResult
@@ -191,6 +188,8 @@ data ReleaseSearch = ReleaseSearch
 
 instance Default ReleaseSearch
 
+instance Hashable ReleaseSearch
+
 newtype ReleaseSearchResult = ReleaseSearchResult
   { releases :: Maybe (Vector Release)
   }
@@ -284,6 +283,8 @@ data RecordingSearch = RecordingSearch
   deriving TextShow via FromGeneric RecordingSearch
 
 instance Default RecordingSearch
+
+instance Hashable RecordingSearch
 
 newtype RecordingSearchResult = RecordingSearchResult
   { recordings :: Maybe (Vector Recording)
@@ -466,28 +467,6 @@ perfectScore r = r.score == Just 100
 truncateDate :: Text -> Text
 truncateDate = T.takeWhile isDigit
 
-newtype MusicBrainzServiceIOT m a = MusicBrainzServiceIOT
-  { runMusicBrainzServiceIOT :: ReaderT (Http.Manager, MusicBrainzConfig) m a
-  }
-  deriving newtype
-    ( Applicative,
-      Functor,
-      Monad,
-      MonadBase b,
-      MonadBaseControl b,
-      MonadCatch,
-      MonadConc,
-      MonadIO,
-      MonadMask,
-      MonadReader (Http.Manager, MusicBrainzConfig),
-      MonadThrow,
-      PrimMonad
-    )
-  deriving (MonadTransControl)
-
-instance MonadTrans MusicBrainzServiceIOT where
-  lift m = MusicBrainzServiceIOT $ ReaderT $ const m
-
 data QueryTerm
   = QueryTerm
       { key :: Text,
@@ -506,30 +485,85 @@ renderQueryParam qs = case catMaybes $ fmap encodeTerm qs of
     encodeTerm q@QueryTerm {} = q.value <&> \v -> q.key <> ":%22" <> decodeUtf8 (urlEncode True (encodeUtf8 v)) <> "%22"
     encodeTerm q@MultiTerm {} = q.values <&> \v -> q.key <> ":%22" <> T.intercalate " & " (decodeUtf8 . urlEncode True . encodeUtf8 <$> v) <> "%22"
 
+newtype RateLimitWrapper = RateLimitWrapper (LimitConfig, RateLimiter)
+  deriving Typeable
+
+getRateLimiter :: (
+  AppDataReader m,
+  ConfigService m,
+  MonadIO m
+  ) => m (Maybe RateLimitWrapper)
+getRateLimiter = getConfigDefault musicbrainzConfigKey >>= \case
+  config | config == def ->
+    getAppData @RateLimitWrapper >>= \case
+      Nothing -> do
+        rateLimiter <- liftIO $ newRateLimiter mbRateLimitConfig
+        pure $ Just $ RateLimitWrapper (mbRateLimitConfig, rateLimiter)
+      rl -> pure rl
+  _ -> pure Nothing
+
+waitReady :: (
+  AppDataReader m,
+  ConfigService m,
+  MonadIO m
+  ) => m ()
+waitReady = getRateLimiter >>= \case
+  Nothing -> pure ()
+  Just (RateLimitWrapper (lc, rl)) -> liftIO $ waitDebit lc rl 1
+
 mbHttp ::
   forall a m.
   ( A.FromJSON a,
     MonadCatch m,
     MonadIO m,
-    MonadReader (Http.Manager, MusicBrainzConfig) m
+    AppDataReader m,
+    ConfigService m,
+    Tracing m
   ) =>
   String ->
   m (Maybe a)
 mbHttp url = do
-  (httpManager, config) <- ask
-  let runHttp rq = runReaderT (httpJson @a rq) httpManager
-  parseRequest (config.baseUrl <> url) >>= runHttp
+  waitReady
+  httpManager <- Http.getManager
+  config <- getConfigDefault musicbrainzConfigKey
+  parseRequest (config.baseUrl <> url) >>= httpJson @a httpManager
 
-instance
-  ( MonadIO m,
-    MonadCatch m,
-    RateLimit m,
-    Logging m
-  ) =>
-  MusicBrainzService (MusicBrainzServiceIOT m)
-  where
-  searchReleases search = do
-    waitReady
+data CacheAggregate = CacheAggregate
+  { searchReleasesStore :: SM.Map ReleaseSearch (Vector Release),
+    searchReleaseGroupsStore :: SM.Map ReleaseSearch (Vector ReleaseGroup),
+    searchArtistsStore :: SM.Map ArtistSearch (Vector Artist),
+    searchRecordingsStore :: SM.Map RecordingSearch (Vector Recording),
+    getArtistStore :: SM.Map MusicBrainzId (Maybe Artist),
+    getArtistReleaseGroupsStore :: SM.Map MusicBrainzId (Vector ReleaseGroup),
+    getArtistReleasesStore :: SM.Map MusicBrainzId (Vector Release),
+    getArtistRecordingsStore :: SM.Map MusicBrainzId (Vector Recording),
+    getReleaseStore :: SM.Map MusicBrainzId (Maybe Release),
+    getReleaseGroupStore :: SM.Map MusicBrainzId (Maybe ReleaseGroup),
+    getRecordingStore :: SM.Map MusicBrainzId (Maybe Recording)
+  }
+  deriving (Generic, Typeable)
+
+doCache :: Hashable k => (CacheAggregate -> SM.Map k a) -> k -> AppM IO IO a -> AppM IO IO a
+doCache f k m = do
+  cache <- getAppData @CacheAggregate >>= \case
+    Just cache -> pure cache
+    Nothing -> do
+      a <- atomically (CacheAggregate <$> SM.empty <*> SM.empty
+        <*> SM.empty <*> SM.empty <*> SM.empty
+        <*> SM.empty <*> SM.empty <*> SM.empty
+        <*> SM.empty <*> SM.empty <*> SM.empty)
+      putAppData a
+      pure a
+  let !map = f cache
+  atomically (SM.lookup k map) >>= \case
+    Just a -> pure a
+    Nothing -> do
+      a <- m
+      atomically (SM.insert k a map)
+      pure a
+
+instance MusicBrainzService (AppM IO IO) where
+  searchReleases search = doCache (.searchReleasesStore) search do
     let qterms =
           [ QueryTerm "releaseaccent" search.albumTitle,
             MultiTerm "artist" search.albumArtists,
@@ -544,8 +578,7 @@ instance
           Nothing -> do
             $(logWarn) "no matching releases found"
             pure V.empty
-  searchReleaseGroups search = do
-    waitReady
+  searchReleaseGroups search = doCache (.searchReleaseGroupsStore) search do
     let qterms =
           [ QueryTerm "releasegroupaccent" search.albumTitle,
             MultiTerm "artist" search.albumArtists,
@@ -560,16 +593,14 @@ instance
           Nothing -> do
             $(logWarn) "no matching release groups found"
             pure V.empty
-  searchArtists search = do
-    waitReady
+  searchArtists search = doCache (.searchArtistsStore) search do
     let url = "/artist?query=artist:\"" <> decodeUtf8 (urlEncode True (encodeUtf8 search.artist)) <> "\"" <> "&fmt=json"
     mbHttp @ArtistSearchResult (T.unpack url) >>= \case
       Just r -> pure $ fromMaybe V.empty $ r.artists
       Nothing -> do
         $(logError) "no matching artists found"
         pure V.empty
-  searchRecordings search = do
-    waitReady
+  searchRecordings search = doCache (.searchRecordingsStore) search do
     let qterms =
           [ QueryTerm "recording" search.title,
             QueryTerm "tnum" search.trackNumber,
@@ -588,16 +619,14 @@ instance
           Nothing -> do
             $(logError) "no matching recordings found"
             pure V.empty
-  getArtist artistId = do
-    waitReady
+  getArtist artistId = doCache (.getArtistStore) artistId do
     let url = "/artist/" <> T.unpack artistId.mbid <> "?inc=aliases&fmt=json"
     mbHttp url >>= \case
       Just r -> pure r
       Nothing -> do
         $(logError) $ "failed to get artist " <> showt artistId.mbid
         pure Nothing
-  getArtistReleaseGroups artistId = do
-    waitReady
+  getArtistReleaseGroups artistId = doCache (.getArtistReleaseGroupsStore) artistId do
     let params =
           [ ("artist", encodeUtf8 artistId.mbid),
             ("limit", "100"),
@@ -610,8 +639,7 @@ instance
       Nothing -> do
         $(logError) $ "failed to get release groups for artist " <> showt artistId.mbid
         pure V.empty
-  getArtistReleases artistId = do
-    waitReady
+  getArtistReleases artistId = doCache (.getArtistReleasesStore) artistId do
     let params =
           [ ("artist", encodeUtf8 artistId.mbid),
             ("limit", "100"),
@@ -624,8 +652,7 @@ instance
       Nothing -> do
         $(logError) $ "failed to get releases for artist " <> showt artistId.mbid
         pure V.empty
-  getArtistRecordings artistId = do
-    waitReady
+  getArtistRecordings artistId = doCache (.getArtistRecordingsStore) artistId do
     let params =
           [ ("artist", encodeUtf8 artistId.mbid),
             ("limit", "100"),
@@ -637,8 +664,7 @@ instance
       Nothing -> do
         $(logError) $ "failed to get recordings for artist " <> showt artistId.mbid
         pure V.empty
-  getRelease releaseId = do
-    waitReady
+  getRelease releaseId = doCache (.getReleaseStore) releaseId do
     let params =
           [ ("inc", "artist-credits labels"),
             ("fmt", "json")
@@ -649,8 +675,7 @@ instance
       Nothing -> do
         $(logError) $ "failed to get release " <> showt releaseId.mbid
         pure Nothing
-  getReleaseGroup releaseGroupId = do
-    waitReady
+  getReleaseGroup releaseGroupId = doCache (.getReleaseGroupStore) releaseGroupId do
     let params =
           [ ("inc", "artist-credits"),
             ("fmt", "json")
@@ -661,8 +686,7 @@ instance
       Nothing -> do
         $(logError) $ "failed to get release group " <> showt releaseGroupId.mbid
         pure Nothing
-  getRecording recordingId = do
-    waitReady
+  getRecording recordingId = doCache (.getRecordingStore) recordingId do
     let url = "/recording/" <> recordingId.mbid <> "?fmt=json"
     mbHttp (T.unpack url) >>= \case
       Just r -> pure r
@@ -692,19 +716,6 @@ musicbrainzConfigKey = ConfigKey "musicbrainz"
 initMusicBrainzConfig :: ConfigService m => m ()
 initMusicBrainzConfig = setConfig musicbrainzConfigKey def
 
-runMusicBrainzServiceIO ::
-  ( MonadIO m,
-    ConfigService m
-  ) =>
-  Http.Manager ->
-  MusicBrainzServiceIOT (RateLimitIOT m) a ->
-  m a
-runMusicBrainzServiceIO manager m = do
-  config <- getConfigDefault musicbrainzConfigKey
-  runDynamicRateLimitIO (if config == def then Just mbRateLimitConfig else Nothing) $
-    (flip runReaderT) (manager, config) $
-      runMusicBrainzServiceIOT m
-
 mbRateLimitConfig :: LimitConfig
 mbRateLimitConfig =
   defaultLimitConfig
@@ -712,66 +723,6 @@ mbRateLimitConfig =
       initialBucketTokens = 1,
       bucketRefillTokensPerSecond = 1
     }
-
-data CacheAggregate = CacheAggregate
-  { searchReleasesStore :: Map ReleaseSearch (Vector Release),
-    searchReleaseGroupsStore :: Map ReleaseSearch (Vector ReleaseGroup),
-    searchArtistsStore :: Map ArtistSearch (Vector Artist),
-    searchRecordingsStore :: Map RecordingSearch (Vector Recording),
-    getArtistStore :: Map MusicBrainzId (Maybe Artist),
-    getArtistReleaseGroupsStore :: Map MusicBrainzId (Vector ReleaseGroup),
-    getArtistReleasesStore :: Map MusicBrainzId (Vector Release),
-    getArtistRecordingsStore :: Map MusicBrainzId (Vector Recording),
-    getReleaseStore :: Map MusicBrainzId (Maybe Release),
-    getReleaseGroupStore :: Map MusicBrainzId (Maybe ReleaseGroup),
-    getRecordingStore :: Map MusicBrainzId (Maybe Recording)
-  }
-  deriving (Generic)
-
-instance Default CacheAggregate
-
-newtype CachingMusicBrainzServiceT m a = CachingMusicBrainzServiceT
-  { runCachingMusicBrainzServiceT :: StateT CacheAggregate m a
-  }
-  deriving newtype
-    ( Functor,
-      Applicative,
-      Monad,
-      MonadIO,
-      MonadBase b,
-      MonadBaseControl b,
-      MonadConc,
-      MonadCatch,
-      MonadMask,
-      MonadThrow,
-      MonadTrans,
-      MonadTransControl,
-      PrimMonad
-    )
-
-doCache :: MusicBrainzService m => Lens' CacheAggregate (Maybe a) -> m a -> StateT CacheAggregate m a
-doCache l m = doImpl $ lift $ m
-  where
-    doImpl mb =
-      use l >>= \case
-        Just x -> pure x
-        Nothing -> mb >>= (l <?=)
-
-instance MusicBrainzService m => MusicBrainzService (CachingMusicBrainzServiceT m) where
-  searchReleases search = CachingMusicBrainzServiceT $ doCache ( #searchReleasesStore . at search ) (searchReleases search)
-  searchReleaseGroups search = CachingMusicBrainzServiceT $ doCache ( #searchReleaseGroupsStore . at search ) (searchReleaseGroups search)
-  searchArtists search = CachingMusicBrainzServiceT $ doCache ( #searchArtistsStore . at search ) (searchArtists search)
-  searchRecordings search = CachingMusicBrainzServiceT $ doCache ( #searchRecordingsStore . at search ) (searchRecordings search)
-  getArtist mbid = CachingMusicBrainzServiceT $ doCache ( #getArtistStore . at mbid ) (getArtist mbid)
-  getArtistReleaseGroups mbid = CachingMusicBrainzServiceT $ doCache ( #getArtistReleaseGroupsStore . at mbid ) (getArtistReleaseGroups mbid)
-  getArtistReleases mbid = CachingMusicBrainzServiceT $ doCache ( #getArtistReleasesStore . at mbid ) (getArtistReleases mbid)
-  getArtistRecordings mbid = CachingMusicBrainzServiceT $ doCache ( #getArtistRecordingsStore . at mbid ) (getArtistRecordings mbid)
-  getRelease mbid = CachingMusicBrainzServiceT $ doCache ( #getReleaseStore . at mbid ) (getRelease mbid)
-  getReleaseGroup mbid = CachingMusicBrainzServiceT $ doCache ( #getReleaseGroupStore . at mbid ) (getReleaseGroup mbid)
-  getRecording mbid = CachingMusicBrainzServiceT $ doCache ( #getRecordingStore . at mbid ) (getRecording mbid)
-
-runCachingMusicBrainzService :: Monad m => CachingMusicBrainzServiceT m a -> m a
-runCachingMusicBrainzService (CachingMusicBrainzServiceT m) = evalStateT m def
 
 mbAesonOptions :: A.Options
 mbAesonOptions = defaultOptions {fieldLabelModifier = trainCase}

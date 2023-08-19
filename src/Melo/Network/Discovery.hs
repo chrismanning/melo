@@ -107,7 +107,8 @@ instance (MonadIO m) => NetworkDiscovery (NetworkDiscoveryIOT m) where
       extractAddress (RD_AAAA address) port = Just $ SockAddrInet6 port 0 (toHostAddress6 address) 0
       extractAddress _ _ = Nothing
       logAndContinue e = do
-        $(logErrorIO) $ "mDNS error: " <> showt e
+        let cause = displayException e
+        $(logWarnVIO ['cause]) "mDNS error"
         pure mempty
 
 newtype Timeout = Timeout Unique deriving (Eq, Typeable)

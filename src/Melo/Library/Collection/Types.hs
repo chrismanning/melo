@@ -17,7 +17,8 @@ data CollectionTable f = CollectionTable
     root_uri :: Column f Text,
     name :: Column f Text,
     watch :: Column f Bool,
-    kind :: Column f Text
+    kind :: Column f Text,
+    rescan :: Column f Bool
   }
   deriving (Generic, Rel8able)
 
@@ -53,19 +54,21 @@ instance Entity (CollectionTable Result) where
 data NewCollection = NewFilesystemCollection
   { rootPath :: Text,
     name :: Text,
-    watch :: Bool
+    watch :: Bool,
+    rescan :: Bool
   }
   deriving (Show, Eq, Generic, GQLType)
   deriving TextShow via FromGeneric NewCollection
 
 instance From NewCollection (CollectionTable Expr) where
-  from c@NewFilesystemCollection {name, watch} =
+  from c@NewFilesystemCollection {name, watch, rescan} =
     CollectionTable
       { id = nullaryFunction "uuid_generate_v4",
         root_uri = lit $ showt $ rootUri c,
         name = lit name,
         watch = lit watch,
-        kind = lit $ kind c
+        kind = lit $ kind c,
+        rescan = lit rescan
       }
     where
       rootUri NewFilesystemCollection {rootPath} = fileUri $ T.unpack rootPath

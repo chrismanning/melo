@@ -1,11 +1,8 @@
-{-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Library.Track.Repo where
 
-import Control.Concurrent.Classy
-import Melo.Common.Exception
-import Control.Monad.Reader
+import Control.Monad.State.Strict
 import Melo.Common.Monad
 import Melo.Database.Repo
 import Melo.Database.Repo.IO
@@ -29,41 +26,18 @@ instance
   getByMusicBrainzId = lift . getByMusicBrainzId
   getBySrcRef = lift . getBySrcRef
 
-newtype TrackRepositoryIOT m a = TrackRepositoryIOT
-  { runTrackRepositoryIOT :: RepositoryIOT TrackTable m a
-  }
-  deriving newtype
-    ( Functor,
-      Applicative,
-      Monad,
-      MonadIO,
-      MonadBase b,
-      MonadBaseControl b,
-      MonadConc,
-      MonadCatch,
-      MonadMask,
-      MonadReader (RepositoryHandle TrackTable),
-      MonadThrow,
-      MonadTrans,
-      MonadTransControl,
-      PrimMonad,
-      Repository (TrackTable Result)
-    )
-
-instance
-  ( MonadIO m
-  ) =>
-  TrackRepository (TrackRepositoryIOT m)
-  where
+instance TrackRepository (AppM IO IO) where
   getByMusicBrainzId mbid = do
-    RepositoryHandle {connSrc, tbl} <- ask
-    firstOf traverse <$> runSelect connSrc do
+    pool <- getConnectionPool
+    RepositoryHandle {tbl} <- getRepoHandle @TrackTable
+    firstOf traverse <$> runSelect pool do
       track <- Rel8.each tbl
       Rel8.where_ $ track.musicbrainz_id ==. lit (Just mbid.mbid)
       pure track
   getBySrcRef srcId = do
-    RepositoryHandle {connSrc, tbl} <- ask
-    firstOf traverse <$> runSelect connSrc do
+    pool <- getConnectionPool
+    RepositoryHandle {tbl} <- getRepoHandle @TrackTable
+    firstOf traverse <$> runSelect pool do
       track <- Rel8.each tbl
       Rel8.where_ $ track.source_id ==. lit srcId
       pure track
@@ -95,13 +69,12 @@ trackSchema =
           }
     }
 
-runTrackRepositoryIO :: DbConnection -> TrackRepositoryIOT m a -> m a
-runTrackRepositoryIO connSrc =
-  flip
-    runReaderT
+
+initTrackRepo :: AppDataReader m => m ()
+initTrackRepo =
+  putAppData
     RepositoryHandle
-      { connSrc,
-        tbl = trackSchema,
+      { tbl = trackSchema,
         pk = (^. #id),
         upsert =
           Just
@@ -111,5 +84,3 @@ runTrackRepositoryIO connSrc =
                 updateWhere = \_new _old -> lit True
               }
       }
-    . runRepositoryIOT
-    . runTrackRepositoryIOT

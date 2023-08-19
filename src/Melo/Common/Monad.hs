@@ -1,3 +1,6 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE UndecidableInstances #-}
+
 module Melo.Common.Monad
   ( module Control.Monad,
     module Control.Monad.Base,
@@ -5,19 +8,29 @@ module Melo.Common.Monad
     module Control.Monad.Extra,
     module Control.Monad.Primitive,
     module Control.Monad.Reader.Class,
+    module Control.Monad.STM.Class,
     module Control.Monad.Trans,
     module Control.Monad.Trans.Control,
     module Control.Monad.Trans.Identity,
     module Control.Monad.Trans.Maybe,
     module Control.Monad.Trans.Reader,
     module Data.Foldable.Extra,
+    AppData (..),
+    AppDataReader (..),
+    LocalAppDataReader (..),
+    AppM,
+    getAppData,
+    deleteAppData,
+    runAppM,
     forMaybeM,
     (<<|>>),
     once,
+    runReaderT',
   )
 where
 
 import Control.Applicative as A
+import Control.Concurrent.Classy
 import Control.Monad
 import Control.Monad.Base
 import Control.Monad.Conc.Class
@@ -38,12 +51,18 @@ import Control.Monad.Extra hiding
   )
 import Control.Monad.Primitive
 import Control.Monad.Reader.Class
+import Control.Monad.State.Strict
+import Control.Monad.STM.Class
 import Control.Monad.Trans
 import Control.Monad.Trans.Control
 import Control.Monad.Trans.Identity hiding (liftCallCC, liftCatch)
 import Control.Monad.Trans.Maybe hiding (liftCallCC, liftCatch)
 import Control.Monad.Trans.Reader (ReaderT (..))
 import Data.Foldable.Extra
+import Data.Kind
+import Data.Proxy
+import Data.TMap as TMap
+import Data.Typeable
 import Data.Vector qualified as V
 
 forMaybeM :: Monad m => V.Vector a -> (a -> m (Maybe b)) -> m (V.Vector b)
@@ -70,3 +89,82 @@ once action = do
         val <- action
         putMVar mvar (Just val)
         return val
+
+runReaderT' :: r -> ReaderT r m a -> m a
+runReaderT' = flip runReaderT
+
+newtype AppData m = AppData
+  { typeMap :: TVar (STM m) TMap
+  }
+
+type AppM b m = ReaderT (AppData b) m
+
+runAppM :: (b ~ m, MonadConc m) => AppM b m a -> m a
+runAppM m = do
+  typeMapVar <- newTVarConc mempty
+  let !appData = AppData typeMapVar
+  runReaderT m appData
+
+class Monad m => AppDataReader m where
+  getAppData' :: forall (a :: Type). Typeable a => Proxy a -> m (Maybe a)
+  putAppData :: forall (a :: Type). Typeable a => a -> m ()
+  deleteAppData' :: forall (a :: Type). Typeable a => Proxy a -> m ()
+
+instance MonadIO m => AppDataReader (AppM IO m)
+  where
+  getAppData' _ = do
+    mapVar <- asks (.typeMap)
+    map <- liftIO $ readTVarConc mapVar
+    pure $ TMap.lookup map
+  putAppData a = do
+    mapVar <- asks (.typeMap)
+    liftIO $ atomically (modifyTVar' mapVar (TMap.insert a))
+    pure ()
+  deleteAppData' :: forall (a :: Type). Typeable a => Proxy a -> AppM IO m ()
+  deleteAppData' _ = do
+    mapVar <- asks (.typeMap)
+    liftIO $ atomically (modifyTVar' mapVar (TMap.delete @a))
+    pure ()
+
+instance
+  {-# OVERLAPPABLE #-}
+  ( Monad (t m),
+    MonadTrans t,
+    AppDataReader m
+  ) =>
+  AppDataReader (t m)
+  where
+  getAppData' = lift . getAppData'
+  putAppData = lift . putAppData
+  deleteAppData' = lift . deleteAppData'
+
+getAppData :: forall (a :: Type) m. (AppDataReader m, Typeable a) => m (Maybe a)
+getAppData = getAppData' (Proxy @a)
+
+deleteAppData :: forall (a :: Type) m. (AppDataReader m, Typeable a) => m ()
+deleteAppData = deleteAppData' (Proxy @a)
+
+class Monad m => LocalAppDataReader m where
+  localAppData :: forall (a :: Type) x. Typeable a => (Maybe a -> Maybe a) -> m x -> m x
+
+instance MonadIO m => LocalAppDataReader (AppM IO m) where
+  localAppData :: forall (a :: Type) x. Typeable a => (Maybe a -> Maybe a) -> AppM IO m x -> AppM IO m x
+  localAppData f m = do
+    mapVar <- asks (.typeMap)
+    map <- liftIO $ readTVarConc mapVar
+    let !map' = case f (TMap.lookup @a map) of
+          Just a -> TMap.insert a map
+          Nothing -> TMap.delete @a map
+    map <- liftIO $ newTVarConc map'
+    local (\appData -> appData {typeMap = map}) m
+
+instance
+  {-# OVERLAPPABLE #-}
+  ( Monad (t m),
+    MonadTrans t,
+    MonadTransControl t,
+    LocalAppDataReader m
+  ) =>
+  LocalAppDataReader (t m)
+  where
+  localAppData f m = liftWith (\run -> localAppData f (run m)) >>= restoreT . pure

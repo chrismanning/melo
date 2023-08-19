@@ -4,12 +4,7 @@
 
 module Melo.Metadata.Aggregate where
 
-import Control.Concurrent.Classy
-import Control.Foldl (PrimMonad)
-import Control.Monad.Base
-import Control.Monad.Identity
-import Control.Monad.Trans
-import Control.Monad.Trans.Control
+import Control.Monad.State.Strict
 import Data.Aeson
 import Data.Coerce
 import Data.Default
@@ -20,6 +15,8 @@ import Melo.Common.Config
 import Melo.Common.Exception
 import Melo.Common.FileSystem.Watcher
 import Melo.Common.Logging
+import Melo.Common.Monad
+import Melo.Common.Tracing
 import Melo.Format (Metadata (..), SupportedMetadataFormats)
 import Melo.Format qualified as F
 import Melo.Format.Error qualified as F
@@ -33,14 +30,7 @@ class Monad m => MetadataAggregate m where
   chooseMetadata :: [Metadata] -> m (Maybe Metadata)
   metadataFactory :: F.MetadataId -> m (Maybe MetadataFormatFactory)
 
-instance
-  {-# OVERLAPPABLE #-}
-  ( Monad (t m),
-    MonadTrans t,
-    MetadataAggregate m
-  ) =>
-  MetadataAggregate (t m)
-  where
+instance MetadataAggregate m => MetadataAggregate (StateT s m) where
   openMetadataFile = lift . openMetadataFile
   openMetadataFileByExt = lift . openMetadataFileByExt
   readMetadataFile fid = lift . readMetadataFile fid
@@ -48,57 +38,32 @@ instance
   chooseMetadata = lift . chooseMetadata
   metadataFactory = lift . metadataFactory
 
-newtype MetadataAggregateIOT m a = MetadataAggregateIOT
-  { runMetadataAggregateIOT :: m a
-  }
-  deriving newtype
-    ( Functor,
-      Applicative,
-      Monad,
-      MonadIO,
-      MonadBase b,
-      MonadBaseControl b,
-      MonadConc,
-      MonadCatch,
-      MonadMask,
-      MonadThrow,
-      PrimMonad
-    )
-  deriving (MonadTrans, MonadTransControl) via IdentityT
-
-runMetadataAggregateIO :: MetadataAggregateIOT m a -> m a
-runMetadataAggregateIO = runMetadataAggregateIOT
-
-instance
-  ( MonadIO m,
-    ConfigService m,
-    FileSystemWatcher m
-  ) =>
-  MetadataAggregate (MetadataAggregateIOT m)
-  where
-  openMetadataFile path = liftIO $
-    try $ do
+instance MetadataAggregate (AppM IO IO) where
+  openMetadataFile path = try $
+    withSpan "openMetadataFile" defaultSpanArguments $ liftIO do
       $(logDebugIO) $ "opening metadata file " <> T.pack path
       F.openMetadataFile path
-  openMetadataFileByExt path = liftIO $
-    try $ do
+  openMetadataFileByExt path = try $
+    withSpan "openMetadataFileByExt" defaultSpanArguments $ liftIO do
       $(logDebugIO) $ "opening metadata file " <> T.pack path
       F.openMetadataFileByExt path
-  readMetadataFile mfid@(F.MetadataFileId fid) path = liftIO $ try do
-    $(logDebugIO) $ "reading file " <> T.pack path <> " as " <> fid
-    F.MetadataFileFactory {readMetadataFile} <- getFactoryIO mfid
-    readMetadataFile path
-  writeMetadataFile mf path = lockPathsDuring (path :| []) $ liftIO $ try do
-    F.MetadataFileFactory {writeMetadataFile, readMetadataFile} <- getFactoryIO mf.fileId
-    writeMetadataFile mf path
-    readMetadataFile path
-  chooseMetadata ms = do
+  readMetadataFile mfid@(F.MetadataFileId fid) path = try $
+    withSpan "readMetadataFile" defaultSpanArguments $ liftIO do
+      $(logDebugIO) $ "reading file " <> T.pack path <> " as " <> fid
+      F.MetadataFileFactory {readMetadataFile} <- getFactoryIO mfid
+      readMetadataFile path
+  writeMetadataFile mf path = lockPathsDuring (path :| []) $ try $
+    withSpan "writeMetadataFile" defaultSpanArguments $ liftIO do
+      F.MetadataFileFactory {writeMetadataFile, readMetadataFile} <- getFactoryIO mf.fileId
+      writeMetadataFile mf path
+      readMetadataFile path
+  chooseMetadata ms = withSpan "chooseMetadata" defaultSpanArguments do
     config <- getConfigDefault metadataConfigKey
     let metadata = H.fromList $ fmap (\m -> (m.formatId, m)) ms
     case catMaybes (config.tagPreference <&> \mid -> metadata ^. at mid) of
       (m : _) -> pure $ Just m
       [] -> pure Nothing
-  metadataFactory mid =
+  metadataFactory mid = withSpan "metadataFactory" defaultSpanArguments $
     -- TODO user provided formats
     pure $ find (\f -> f.metadataFormat.formatId == mid) factories
 
@@ -124,7 +89,7 @@ getFactoryIO :: F.MetadataFileId -> IO (F.MetadataFileFactory IO)
 getFactoryIO mfid = case F.metadataFileFactoryIO mfid of
   Just fact -> pure fact
   Nothing -> do
-    $(logErrorIO) $ T.pack "unknown metadata file id '" <> coerce mfid <> "'"
+    $(logErrorIO) $ "unknown metadata file id '" <> coerce mfid <> "'"
     throwIO F.UnknownFormat
 
 -- TODO config - duplicate tags to other types

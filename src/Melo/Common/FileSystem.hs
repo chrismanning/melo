@@ -3,14 +3,9 @@
 
 module Melo.Common.FileSystem where
 
-import Control.Concurrent.Classy
 import Melo.Common.Exception
-import Control.Foldl (PrimMonad)
-import Control.Monad.Base
 import Control.Monad.Extra
-import Control.Monad.Identity
 import Control.Monad.Trans
-import Control.Monad.Trans.Control
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import GHC.IO.Exception
@@ -69,34 +64,7 @@ data RemoveError
 
 instance Exception RemoveError
 
-newtype FileSystemIOT m a = FileSystemIOT
-  { runFileSystemIOT :: m a
-  }
-  deriving newtype
-    ( Functor,
-      Applicative,
-      Monad,
-      MonadIO,
-      MonadBase b,
-      MonadBaseControl b,
-      MonadConc,
-      MonadCatch,
-      MonadThrow,
-      MonadMask,
-      PrimMonad
-    )
-  deriving (MonadTrans, MonadTransControl) via IdentityT
-
-runFileSystemIO :: FileSystemIOT m a -> m a
-runFileSystemIO = runFileSystemIOT
-
-instance
-  ( MonadIO m,
-    Logging m,
-    MonadCatch m
-  ) =>
-  FileSystem (FileSystemIOT m)
-  where
+instance FileSystem IO where
   doesFileExist p = liftIO $ Dir.doesFileExist p
   doesDirectoryExist p = liftIO $ Dir.doesDirectoryExist p
   listDirectory p = liftIO $ fmap (p </>) <$> Dir.listDirectory p

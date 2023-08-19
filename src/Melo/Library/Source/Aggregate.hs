@@ -4,16 +4,9 @@
 module Melo.Library.Source.Aggregate where
 
 import Control.Applicative
-import Control.Foldl (PrimMonad, impurely, vectorM)
-import Control.Monad
-import Control.Monad.Base
-import Control.Monad.Conc.Class
-import Control.Monad.Trans
-import Control.Monad.Trans.Control
-import Control.Monad.Trans.Except
-import Control.Monad.Trans.Identity
+import Control.Foldl (impurely, vectorM)
+import Control.Monad.State.Strict
 import Data.Char
-import Data.Either.Combinators (mapLeft)
 import Data.Range qualified as R
 import Data.Text qualified as T
 import Data.Time.LocalTime
@@ -22,6 +15,7 @@ import Melo.Common.Config
 import Melo.Common.Exception
 import Melo.Common.FileSystem
 import Melo.Common.Logging
+import Melo.Common.Monad
 import Melo.Metadata.Aggregate
 import Melo.Common.Uri
 import Melo.Common.Vector
@@ -57,40 +51,13 @@ instance
   importSources = lift . importSources
   updateSource = lift . updateSource
 
-newtype SourceAggregateIOT m a = SourceAggregateIOT
-  { runSourceAggregateIOT :: m a
-  }
-  deriving newtype
-    ( Functor,
-      Applicative,
-      Monad,
-      MonadIO,
-      MonadBase b,
-      MonadBaseControl b,
-      MonadConc,
-      MonadCatch,
-      MonadMask,
-      MonadThrow,
-      PrimMonad
-    )
-  deriving (MonadTrans, MonadTransControl) via IdentityT
-
-instance
-  ( SourceRepository m,
-    ReleaseAggregate m,
-    MetadataAggregate m,
-    ConfigService m,
-    MonadConc m,
-    PrimMonad m,
-    Logging m
-  ) =>
-  SourceAggregate (SourceAggregateIOT m)
-  where
+instance SourceAggregate (AppM IO IO) where
   importSources ss | null ss = pure mempty
   importSources ss = do
     $(logDebug) $ "Importing " <> showt (V.length ss) <> " sources"
     metadataSources <- S.each ss & S.mapMaybeM transformImportSource & impurely S.foldM_ vectorM
     $(logDebug) $ "Importing " <> showt (V.length metadataSources) <> " metadata sources"
+    -- TODO handle Left errors
     srcs <- rights . fmap tryFrom <$> insert @SourceEntity (fmap (from @MetadataImportSource) metadataSources)
     let sources = fmap (showt . (.ref)) srcs
     $(logDebugV ['sources]) "Imported sources"
@@ -98,10 +65,11 @@ instance
     fork $ void $ importReleases srcs
     pure srcs
   updateSource s = do
-    e <- runExceptT (writeMetadata >> updateDB)
+    e <- try (writeMetadata >> updateDB)
     void $ importReleases (pure s)
     pure e
     where
+      writeMetadata :: AppM IO IO ()
       writeMetadata =
         case uriToFilePath s.source of
           Nothing -> pure ()
@@ -120,17 +88,17 @@ instance
                   Left e -> do
                     let cause = displayException e
                     $(logWarnV ['cause]) "Failed to write metadata file"
-                    throwE (UpdateSourceError $ Just $ SomeException e)
+                    throwM (UpdateSourceError $ Just $ SomeException e)
                   Right _ -> pure ()
               Left e -> do
                 let cause = displayException e
                 $(logWarnV ['cause]) "Failed to read metadata file"
-                throwE (UpdateSourceError $ Just $ SomeException e)
-      updateDB :: ExceptT SourceError (SourceAggregateIOT m) Source
+                throwM (UpdateSourceError $ Just $ SomeException e)
+      updateDB :: AppM IO IO Source
       updateDB =
         updateSingle @SourceEntity (from s) >>= \case
-          Just s' -> ExceptT $ pure $ mapLeft (UpdateSourceError . Just . SomeException) $ tryFrom s'
-          Nothing -> throwE $ UpdateSourceError Nothing
+          Just s' -> throwOnLeft $ first (UpdateSourceError . Just . SomeException) $ tryFrom s'
+          Nothing -> throwM $ UpdateSourceError Nothing
 
 transformImportSource :: MetadataAggregate m => NewImportSource -> m (Maybe MetadataImportSource)
 transformImportSource s = do

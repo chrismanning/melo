@@ -1,5 +1,4 @@
 {-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Metadata.Mapping.Types where
 
@@ -7,29 +6,19 @@ import Data.Aeson as A
   ( FromJSON (..),
     Options (..),
     ToJSON (..),
-    Value (Array),
     defaultOptions,
     genericParseJSON,
     genericToJSON,
   )
 import Data.Aeson.Casing (snakeCase)
-import Data.Aeson.Types
-  ( prependFailure,
-    typeMismatch,
-  )
 import Data.Coerce
 import Data.Default
 import Data.List.NonEmpty as NE
-import Data.Map.Strict (Map)
-import Data.Map.Strict qualified as Map
 import Data.Morpheus.Types as M
-import Data.Traversable
-import Data.Vector qualified as V
 import GHC.Generics hiding (from)
 import GHC.Records
 import Melo.Database.Repo
 import Melo.Format qualified as F
-import Melo.Format.Mapping qualified as FM
 import Rel8
   ( Column,
     Expr,

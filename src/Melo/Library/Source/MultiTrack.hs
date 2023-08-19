@@ -3,22 +3,16 @@
 
 module Melo.Library.Source.MultiTrack where
 
-import Control.Concurrent.Classy
-import Melo.Common.Exception
-import Control.Foldl (PrimMonad)
-import Control.Monad
-import Control.Monad.Base
-import Control.Monad.Trans
-import Control.Monad.Trans.Control
-import Control.Monad.Trans.Identity
+import Control.Monad.State.Strict
 import Control.Monad.Trans.Resource
 import Data.Conduit.Audio
 import Data.Conduit.Audio.Sndfile
-import Data.Either.Combinators
 import Data.Int
 import Data.Range
 import Data.Time
+import Melo.Common.Exception
 import Melo.Common.FileSystem.Watcher
+import Melo.Common.Monad
 import Melo.Metadata.Aggregate
 import Melo.Format.Error
 import Melo.Format.Metadata (MetadataFile)
@@ -30,6 +24,9 @@ import System.FilePath
 class Monad m => MultiTrack m where
   extractTrackTo :: CueFileSource -> FilePath -> m (Either MultiTrackError MetadataFile)
 
+instance MultiTrack m => MultiTrack (StateT s m) where
+  extractTrackTo s p = lift (extractTrackTo s p)
+
 data MultiTrackError
   = NotMultiTrack
   | DecoderError String
@@ -39,44 +36,7 @@ data MultiTrackError
 
 instance Exception MultiTrackError
 
-instance
-  {-# OVERLAPPABLE #-}
-  ( Monad (t m),
-    MonadTrans t,
-    MultiTrack m
-  ) =>
-  MultiTrack (t m)
-  where
-  extractTrackTo s d = lift $ extractTrackTo s d
-
-newtype MultiTrackIOT m a = MultiTrackIOT
-  { runMultiTrackIOT :: m a
-  }
-  deriving newtype
-    ( Functor,
-      Applicative,
-      Monad,
-      MonadIO,
-      MonadBase b,
-      MonadBaseControl b,
-      MonadConc,
-      MonadCatch,
-      MonadMask,
-      MonadThrow,
-      PrimMonad
-    )
-  deriving (MonadTrans, MonadTransControl) via IdentityT
-
-runMultiTrackIO :: MultiTrackIOT m a -> m a
-runMultiTrackIO = runMultiTrackIOT
-
-instance
-  ( FileSystemWatcher m,
-    MetadataAggregate m,
-    MonadIO m
-  ) =>
-  MultiTrack (MultiTrackIOT m)
-  where
+instance MultiTrack (AppM IO IO) where
   extractTrackTo cuefile destPath = lockPathsDuring (takeDirectory destPath :| []) do
     liftIO do
       Dir.createDirectoryIfMissing True (takeDirectory destPath)
@@ -87,7 +47,7 @@ instance
             Just end -> takeStart end src
             Nothing -> src
       runResourceT $ sinkSnd destPath (Sndfile.format info) src'
-    mapLeft MetadataError <$!> openMetadataFile destPath
+    first MetadataError <$!> openMetadataFile destPath
     where
       getStartTime :: AudioRange -> Duration
       getStartTime (TimeRange (SpanRange lower _upper)) = Seconds $ toSeconds $ boundValue lower

@@ -4,12 +4,14 @@
 module Melo.Metadata.Mapping.Aggregate where
 
 import Control.Foldl qualified as F
+import Control.Monad.State.Strict
 import Country
-import Data.Map.Strict as Map
+import Data.HashMap.Strict as HashMap
+import Data.Time.Clock
 import Data.Vector qualified as V
 import Melo.Common.Exception
-import Melo.Common.Logging
 import Melo.Common.Monad
+import Melo.Common.Tracing
 import Melo.Database.Repo as Repo
 import Melo.Format.Mapping qualified as M
 import Melo.Library.Artist.Repo
@@ -25,52 +27,43 @@ class Monad m => TagMappingAggregate m where
   getMappingsNamed :: Vector Text -> m TagMappingIndex
   getAllMappings :: m TagMappingIndex
 
-singleMapping :: TagMappingAggregate m => Text -> Source -> m (Maybe Text)
-singleMapping m src = firstOf traverse <$> resolveMappingNamed m src
-
-instance
-  {-# OVERLAPPABLE #-}
-  ( Monad (t m),
-    MonadTrans t,
-    TagMappingAggregate m
-  ) =>
-  TagMappingAggregate (t m)
-  where
-  resolveMappingNamed n s = lift (resolveMappingNamed n s)
+instance TagMappingAggregate m => TagMappingAggregate (StateT s m) where
+  resolveMappingNamed m s = lift (resolveMappingNamed m s)
   getMappingNamed = lift . getMappingNamed
   getMappingsNamed = lift . getMappingsNamed
   getAllMappings = lift getAllMappings
 
-type TagMappingIndex = Map Text M.TagMapping
+singleMapping :: TagMappingAggregate m => Text -> Source -> m (Maybe Text)
+singleMapping m src = firstOf traverse <$> resolveMappingNamed m src
 
-newtype TagMappingAggregateT m a = TagMappingAggregateT
-  { runTagMappingAggregateT :: ReaderT TagMappingIndex m a
+type TagMappingIndex = HashMap Text M.TagMapping
+
+data TagMappingIndexWrapper = TagMappingIndexWrapper
+  { index :: TagMappingIndex,
+    lastUpdated :: UTCTime
   }
-  deriving newtype
-    ( Functor,
-      Applicative,
-      Monad,
-      MonadIO,
-      MonadBase b,
-      MonadBaseControl b,
-      MonadConc,
-      MonadCatch,
-      MonadMask,
-      MonadReader TagMappingIndex,
-      MonadThrow,
-      MonadTrans,
-      MonadTransControl,
-      PrimMonad
-    )
+  deriving (Typeable)
 
-instance
-  ( ArtistRepository m,
-    TagMappingRepository m,
-    Logging m
-  ) =>
-  TagMappingAggregate (TagMappingAggregateT m)
+getTagMappingIndex :: AppM IO IO TagMappingIndex
+getTagMappingIndex =
+  getAppData @TagMappingIndexWrapper >>= \case
+    Just w -> do
+      now <- liftIO getCurrentTime
+      if now `diffUTCTime` w.lastUpdated > secondsToNominalDiffTime 300 then
+        updateMappings
+      else
+        pure w.index
+    Nothing -> updateMappings
   where
-  resolveMappingNamed m src | m == "release_artist_origin" = do
+    updateMappings = do
+      all <- getAll @TagMappingEntity
+      let !mappings = HashMap.fromList $ fmap (\e -> (e.name, from e.tagMapping)) $ V.toList all
+      now <- liftIO getCurrentTime
+      putAppData (TagMappingIndexWrapper mappings now)
+      pure mappings
+
+instance TagMappingAggregate (AppM IO IO) where
+  resolveMappingNamed m src | m == "release_artist_origin" = withSpan "resolveMappingNamed$release_artist_origin" defaultSpanArguments do
     artists <- getSourceReleaseArtists src.ref
     pure $ V.take 1 $ V.mapMaybe ((\c -> c >>= decodeAlphaThree <&> alphaTwoUpper) . (.country) . fst) artists
   resolveMappingNamed m src | m == "va_track_artist" = do
@@ -84,21 +77,15 @@ instance
     getMappingNamed mappingName >>= \case
       Just mapping -> pure $ metadata.tag mapping
       Nothing -> pure V.empty
-  getMappingNamed name = asks lookup
+  getMappingNamed name = lookup <$> getTagMappingIndex
     where
       lookup :: TagMappingIndex -> Maybe M.TagMapping
       lookup mappings = mappings ^. at name
   getMappingsNamed names =
     S.each names
       & S.mapMaybeM (\m -> fmap (m,) <$> getMappingNamed m)
-      & F.impurely S.foldM_ (F.generalize F.map)
-  getAllMappings = ask
-
-runTagMappingAggregate :: TagMappingRepository m => TagMappingAggregateT m a -> m a
-runTagMappingAggregate (TagMappingAggregateT m) = do
-  all <- getAll @TagMappingEntity
-  let mappings = Map.fromList $ fmap (\e -> (e.name, from e.tagMapping)) $ V.toList all
-  runReaderT m mappings
+      & F.impurely S.foldM_ (F.generalize F.hashMap)
+  getAllMappings = getTagMappingIndex
 
 insertDefaultMappings :: (MonadCatch m, TagMappingRepository m) => m ()
 insertDefaultMappings = void (insert' @TagMappingEntity defaultMappings) `catchIO` (\_ -> pure ())

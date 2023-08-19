@@ -39,6 +39,20 @@ extra-deps:
       - abstract-par
       - monad-par
       - monad-par-extras
+  - github: chrismanning/hs-opentelemetry
+    commit: b0f546ae6aebe9ec483b107c5d43db875234be7b
+    subdirs:
+      - api
+      - exporters/otlp
+      - instrumentation/conduit
+      - instrumentation/http-client
+      - instrumentation/hspec
+      - instrumentation/wai
+      - otlp
+      - propagators/b3
+      - propagators/w3c
+      - sdk
+      - utils/exceptions
   - hasql-streams-core-0.1.0.0
   - hasql-streams-streaming-0.1.0.0
   - mpg123-bindings-0.1.0.0
@@ -60,5 +74,8 @@ extra-deps:
   - relude-1.2.0.0
   - bytebuild-0.3.13.0
   - zigzag-0.0.1.0
+  - thread-utils-context-0.3.0.3
+  - thread-utils-finalizers-0.1.1.0
+  - typerep-map-0.6.0.0
 
 allow-newer: true

@@ -96,7 +96,7 @@ instance EncodeScalar PictureTypeWrapper where
 
 instance DecodeScalar PictureTypeWrapper where
   decodeScalar (M.String s) =
-    mapLeft T.pack $ PictureTypeWrapper <$> readEither (T.unpack s)
+    first T.pack $ PictureTypeWrapper <$> readEither (T.unpack s)
   decodeScalar _ = Left "PictureType must be a String"
 
 newtype IntervalRange = IntervalRange (Range CalendarDiffTime)

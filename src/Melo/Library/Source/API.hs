@@ -5,11 +5,11 @@
 module Melo.Library.Source.API where
 
 import Control.Concurrent.Classy
-import Melo.Common.Exception (displayException, throwIO, toException)
-import Melo.Common.Exception qualified as E
+import Control.DeepSeq
 import Control.Foldl qualified as Fold
 import Control.Monad
 import Control.Monad.IO.Class
+import Control.Monad.Trans.Resource
 import Data.Binary.Builder (append, fromByteString, putStringUtf8)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as L
@@ -17,7 +17,6 @@ import Data.Coerce
 import Data.Either.Combinators
 import Data.Generics.Labels ()
 import Data.Kind
-import Data.Map.Strict qualified as Map
 import Data.Morpheus
 import Data.Morpheus.Types
 import Data.Pool
@@ -28,57 +27,53 @@ import Data.UUID (fromText, toText)
 import Data.Vector qualified as V
 import GHC.Generics hiding (from)
 import Hasql.Connection
+import Hasql.CursorTransactionIO
 import Hasql.CursorTransactionIO.TransactionIO
 import Hasql.Session
+import Hasql.TransactionIO
 import Hasql.TransactionIO.Sessions
 import Melo.Common.Config
-import Melo.Common.FileSystem
+import Melo.Common.Exception qualified as E
 import Melo.Common.Logging
-import Melo.Metadata.Aggregate
+import Melo.Common.Monad
+import Melo.Common.Tracing
 import Melo.Common.Uri
 import Melo.Common.Uuid
 import Melo.Database.Repo as Repo
-import Melo.Database.Repo.IO (DbConnection(..), selectStream)
+import Melo.Database.Repo.IO (getConnectionPool, selectStream)
 import Melo.Format qualified as F
 import Melo.GraphQL.Where
-import Melo.Library.Release.Aggregate
+import Melo.Library.Artist.Name.Repo
+import Melo.Library.Collection.Types qualified as Ty
+import Melo.Library.Release.Aggregate as Release
 import Melo.Library.Release.ArtistName.Repo
 import Melo.Library.Release.Repo
 import Melo.Library.Release.Types
-import Melo.Library.Artist.Aggregate
-import Melo.Library.Artist.Name.Repo
-import Melo.Library.Artist.Repo
-import Melo.Library.Collection.Aggregate
-import Melo.Library.Collection.FileSystem.Scan
-import Melo.Library.Collection.Repo (runCollectionRepositoryIO)
-import Melo.Library.Collection.Types qualified as Ty
-import Melo.Library.Release.Aggregate as Release
 import Melo.Library.Source.Aggregate
-import Melo.Library.Source.MultiTrack
 import Melo.Library.Source.Repo
 import Melo.Library.Source.Transform qualified as Tr
 import Melo.Library.Source.Types qualified as Ty
-import Melo.Library.Track.Aggregate
 import Melo.Library.Track.ArtistName.Repo
 import Melo.Library.Track.Repo as Track
 import Melo.Library.Track.Types
-import Melo.Lookup.MusicBrainz as MB
-import Melo.Lookup.Covers (Cover(..), CoverService(..))
+import Melo.Lookup.Covers (Cover (..), CoverService (..))
 import Melo.Lookup.Covers qualified as Covers
 import Melo.Metadata.Mapping.Aggregate
-import Melo.Metadata.Mapping.Repo
-import Network.HTTP.Client as Http
 import Network.Wai (StreamingBody)
 import Rel8 (JSONBEncoded (..), (&&.), (==.))
 import Rel8 qualified
+import Streaming qualified as S
 import Streaming.Prelude qualified as S
 import System.FilePath as P
+import UnliftIO
+import Unsafe.Coerce
+import Prelude hiding (log)
 
 data SourceEvent
   = SourceAdded (Ty.Source)
   | SourceRemoved (Ty.SourceRef)
   deriving (Show, Eq)
-  deriving TextShow via FromStringShow SourceEvent
+  deriving (TextShow) via FromStringShow SourceEvent
 
 resolveSources ::
   ( Tr.MonadSourceTransform m,
@@ -91,6 +86,8 @@ resolveSources ::
     UuidGenerator m,
     CoverService m,
     ConfigService m,
+    Tracing m,
+    Typeable m,
     WithOperation o
   ) =>
   SourcesArgs ->
@@ -111,6 +108,8 @@ resolveSourceGroups ::
     UuidGenerator m,
     CoverService m,
     ConfigService m,
+    Tracing m,
+    Typeable m,
     WithOperation o
   ) =>
   SourceGroupsArgs ->
@@ -158,7 +157,7 @@ resolveSourceEntities (Just SourceWhere {..}) =
 resolveSourceEntities _ = lift getAll
 
 convertSources :: Vector Ty.SourceEntity -> Vector (Either Tr.TransformationError Ty.Source)
-convertSources = fmap (mapLeft from . tryFrom)
+convertSources = fmap (first from . tryFrom)
 
 resolveCollectionSources ::
   ( Tr.MonadSourceTransform m,
@@ -171,6 +170,8 @@ resolveCollectionSources ::
     UuidGenerator m,
     CoverService m,
     ConfigService m,
+    Tracing m,
+    Typeable m,
     WithOperation o
   ) =>
   Ty.CollectionRef ->
@@ -208,6 +209,8 @@ enrichSourceEntity ::
     UuidGenerator m,
     CoverService m,
     ConfigService m,
+    Tracing m,
+    Typeable m,
     WithOperation o
   ) =>
   Ty.SourceEntity ->
@@ -241,8 +244,7 @@ enrichSourceEntity s =
       findCoverImage (takeDirectory path) >>= \case
         Just imgPath ->
           pure $
-            [
-              ExternalImage
+            [ ExternalImage
                 { fileName = T.pack $ takeFileName imgPath,
                   downloadUri
                 }
@@ -253,16 +255,18 @@ enrichSourceEntity s =
     coverSearch =
       Track.getBySrcRef s.id >>= \case
         Nothing -> pure []
-        Just track -> Release.getRelease track.release_id >>= \case
-          Nothing -> pure []
-          Just release -> fmap from <$> searchForCovers release
+        Just track ->
+          Release.getRelease track.release_id >>= \case
+            Nothing -> pure []
+            Just release -> fmap from <$> searchForCovers release
 
 instance From Cover Image where
-  from CoverInfo {..} = ImageSearchResult
-    { bigCover = from bigCover,
-      smallCover = from smallCover,
-      source = from source
-    }
+  from CoverInfo {..} =
+    ImageSearchResult
+      { bigCover = from bigCover,
+        smallCover = from smallCover,
+        source = from source
+      }
 
 instance From Covers.CoverSource CoverSource where
   from Covers.Bandcamp = Bandcamp
@@ -315,15 +319,21 @@ data MappedTag = MappedTag
   { mappingName :: Text,
     values :: Vector Text
   }
-  deriving (Show, Eq, Ord, Generic, GQLType)
-  deriving TextShow via FromGeneric MappedTag
+  deriving (Show, Eq, Ord, Generic, GQLType, NFData)
+  deriving (TextShow) via FromGeneric MappedTag
 
 data MappedTagsArgs = MappedTagsArgs
   { mappings :: Vector Text
   }
   deriving (Generic, GQLType)
 
-instance (TagMappingAggregate m, WithOperation o) => From Ty.SourceEntity (Metadata (Resolver o e m)) where
+instance
+  ( TagMappingAggregate m,
+    Tracing m,
+    WithOperation o
+  ) =>
+  From Ty.SourceEntity (Metadata (Resolver o e m))
+  where
   from s =
     let s' = tryFrom @_ @Ty.Source s
         m = fmap (.metadata) s'
@@ -338,8 +348,8 @@ instance (TagMappingAggregate m, WithOperation o) => From Ty.SourceEntity (Metad
               Left e -> fail $ "failed to convert SourceEntity: " <> displayException e
           }
 
-resolveMappedTags :: TagMappingAggregate m => Ty.Source -> Vector Text -> m MappedTags
-resolveMappedTags src mappingNames =
+resolveMappedTags :: (TagMappingAggregate m, Tracing m) => Ty.Source -> Vector Text -> m MappedTags
+resolveMappedTags src mappingNames = withSpan "resolveMappedTags" defaultSpanArguments do
   forM mappingNames $ \mappingName -> do
     values <- resolveMappingNamed mappingName src
     pure
@@ -359,6 +369,8 @@ resolveCollectionSourceGroups ::
     UuidGenerator m,
     CoverService m,
     ConfigService m,
+    Tracing m,
+    Typeable m,
     WithOperation o
   ) =>
   Ty.CollectionRef ->
@@ -422,17 +434,18 @@ data ImageInfo = ImageInfo
     bytes :: Int
   }
   deriving (Show, Eq, Generic)
-  deriving TextShow via FromGeneric ImageInfo
+  deriving (TextShow) via FromGeneric ImageInfo
 
 instance GQLType ImageInfo
 
 instance From Covers.ImageInfo ImageInfo where
-  from s = ImageInfo {
-    width = s.width,
-    height = s.height,
-    url = s.url,
-    bytes = s.bytes
-  }
+  from s =
+    ImageInfo
+      { width = s.width,
+        height = s.height,
+        url = s.url,
+        bytes = s.bytes
+      }
 
 data SourceContent
   = Folder [SourceContent]
@@ -468,7 +481,10 @@ groupSources' ::
     UuidGenerator m,
     CoverService m,
     ConfigService m,
+    Tracing m,
+    Typeable m,
     WithOperation o,
+    Logging n,
     Monad n
   ) =>
   TagMappingIndex ->
@@ -476,9 +492,25 @@ groupSources' ::
   S.Stream (S.Of (SourceGroup (Resolver o e m))) n ()
 groupSources' groupByMappings s =
   s
-    & S.map (\e -> (e, extractMappedTags groupByMappings e))
+    & S.mapM (\e -> do
+      let !mappings = force $ extractMappedTags groupByMappings e
+      pure (e, mappings)
+      )
     & S.groupBy (\(_, a) (_, b) -> a == b)
     & S.mapped mkSrcGroup
+
+spanEffect ::
+  ( Functor f,
+    Monad m,
+    SpanOperations m
+  ) =>
+  Text ->
+  S.Stream f m r ->
+  S.Stream f m r
+spanEffect name = S.wrapEffect
+  do
+    createSpan name defaultSpanArguments
+  endSpan
 
 extractMappedTags :: TagMappingIndex -> Ty.SourceEntity -> MappedTags
 extractMappedTags mappings e = case tryFrom @_ @F.Metadata e of
@@ -486,7 +518,7 @@ extractMappedTags mappings e = case tryFrom @_ @F.Metadata e of
   Right metadata ->
     V.fromList $
       filter (not . null . (.values)) $
-        Map.assocs mappings <&> \(name, mapping) ->
+        mappings ^@.. itraversed <&> \(name, mapping) ->
           MappedTag
             { mappingName = name,
               values = metadata.tag mapping
@@ -503,7 +535,10 @@ mkSrcGroup ::
     TrackRepository m,
     CoverService m,
     ConfigService m,
+    Tracing m,
+    Typeable m,
     WithOperation o,
+    Logging n,
     Monad n
   ) =>
   S.Stream (S.Of (Ty.SourceEntity, MappedTags)) n x ->
@@ -517,8 +552,11 @@ mkSrcGroup s =
       S.Stream (S.Of (Source (Resolver o e m), MappedTags)) n x ->
       n (S.Of (SourceGroup (Resolver o e m)) x)
     toSourceGroup ss = do
+      $(logDebug) "Creating source group"
       ofSources <- S.toList ss
-      pure $ S.mapOf toSourceGroup' ofSources
+      let !sg = S.mapOf toSourceGroup' ofSources
+      $(logDebug) $ "Source group created from " <> showt (Prelude.length (S.fst' ofSources)) <> " sources"
+      pure sg
       where
         toSourceGroup' :: [(Source (Resolver o e m), MappedTags)] -> SourceGroup (Resolver o e m)
         toSourceGroup' ss =
@@ -536,9 +574,10 @@ mkSrcGroup s =
 
 data SourceGroupFilter = AllSourceGroups | Orphaned
 
-streamSourceGroupsQuery :: CollectionWatchState -> Pool Connection -> Http.Manager -> Ty.CollectionRef -> TagMappingIndex -> SourceGroupFilter -> L.ByteString -> StreamingBody
-streamSourceGroupsQuery collectionWatchState pool httpManager collectionRef groupByMappings filt rq sendChunk flush =
-  withResource pool (streamSession >=> either throwIO pure)
+streamSourceGroupsQuery :: AppData IO -> Ty.CollectionRef -> Vector Text -> SourceGroupFilter -> L.ByteString -> StreamingBody
+streamSourceGroupsQuery appData collectionRef groupByMappings filt rq sendChunk flush = do
+  pool <- runReaderT getConnectionPool appData
+  withResource pool (streamSession >=> either throwM pure)
   where
     mkRoot :: SourceGroup (Resolver QUERY () m) -> RootResolver m () SourceGroupStream Undefined Undefined
     mkRoot sourceGroup =
@@ -564,49 +603,37 @@ streamSourceGroupsQuery collectionWatchState pool httpManager collectionRef grou
             )
       pure srcs
     streamSession :: Connection -> IO (Either QueryError ())
-    streamSession conn = do
-      let q = sourcesForCollection collectionRef
-      $(logInfoIO) $ showt (Rel8.showQuery q)
+    streamSession conn = {-withSpan "streamSession" defaultSpanArguments-} do
+      let !q = sourcesForCollection collectionRef
+      groupByMappings' <- runIO $ getMappingsNamed groupByMappings
       flip run conn $
         transactionIO ReadCommitted ReadOnly NotDeferrable $
-          cursorTransactionIO $
-            processStream (selectStream q)
-    processStream :: MonadIO m => S.Stream (S.Of Ty.SourceEntity) m () -> m ()
-    processStream s = do
+          cursorTransactionIO' $
+            processStream groupByMappings' (selectStream q)
+    processStream groupByMappings' s = do
       $(logInfoIO) $ "Starting streaming sources from collection " <> showt collectionRef
-      let runIO = liftIO . runSourceIO collectionWatchState pool httpManager
       s
-        & groupSources' groupByMappings
+        & groupSources' groupByMappings'
         & S.mapM (\srcGrp -> runIO $ interpreter (mkRoot srcGrp) (L.toStrict rq))
-        & S.mapM_ sendFlush
+        & S.mapM_ (sendFlush)
       $(logInfoIO) $ "Finished streaming sources from collection " <> showt collectionRef
+    runIO :: MonadIO m => AppM IO IO a -> m a
+    runIO (ReaderT m) = liftIO $ m appData
     sendFlush :: MonadIO m => BS.ByteString -> m ()
-    sendFlush = (liftIO . (const flush)) <=< liftIO . sendChunk . (`append` (putStringUtf8 "\n\n")) . fromByteString
+    sendFlush buf = liftIO {-$ withSpan "sendFlush" defaultSpanArguments-} do
+      sendChunk $ fromByteString buf `append` (putStringUtf8 "\n\n")
+      flush
 
-runSourceIO collectionWatchState pool httpManager =
-  runFileSystemIO
-    . runConfigRepositoryIO (Pooled pool)
-    . runFileSystemWatcherIO pool collectionWatchState httpManager
-    . runMetadataAggregateIO
-    . runSourceRepositoryIO (Pooled pool)
-    . runTagMappingRepositoryIO (Pooled pool)
-    . runReleaseRepositoryIO (Pooled pool)
-    . runReleaseArtistNameRepositoryIO (Pooled pool)
-    . runArtistNameRepositoryIO (Pooled pool)
-    . runArtistRepositoryIO (Pooled pool)
-    . runTrackArtistNameRepositoryIO (Pooled pool)
-    . runTrackRepositoryIO (Pooled pool)
-    . runMusicBrainzServiceIO httpManager
-    . runCachingMusicBrainzService
-    . runMultiTrackIO
-    . runCollectionRepositoryIO (Pooled pool)
-    . runCollectionAggregateIO pool httpManager collectionWatchState
-    . runTagMappingAggregate
-    . runArtistAggregateIOT
-    . runTrackAggregateIOT
-    . runReleaseAggregateIOT
-    . runSourceAggregateIOT
-    . Covers.runCoverServiceIO httpManager
+cursorTransactionIO' :: CursorTransactionIO s a -> TransactionIO a
+cursorTransactionIO' c = cursorTransactionIO (unsafeCoerce c)
+
+instance Logging (CursorTransactionIO s) where
+  log ns severity msg = liftIO $ log ns severity msg
+  logV ns severity msg payload = liftIO $ logV ns severity msg payload
+
+instance Logging TransactionIO where
+  log ns severity msg = liftIO $ log ns severity msg
+  logV ns severity msg payload = liftIO $ logV ns severity msg payload
 
 getParentUri :: Text -> Text
 getParentUri srcUri = case parseURI (T.unpack srcUri) of
@@ -653,7 +680,7 @@ data Transform
   | CopyCoverImage {url :: Text}
   | ConvertMetadataFormat {targetId :: Text}
   deriving (Show, Generic, GQLType)
-  deriving TextShow via FromGeneric Transform
+  deriving (TextShow) via FromGeneric Transform
 
 data MetadataTransformation
   = SetMapping {mapping :: Text, values :: Vector Text}
@@ -664,7 +691,7 @@ data MetadataTransformation
   | RemoveTags {key :: Text}
   | RemoveAll
   deriving (Show, Generic, GQLType)
-  deriving TextShow via FromGeneric MetadataTransformation
+  deriving (TextShow) via FromGeneric MetadataTransformation
 
 previewTransformSourceImpl ::
   forall m e o.
@@ -677,12 +704,15 @@ previewTransformSourceImpl ::
     UuidGenerator m,
     CoverService m,
     ConfigService m,
+    E.MonadCatch m,
+    Tracing m,
+    Typeable m,
     WithOperation o
   ) =>
   Ty.SourceEntity ->
   Vector Transform ->
   m (UpdateSourceResult (Resolver o e m))
-previewTransformSourceImpl s ts = do
+previewTransformSourceImpl s ts = withSpan "previewTransformSourceImpl" defaultSpanArguments do
   $(logDebug) $ "Preview; Transforming source " <> showt s.id <> " with " <> showt ts
   E.catchAny
     ( case tryFrom s of
@@ -713,6 +743,8 @@ transformSourcesImpl ::
     UuidGenerator m,
     CoverService m,
     ConfigService m,
+    Tracing m,
+    Typeable m,
     Tr.MonadSourceTransform m
   ) =>
   TransformSourcesArgs ->
@@ -723,7 +755,7 @@ transformSourcesImpl (TransformSourcesArgs ts where') = do
   ss <- lift $ forM es $ \s ->
     case tryFrom s of
       Left e -> pure $ Left (s.id, into @Tr.TransformationError e)
-      Right s' -> mapLeft (s.id,) <$> Tr.evalTransformActions (interpretTransforms ts) s'
+      Right s' -> first (s.id,) <$> Tr.evalTransformActions (interpretTransforms ts) s'
   lift $ fork $ void $ importReleases (V.mapMaybe rightToMaybe ss)
   forM ss \case
     Left (id, e) -> do
@@ -744,7 +776,7 @@ instance TryFrom Transform Tr.TransformAction where
     CopyCoverImage url -> maybeToRight (TryFromException t Nothing) $ Tr.CopyCoverImage <$> parseURI (T.unpack url)
     ConvertMetadataFormat mid -> Right $ Tr.ConvertMetadataFormat (F.MetadataId mid)
     where
-      parseMovePattern' pat = mapLeft (TryFromException t <$> fmap toException) $ Tr.parseMovePattern pat
+      parseMovePattern' pat = first (TryFromException t <$> fmap toException) $ Tr.parseMovePattern pat
       parseRef Nothing = Right Nothing
       parseRef (Just ref) = mapRight Just $ maybeToRight (TryFromException t Nothing) $ Ty.CollectionRef <$> fromText ref
 

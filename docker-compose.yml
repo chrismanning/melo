@@ -8,16 +8,23 @@ services:
     ports:
      - 5432:5432
 
-  loki:
-    image: grafana/loki:2.5.0
-    ports:
-      - "3100:3100"
-    command: -config.file=/etc/loki/local-config.yaml
-
-  grafana:
-    image: grafana/grafana:latest
-    ports:
-      - "3000:3000"
+  openobserve:
+    image: public.ecr.aws/zinclabs/openobserve:latest
     environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      ZO_ROOT_USER_EMAIL: cmanning999@gmail.com
+      ZO_ROOT_USER_PASSWORD: melo
+    ports:
+      - 5080:5080
+#  loki:
+#    image: grafana/loki:2.5.0
+#    ports:
+#      - "3100:3100"
+#    command: -config.file=/etc/loki/local-config.yaml
+#
+#  grafana:
+#    image: grafana/grafana:latest
+#    ports:
+#      - "3000:3000"
+#    environment:
+#      GF_SECURITY_ADMIN_USER: admin
+#      GF_SECURITY_ADMIN_PASSWORD: admin

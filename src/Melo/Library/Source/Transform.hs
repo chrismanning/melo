@@ -5,23 +5,19 @@ module Melo.Library.Source.Transform where
 
 import Control.Applicative hiding (many, some)
 import Control.Concurrent.Classy
-import Melo.Common.Exception as E hiding (try)
 import Control.Foldl qualified as Fold
 import Control.Lens (to)
-import Control.Monad.Except
 import Control.Monad.State.Class
-import Control.Monad.Trans.Except
 import Control.Monad.Trans.State.Strict (StateT, evalStateT)
 import Data.Char
 import Data.Default
-import Data.Either.Combinators
-import Data.HashMap.Strict qualified as H
+import Data.HashMap.Strict qualified as HashMap
 import Data.Map.Strict (Map)
-import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Data.Vector qualified as V
 import Data.Void (Void)
 import GHC.Generics hiding (from, to)
+import Melo.Common.Exception as E
 import Melo.Common.FileSystem as FS
 import Melo.Common.FileSystem.Watcher
 import Melo.Common.Logging
@@ -39,7 +35,7 @@ import Melo.Library.Artist.Name.Repo
 import Melo.Library.Artist.Name.Types
 import Melo.Library.Artist.Repo as Artist
 import Melo.Library.Artist.Types
-import Melo.Library.Collection.Repo
+import Melo.Library.Collection.Repo as Collection
 import Melo.Library.Collection.Types
 import Melo.Library.Release.Aggregate as Release
 import Melo.Library.Release.ArtistName.Repo as ReleaseArtist
@@ -62,7 +58,8 @@ import Melo.Metadata.Mapping.Repo
 import Melo.Metadata.Mapping.Types
 import System.FilePath
 import System.IO (TextEncoding)
-import Text.Megaparsec
+import Text.Megaparsec hiding (try)
+import Text.Megaparsec qualified as MP
 import Text.Megaparsec.Char
 import Text.Printf
 
@@ -107,9 +104,9 @@ f >=/> g = \x ->
     Right s -> g s
 
 evalTransformAction :: MonadSourceTransform m => TransformAction -> Transform m
-evalTransformAction (Move ref patterns) src = mapLeft from <$> moveSourceWithPattern ref patterns src
-evalTransformAction (SplitMultiTrackFile ref patterns) src = mapLeft from <$> extractTrack ref patterns src
-evalTransformAction (EditMetadata metadataTransformations) src = mapLeft from <$> editMetadata metadataTransformations src
+evalTransformAction (Move ref patterns) src = first from <$> moveSourceWithPattern ref patterns src
+evalTransformAction (SplitMultiTrackFile ref patterns) src = first from <$> extractTrack ref patterns src
+evalTransformAction (EditMetadata metadataTransformations) src = first from <$> editMetadata metadataTransformations src
 evalTransformAction MusicBrainzLookup src = musicBrainzLookup src
 evalTransformAction (CopyCoverImage coverUrl) src = copyCoverImage coverUrl src
 evalTransformAction (ConvertMetadataFormat mid) src = convertMetadataFormat mid src
@@ -118,7 +115,7 @@ evalTransformAction t _ = pure $ Left (UnsupportedTransform (showt t))
 type MonadSourceTransform m =
   ( CollectionRepository m,
     FileSystem m,
-    FileSystemWatcher m,
+    FileSystemWatchLocks m,
     Logging m,
     MetadataAggregate m,
     Monad m,
@@ -142,30 +139,15 @@ previewTransformation ::
   MonadSourceTransform m =>
   Transform
     ( TransformPreviewT
-        ( SourceAggregateIOT
-            ( ReleaseAggregateIOT
-                ( TrackAggregateIOT
-                    ( ArtistAggregateIOT
-                        ( TagMappingAggregateT
-                            (VirtualArtistRepoT (StateT VirtualEntities m))
-                        )
-                    )
-                )
-            )
-        )
+        (VirtualArtistRepoT (StateT VirtualEntities m))
     ) ->
   Source ->
   m (Either TransformationError Source)
 previewTransformation transformation src =
   (flip evalStateT) def $
     runVirtualArtistRepoT $
-      runTagMappingAggregate $
-        runArtistAggregateIOT $
-          runTrackAggregateIOT $
-            runReleaseAggregateIOT $
-              runSourceAggregateIOT $
-                runTransformPreviewT $
-                  transformation src
+      runTransformPreviewT $
+        transformation src
 
 newtype TransformPreviewT m a = TransformPreviewT
   { runTransformPreviewT :: m a
@@ -188,54 +170,79 @@ data VirtualEntities = VirtualEntities
 
 instance Default VirtualEntities
 
-instance MonadSourceTransform m => FileSystem (TransformPreviewT m) where
+instance
+  {-# OVERLAPS #-}
+  ( FileSystem m,
+    Logging m
+  ) => FileSystem (TransformPreviewT m) where
   doesFileExist = lift . doesFileExist
   doesDirectoryExist = lift . doesDirectoryExist
   listDirectory = lift . listDirectory
   canonicalizePath = lift . canonicalizePath
-  readFile p = lift $ do
-    $(logDebug) ("readFile called with " <> showt p)
-    FS.readFile p
-  movePath _ _ = lift $ do
-    $(logDebug) "Preview movePath called"
+  readFile path = lift $ do
+    $(logDebugV ['path]) ("readFile called")
+    FS.readFile path
+  movePath source destination = lift $ do
+    $(logDebugV ['source, 'destination]) "Preview movePath called"
     pure $ Right ()
-  copyPath _ _ = lift $ do
-    $(logDebug) "Preview copyPath called"
+  copyPath source destination = lift $ do
+    $(logDebugV ['source, 'destination]) "Preview copyPath called"
     pure $ Right ()
-  removePath _ = lift $ do
-    $(logDebug) "Preview removePath called"
+  removePath path = lift $ do
+    $(logDebugV ['path]) "Preview removePath called"
     pure $ Right ()
-  removeEmptyDirectories _ = lift $ do
-    $(logDebug) "Preview removeEmptyDirectories called"
+  removeEmptyDirectories path = lift $ do
+    $(logDebugV ['path]) "Preview removeEmptyDirectories called"
     pure ()
 
-instance MonadSourceTransform m => MetadataAggregate (TransformPreviewT m) where
-  openMetadataFile _p = do
-    $(logDebug) "Preview openMetadataFile called"
-    lift $ openMetadataFile _p
+instance
+  {-# OVERLAPS #-}
+  ( MetadataAggregate m,
+    Logging m
+  ) => MetadataAggregate (TransformPreviewT m) where
+  openMetadataFile path = do
+    $(logDebugV ['path]) "Preview openMetadataFile called"
+    lift $ openMetadataFile path
   openMetadataFileByExt = lift . openMetadataFileByExt
   readMetadataFile mid p = lift $ readMetadataFile mid p
-  writeMetadataFile mf _p = lift $ do
-    $(logDebug) "Preview writeMetadataFile called"
+  writeMetadataFile mf path = lift $ do
+    $(logDebugV ['path]) "Preview writeMetadataFile called"
     pure $ Right mf
   chooseMetadata ms = lift $ do
     $(logDebug) "Preview chooseMetadata called"
     chooseMetadata ms
   metadataFactory = lift . metadataFactory
 
-instance MonadSourceTransform m => MultiTrack (TransformPreviewT m) where
+instance
+  {-# OVERLAPS #-}
+  MultiTrack m => MultiTrack (TransformPreviewT m) where
   extractTrackTo cuefile dest =
     pure $
       Right
         F.MetadataFile
           { filePath = dest,
-            metadata = H.empty,
+            metadata = mempty,
             audioInfo = cuefile.audioInfo,
             fileId = cuefile.fileId,
             pictures = []
           }
 
 instance
+  {-# OVERLAPS #-}
+  MultiTrack m => MultiTrack (VirtualArtistRepoT m) where
+  extractTrackTo cuefile dest =
+    pure $
+      Right
+        F.MetadataFile
+          { filePath = dest,
+            metadata = mempty,
+            audioInfo = cuefile.audioInfo,
+            fileId = cuefile.fileId,
+            pictures = []
+          }
+
+instance
+  {-# OVERLAPS #-}
   ( TagMappingAggregate m,
     Logging m
   ) =>
@@ -256,14 +263,18 @@ newtype VirtualArtistRepoT m a = VirtualArtistRepoT
 
 deriving instance (MonadState VirtualEntities m) => MonadState VirtualEntities (VirtualArtistRepoT m)
 
-instance MonadSourceTransform m => MetadataAggregate (VirtualArtistRepoT m) where
-  openMetadataFile _p = do
-    $(logDebug) "Preview openMetadataFile called"
-    lift $ openMetadataFile _p
+instance
+  {-# OVERLAPS #-}
+  ( MetadataAggregate m,
+    Logging m
+  ) => MetadataAggregate (VirtualArtistRepoT m) where
+  openMetadataFile path = do
+    $(logDebugV ['path]) "Preview openMetadataFile called"
+    lift $ openMetadataFile path
   openMetadataFileByExt = lift . openMetadataFileByExt
   readMetadataFile mid p = lift $ readMetadataFile mid p
-  writeMetadataFile mf _p = lift $ do
-    $(logDebug) "Preview writeMetadataFile called"
+  writeMetadataFile mf path = lift $ do
+    $(logDebugV ['path]) "Preview writeMetadataFile called"
     pure $ Right mf
   chooseMetadata ms = lift $ do
     $(logDebug) "Preview chooseMetadata called"
@@ -271,6 +282,7 @@ instance MonadSourceTransform m => MetadataAggregate (VirtualArtistRepoT m) wher
   metadataFactory = lift . metadataFactory
 
 instance
+  {-# OVERLAPS #-}
   ( Repo.Repository SourceEntity m,
     Logging m
   ) =>
@@ -289,6 +301,7 @@ instance
   update' = void . Repo.update
 
 instance
+  {-# OVERLAPS #-}
   ( SourceRepository m,
     Logging m
   ) =>
@@ -301,6 +314,7 @@ instance
   getCollectionSources = lift . Src.getCollectionSources
 
 instance
+  {-# OVERLAPS #-}
   ( ArtistRepository m,
     ReleaseArtistNameRepository m,
     Logging m,
@@ -313,13 +327,13 @@ instance
   where
   getAll = VirtualArtistRepoT do
     $(logDebug) "Preview getAll @ArtistEntity called"
-    artists <- uses #artists Map.elems
+    artists <- uses #artists (toListOf traverse)
     all <- Repo.getAll
     pure $ V.fromList artists <> all
   getByKey keys = VirtualArtistRepoT do
     $(logDebug) "Preview getByKey @ArtistEntity called"
     artists <- gets (.artists)
-    V.catMaybes <$> forM keys \key -> case Map.lookup key artists of
+    V.catMaybes <$> forM keys \key -> case artists ^. at key of
       Just v -> pure $ Just v
       Nothing -> Repo.getSingle key
   insert newArtists = do
@@ -331,12 +345,12 @@ instance
       case artist of
         Just artist -> do
           let artist' = mergeArtist artist newArtist
-          VirtualArtistRepoT ( #artists %= Map.insert artist.id artist' )
+          VirtualArtistRepoT ( #artists %= (at artist.id ?~ artist') )
           pure artist'
         Nothing -> do
           id <- ArtistRef <$> VirtualArtistRepoT generateV4
           let artist' = mkNewArtist id newArtist
-          VirtualArtistRepoT ( #artists %= Map.insert id artist' )
+          VirtualArtistRepoT ( #artists %= (at id ?~ artist') )
           pure artist'
   insert' newArtists = Repo.insert @ArtistEntity newArtists <&> V.length
   delete _ = pure V.empty
@@ -348,6 +362,7 @@ instance
     pure ()
 
 instance
+  {-# OVERLAPS #-}
   ( ArtistRepository m,
     ReleaseArtistNameRepository m,
     Logging m,
@@ -359,7 +374,8 @@ instance
   ArtistRepository (VirtualArtistRepoT m)
   where
   getByMusicBrainzId mbid = VirtualArtistRepoT do
-    artists <- uses #artists Map.elems
+    $(logDebug) "Preview getByMusicBrainzId @Artist called"
+    artists <- uses #artists (toListOf traverse)
     case find (\a -> a.musicbrainz_id == Just (mbid.mbid)) artists of
       Just artist -> pure (Just artist)
       Nothing -> Artist.getByMusicBrainzId mbid
@@ -370,18 +386,24 @@ instance
     if V.null releaseArtists
       then VirtualArtistRepoT $ getReleaseArtists releaseRef
       else pure releaseArtists
-  getSourceReleaseArtists srcRef = fmap (fromMaybe V.empty) $ runMaybeT do
+  getSourceReleaseArtists srcRef = do
     $(logDebug) "Preview getSourceReleaseArtists called"
-    track <- MaybeT $ Track.getBySrcRef srcRef
-    $(logDebug) $ "track: " <> showt track
-    getReleaseArtists track.release_id
+    Track.getBySrcRef srcRef >>= \case
+      Just track -> do
+        $(logDebug) $ "track: " <> showt track
+        getReleaseArtists track.release_id
+      Nothing -> pure V.empty
   getByName name = VirtualArtistRepoT do
-    artists <- uses #artists Map.elems
+    artists <- uses #artists (toListOf traverse)
     case filter (\a -> a.name == name) artists of
       [] -> getByName name
       artists -> pure (V.fromList artists)
 
+instance UuidGenerator m => UuidGenerator (VirtualArtistRepoT m) where
+  generateV4 = lift generateV4
+
 instance
+  {-# OVERLAPS #-}
   ( Repo.Repository ArtistNameEntity m,
     Logging m,
     MonadState VirtualEntities m,
@@ -391,13 +413,13 @@ instance
   where
   getAll = VirtualArtistRepoT do
     $(logDebug) "Preview getAll @ArtistNameEntity called"
-    artistNames <- uses #artistNames Map.elems
+    artistNames <- uses #artistNames (toListOf traverse)
     all <- Repo.getAll
     pure $ V.fromList artistNames <> all
   getByKey keys = VirtualArtistRepoT do
     $(logDebug) "Preview getByKey @ArtistNameEntity called"
     artistNames <- gets (.artistNames)
-    V.catMaybes <$> forM keys \key -> case Map.lookup key artistNames of
+    V.catMaybes <$> forM keys \key -> case artistNames ^. at key of
       Just v -> pure $ Just v
       Nothing -> Repo.getSingle key
   insert = mapM \a -> do
@@ -415,6 +437,7 @@ instance
     pure ()
 
 instance
+  {-# OVERLAPS #-}
   ( ArtistNameRepository m,
     Logging m,
     MonadState VirtualEntities m,
@@ -423,17 +446,20 @@ instance
   ArtistNameRepository (VirtualArtistRepoT m)
   where
   getArtistNames artistRef = VirtualArtistRepoT do
-    artistNames <- uses #artistNames Map.elems
+    $(logDebug) "Preview getArtistNames called"
+    artistNames <- uses #artistNames (toListOf traverse)
     case filter (\a -> a.artist_id == artistRef) artistNames of
       [] -> getArtistNames artistRef
       an -> pure $ V.fromList an
   getAlias artistRef name = VirtualArtistRepoT do
-    artistNames <- uses #artistNames Map.elems
+    $(logDebug) "Preview getAlias called"
+    artistNames <- uses #artistNames (toListOf traverse)
     case find (\a -> a.artist_id == artistRef && a.name == name) artistNames of
       Just artistName -> pure $ Just artistName
       Nothing -> getAlias artistRef name
 
 instance
+  {-# OVERLAPS #-}
   ( Repo.Repository ReleaseEntity m,
     Logging m,
     MonadState VirtualEntities m,
@@ -443,13 +469,13 @@ instance
   where
   getAll = VirtualArtistRepoT do
     $(logDebug) "Preview getAll @ReleaseEntity called"
-    releases <- uses #releases Map.elems
+    releases <- uses #releases (toListOf traverse)
     all <- Repo.getAll
     pure $ V.fromList releases <> all
   getByKey keys = VirtualArtistRepoT do
     $(logDebug) "Preview getByKey @ReleaseEntity called"
     releases <- gets (.releases)
-    V.catMaybes <$> forM keys \key -> case Map.lookup key releases of
+    V.catMaybes <$> forM keys \key -> case releases ^. at key of
       Just v -> pure $ Just v
       Nothing -> Repo.getSingle key
   insert = mapM \a -> do
@@ -470,6 +496,7 @@ instance
     pure ()
 
 instance
+  {-# OVERLAPS #-}
   ( ReleaseRepository m,
     Logging m,
     MonadState VirtualEntities m,
@@ -478,12 +505,14 @@ instance
   ReleaseRepository (VirtualArtistRepoT m)
   where
   getByMusicBrainzId mbid = VirtualArtistRepoT do
-    releases <- uses #releases Map.elems
+    $(logDebug) "Preview getByMusicBrainzId @Release called"
+    releases <- uses #releases (toListOf traverse)
     case find (\r -> r.musicbrainz_id == Just (mbid.mbid) || r.musicbrainz_group_id == Just (mbid.mbid)) releases of
       Just release -> pure (Just release)
       Nothing -> Release.getByMusicBrainzId mbid
 
 instance
+  {-# OVERLAPS #-}
   ( ReleaseArtistNameRepository m,
     Repo.Repository ArtistNameEntity m,
     Logging m,
@@ -500,7 +529,7 @@ instance
       releaseArtists ->
         pure $
           V.fromList $
-            mapMaybe (\releaseArtist -> Map.lookup releaseArtist.artist_name_id artistNames) releaseArtists
+            mapMaybe (\releaseArtist -> artistNames ^. at releaseArtist.artist_name_id) releaseArtists
   insert as = do
     $(logDebug) "Preview insert @ReleaseArtistNameEntity called"
     #releaseArtists <>= V.toList as
@@ -508,6 +537,7 @@ instance
   insert' releaseArtists = ReleaseArtist.insert releaseArtists <&> V.length
 
 instance
+  {-# OVERLAPS #-}
   ( Repo.Repository TrackEntity m,
     Logging m,
     MonadState VirtualEntities m,
@@ -517,13 +547,13 @@ instance
   where
   getAll = VirtualArtistRepoT do
     $(logDebug) "Preview getAll @TrackEntity called"
-    tracks <- uses #tracks Map.elems
+    tracks <- uses #tracks (toListOf traverse)
     all <- Repo.getAll
     pure $ V.fromList tracks <> all
   getByKey keys = VirtualArtistRepoT do
     $(logDebug) "Preview getByKey @TrackEntity called"
     tracks <- gets (.tracks)
-    V.catMaybes <$> forM keys \key -> case Map.lookup key tracks of
+    V.catMaybes <$> forM keys \key -> case tracks ^. at key of
       Just v -> pure $ Just v
       Nothing -> Repo.getSingle key
   insert = mapM \t -> do
@@ -541,6 +571,7 @@ instance
     #tracks . at track.id ?= track
 
 instance
+  {-# OVERLAPS #-}
   ( TrackRepository m,
     Logging m,
     MonadState VirtualEntities m,
@@ -549,17 +580,20 @@ instance
   TrackRepository (VirtualArtistRepoT m)
   where
   getByMusicBrainzId mbid = VirtualArtistRepoT do
-    tracks <- uses #tracks Map.elems
+    $(logDebug) "Preview getByMusicBrainzId @Track called"
+    tracks <- uses #tracks (toListOf traverse)
     case find (\t -> t.musicbrainz_id == Just mbid.mbid) tracks of
       Just track -> pure $ Just track
       Nothing -> Track.getByMusicBrainzId mbid
   getBySrcRef srcRef = VirtualArtistRepoT do
-    tracks <- uses #tracks Map.elems
+    $(logDebug) "Preview getBySrcRef @Track called"
+    tracks <- uses #tracks (toListOf traverse)
     case find (\t -> t.source_id == srcRef) tracks of
       Just track -> pure $ Just track
       Nothing -> Track.getBySrcRef srcRef
 
 instance
+  {-# OVERLAPS #-}
   ( TrackArtistNameRepository m,
     Logging m,
     MonadState VirtualEntities m
@@ -575,7 +609,7 @@ instance
       trackArtists ->
         pure $
           V.fromList $
-            mapMaybe (\trackArtist -> Map.lookup trackArtist.artist_name_id artistNames) trackArtists
+            mapMaybe (\trackArtist -> artistNames ^. at trackArtist.artist_name_id) trackArtists
   insert ts = do
     $(logDebug) "Preview insert @TrackArtistNameEntity called"
     #trackArtists <>= V.toList ts
@@ -583,6 +617,7 @@ instance
   insert' trackArtists = TrackArtist.insert trackArtists <&> V.length
 
 instance
+  {-# OVERLAPS #-}
   ( TagMappingAggregate m,
     Logging m
   ) =>
@@ -595,8 +630,6 @@ instance
   getMappingsNamed = lift . getMappingsNamed
   getAllMappings = lift getAllMappings
 
-instance TagMappingRepository m => TagMappingRepository (VirtualArtistRepoT m)
-
 instance Repo.Repository TagMappingEntity m => Repo.Repository TagMappingEntity (VirtualArtistRepoT m) where
   getAll = lift Repo.getAll
   getByKey = lift . Repo.getByKey
@@ -607,29 +640,35 @@ instance Repo.Repository TagMappingEntity m => Repo.Repository TagMappingEntity 
   update' = lift . Repo.update'
 
 instance
-  ( ReleaseRepository m,
-    ReleaseArtistNameRepository m,
-    ReleaseAggregate m,
-    ArtistAggregate m,
-    ArtistNameRepository m,
-    ArtistRepository m,
-    TrackAggregate m,
-    TagMappingAggregate m,
-    Logging m,
-    MonadCatch m,
-    PrimMonad m,
-    MB.MusicBrainzService m
+  {-# OVERLAPS #-}
+  ( ReleaseAggregate m,
+    Logging m
   ) =>
   ReleaseAggregate (TransformPreviewT m)
   where
-  importReleases srcs = do
+  importReleases srcs = TransformPreviewT do
     $(logDebug) "Preview importReleases called"
-    importReleasesImpl srcs
+    importReleases srcs
   getRelease ref = TransformPreviewT do
     $(logDebug) "Preview getRelease called"
     Release.getRelease ref
 
 instance
+  {-# OVERLAPS #-}
+  ( ReleaseAggregate m,
+    Logging m
+  ) =>
+  ReleaseAggregate (VirtualArtistRepoT m)
+  where
+  importReleases srcs = VirtualArtistRepoT do
+    $(logDebug) "Preview importReleases called"
+    importReleases srcs
+  getRelease ref = VirtualArtistRepoT do
+    $(logDebug) "Preview getRelease called"
+    Release.getRelease ref
+
+instance
+  {-# OVERLAPS #-}
   ( Covers.CoverService m,
     Logging m
   ) =>
@@ -643,6 +682,7 @@ instance
     Covers.copyCoverToDir src dest
 
 instance
+  {-# OVERLAPS #-}
   ( Covers.CoverService m,
     Logging m
   ) =>
@@ -655,19 +695,83 @@ instance
     $(logDebug) "Preview copyCoverToDir VirtualArtistRepoT"
     Covers.copyCoverToDir src dest
 
-instance Logging m => FileSystemWatcher (TransformPreviewT m) where
+instance
+  {-# OVERLAPS #-}
+  Logging m => FileSystemWatcher (TransformPreviewT m) where
   startWatching _ _ = $(logDebug) "Preview startWarching TransformPreviewT"
   stopWatching _ = $(logDebug) "Preview stopWatching TransformPreviewT"
+
+instance
+  {-# OVERLAPS #-}
+  Logging m => FileSystemWatchLocks (TransformPreviewT m) where
   lockPathsDuring _ m = do
     $(logDebug) "Preview lockPathsDuring TransformPreviewT"
     m
 
-instance Logging m => FileSystemWatcher (VirtualArtistRepoT m) where
+instance
+  {-# OVERLAPS #-}
+  Logging m => FileSystemWatcher (VirtualArtistRepoT m) where
   startWatching _ _ = $(logDebug) "Preview startWarching VirtualArtistRepoT"
   stopWatching _ = $(logDebug) "Preview stopWatching VirtualArtistRepoT"
+
+instance
+  {-# OVERLAPS #-}
+  Logging m => FileSystemWatchLocks (VirtualArtistRepoT m) where
   lockPathsDuring _ m = do
     $(logDebug) "Preview lockPathsDuring VirtualArtistRepoT"
     m
+
+instance
+  {-# OVERLAPS #-}
+  AppDataReader m => AppDataReader (TransformPreviewT m) where
+  getAppData' = lift . getAppData'
+  putAppData = lift . putAppData
+  deleteAppData' = lift . deleteAppData'
+
+instance
+  {-# OVERLAPS #-}
+  AppDataReader m => AppDataReader (VirtualArtistRepoT m) where
+  getAppData' = lift . getAppData'
+  putAppData = lift . putAppData
+  deleteAppData' = lift . deleteAppData'
+
+instance
+  {-# OVERLAPS #-}
+  Repo.Repository CollectionEntity m => Repo.Repository CollectionEntity (TransformPreviewT m) where
+  getAll = lift Repo.getAll
+  getByKey = lift . Repo.getByKey
+  insert = lift . Repo.insert
+  insert' = lift . Repo.insert' @CollectionEntity
+  delete = lift . Repo.delete @CollectionEntity
+  update = lift . Repo.update
+  update' = lift . Repo.update'
+
+instance
+  {-# OVERLAPS #-}
+  Repo.Repository CollectionEntity m => Repo.Repository CollectionEntity (VirtualArtistRepoT m) where
+  getAll = lift Repo.getAll
+  getByKey = lift . Repo.getByKey
+  insert = lift . Repo.insert
+  insert' = lift . Repo.insert' @CollectionEntity
+  delete = lift . Repo.delete @CollectionEntity
+  update = lift . Repo.update
+  update' = lift . Repo.update'
+
+instance
+  {-# OVERLAPS #-}
+  CollectionRepository m => CollectionRepository (TransformPreviewT m) where
+  getByUri = lift . Collection.getByUri
+
+instance
+  {-# OVERLAPS #-}
+  CollectionRepository m => CollectionRepository (VirtualArtistRepoT m) where
+  getByUri = lift . Collection.getByUri
+
+instance (SourceAggregate m, Logging m) => SourceAggregate (VirtualArtistRepoT m) where
+  importSources = lift . importSources
+  updateSource s = do
+    $(logDebug) "Preview updateSource VirtualArtistRepoT"
+    pure $ Right s
 
 data TransformationError
   = MoveTransformError SourceFileManipError
@@ -701,7 +805,8 @@ moveSourceWithPattern ::
     CollectionRepository m,
     SourceRepository m,
     TagMappingAggregate m,
-    FileSystemWatcher m,
+    FileSystemWatchLocks m,
+--    Tracing m,
     Logging m
   ) =>
   Maybe CollectionRef ->
@@ -737,7 +842,7 @@ moveSourceWithPattern collectionRef pats src@Source {ref, source} =
               void $ removeEmptyDirectories (takeDirectory srcPath)
               let movedSrc = src & #source .~ fileUri destPath
               Repo.updateSingle @SourceEntity (from movedSrc) >>= \case
-                Just updatedSrc -> pure $ mapLeft ConversionError $ tryFrom updatedSrc
+                Just updatedSrc -> pure $ first ConversionError $ tryFrom updatedSrc
                 Nothing -> pure $ Left SourceUpdateError
         Nothing -> pure $ Left PatternError
     Nothing -> pure $ Left SourcePathError
@@ -803,13 +908,13 @@ renderSourcePattern src = \case
     appendJust _ _ = Nothing
 
 parseMovePattern :: Text -> Either (Maybe (ParseErrorBundle Text Void)) (NonEmpty SourcePathPattern)
-parseMovePattern s = nonEmptyRight =<< mapLeft Just (parse terms "" s)
+parseMovePattern s = nonEmptyRight =<< first Just (parse terms "" s)
   where
     nonEmptyRight :: [SourcePathPattern] -> Either (Maybe (ParseErrorBundle Text Void)) (NonEmpty SourcePathPattern)
     nonEmptyRight (p : ps) = Right $ p :| ps
     nonEmptyRight [] = Left Nothing
     terms = someTill term eof
-    term = try format <|> try group <|> try literal
+    term = MP.try format <|> MP.try group <|> MP.try literal
     format = do
       void (char '%')
       padZero <- isn't _Nothing <$> optional (char '0')
@@ -846,48 +951,45 @@ extractTrack ::
   m (Either TransformationError Source)
 extractTrack collectionRef' patterns s@Source {multiTrack = Just MultiTrackDesc {..}, metadata = Just metadata} =
   let collectionRef = fromMaybe s.collectionRef collectionRef'
-   in uriToFilePath s.source & \case
-        Just filePath ->
-          Repo.getSingle @CollectionEntity collectionRef >>= \case
-            Nothing -> pure $ Left (CollectionNotFound collectionRef)
-            Just CollectionTable {root_uri} -> case uriToFilePath =<< parseURI (T.unpack root_uri) of
-              Nothing -> pure $ Left UnsupportedSourceKind
-              Just basePath -> do
-                mappings <- V.fromList . Map.elems <$> getAllMappings
-                srcPath <- renderSourcePath basePath s patterns
-                let dest = addExtension srcPath (takeExtension filePath)
-                lockPathsDuring (dest :| []) $ runExceptT do
-                  mf <- openMetadataFile filePath >>= mapE MetadataTransformError
-                  let cuefile =
-                        CueFileSource
-                          { idx,
-                            range,
-                            filePath,
-                            metadata,
-                            audioInfo = mf.audioInfo,
-                            fileId = s.kind,
-                            cueFilePath = filePath,
-                            pictures = mf.pictures
-                          }
-                  raw <- extractTrackTo cuefile dest >>= mapE MultiTrackError
-                  $(logDebug) $ "Mappings: " <> showt mappings
-                  let vc =
-                        fromMaybe (F.metadataFactory @F.VorbisComments F.emptyTags) $
-                          F.convert' F.vorbisCommentsId metadata mappings
-                  $(logDebug) $ "Original metadata: " <> showt metadata
-                  $(logDebug) $ "Converted metadata: " <> showt vc
-                  let m = H.fromList [(F.vorbisCommentsId, vc)]
-                  let metadataFile = raw & #metadata .~ m
-                  mf <- writeMetadataFile metadataFile dest >>= mapE MetadataTransformError
-                  srcs <- importSources (V.singleton (FileSource collectionRef mf))
-                  case srcs V.!? 0 of
-                    Just s -> pure s
-                    Nothing -> throwE (ImportFailed (ImportSourceError Nothing))
-        Nothing -> pure $ Right s
+   in case uriToFilePath s.source of
+    Just filePath ->
+      Repo.getSingle @CollectionEntity collectionRef >>= \case
+        Nothing -> pure $ Left (CollectionNotFound collectionRef)
+        Just CollectionTable {root_uri} -> case uriToFilePath =<< parseURI (T.unpack root_uri) of
+          Nothing -> pure $ Left UnsupportedSourceKind
+          Just basePath -> do
+            mappings <- V.fromList . toListOf traverse <$> getAllMappings
+            srcPath <- renderSourcePath basePath s patterns
+            let dest = addExtension srcPath (takeExtension filePath)
+            lockPathsDuring (dest :| []) $ try do
+              mf <- openMetadataFile filePath >>= throwOnLeft . first MetadataTransformError
+              let cuefile =
+                    CueFileSource
+                      { idx,
+                        range,
+                        filePath,
+                        metadata,
+                        audioInfo = mf.audioInfo,
+                        fileId = s.kind,
+                        cueFilePath = filePath,
+                        pictures = mf.pictures
+                      }
+              raw <- extractTrackTo cuefile dest >>= throwOnLeft . first MultiTrackError
+              $(logDebug) $ "Mappings: " <> showt mappings
+              let vc =
+                    fromMaybe (F.metadataFactory @F.VorbisComments F.emptyTags) $
+                      F.convert' F.vorbisCommentsId metadata mappings
+              $(logDebug) $ "Original metadata: " <> showt metadata
+              $(logDebug) $ "Converted metadata: " <> showt vc
+              let m = HashMap.fromList [(F.vorbisCommentsId, vc)]
+              let metadataFile = raw & #metadata .~ m
+              mf <- writeMetadataFile metadataFile dest >>= throwOnLeft . first MetadataTransformError
+              srcs <- importSources (V.singleton (FileSource collectionRef mf))
+              case srcs ^? _head of
+                Just src -> pure src
+                Nothing -> throwM (ImportFailed (ImportSourceError Nothing))
+    Nothing -> pure $ Right s
 extractTrack _ _ src = pure $ Right src
-
-mapE :: Monad m => (b -> c) -> Either b a -> ExceptT c m a
-mapE e = except . mapLeft e
 
 data MetadataTransformation
   = SetMapping Text (Vector Text)
@@ -902,50 +1004,55 @@ data MetadataTransformation
 
 editMetadata :: MonadSourceTransform m => Vector MetadataTransformation -> Source -> m (Either TransformationError Source)
 editMetadata _ src@Source {metadata = Nothing} = pure $ Right src
-editMetadata ts src = runExceptT do
-  src' <- foldM (\src t -> ExceptT $ editMetadata' t src) src ts
+editMetadata ts src = {-withSpan "editMetadata" defaultSpanArguments $-} try do
+  src' <- foldM (\src t -> throwOnLeft =<< editMetadata' t src) src ts
   if src' /= src then
-    updateSource src' >>= mapE ImportFailed
+    updateSource src' >>= throwOnLeft . first ImportFailed
   else pure src'
   where
   editMetadata' _ src@Source {metadata = Nothing} = pure $ Right src
   editMetadata' (SetMapping mappingName vs) src@Source {metadata = Just metadata'} =
-    runExceptT @TransformationError do
-      mapping <- getMappingNamed mappingName >>= eitherToError . maybeToRight (UnknownTagMapping mappingName)
+    try do
+      mapping <- getMappingNamed mappingName >>= throwOnNothing (UnknownTagMapping mappingName)
       let metadata = into @SourceMetadata metadata'.tags
           current  = metadata' ^. F.tagLens mapping in
         $(logDebugV ['mapping, 'metadata, 'current]) $ "Setting tag to " <> showt vs
       let newMetadata = metadata' & F.tagLens mapping .~ vs
-      pure (src & #metadata .~ Just newMetadata)
+      pure (src & #metadata ?~ newMetadata)
   editMetadata' (RemoveMappings mappings) src = flatten <$> (forM mappings $ \mapping -> editMetadata' (SetMapping mapping V.empty) src)
     where
       flatten es = foldl' (\_a b -> b) (Left $ ImportFailed undefined) es
   editMetadata' (RetainMappings retained) src@Source {metadata = Just metadata} =
     let tag = F.mappedTag metadata.mappingSelector
-     in runExceptT @TransformationError do
+     in try do
           retainedMappings <- forM retained $ \mappingName -> do
             getMappingNamed mappingName
-              >>= eitherToError . maybeToRight (UnknownTagMapping mappingName)
+              >>= throwOnNothing (UnknownTagMapping mappingName)
           let newTags = foldl' (\ts mapping -> ts & tag mapping .~ (metadata.tag mapping)) F.emptyTags retainedMappings
           let newMetadata = metadata {F.tags = newTags}
-          pure (src & #metadata .~ Just newMetadata)
-  editMetadata' (AddTag k v) src@Source {metadata = Just metadata} = runExceptT @TransformationError do
+          pure (src & #metadata ?~ newMetadata)
+  editMetadata' (AddTag k v) src@Source {metadata = Just metadata} = try do
     let (F.Tags tags) = metadata.tags
     let newMetadata = metadata {F.tags = F.Tags (V.snoc tags (k, v))}
-    pure (src & #metadata .~ Just newMetadata)
-  editMetadata' (RemoveTag k v) src@Source {metadata = Just metadata} = runExceptT @TransformationError do
+    pure (src & #metadata ?~ newMetadata)
+  editMetadata' (RemoveTag k v) src@Source {metadata = Just metadata} = try do
     let (F.Tags tags) = metadata.tags
     let newMetadata = metadata {F.tags = F.Tags (V.filter (\(k', v') -> k' /= k && v' /= v) tags)}
-    pure (src & #metadata .~ Just newMetadata)
-  editMetadata' (RemoveTags k) src@Source {metadata = Just metadata} = runExceptT @TransformationError do
+    pure (src & #metadata ?~ newMetadata)
+  editMetadata' (RemoveTags k) src@Source {metadata = Just metadata} = try do
     let (F.Tags tags) = metadata.tags
     let newMetadata = metadata {F.tags = F.Tags (V.filter (\(k', _) -> k' /= k) tags)}
-    pure (src & #metadata .~ Just newMetadata)
-  editMetadata' RemoveAll src@Source {metadata = Just metadata} = runExceptT @TransformationError do
+    pure (src & #metadata ?~ newMetadata)
+  editMetadata' RemoveAll src@Source {metadata = Just metadata} = try do
     let newMetadata = metadata {F.tags = F.Tags V.empty}
-    pure (src & #metadata .~ Just newMetadata)
+    pure (src & #metadata ?~ newMetadata)
 
-musicBrainzLookup :: MonadSourceTransform m => Source -> m (Either TransformationError Source)
+musicBrainzLookup ::
+  ( MB.MusicBrainzService m,
+    Logging m,
+    SourceAggregate m
+  ) =>
+  Source -> m (Either TransformationError Source)
 musicBrainzLookup src@Source {metadata = Nothing} = do
   $(logDebug) $ "No Metadata; Cannot lookup MusicBrainz by metadata for source " <> showt src.ref
   pure $ Right src
@@ -976,7 +1083,7 @@ musicBrainzLookup src@Source {metadata = Just metadata} = (flip evalStateT) meta
     _ -> pure ()
   newMetadata <- get
   $(logDebug) $ "Updating source with musicbrainz metadata " <> showt newMetadata
-  mapLeft ImportFailed <$> updateSource (src & #metadata .~ Just newMetadata)
+  first ImportFailed <$> updateSource (src & #metadata .~ Just newMetadata)
 
 copyCoverImage :: MonadSourceTransform m => URI -> Source -> m (Either TransformationError Source)
 copyCoverImage imageUrl src =
@@ -988,7 +1095,7 @@ copyCoverImage imageUrl src =
 
 convertMetadataFormat :: MonadSourceTransform m => F.MetadataId -> Source -> m (Either TransformationError Source)
 convertMetadataFormat mid src = do
-  !mappings <- V.fromList . Map.elems <$> getAllMappings
+  !mappings <- V.fromList . toListOf traverse <$> getAllMappings
 
   case flip (F.convert' mid) mappings =<< src.metadata of
     Just metadata -> pure $ Right (src & #metadata ?~ metadata)

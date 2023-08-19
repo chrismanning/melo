@@ -1,14 +1,8 @@
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE UnboxedTuples #-}
 
 module Melo.Library.Artist.Name.Repo where
 
-import Control.Concurrent.Classy
-import Melo.Common.Exception
-import Control.Foldl (PrimMonad)
-import Control.Monad.Base
-import Control.Monad.Reader
-import Control.Monad.Trans.Control
+import Melo.Common.Monad
 import Melo.Database.Repo
 import Melo.Database.Repo.IO
 import Melo.Library.Artist.Name.Types
@@ -30,41 +24,22 @@ instance
   getArtistNames = lift . getArtistNames
   getAlias ref name = lift (getAlias ref name)
 
-newtype ArtistNameRepositoryIOT m a = ArtistNameRepositoryIOT
-  { runArtistNameRepositoryIOT :: RepositoryIOT ArtistNameTable m a
-  }
-  deriving newtype
-    ( Applicative,
-      Functor,
-      Monad,
-      MonadIO,
-      MonadBase b,
-      MonadBaseControl b,
-      MonadConc,
-      MonadCatch,
-      MonadMask,
-      MonadReader (RepositoryHandle ArtistNameTable),
-      MonadThrow,
-      MonadTrans,
-      MonadTransControl,
-      PrimMonad,
-      Repository (ArtistNameTable Result)
-    )
-
-instance MonadIO m => ArtistNameRepository (ArtistNameRepositoryIOT m) where
+instance ArtistNameRepository (AppM IO IO) where
   getArtistNames artistRef = do
-    RepositoryHandle {connSrc, tbl} <- ask
-    runSelect connSrc do
+    pool <- getConnectionPool
+    RepositoryHandle {tbl} <- getRepoHandle @ArtistNameTable
+    runSelect pool do
       artistName <- Rel8.each tbl
       Rel8.where_ $ artistName.artist_id ==. lit artistRef
       pure artistName
   getAlias artistRef name = do
-    RepositoryHandle {connSrc, tbl} <- ask
-    firstOf traverse <$> runSelect connSrc do
+    pool <- getConnectionPool
+    RepositoryHandle {tbl} <- getRepoHandle @ArtistNameTable
+    firstOf traverse <$> runSelect pool do
       artistName <- Rel8.each tbl
       Rel8.where_ $
-          artistName.artist_id ==. lit artistRef
-        &&. artistName.name ==. lit name
+        artistName.artist_id ==. lit artistRef
+          &&. artistName.name ==. lit name
       pure artistName
 
 artistNameSchema :: TableSchema (ArtistNameTable Name)
@@ -80,19 +55,17 @@ artistNameSchema =
           }
     }
 
-runArtistNameRepositoryIO :: DbConnection -> ArtistNameRepositoryIOT m a -> m a
-runArtistNameRepositoryIO connSrc =
-  flip
-    runReaderT
+initArtistNameRepo :: AppDataReader m => m ()
+initArtistNameRepo =
+  putAppData
     RepositoryHandle
-      { connSrc,
-        tbl = artistNameSchema,
+      { tbl = artistNameSchema,
         pk = (\t -> t.id),
-        upsert = Just Upsert {
-          index = \t -> (t.artist_id, t.name),
-          set = \_new old -> old,
-          updateWhere = \_new _old -> lit True
-        }
+        upsert =
+          Just
+            Upsert
+              { index = \t -> (t.artist_id, t.name),
+                set = \_new old -> old,
+                updateWhere = \_new _old -> lit True
+              }
       }
-    . runRepositoryIOT
-    . runArtistNameRepositoryIOT

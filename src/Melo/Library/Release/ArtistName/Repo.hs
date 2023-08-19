@@ -1,15 +1,10 @@
-{-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Library.Release.ArtistName.Repo where
 
-import Control.Concurrent.Classy
-import Melo.Common.Exception
-import Control.Foldl (PrimMonad)
-import Control.Monad.Base
-import Control.Monad.Reader
-import Control.Monad.Trans.Control
+import Control.Monad.State.Strict
 import Data.Vector qualified as V
+import Melo.Common.Monad
 import Melo.Database.Repo.IO
 import Melo.Library.Release.ArtistName.Types
 import Melo.Library.Release.Types (ReleaseRef (..))
@@ -41,35 +36,15 @@ instance
   insert' = lift . insert'
   insert = lift . insert
 
-newtype ReleaseArtistNameRepositoryIOT m a = ReleaseArtistNameRepositoryIOT
-  { runReleaseArtistNameRepositoryIOT :: ReaderT DbConnection m a
-  }
-  deriving newtype
-    ( Functor,
-      Applicative,
-      Monad,
-      MonadIO,
-      MonadBase b,
-      MonadBaseControl b,
-      MonadConc,
-      MonadCatch,
-      MonadMask,
-      MonadReader DbConnection,
-      MonadThrow,
-      MonadTrans,
-      MonadTransControl,
-      PrimMonad
-    )
-
-instance MonadIO m => ReleaseArtistNameRepository (ReleaseArtistNameRepositoryIOT m) where
+instance ReleaseArtistNameRepository (AppM IO IO) where
   getReleaseArtistNames releaseRef = do
-    connSrc <- ask
-    runSelect connSrc (artistNameForReleaseRef $ lit releaseRef)
+    pool <- getConnectionPool
+    runSelect pool (artistNameForReleaseRef $ lit releaseRef)
   insert' releaseArtistNames | V.null releaseArtistNames = pure 0
   insert' releaseArtistNames = do
-    connSrc <- ask
+    pool <- getConnectionPool
     runInsert
-      connSrc
+      pool
       Rel8.Insert
         { into = releaseArtistNameSchema,
           rows = Rel8.values (from <$> releaseArtistNames),
@@ -78,10 +53,10 @@ instance MonadIO m => ReleaseArtistNameRepository (ReleaseArtistNameRepositoryIO
         }
   insert releaseArtistNames | V.null releaseArtistNames = pure V.empty
   insert releaseArtistNames = do
-    connSrc <- ask
+    pool <- getConnectionPool
     V.fromList
       <$> runInsert
-        connSrc
+        pool
         Rel8.Insert
           { into = releaseArtistNameSchema,
             rows = Rel8.values (from <$> releaseArtistNames),
@@ -109,10 +84,3 @@ releaseArtistNameSchema =
             artist_name_id = "artist_name_id"
           }
     }
-
-runReleaseArtistNameRepositoryIO :: DbConnection -> ReleaseArtistNameRepositoryIOT m a -> m a
-runReleaseArtistNameRepositoryIO conn =
-  flip
-    runReaderT
-    conn
-    . runReleaseArtistNameRepositoryIOT

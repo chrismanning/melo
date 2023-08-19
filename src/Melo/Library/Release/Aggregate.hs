@@ -1,10 +1,8 @@
-{-# LANGUAGE UnboxedTuples #-}
-{-# LANGUAGE UndecidableInstances #-}
-
 module Melo.Library.Release.Aggregate where
 
 import Control.Applicative
 import Control.Foldl (impurely, vectorM)
+import Control.Monad.State.Strict
 import Data.Vector ((!))
 import Data.Vector qualified as V
 import Melo.Common.Exception
@@ -32,50 +30,11 @@ class Monad m => ReleaseAggregate m where
   importReleases :: Vector Source -> m (Vector Release)
   getRelease :: ReleaseRef -> m (Maybe Release)
 
-instance
-  {-# OVERLAPPABLE #-}
-  ( Monad (t m),
-    MonadTrans t,
-    ReleaseAggregate m
-  ) =>
-  ReleaseAggregate (t m)
-  where
+instance ReleaseAggregate m => ReleaseAggregate (StateT s m) where
   importReleases = lift . importReleases
   getRelease = lift . getRelease
 
-newtype ReleaseAggregateIOT m a = ReleaseAggregateIOT
-  { runReleaseAggregateIOT :: m a
-  }
-  deriving newtype
-    ( Functor,
-      Applicative,
-      Monad,
-      MonadIO,
-      MonadBase b,
-      MonadBaseControl b,
-      MonadConc,
-      MonadCatch,
-      MonadMask,
-      MonadThrow,
-      PrimMonad
-    )
-  deriving (MonadTrans, MonadTransControl) via IdentityT
-
-instance
-  ( ReleaseRepository m,
-    ReleaseArtistNameRepository m,
-    ArtistAggregate m,
-    ArtistNameRepository m,
-    ArtistRepository m,
-    TrackAggregate m,
-    TagMappingAggregate m,
-    Logging m,
-    MonadCatch m,
-    PrimMonad m,
-    MB.MusicBrainzService m
-  ) =>
-  ReleaseAggregate (ReleaseAggregateIOT m)
-  where
+instance ReleaseAggregate (AppM IO IO) where
   importReleases = importReleasesImpl
   getRelease ref =
     Repo.getSingle @ReleaseEntity ref >>= \case
@@ -111,11 +70,11 @@ importReleasesImpl srcs =
     & handleException
   where
     handleException =
-      let sources = srcs <&> (showt . (.ref))
-       in handleAny \e -> do
-            let cause = displayException e
-            $(logErrorV ['sources, 'cause]) "failed to import releases from sources"
-            pure mempty
+      handleAny \e -> do
+        let cause = displayException e
+        let sources = srcs <&> (showt . (.ref))
+        $(logErrorV ['sources, 'cause]) "failed to import releases from sources"
+        pure mempty
     mbLookup :: Source -> m (Source, (Maybe MB.ReleaseGroup, Maybe MB.Release))
     mbLookup src = case src.metadata of
       Nothing -> pure (src, (Nothing, Nothing))
@@ -127,6 +86,7 @@ importReleasesImpl srcs =
             (Nothing, Nothing) -> importReleasesFromMetadata srcs
             (mbReleaseGroup, mbRelease) -> importMusicBrainzRelease mbReleaseGroup mbRelease srcs
         )
+    importMusicBrainzRelease :: Maybe MB.ReleaseGroup -> Maybe MB.Release -> Vector Source -> S.Stream (S.Of Release) m ()
     importMusicBrainzRelease mbReleaseGroup mbRelease srcs = case fromMusicBrainz mbReleaseGroup mbRelease of
       Nothing -> pure ()
       Just newRelease -> handleAny
@@ -138,24 +98,25 @@ importReleasesImpl srcs =
         )
         do
           $(logDebug) $ "Importing musicbrainz release for sources: " <> showt (srcs <&> (.ref))
-          release <-
+          release <- lift $
             fmap join (traverse Release.getByMusicBrainzId (mbRelease ^? _Just . #id))
               <<|>> fmap join (traverse Release.getByMusicBrainzId (mbReleaseGroup ^? _Just . #id))
               <<|>> insertSingle @ReleaseEntity newRelease
           let artistCredits = mbRelease ^? _Just . #artistCredit . _Just <|> mbReleaseGroup ^? _Just . #artistCredit . _Just
           $(logDebug) $ "Artist credits for release " <> showt newRelease.title <> ": " <> showt artistCredits
-          artistNames <- case artistCredits of
+          artistNames <- lift case artistCredits of
             Just as -> V.mapMaybeM importArtistCredit as
             _ -> pure V.empty
           case release of
             Just release -> do
               $(logInfo) $ "Found release " <> showt release.title <> " (id: " <> showt release.id <> ")"
               let mk a = ReleaseArtistNameTable {release_id = release.id, artist_name_id = a.id}
-              _ <- ReleaseArtist.insert' (mk <$> artistNames)
+              _ <- lift $ ReleaseArtist.insert' (mk <$> artistNames)
               let release' = mkRelease (V.toList artistNames) release
-              _tracks <- importReleaseTracks srcs release'
+              _tracks <- lift $ importReleaseTracks srcs release'
               S.yield release'
             Nothing -> pure ()
+    importReleasesFromMetadata :: Vector Source -> S.Stream (S.Of Release) m ()
     importReleasesFromMetadata srcs = handleAny
       ( \e -> do
           let cause = displayException e

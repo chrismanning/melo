@@ -235,3 +235,4 @@ logErrorShowIO = logShowIO K.ErrorS
 
 logEnv :: IORef LogEnv
 logEnv = unsafePerformIO $ newIORef =<< initLogEnv "melo" "local"
+{-# NOINLINE logEnv #-}

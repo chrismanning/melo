@@ -4,7 +4,6 @@
 module Melo.Library.Artist.Aggregate where
 
 import Control.Applicative
-import Control.Monad.State.Strict
 import Data.Vector qualified as V
 import Melo.Common.Exception
 import Melo.Common.Logging
@@ -31,33 +30,7 @@ instance
   importArtistCredit = lift . importArtistCredit
   importMusicBrainzArtist = lift . importMusicBrainzArtist
 
-newtype ArtistAggregateIOT m a = ArtistAggregateIOT
-  { runArtistAggregateIOT :: m a
-  }
-  deriving newtype
-    ( Functor,
-      Applicative,
-      Monad,
-      MonadIO,
-      MonadBase b,
-      MonadBaseControl b,
-      MonadConc,
-      MonadCatch,
-      MonadMask,
-      MonadThrow,
-      PrimMonad
-    )
-  deriving (MonadTrans, MonadTransControl) via IdentityT
-
-instance
-  ( MB.MusicBrainzService m,
-    ArtistRepository m,
-    ArtistNameRepository m,
-    MonadCatch m,
-    Logging m
-  ) =>
-  ArtistAggregate (ArtistAggregateIOT m)
-  where
+instance ArtistAggregate (AppM IO IO) where
   importArtistCredit artistCredit = handleAny
     ( \e -> do
         let cause = displayException e
@@ -96,14 +69,14 @@ instance
       getAliases (Just aliases) = Just $ fmap (.name) $ V.filter (\a -> a.type' == Just "Artist Name") aliases
       getAliases _ = Nothing
 
-getArtistNamed ::
-  ( MB.MusicBrainzService m,
-    ArtistRepository m,
-    ArtistNameRepository m,
-    Logging m
-  ) =>
-  ArtistNameRef ->
-  m (Maybe Artist)
-getArtistNamed ref = do
-  -- TODO getArtistNamed
-  undefined
+--getArtistNamed ::
+--  ( MB.MusicBrainzService m,
+--    ArtistRepository m,
+--    ArtistNameRepository m,
+--    Logging m
+--  ) =>
+--  ArtistNameRef ->
+--  m (Maybe Artist)
+--getArtistNamed ref = do
+--  -- TODO getArtistNamed
+--  undefined

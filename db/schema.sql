@@ -93,7 +93,8 @@ CREATE TABLE melo.collection (
     root_uri text NOT NULL,
     name text NOT NULL,
     watch boolean NOT NULL,
-    kind text NOT NULL
+    kind text NOT NULL,
+    rescan boolean DEFAULT true
 );
 
 
@@ -716,4 +717,5 @@ INSERT INTO melo.schema_migrations (version) VALUES
     ('20221209154929'),
     ('20221211232034'),
     ('20230219160659'),
-    ('20230422225419');
+    ('20230422225419'),
+    ('20230708170753');

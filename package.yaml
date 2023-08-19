@@ -24,6 +24,7 @@ library:
   - abstract-par
   - aeson
   - aeson-casing
+  - ansi-terminal
   - async
   - attoparsec
   - authenticate-oauth
@@ -46,12 +47,14 @@ library:
   - country
   - cue-sheet
   - data-default
+  - deepseq
   - dependent-map
   - dependent-sum
   - deriving-trans
   - directory
   - directory-tree
   - dns
+  - edit-distance
   - either
   - exceptions
   - extra
@@ -66,6 +69,13 @@ library:
   - hasql-streams-streaming
   - hasql-transaction
   - hasql-transaction-io
+  - hs-opentelemetry-api
+  - hs-opentelemetry-exporter-otlp
+  - hs-opentelemetry-instrumentation-conduit
+  - hs-opentelemetry-instrumentation-http-client
+  - hs-opentelemetry-instrumentation-wai
+  - hs-opentelemetry-sdk
+  - hs-opentelemetry-utils-exceptions
   - hsndfile
   - http-client
   - http-client-tls
@@ -74,6 +84,7 @@ library:
   - imagesize-conduit
   - iproute
   - katip
+  - katip-wai
   - lens
   - lifted-base
   - megaparsec
@@ -97,6 +108,7 @@ library:
   - network-uri-json
   - newtype-generics
   - opaleye
+  - opentelemetry
   - path
   - path-io
   - postgresql-binary
@@ -129,6 +141,7 @@ library:
   - transformers
   - transformers-base
   - ttrie
+  - typerep-map
   - unliftio
   - unordered-containers
   - utf8-string
@@ -165,6 +178,27 @@ executables:
     - -debug
     dependencies:
       - melo
+  melo-stream-sources:
+    source-dirs: app/stream-sources
+    main: Main.hs
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+      - -debug
+    dependencies:
+      - melo
+      - bytestring
+      - hasql
+      - http-client
+      - http-client-tls
+      - raw-strings-qq
+      - resource-pool
+      - text-show
+      - uuid
+      - vector
+      - wai
+      - witch
 
 tests:
   melo-test:
@@ -207,14 +241,14 @@ tests:
     - uuid
     - vector
     - witch
-    - wreq
 
 ghc-options:
 - -O0
 - -debug
 - -Wall
 - -Wcompat
-- -fno-warn-name-shadowing
+- -Wno-name-shadowing
+- -Wno-missing-home-modules
 - -Wincomplete-record-updates
 - -Wincomplete-uni-patterns
 - -Wredundant-constraints

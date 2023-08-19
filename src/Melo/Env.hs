@@ -11,9 +11,11 @@ module Melo.Env
     DatabaseConnectionPool (..),
     LoggingConfig (..),
     LokiConfig (..),
+    ConsoleConfig (..),
   )
 where
 
+import Control.Monad.IO.Class
 import Data.ByteString.Char8 qualified as C8
 import Data.Either.Combinators
 import Data.Time.Clock
@@ -22,13 +24,13 @@ import GHC.Exts
 import GHC.Generics
 import GHC.TypeLits
 import System.Environment (lookupEnv)
-import System.Exit
+import Melo.Common.Exit
 import Text.Casing
 import Text.Read
 import Prelude hiding (Text)
 
-initEnv :: IO Env
-initEnv = getEnv @Env
+initEnv :: MonadIO m => m Env
+initEnv = liftIO $ getEnv @Env
 
 data Env = Env
   { server :: Server,
@@ -65,7 +67,8 @@ data DatabaseConnectionPool = DatabaseConnectionPool
   deriving TextShow via FromGeneric DatabaseConnectionPool
 
 data LoggingConfig = Logging
-  { loki :: LokiConfig
+  { loki :: LokiConfig,
+    console :: ConsoleConfig
   }
   deriving (Show, Generic)
   deriving TextShow via FromGeneric LoggingConfig
@@ -76,6 +79,12 @@ data LokiConfig = LokiConfig
   }
   deriving (Show, Generic)
   deriving TextShow via FromGeneric LokiConfig
+
+data ConsoleConfig = ConsoleConfig
+  { level :: EnvVar String "info"
+  }
+  deriving (Show, Generic)
+  deriving TextShow via FromGeneric ConsoleConfig
 
 class GetEnv a where
   getEnv :: IO a

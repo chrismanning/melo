@@ -2,44 +2,24 @@
 
 module Melo.Library.Genre.Repo where
 
-import Control.Concurrent.Classy
-import Melo.Common.Exception
-import Control.Monad.Base
-import Control.Monad.Reader
-import Control.Monad.Trans.Control
-import Melo.Database.Repo
-import Melo.Database.Repo.IO
-import Melo.Library.Artist.Types
-import Melo.Library.Genre.Types
-import Melo.Library.Release.Types
-import Melo.Library.Track.Types
-import Rel8
-
-class Repository (GenreTable Result) m => GenreRepository m where
-  getByName :: [Text] -> m [Genre]
-  getArtists :: [GenreRef] -> m [(GenreRef, Artist)]
-  getReleases :: [GenreRef] -> m [(GenreRef, Release)]
-  getTracks :: [GenreRef] -> m [(GenreRef, Track)]
-
-newtype GenreRepositoryIOT m a = GenreRepositoryIOT
-  { runGenreRepositoryIOT :: RepositoryIOT GenreTable m a
-  }
-  deriving newtype
-    ( Functor,
-      Applicative,
-      Monad,
-      MonadIO,
-      MonadBase b,
-      MonadBaseControl b,
-      MonadConc,
-      MonadCatch,
-      MonadMask,
-      MonadReader (RepositoryHandle GenreTable),
-      MonadThrow,
-      MonadTrans,
-      MonadTransControl,
-      Repository (GenreTable Result)
-    )
+--import Control.Concurrent.Classy
+--import Melo.Common.Exception
+--import Control.Monad.Base
+--import Control.Monad.Reader
+--import Control.Monad.Trans.Control
+--import Melo.Database.Repo
+--import Melo.Database.Repo.IO
+--import Melo.Library.Artist.Types
+--import Melo.Library.Genre.Types
+--import Melo.Library.Release.Types
+--import Melo.Library.Track.Types
+--import Rel8
+--
+--class Repository (GenreTable Result) m => GenreRepository m where
+--  getByName :: [Text] -> m [Genre]
+--  getArtists :: [GenreRef] -> m [(GenreRef, Artist)]
+--  getReleases :: [GenreRef] -> m [(GenreRef, Release)]
+--  getTracks :: [GenreRef] -> m [(GenreRef, Track)]
 
 --instance
 --  (MonadIO m) =>

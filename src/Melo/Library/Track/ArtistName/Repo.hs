@@ -1,15 +1,9 @@
-{-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Library.Track.ArtistName.Repo where
 
-import Control.Concurrent.Classy
-import Melo.Common.Exception
-import Control.Foldl (PrimMonad)
-import Control.Monad.Base
-import Control.Monad.Reader
-import Control.Monad.Trans.Control
 import Data.Vector qualified as V
+import Melo.Common.Monad
 import Melo.Database.Repo.IO
 import Melo.Library.Artist.Name.Repo (artistNameSchema)
 import Melo.Library.Artist.Name.Types
@@ -20,6 +14,7 @@ import Melo.Library.Track.ArtistName.Types
 import Melo.Library.Track.Types
 import Rel8 (lit, (&&.), (==.))
 import Rel8 qualified
+import Streaming qualified as S
 
 class Monad m => TrackArtistNameRepository m where
   getTrackArtistNames :: TrackRef -> m (Vector ArtistNameEntity)
@@ -41,30 +36,10 @@ instance
   insert' = lift . insert'
   insert = lift . insert
 
-newtype TrackArtistNameRepositoryIOT m a = TrackArtistNameRepositoryIOT
-  { runTrackArtistNameRepositoryIOT :: ReaderT DbConnection m a
-  }
-  deriving newtype
-    ( Functor,
-      Applicative,
-      Monad,
-      MonadIO,
-      MonadBase b,
-      MonadBaseControl b,
-      MonadConc,
-      MonadCatch,
-      MonadMask,
-      MonadReader DbConnection,
-      MonadThrow,
-      MonadTrans,
-      MonadTransControl,
-      PrimMonad
-    )
-
-instance MonadIO m => TrackArtistNameRepository (TrackArtistNameRepositoryIOT m) where
+instance TrackArtistNameRepository (AppM IO IO) where
   getTrackArtistNames trackRef = do
-    connSrc <- ask
-    runSelect connSrc do
+    pool <- getConnectionPool
+    runSelect pool do
       trackArtistName <- Rel8.each trackArtistNameSchema
       artistName <- Rel8.each artistNameSchema
       Rel8.where_ $
@@ -73,9 +48,9 @@ instance MonadIO m => TrackArtistNameRepository (TrackArtistNameRepositoryIOT m)
       pure artistName
   insert' trackArtistNames | V.null trackArtistNames = pure 0
   insert' trackArtistNames = do
-    connSrc <- ask
+    pool <- getConnectionPool
     runInsert
-      connSrc
+      pool
       Rel8.Insert
         { into = trackArtistNameSchema,
           rows = Rel8.values (from <$> trackArtistNames),
@@ -84,16 +59,27 @@ instance MonadIO m => TrackArtistNameRepository (TrackArtistNameRepositoryIOT m)
         }
   insert trackArtistNames | V.null trackArtistNames = pure V.empty
   insert trackArtistNames = do
-    connSrc <- ask
+    pool <- getConnectionPool
     V.fromList
       <$> runInsert
-        connSrc
+        pool
         Rel8.Insert
           { into = trackArtistNameSchema,
             rows = Rel8.values (from <$> trackArtistNames),
             onConflict = Rel8.DoNothing,
             returning = Rel8.Projection (\x -> x)
           }
+
+instance
+  {-# OVERLAPPING #-}
+  ( TrackArtistNameRepository m,
+    Functor f
+  )=>
+  TrackArtistNameRepository (S.Stream f m)
+  where
+  getTrackArtistNames = lift . getTrackArtistNames
+  insert' = lift . insert'
+  insert = lift . insert
 
 trackArtistNameSchema :: Rel8.TableSchema (TrackArtistNameTable Rel8.Name)
 trackArtistNameSchema =
@@ -106,10 +92,3 @@ trackArtistNameSchema =
             artist_name_id = "artist_name_id"
           }
     }
-
-runTrackArtistNameRepositoryIO :: DbConnection -> TrackArtistNameRepositoryIOT m a -> m a
-runTrackArtistNameRepositoryIO conn =
-  flip
-    runReaderT
-    conn
-    . runTrackArtistNameRepositoryIOT

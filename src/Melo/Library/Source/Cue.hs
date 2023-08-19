@@ -11,8 +11,7 @@ import Data.Range
 import Data.Time
 import Data.Vector qualified as V
 import GHC.Natural (naturalToInteger)
-import Melo.Common.Config
-import Melo.Common.FileSystem.Watcher
+import Melo.Common.Tracing
 import Melo.Metadata.Aggregate
 import Melo.Format.Info
 import Melo.Format.Mapping qualified as Mapping
@@ -32,12 +31,12 @@ cueId = MetadataId "CUE"
 openCueFile ::
   ( MonadIO m,
     MonadThrow m,
-    ConfigService m,
-    FileSystemWatcher m
+    MetadataAggregate m,
+    Tracing m
   ) =>
   FilePath ->
   m (Vector CueFileSource)
-openCueFile cueFilePath = do
+openCueFile cueFilePath = withSpan "openCueFile" defaultSpanArguments do
   fileContents <- liftIO $ B.readFile cueFilePath
   case parseCueSheet (takeBaseName cueFilePath) fileContents of
     Left e -> throwIO e
@@ -47,7 +46,7 @@ openCueFile cueFilePath = do
       let cueTracks' = zip trackNums (NE.toList cueTracks)
       let cueTracks'' = filter (\(_, (_, CueTrack {..})) -> cueTrackType == CueTrackAudio) cueTracks'
       processedTracks <- forM cueTracks'' $ \(trackNum, (filePath, CueTrack {..})) ->
-        runMetadataAggregateIO (openMetadataFile (takeDirectory cueFilePath </> filePath)) >>= \case
+        openMetadataFile (takeDirectory cueFilePath </> filePath) >>= \case
           Left e -> throwIO e
           Right mf -> do
             let rem = M.fromList $ bimap unCueText unCueText <$> cueRem

@@ -4,6 +4,7 @@
 module Prelude
   ( module Prelude,
     module Control.Lens,
+    module Data.Bifunctor,
     module Data.Foldable,
     module TextShow.Generic,
     module Witherable,
@@ -31,6 +32,7 @@ import Data.Aeson.Types
   ( prependFailure,
     typeMismatch,
   )
+import Data.Bifunctor
 import Data.Foldable
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NE

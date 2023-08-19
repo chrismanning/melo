@@ -4,12 +4,13 @@
 
 module Melo.Database.Repo where
 
-import Melo.Common.Exception (Exception)
 import Control.Monad
-import Control.Monad.Trans
+import Control.Monad.State.Strict
 import Data.ByteString (ByteString)
 import Data.Kind
+import Data.Typeable
 import Data.Vector.Lens ()
+import Melo.Common.Exception (Exception)
 
 class Entity e where
   type NewEntity e :: Type
@@ -57,6 +58,8 @@ instance
   update' = lift . update'
 
 data DatabaseError = ConnectionError (Maybe ByteString)
+  | DatabaseNotConfigured
+  | EntityNotConfigured TypeRep
   | OtherDatabaseError
   deriving (Show, Exception)
   deriving TextShow via FromStringShow DatabaseError

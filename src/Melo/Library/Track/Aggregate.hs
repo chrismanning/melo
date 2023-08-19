@@ -1,4 +1,3 @@
-{-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Library.Track.Aggregate where
@@ -9,7 +8,6 @@ import Data.Int (Int16)
 import Data.Text qualified as T
 import Data.Vector qualified as V
 import GHC.Generics hiding (from)
-import Melo.Common.Exception
 import Melo.Common.Logging
 import Melo.Common.Monad
 import Melo.Common.Uri
@@ -22,7 +20,6 @@ import Melo.Library.Artist.Repo as Artist
 import Melo.Library.Artist.Types
 import Melo.Library.Release.Types
 import Melo.Library.Source.Types
-import Melo.Library.Track.ArtistName.Repo (TrackArtistNameRepository)
 import Melo.Library.Track.ArtistName.Repo qualified as TrackArtist
 import Melo.Library.Track.ArtistName.Types
 import Melo.Library.Track.Repo as Track
@@ -44,48 +41,19 @@ instance
   where
   importReleaseTracks ss a = lift (importReleaseTracks ss a)
 
-newtype TrackAggregateIOT m a = TrackAggregateIOT
-  { runTrackAggregateIOT :: m a
-  }
-  deriving newtype
-    ( Functor,
-      Applicative,
-      Monad,
-      MonadIO,
-      MonadBase b,
-      MonadBaseControl b,
-      MonadConc,
-      MonadCatch,
-      MonadMask,
-      MonadThrow,
-      PrimMonad
-    )
-  deriving (MonadTrans, MonadTransControl) via IdentityT
-
-instance
-  ( TrackRepository m,
-    TrackArtistNameRepository m,
-    MB.MusicBrainzService m,
-    ArtistAggregate m,
-    ArtistRepository m,
-    TagMappingAggregate m,
-    Logging m
-  ) =>
-  TrackAggregate (TrackAggregateIOT m)
-  where
+instance TrackAggregate (AppM IO IO) where
   importReleaseTracks srcs release =
-    lift $
-      S.zip (S.each srcs) (S.each srcs & S.mapM importSourceTrack)
-        & S.mapMaybe (\(src, track) -> (src,) <$> track)
-        & S.mapM_ (\(src, track) -> linkTrackArtists src track)
+    S.zip (S.each srcs) (S.each srcs & S.mapM importSourceTrack)
+      & S.mapMaybe (\(src, track) -> (src,) <$> track)
+      & S.mapM_ (\(src, track) -> linkTrackArtists src track)
     where
-      importSourceTrack :: Source -> m (Maybe TrackEntity)
+      importSourceTrack :: Source -> AppM IO IO (Maybe TrackEntity)
       importSourceTrack src = do
         $(logDebug) $ "Importing track from source " <> showt src.ref
         Track.getBySrcRef src.ref >>= \case
           Just track -> updateSingle (track {release_id = release.ref})
           Nothing -> insertSingle (mkNewTrack release.ref Nothing src)
-      linkTrackArtists :: Source -> TrackEntity -> m ()
+      linkTrackArtists :: Source -> TrackEntity -> AppM IO IO ()
       linkTrackArtists src track = do
         releaseArtists <- resolveMappingNamed "release_artist" src
         trackArtists <- resolveMappingNamed "track_artist" src
@@ -100,6 +68,7 @@ instance
             unlessM (importArtistsByRecording src track) do
               let mbArtistIds = MB.MusicBrainzId <$> fromMaybe V.empty (src.metadata ^? _Just . tagLens MB.artistIdTag)
               importArtistsByMetadata src track trackArtists mbArtistIds
+      importArtistsByMetadata :: Source -> TrackEntity -> Vector Text -> Vector MB.MusicBrainzId -> AppM IO IO ()
       importArtistsByMetadata src _track trackArtists mbArtistIds
         | V.length mbArtistIds /= V.length trackArtists =
             $(logWarn) $ "Invalid track artist MusicBrainz info found for source " <> showt src
@@ -118,6 +87,7 @@ instance
                 Nothing -> $(logWarn) "No artist imported"
             Nothing ->
               $(logWarn) $ "No MusicBrainz artist found with MBID " <> showt mbid.mbid
+      importArtistsByRecording :: Source -> TrackEntity -> AppM IO IO Bool
       importArtistsByRecording src track =
         join <$> traverse MB.getRecordingFromMetadata src.metadata >>= \case
           Just mbRecording ->

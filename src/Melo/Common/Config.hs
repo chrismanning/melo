@@ -6,6 +6,8 @@ module Melo.Common.Config where
 
 import Data.Aeson qualified as A
 import Data.Default
+import Data.HashMap.Strict (HashMap)
+import Data.HashMap.Strict qualified as HashMap
 import Data.Hashable
 import Data.Text qualified as T
 import GHC.Generics
@@ -24,6 +26,8 @@ data ConfigTable f = ConfigTable
 
 type ConfigEntity = ConfigTable Result
 
+deriving via FromGeneric ConfigEntity instance TextShow ConfigEntity
+
 instance Entity ConfigEntity where
   type NewEntity ConfigEntity = ConfigEntity
   type PrimaryKey ConfigEntity = Text
@@ -41,11 +45,12 @@ newtype ConfigKey v = ConfigKey
   }
   deriving (Show, Eq, Ord, Generic)
   deriving newtype (Hashable, A.ToJSON)
-  deriving TextShow via FromGeneric (ConfigKey v)
+  deriving (TextShow) via FromGeneric (ConfigKey v)
 
 type ConfigValue = A.Value
 
 class Monad m => ConfigService m where
+-- TODO invalidateCache :: m ()
   getConfig :: A.FromJSON v => ConfigKey v -> m (Maybe v)
   setConfig :: A.ToJSON v => ConfigKey v -> v -> m ()
   updateConfig :: A.ToJSON v => ConfigKey v -> v -> m ()
@@ -56,59 +61,46 @@ getConfigDefault k = fromMaybe def <$> getConfig k
 getConfig' :: (A.FromJSON v, ConfigService m) => ConfigKey v -> v -> m v
 getConfig' k d = fromMaybe d <$> getConfig k
 
-instance
-  {-# OVERLAPPABLE #-}
-  ( Monad (t m),
-    MonadTrans t,
-    ConfigService m
-  ) =>
-  ConfigService (t m) where
-  getConfig = lift . getConfig
-  setConfig k v = lift $ setConfig k v
-  updateConfig k v = lift $ updateConfig k v
+type ConfigRepository = Repo.Repository ConfigEntity
 
-newtype ConfigRepositoryIOT m a = ConfigRepositoryIOT
-  { runConfigRepositoryIOT :: RepositoryIOT ConfigTable m a
-  }
-  deriving newtype
-    ( Applicative,
-      Functor,
-      Monad,
-      MonadIO,
-      MonadBase b,
-      MonadBaseControl b,
-      MonadConc,
-      MonadCatch,
-      MonadMask,
-      MonadReader (RepositoryHandle ConfigTable),
-      MonadThrow,
-      MonadTrans,
-      MonadTransControl,
-      Repository ConfigEntity,
-      PrimMonad
-    )
+newtype ConfigCache = ConfigCache {configs :: HashMap Text ConfigEntity}
+  deriving (Generic, Typeable)
+  deriving newtype (TextShow)
+
+getConfigCache :: (AppDataReader m, ConfigRepository m) => m ConfigCache
+getConfigCache = getAppData @ConfigCache >>= \case
+  Just config -> pure config
+  Nothing -> do
+    all <- toList <$> getAll @ConfigEntity
+    let !config = ConfigCache $ HashMap.fromList $ fmap (\c -> (c.key, c)) all
+    putAppData config
+    pure config
 
 instance
   ( Logging m,
-    MonadIO m,
+    Monad m,
+    AppDataReader m,
+    ConfigRepository m,
     MonadCatch m
   ) =>
-  ConfigService (ConfigRepositoryIOT m)
+  ConfigService m
   where
   getConfig configKey@ConfigKey {key} =
-    Repo.getSingle @ConfigEntity key >>= \case
+    getConfigCache <&> HashMap.lookup key . (.configs) >>= \case
       Nothing -> pure Nothing
       Just e -> case A.fromJSON e.value.fromJSONBEncoded of
         A.Success v -> pure $ Just v
         A.Error error -> do
           $(logErrorV ['configKey]) $ "Unable to parse config value: " <> T.pack error
           pure Nothing
-  setConfig ConfigKey {key} v = let e = ConfigTable {key, value = JSONBEncoded (A.toJSON v)} in
-    handleAny (const (pure ())) $ Repo.insertSingle' @ConfigEntity e
-  updateConfig configKey@ConfigKey {key} v = let e = ConfigTable {key, value = JSONBEncoded (A.toJSON v)} in
-    catchAny (Repo.updateSingle' @ConfigEntity e) \_error -> do
-      $(logWarnV ['configKey]) $ "Could not update config value; creating new value"
-      Repo.insertSingle' @ConfigEntity e
+  setConfig ConfigKey {key} v =
+    let e = ConfigTable {key, value = JSONBEncoded (A.toJSON v)}
+     in handleAny (const (pure ())) (Repo.insertSingle' @ConfigEntity e >> deleteAppData @ConfigCache)
+  updateConfig configKey@ConfigKey {key} v =
+    let e = ConfigTable {key, value = JSONBEncoded (A.toJSON v)}
+     in catchAny (Repo.updateSingle' @ConfigEntity e >> deleteAppData @ConfigCache) \_error -> do
+          $(logWarnV ['configKey]) "Could not update config value; creating new value"
+          Repo.insertSingle' @ConfigEntity e
 
 configSchema :: TableSchema (ConfigTable Name)
 configSchema =
@@ -122,15 +114,10 @@ configSchema =
           }
     }
 
-runConfigRepositoryIO :: DbConnection -> ConfigRepositoryIOT m a -> m a
-runConfigRepositoryIO connSrc =
-  flip
-    runReaderT
-    RepositoryHandle
-      { connSrc,
-        tbl = configSchema,
-        pk = (.key),
-        upsert = Nothing
-      }
-    . runRepositoryIOT
-    . runConfigRepositoryIOT
+initConfigRepo :: AppDataReader m => m ()
+initConfigRepo = putAppData
+  RepositoryHandle
+    { tbl = configSchema,
+      pk = (.key),
+      upsert = Nothing
+    }

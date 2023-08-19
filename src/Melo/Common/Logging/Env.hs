@@ -1,30 +1,47 @@
 module Melo.Common.Logging.Env where
 
 import Control.Exception.Safe
-import Data.IORef
 import Katip
-import Melo.Env
+import Melo.Common.Exit
 import Melo.Common.Logging
 import Melo.Common.Logging.Loki
-import Network.HTTP.Client qualified as Http
-import System.Exit
+import Melo.Common.Monad
+import Melo.Env
+import System.Console.ANSI
 import System.IO
 
-withLogging :: LoggingConfig -> Http.Manager -> IO () -> IO ()
-withLogging config manager m = do
-  stdoutScribe <- mkHandleScribe ColorIfTerminal stdout (permitItem DebugS) V2
-  modifyRefM logEnv (registerScribe "stdout" stdoutScribe defaultScribeSettings)
-  $(logDebug) $ "Logging config: " <> showt config
-  mkLokiScribe config.loki manager >>= \case
+withLogging ::
+  forall m.
+  ( AppDataReader m,
+    MonadMask m,
+    MonadIO m
+  ) =>
+  LoggingConfig ->
+  m () ->
+  m ()
+withLogging config m = do
+  liftIO do
+    withColour <- hSupportsANSIColor stdout
+    stdoutScribe <- mkHandleScribe (ColorLog withColour) stdout permitItem' V2
+    modifyRefM logEnv (registerScribe "stdout" stdoutScribe defaultScribeSettings)
+  $(logDebugIO) $ "Logging config: " <> showt config
+  mkLokiScribe config.loki >>= \case
     Just lokiScribe -> do
-      $(logInfo) "Initialising loki scribe"
+      $(logInfoIO) "Initialising loki scribe"
       let bufferSize = fromMaybe (1024 * 1024) (fromIntegral <$> config.loki.bufferSize)
-      modifyRefM logEnv (registerScribe "loki" lokiScribe (defaultScribeSettings & scribeBufferSize .~ bufferSize))
-      finally (handle logFatalError m) (readIORef logEnv >>= closeScribes)
-    _ -> handle logFatalError m
-    where
-      logFatalError :: SomeException -> IO ()
-      logFatalError e =
-        die $ "Fatal error: " <> displayException e
-      modifyRefM :: IORef a -> (a -> IO a) -> IO ()
-      modifyRefM r m = readIORef r >>= m >>= writeIORef r
+      liftIO $ modifyRefM logEnv (registerScribe "loki" lokiScribe (defaultScribeSettings & scribeBufferSize .~ bufferSize))
+      finally (handle logFatalError m) closeScribes
+    _ -> finally (handle logFatalError m) closeScribes
+  where
+    logFatalError :: SomeException -> m ()
+    logFatalError e = do
+      let !cause = displayException e
+      $(logErrorVIO ['cause]) "Fatal error"
+      die $ "Fatal error: " <> cause
+    modifyRefM :: IORef IO a -> (a -> IO a) -> IO ()
+    modifyRefM r m = readIORef r >>= m >>= writeIORef r
+    closeScribes = liftIO (readIORef logEnv >>= Katip.closeScribes)
+    permitItem' :: Item a -> IO Bool
+    permitItem' = case textToSeverity (from config.console.level.unwrap) of
+      Just severity -> permitItem severity
+      Nothing -> const (pure False)

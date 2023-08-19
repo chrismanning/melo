@@ -11,6 +11,7 @@ import GHC.Generics hiding (from)
 import GHC.OverloadedLabels ()
 import Melo.Common.Config
 import Melo.Common.FileSystem
+import Melo.Common.Tracing
 import Melo.Common.Uuid
 import Melo.Library.Release.Repo
 import Melo.Library.Release.ArtistName.Repo
@@ -42,6 +43,8 @@ resolveLibrary ::
     MonadConc m,
     CoverService m,
     ConfigService m,
+    Tracing m,
+    Typeable m,
     UuidGenerator m
   ) =>
   ResolverQ e m LibraryQuery
@@ -75,6 +78,8 @@ libraryMutation ::
     FileSystem m,
     CoverService m,
     ConfigService m,
+    Tracing m,
+    Typeable m,
     UuidGenerator m
   ) =>
   ResolverM e (m :: Type -> Type) LibraryMutation
