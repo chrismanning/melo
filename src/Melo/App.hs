@@ -1,6 +1,7 @@
 module Melo.App where
 
 import Colog.Core qualified as Colog
+import Configuration.Dotenv qualified as Dotenv
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception.Safe (catch)
 import Control.Monad.Class.MonadThrow as E (Handler (..), Exception (..))
@@ -36,6 +37,7 @@ import Network.Socket
 
 app :: IO ()
 app = runAppM do
+  Dotenv.loadFile Dotenv.defaultConfig
   env <- initEnv
   withLogging env.logging $ withGlobalTracer do
     $(logInfoIO) "Starting melo..."
