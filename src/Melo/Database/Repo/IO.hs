@@ -3,6 +3,8 @@
 
 module Melo.Database.Repo.IO where
 
+import Control.Concurrent.Chan.Unagi.Bounded
+import Control.Monad.Trans.Cont
 import Data.ByteString.Char8 qualified as C8
 import Data.Pool
 import Data.Text qualified as T
@@ -12,9 +14,11 @@ import Data.Vector qualified as V
 import Data.Word
 import Hasql.Connection as Hasql
 import Hasql.CursorTransactionIO
+import Hasql.CursorTransactionIO.TransactionIO
 import Hasql.Session
 import Hasql.Statement as Hasql
 import Hasql.Streaming
+import Hasql.TransactionIO.Sessions
 import Melo.Common.Exception
 import Melo.Common.Logging
 import Melo.Common.Monad
@@ -24,7 +28,7 @@ import Melo.Env qualified as Env
 import OpenTelemetry.Trace qualified as Otel
 import Rel8 ((==.))
 import Rel8 qualified
-import Streaming.Prelude (Of, Stream)
+import Streaming.Prelude qualified as S
 
 data RepositoryHandle a = RepositoryHandle
   { tbl :: Rel8.TableSchema (a Rel8.Name),
@@ -251,15 +255,58 @@ runSelect pool q = withSpan' "runSelect" defaultSpanArguments \span -> do
   let session = statement () $ Rel8.runVector $ Rel8.select q
   liftIO $ withResource pool $ \conn -> run session conn >>= throwOnLeft
 
+data StreamItem a =
+    RowItem a
+  | EndOfStream
+  | StreamError SomeException
+
 selectStream ::
-  ( Rel8.Serializable exprs (Rel8.FromExprs exprs)
+  forall exprs m.
+  ( Rel8.Serializable exprs (Rel8.FromExprs exprs),
+    AppDataReader m,
+    MonadConc m,
+    MonadIO m
   ) =>
   Rel8.Query exprs ->
-  Stream (Of (Rel8.FromExprs exprs)) (CursorTransactionIO s) ()
-selectStream q = do
-  let statement = showt (Rel8.showQuery q)
-  $(logDebugVIO ['statement]) "Streaming SELECT"
-  streamingQuery (Rel8.run $ Rel8.select q) ()
+  ContT () m (S.Stream (S.Of (Rel8.FromExprs exprs)) m ())
+selectStream query = do
+  pool <- getConnectionPool
+  (conn, localPool) <- liftIO $ takeResource pool
+  (inChan, outChan) <- liftIO $ newChan 1
+  readThreadId <- lift $ fork do
+    finally
+      do
+        catch
+          do
+            streamSession conn inChan >>= either throwM pure
+          \e'@(SomeException e) -> do
+            let cause = displayException e
+            $(logErrorVIO ['cause]) $ "Error while streaming results"
+            liftIO $ writeChan inChan (StreamError e')
+      do
+        liftIO do
+          writeChan inChan EndOfStream
+    pure ()
+  ContT \f -> f () `finally` killThread readThreadId
+  ContT \f -> f () `finally` liftIO (putResource localPool conn)
+  ContT \f -> f () `finally` ($(logInfoIO) $ "Finished streaming results")
+  pure (S.reread (liftIO . (handleItem <=< readChan)) outChan)
+  where
+    handleItem :: StreamItem (Rel8.FromExprs exprs) -> IO (Maybe (Rel8.FromExprs exprs))
+    handleItem (RowItem a) = pure $ Just a
+    handleItem EndOfStream = pure $ Nothing
+    handleItem (StreamError (SomeException e)) = throwIO e
+    streamSession conn inChan = do
+      liftIO $ run (transactionIO ReadCommitted ReadOnly NotDeferrable (cursorTransactionIO (processStream inChan (streamQuery query)))) conn
+    processStream inChan s = do
+      $(logInfoIO) $ "Starting streaming results"
+      (s & S.map RowItem >> S.yield EndOfStream)
+          & S.mapM_ (\s -> liftIO (writeChan inChan s))
+    streamQuery :: Rel8.Query exprs -> S.Stream (S.Of (Rel8.FromExprs exprs)) (CursorTransactionIO s) ()
+    streamQuery q = do
+      let statement = showt (Rel8.showQuery q)
+      $(logDebugVIO ['statement]) "Streaming SELECT"
+      streamingQuery (Rel8.run $ Rel8.select q) ()
 
 runInsert :: (MonadIO m, Tracing m) => Pool Connection -> (Rel8.Statement b -> Hasql.Statement () a) -> Rel8.Insert b -> m a
 runInsert pool runner i = withSpan' "runInsert" defaultSpanArguments \span -> do

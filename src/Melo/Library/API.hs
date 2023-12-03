@@ -24,7 +24,6 @@ import Melo.Lookup.Covers
 
 data LibraryQuery m = LibraryQuery
   { sources :: SourcesArgs -> m (Vector (Source m)),
-    sourceGroups :: SourceGroupsArgs -> m (Vector (SourceGroup m)),
     collections :: CollectionsArgs -> m (Vector (Collection m))
   }
   deriving (Generic)
@@ -51,7 +50,6 @@ resolveLibrary =
     pure
       LibraryQuery
         { sources = resolveSources,
-          sourceGroups = resolveSourceGroups,
           collections = resolveCollections
         }
 

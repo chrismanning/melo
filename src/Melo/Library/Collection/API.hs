@@ -87,8 +87,7 @@ data Collection m = Collection
     name :: Text,
     watch :: Bool,
     kind :: Text,
-    sources :: CollectionSourcesArgs -> m (Vector (SrcApi.Source m)),
-    sourceGroups :: CollectionSourceGroupsArgs -> m (Vector (SrcApi.SourceGroup m))
+    sources :: CollectionSourcesArgs -> m (Vector (SrcApi.Source m))
   }
   deriving (Generic)
 
@@ -118,8 +117,7 @@ instance
         rootUri = e.root_uri,
         watch = e.watch,
         kind = e.kind,
-        sources = SrcApi.resolveCollectionSources e.id,
-        sourceGroups = \args -> SrcApi.resolveCollectionSourceGroups e.id args.groupByMappings
+        sources = SrcApi.resolveCollectionSources e.id
       }
 
 data LocalFileCollection m = LocalFileCollection

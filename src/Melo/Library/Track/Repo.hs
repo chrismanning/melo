@@ -2,7 +2,6 @@
 
 module Melo.Library.Track.Repo where
 
-import Control.Monad.State.Strict
 import Melo.Common.Monad
 import Melo.Database.Repo
 import Melo.Database.Repo.IO

@@ -64,7 +64,6 @@ app = runAppM do
             exitFailure
         )
     let !addr = SockAddrInet (fromIntegral env.server.port.unwrap) 0
-    $(logInfoIO) ("Starting RSocket server on " <> T.pack (show addr))
     forever do
       RSocket.runServer addr RSocket.Config {
         logger,
