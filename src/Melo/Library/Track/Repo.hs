@@ -54,7 +54,6 @@ trackSchema :: TableSchema (TrackTable Name)
 trackSchema =
   TableSchema
     { name = "track",
-      schema = Nothing,
       columns =
         TrackTable
           { id = "id",
@@ -80,6 +79,7 @@ initTrackRepo =
           Just
             Upsert
               { index = (.source_id),
+                predicate = Nothing,
                 set = const,
                 updateWhere = \_new _old -> lit True
               }

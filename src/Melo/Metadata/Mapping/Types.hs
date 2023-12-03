@@ -2,21 +2,10 @@
 
 module Melo.Metadata.Mapping.Types where
 
-import Data.Aeson as A
-  ( FromJSON (..),
-    Options (..),
-    ToJSON (..),
-    defaultOptions,
-    genericParseJSON,
-    genericToJSON,
-  )
-import Data.Aeson.Casing (snakeCase)
 import Data.Coerce
 import Data.Default
 import Data.List.NonEmpty as NE
 import Data.Morpheus.Types as M
-import GHC.Generics hiding (from)
-import GHC.Records
 import Melo.Database.Repo
 import Melo.Format qualified as F
 import Rel8
@@ -50,12 +39,7 @@ data TagMapping = TagMapping
   }
   deriving (Show, Eq, Generic, GQLType)
   deriving (TextShow) via FromGeneric TagMapping
-
-instance FromJSON TagMapping where
-  parseJSON = genericParseJSON jsonOptions
-
-instance ToJSON TagMapping where
-  toJSON = genericToJSON jsonOptions
+  deriving (FromJSON, ToJSON) via CustomJSON JSONOptions TagMapping
 
 instance From TagMapping F.TagMapping where
   from tm = F.TagMapping $ fmap from tm.fieldMappings
@@ -67,12 +51,7 @@ data FieldMapping = FieldMapping
   }
   deriving (Show, Eq, Generic, GQLType)
   deriving (TextShow) via FromGeneric FieldMapping
-
-instance FromJSON FieldMapping where
-  parseJSON = genericParseJSON jsonOptions
-
-instance ToJSON FieldMapping where
-  toJSON = genericToJSON jsonOptions
+  deriving (FromJSON, ToJSON) via CustomJSON JSONOptions FieldMapping
 
 instance From FieldMapping F.FieldMappings where
   from fm = case F.MetadataId fm.formatId of
@@ -95,12 +74,7 @@ data FieldMatchingKind
   | Virtual
   deriving (Show, Eq, Generic, GQLType)
   deriving (TextShow) via FromGeneric FieldMatchingKind
-
-instance FromJSON FieldMatchingKind where
-  parseJSON = genericParseJSON jsonOptions
-
-instance ToJSON FieldMatchingKind where
-  toJSON = genericToJSON jsonOptions
+  deriving (FromJSON, ToJSON) via CustomJSON JSONOptions FieldMatchingKind
 
 instance From F.FieldMatchMode FieldMatchingKind where
   from F.CaseSensitiveMapping = CaseSensitive
@@ -111,12 +85,6 @@ instance From FieldMatchingKind F.FieldMatchMode where
   from CaseSensitive = F.CaseSensitiveMapping
   from CaseInsensitive = F.CaseInsensitiveMapping
   from Virtual = F.Virtual
-
-jsonOptions :: A.Options
-jsonOptions =
-  A.defaultOptions
-    { A.fieldLabelModifier = snakeCase
-    }
 
 instance Entity (TagMappingTable Result) where
   type NewEntity (TagMappingTable Result) = TagMapping

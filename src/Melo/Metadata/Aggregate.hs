@@ -5,12 +5,10 @@
 module Melo.Metadata.Aggregate where
 
 import Control.Monad.State.Strict
-import Data.Aeson
 import Data.Coerce
 import Data.Default
 import Data.HashMap.Lazy as H
 import Data.Text qualified as T
-import GHC.Generics
 import Melo.Common.Config
 import Melo.Common.Exception
 import Melo.Common.FileSystem.Watcher
@@ -99,6 +97,7 @@ data MetadataConfig = MetadataConfig
   }
   deriving (Show, Eq, Generic)
   deriving TextShow via FromStringShow MetadataConfig
+  deriving (FromJSON, ToJSON) via CustomJSON JSONOptions MetadataConfig
 
 instance Default MetadataConfig where
   def =
@@ -115,10 +114,6 @@ instance Default MetadataConfig where
           F.id3v1Id
         ]
       }
-
-instance FromJSON MetadataConfig
-
-instance ToJSON MetadataConfig
 
 metadataConfigKey :: ConfigKey MetadataConfig
 metadataConfigKey = ConfigKey "metadata"

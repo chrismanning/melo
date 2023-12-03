@@ -8,13 +8,11 @@ import Control.Concurrent.Classy
 import Control.Foldl qualified as F
 import Control.Foldl (PrimMonad)
 import Data.Generics.Labels ()
-import Data.Kind
 import Data.Morpheus.Types
 import Data.Text qualified as T
 import Data.Typeable
 import Data.UUID (fromText)
 import Data.Vector qualified as V
-import GHC.Generics hiding (from)
 import Melo.Common.Config
 import Melo.Common.FileSystem
 import Melo.Common.Tracing

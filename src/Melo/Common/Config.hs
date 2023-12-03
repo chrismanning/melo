@@ -10,7 +10,6 @@ import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HashMap
 import Data.Hashable
 import Data.Text qualified as T
-import GHC.Generics
 import Melo.Common.Exception
 import Melo.Common.Logging
 import Melo.Common.Monad
@@ -106,7 +105,6 @@ configSchema :: TableSchema (ConfigTable Name)
 configSchema =
   TableSchema
     { name = "config",
-      schema = Nothing,
       columns =
         ConfigTable
           { key = "key",

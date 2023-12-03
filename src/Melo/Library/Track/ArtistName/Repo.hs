@@ -2,6 +2,7 @@
 
 module Melo.Library.Track.ArtistName.Repo where
 
+import Data.Int
 import Data.Vector qualified as V
 import Melo.Common.Monad
 import Melo.Database.Repo.IO
@@ -18,7 +19,7 @@ import Streaming qualified as S
 
 class Monad m => TrackArtistNameRepository m where
   getTrackArtistNames :: TrackRef -> m (Vector ArtistNameEntity)
-  insert' :: Vector TrackArtistNameEntity -> m Int
+  insert' :: Vector TrackArtistNameEntity -> m Int64
   insert :: Vector TrackArtistNameEntity -> m (Vector TrackArtistNameEntity)
 
 insertSingle :: TrackArtistNameRepository m => TrackArtistNameEntity -> m (Maybe TrackArtistNameEntity)
@@ -51,24 +52,25 @@ instance TrackArtistNameRepository (AppM IO IO) where
     pool <- getConnectionPool
     runInsert
       pool
+      Rel8.runN
       Rel8.Insert
         { into = trackArtistNameSchema,
           rows = Rel8.values (from <$> trackArtistNames),
           onConflict = Rel8.DoNothing,
-          returning = fromIntegral <$> Rel8.NumberOfRowsAffected
+          returning = Rel8.NoReturning
         }
   insert trackArtistNames | V.null trackArtistNames = pure V.empty
   insert trackArtistNames = do
     pool <- getConnectionPool
-    V.fromList
-      <$> runInsert
-        pool
-        Rel8.Insert
-          { into = trackArtistNameSchema,
-            rows = Rel8.values (from <$> trackArtistNames),
-            onConflict = Rel8.DoNothing,
-            returning = Rel8.Projection (\x -> x)
-          }
+    runInsert
+      pool
+      Rel8.runVector
+      Rel8.Insert
+        { into = trackArtistNameSchema,
+          rows = Rel8.values (from <$> trackArtistNames),
+          onConflict = Rel8.DoNothing,
+          returning = Rel8.Returning (\x -> x)
+        }
 
 instance
   {-# OVERLAPPING #-}
@@ -85,7 +87,6 @@ trackArtistNameSchema :: Rel8.TableSchema (TrackArtistNameTable Rel8.Name)
 trackArtistNameSchema =
   Rel8.TableSchema
     { name = "track_artist_name",
-      schema = Nothing,
       columns =
         TrackArtistNameTable
           { track_id = "track_id",

@@ -53,8 +53,6 @@ import Data.Hashable
 import Data.Text qualified as T
 import Data.Text.Encoding
 import Data.Vector qualified as V
-import GHC.Generics (Generic)
-import GHC.Records
 import Melo.Common.Config
 import Melo.Common.Exception
 import Melo.Common.Http as Http

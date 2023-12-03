@@ -2,7 +2,6 @@
 
 module Melo.Library.Track.ArtistName.Types where
 
-import GHC.Generics
 import Melo.Library.Artist.Name.Types (ArtistNameRef (..))
 import Melo.Library.Track.Types (TrackRef (..))
 import Rel8

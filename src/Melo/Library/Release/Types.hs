@@ -4,12 +4,12 @@ module Melo.Library.Release.Types where
 
 import Hasql.Decoders qualified as Hasql
 import Data.Aeson qualified as A
+import Data.Attoparsec.ByteString.Char8 qualified as P
 import Data.Hashable
 import Data.Morpheus.Kind
 import Data.Morpheus.Types as M
 import Data.Time
 import Data.UUID
-import GHC.Generics
 import Melo.Database.Repo
 import Melo.Library.Artist.Name.Types
 import Melo.Lookup.MusicBrainz qualified as MB
@@ -71,32 +71,42 @@ data ReleaseKind
   | OtherKind
   deriving (Show, Eq, Ord, Generic, Hashable)
   deriving TextShow via FromGeneric ReleaseKind
-
-instance A.ToJSON ReleaseKind where
-  toEncoding = A.genericToEncoding A.defaultOptions
+  deriving (FromJSON, ToJSON) via CustomJSON '[ConstructorTagModifier '[StripSuffix "Kind", ToLower]] ReleaseKind
 
 instance DBType ReleaseKind where
   typeInformation =
     TypeInformation
-      { encode = encode',
-        decode = decode',
+      { encode,
+        decode = Rel8.Decoder {
+          binary,
+          parser = P.parseOnly (parser' <* P.endOfInput),
+          delimiter = ','
+        },
         typeName = "text"
       }
     where
-      encode' AlbumKind = ConstExpr $ StringLit "album"
-      encode' SingleKind = ConstExpr $ StringLit "single"
-      encode' EPKind = ConstExpr $ StringLit "ep"
-      encode' LiveKind = ConstExpr $ StringLit "live"
-      encode' CompilationKind = ConstExpr $ StringLit "compilation"
-      encode' OtherKind = ConstExpr $ StringLit "other"
-      decode' :: Hasql.Value ReleaseKind
-      decode' = Hasql.text <&> \case
+      encode AlbumKind = ConstExpr $ StringLit "album"
+      encode SingleKind = ConstExpr $ StringLit "single"
+      encode EPKind = ConstExpr $ StringLit "ep"
+      encode LiveKind = ConstExpr $ StringLit "live"
+      encode CompilationKind = ConstExpr $ StringLit "compilation"
+      encode OtherKind = ConstExpr $ StringLit "other"
+      binary :: Hasql.Value ReleaseKind
+      binary = Hasql.text <&> \case
         "album" -> AlbumKind
         "single" -> SingleKind
         "ep" -> EPKind
         "live" -> LiveKind
         "compilation" -> CompilationKind
         _ -> OtherKind
+      parser' = do
+        P.takeByteString >>= \case
+          "album" -> pure AlbumKind
+          "single" -> pure SingleKind
+          "ep" -> pure EPKind
+          "live" -> pure LiveKind
+          "compilation" -> pure CompilationKind
+          _ -> pure OtherKind
 
 instance DBEq ReleaseKind where
 
@@ -189,7 +199,7 @@ parsePrimaryType = \case
 instance From NewRelease (ReleaseTable Expr) where
   from a =
     ReleaseTable
-      { id = nullaryFunction "uuid_generate_v4",
+      { id = function "uuid_generate_v4" (),
         title = lit a.title,
         comment = lit Nothing,
         year_released = lit a.yearReleased,

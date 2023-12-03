@@ -11,7 +11,6 @@ import Data.List.NonEmpty qualified as NE
 import Data.Morpheus.Types
 import Data.Typeable
 import Data.Vector qualified as V
-import GHC.Generics hiding (from)
 import GHC.OverloadedLabels ()
 import Melo.Common.Config
 import Melo.Common.Monad

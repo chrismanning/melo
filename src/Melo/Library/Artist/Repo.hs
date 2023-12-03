@@ -51,12 +51,12 @@ instance {-# OVERLAPS #-} Repository ArtistEntity (AppM IO IO) where
   getAll = do
     pool <- getConnectionPool
     RepositoryHandle {tbl} <- getRepoHandle @ArtistTable
-    withSpan ("getAll$" <> T.pack tbl.name) defaultSpanArguments do
+    withSpan ("getAll$" <> T.pack tbl.name.name) defaultSpanArguments do
       runSelect pool $ Rel8.each tbl
   getByKey ks | Prelude.length ks == 1 = do
     pool <- getConnectionPool
     RepositoryHandle {tbl, pk} <- getRepoHandle @ArtistTable
-    withSpan ("getByKey$" <> T.pack tbl.name) defaultSpanArguments do
+    withSpan ("getByKey$" <> T.pack tbl.name.name) defaultSpanArguments do
       runSelect pool do
         all <- Rel8.each tbl
         let k = Rel8.lit $ V.head ks
@@ -65,7 +65,7 @@ instance {-# OVERLAPS #-} Repository ArtistEntity (AppM IO IO) where
   getByKey ks = do
     pool <- getConnectionPool
     RepositoryHandle {tbl, pk} <- getRepoHandle @ArtistTable
-    withSpan ("getByKey$" <> T.pack tbl.name) defaultSpanArguments do
+    withSpan ("getByKey$" <> T.pack tbl.name.name) defaultSpanArguments do
       runSelect pool do
         let keys = Rel8.lit <$> ks
         all <- Rel8.each tbl
@@ -75,9 +75,9 @@ instance {-# OVERLAPS #-} Repository ArtistEntity (AppM IO IO) where
   insert es = do
     pool <- getConnectionPool
     RepositoryHandle {tbl} <- getRepoHandle @ArtistTable
-    S.each (insertArtists es tbl (Rel8.Projection (\x -> x)))
+    S.each (insertArtists es tbl (Rel8.Returning (\x -> x)))
       & S.catMaybes
-      & S.mapM (runInsert' pool)
+      & S.mapM (runInsert' pool Rel8.runVector)
       & S.mapMaybeM \case
         Left e -> do
           let cause = displayException e
@@ -90,9 +90,9 @@ instance {-# OVERLAPS #-} Repository ArtistEntity (AppM IO IO) where
   insert' es = do
     pool <- getConnectionPool
     RepositoryHandle {tbl} <- getRepoHandle @ArtistTable
-    S.each (insertArtists es tbl (fromIntegral <$> Rel8.NumberOfRowsAffected))
+    S.each (insertArtists es tbl Rel8.NoReturning)
       & S.catMaybes
-      & S.mapM (runInsert' pool)
+      & S.mapM (runInsert' pool Rel8.runN)
       & S.mapMaybeM \case
         Left e -> do
           let cause = displayException e
@@ -104,37 +104,36 @@ instance {-# OVERLAPS #-} Repository ArtistEntity (AppM IO IO) where
   delete ks = do
     pool <- getConnectionPool
     RepositoryHandle {tbl, pk} <- getRepoHandle @ArtistTable
-    withSpan' ("delete$" <> T.pack tbl.name) defaultSpanArguments \span -> do
+    withSpan' ("delete$" <> T.pack tbl.name.name) defaultSpanArguments \span -> do
       let keys = Rel8.lit <$> ks
       let d =
             Rel8.Delete
               { from = tbl,
                 using = pure (),
                 deleteWhere = \_ row -> pk row `Rel8.in_` keys,
-                returning = Rel8.Projection pk
+                returning = Rel8.Returning pk
               }
       do
         let statement = Rel8.showDelete d
         Otel.addAttributes span [("database.statement", Otel.toAttribute $ T.pack statement)]
         $(logDebugVIO ['statement]) "Executing DELETE"
-      let session = Hasql.statement () $ Rel8.delete d
+      let session = Hasql.statement () $ Rel8.runVector $ Rel8.delete d
       liftIO do
-        dels <- withResource pool $ \conn -> Hasql.run session conn >>= throwOnLeft
-        pure $ V.fromList dels
+        withResource pool $ \conn -> Hasql.run session conn >>= throwOnLeft
   update es | Prelude.null es = pure mempty
   update es = do
     pool <- getConnectionPool
     h@RepositoryHandle {tbl} <- getRepoHandle @ArtistTable
-    withSpan ("update$" <> T.pack tbl.name) defaultSpanArguments do
+    withSpan ("update$" <> T.pack tbl.name.name) defaultSpanArguments do
       us <- forM es $ \e ->
-        doUpdate h pool (Prelude.from e) (Rel8.Projection (\x -> x))
-      pure $ V.fromList (concat us)
+        doUpdate h pool Rel8.runVector (Prelude.from e) (Rel8.Returning (\x -> x))
+      pure (msum us)
   update' es | Prelude.null es = pure ()
   update' es = do
     pool <- getConnectionPool
     h@RepositoryHandle {tbl} <- getRepoHandle @ArtistTable
-    withSpan ("update'$" <> T.pack tbl.name) defaultSpanArguments do
-      forM_ es $ \e -> doUpdate h pool (Prelude.from e) (pure ())
+    withSpan ("update'$" <> T.pack tbl.name.name) defaultSpanArguments do
+      forM_ es $ \e -> doUpdate h pool Rel8.run_ (Prelude.from e) Rel8.NoReturning
 
 insertArtists :: forall a. Vector (NewEntity ArtistEntity) -> TableSchema (ArtistTable Name) -> Returning (ArtistTable Name) a -> [Maybe (Insert a)]
 insertArtists as tbl returning =
@@ -155,16 +154,16 @@ insertArtists as tbl returning =
             returning
           }
     partialUpsert False =
-      PartialUpsert
+      Upsert
         { index = (.name),
-          indexWhere = \a -> isNull a.musicbrainz_id,
+          predicate = Just (\a -> isNull a.musicbrainz_id),
           set = \new old -> new & #id .~ old.id,
           updateWhere = \_new _old -> lit True
         }
     partialUpsert True =
-      PartialUpsert
+      Upsert
         { index = \a -> (a.name, a.musicbrainz_id),
-          indexWhere = \a -> isNonNull a.musicbrainz_id,
+          predicate = Just (\a -> isNonNull a.musicbrainz_id),
           set = \new old -> new & #id .~ old.id,
           updateWhere = \_new _old -> lit True
         }
@@ -208,7 +207,6 @@ artistSchema :: TableSchema (ArtistTable Name)
 artistSchema =
   TableSchema
     { name = "artist",
-      schema = Nothing,
       columns =
         ArtistTable
           { id = "id",

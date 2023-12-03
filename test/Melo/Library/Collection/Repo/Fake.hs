@@ -44,13 +44,14 @@ instance Monad m => CollectionRepository (FakeCollectionRepositoryT m) where
   getByUri = undefined
 
 instance From NewCollection CollectionEntity where
-  from c@NewFilesystemCollection {name, watch} =
+  from c@NewFilesystemCollection {..} =
     CollectionTable
       { id = CollectionRef $ unsafePerformIO nextRandom,
         root_uri = T.pack $ show $ rootUri c,
-        name = name,
-        watch = watch,
-        kind = kind c
+        name,
+        watch,
+        kind = kind c,
+        rescan
       }
     where
       rootUri NewFilesystemCollection {rootPath} = fileUri $ T.unpack rootPath

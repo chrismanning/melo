@@ -2,10 +2,12 @@ module Melo.Common.Uri
   ( fileUri,
     uriToFilePath,
     module Network.URI,
+    module Network.URI.JSON,
   )
 where
 
 import Network.URI
+import Network.URI.JSON ()
 
 fileUri :: FilePath -> URI
 fileUri p =

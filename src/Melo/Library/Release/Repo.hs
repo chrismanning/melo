@@ -36,12 +36,12 @@ instance {-# OVERLAPPING #-} Repository ReleaseEntity (AppM IO IO) where
   getAll = do
     pool <- getConnectionPool
     RepositoryHandle {tbl} <- getRepoHandle @ReleaseTable
-    withSpan ("getAll$" <> T.pack tbl.name) defaultSpanArguments do
+    withSpan ("getAll$" <> T.pack tbl.name.name) defaultSpanArguments do
       runSelect pool $ Rel8.each tbl
   getByKey ks | Prelude.length ks == 1 = do
     pool <- getConnectionPool
     RepositoryHandle {tbl, pk} <- getRepoHandle @ReleaseTable
-    withSpan ("getByKey$" <> T.pack tbl.name) defaultSpanArguments do
+    withSpan ("getByKey$" <> T.pack tbl.name.name) defaultSpanArguments do
       runSelect pool do
         all <- Rel8.each tbl
         let k = Rel8.lit $ V.head ks
@@ -50,7 +50,7 @@ instance {-# OVERLAPPING #-} Repository ReleaseEntity (AppM IO IO) where
   getByKey ks = do
     pool <- getConnectionPool
     RepositoryHandle {tbl, pk} <- getRepoHandle @ReleaseTable
-    withSpan ("getByKey$" <> T.pack tbl.name) defaultSpanArguments do
+    withSpan ("getByKey$" <> T.pack tbl.name.name) defaultSpanArguments do
       runSelect pool do
         let keys = Rel8.lit <$> ks
         all <- Rel8.each tbl
@@ -60,64 +60,64 @@ instance {-# OVERLAPPING #-} Repository ReleaseEntity (AppM IO IO) where
   insert es = do
     pool <- getConnectionPool
     RepositoryHandle {tbl} <- getRepoHandle @ReleaseTable
-    withSpan ("insert$" <> T.pack tbl.name) defaultSpanArguments do
-      V.fromList
-        <$> runInsert
-          pool
-          Rel8.Insert
-            { into = tbl,
-              rows = Rel8.values (from <$> es),
-              onConflict = Rel8.DoNothing,
-              returning = Rel8.Projection (\x -> x)
-            }
-  insert' es | null es = pure 0
-  insert' es = do
-    pool <- getConnectionPool
-    RepositoryHandle {tbl} <- getRepoHandle @ReleaseTable
-    withSpan ("insert'$" <> T.pack tbl.name) defaultSpanArguments do
+    withSpan ("insert$" <> T.pack tbl.name.name) defaultSpanArguments do
       runInsert
         pool
+        Rel8.runVector
         Rel8.Insert
           { into = tbl,
             rows = Rel8.values (from <$> es),
             onConflict = Rel8.DoNothing,
-            returning = fromIntegral <$> Rel8.NumberOfRowsAffected
+            returning = Rel8.Returning (\x -> x)
+          }
+  insert' es | null es = pure 0
+  insert' es = do
+    pool <- getConnectionPool
+    RepositoryHandle {tbl} <- getRepoHandle @ReleaseTable
+    withSpan ("insert'$" <> T.pack tbl.name.name) defaultSpanArguments do
+      runInsert
+        pool
+        Rel8.runN
+        Rel8.Insert
+          { into = tbl,
+            rows = Rel8.values (from <$> es),
+            onConflict = Rel8.DoNothing,
+            returning = Rel8.NoReturning
           }
   delete ks | null ks = pure mempty
   delete ks = do
     pool <- getConnectionPool
     RepositoryHandle {tbl, pk} <- getRepoHandle @ReleaseTable
-    withSpan' ("delete$" <> T.pack tbl.name) defaultSpanArguments \span -> do
+    withSpan' ("delete$" <> T.pack tbl.name.name) defaultSpanArguments \span -> do
       let keys = Rel8.lit <$> ks
       let d =
             Rel8.Delete
               { from = tbl,
                 using = pure (),
                 deleteWhere = \_ row -> pk row `Rel8.in_` keys,
-                returning = Rel8.Projection pk
+                returning = Rel8.Returning pk
               }
       do
         let statement = Rel8.showDelete d
         Otel.addAttributes span [("database.statement", Otel.toAttribute $ T.pack statement)]
         $(logDebugVIO ['statement]) "Executing DELETE"
-      let session = Hasql.statement () $ Rel8.delete d
+      let session = Hasql.statement () $ Rel8.runVector $ Rel8.delete d
       liftIO do
-        dels <- withResource pool $ \conn -> Hasql.run session conn >>= throwOnLeft
-        pure $ V.fromList dels
+        withResource pool $ \conn -> Hasql.run session conn >>= throwOnLeft
   update es | null es = pure mempty
   update es = do
     pool <- getConnectionPool
     h@RepositoryHandle {tbl} <- getRepoHandle @ReleaseTable
-    withSpan ("update$" <> T.pack tbl.name) defaultSpanArguments do
+    withSpan ("update$" <> T.pack tbl.name.name) defaultSpanArguments do
       us <- forM es $ \e ->
-        doUpdate h pool (from e) (Rel8.Projection (\x -> x))
-      pure $ V.fromList (concat us)
+        doUpdate h pool Rel8.runVector (from e) (Rel8.Returning (\x -> x))
+      pure (msum us)
   update' es | null es = pure ()
   update' es = do
     pool <- getConnectionPool
     h@RepositoryHandle {tbl} <- getRepoHandle @ReleaseTable
-    withSpan ("update'$" <> T.pack tbl.name) defaultSpanArguments do
-      forM_ es $ \e -> doUpdate h pool (from e) (pure ())
+    withSpan ("update'$" <> T.pack tbl.name.name) defaultSpanArguments do
+      forM_ es $ \e -> doUpdate h pool Rel8.run_ (from e) Rel8.NoReturning
 
 instance ReleaseRepository (AppM IO IO) where
   getByMusicBrainzId mbid = do
@@ -137,7 +137,6 @@ releaseSchema :: Rel8.TableSchema (ReleaseTable Rel8.Name)
 releaseSchema =
   Rel8.TableSchema
     { name = "release",
-      schema = Nothing,
       columns =
         ReleaseTable
           { id = "id",
@@ -162,6 +161,7 @@ initReleaseRepo = putAppData
         Just
           Rel8.Upsert
             { index = (.musicbrainz_id),
+              predicate = Nothing,
               set = \new old -> new & #id .~ old.id,
               updateWhere = \new old -> new.musicbrainz_id ==. old.musicbrainz_id
             }

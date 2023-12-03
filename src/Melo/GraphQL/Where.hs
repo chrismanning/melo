@@ -3,7 +3,6 @@
 module Melo.GraphQL.Where where
 
 import Data.Morpheus.Types
-import GHC.Generics
 
 data Where
   = WhereEqExpr EqExpr

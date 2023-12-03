@@ -4,12 +4,17 @@
 
 module Melo.Library.Source.API where
 
-import Control.Concurrent.Classy
+import Control.Concurrent.Classy hiding (catch, newChan, readChan, writeChan)
+import Control.Concurrent.Chan.Unagi.Bounded
 import Control.DeepSeq
+import Control.Exception.Safe hiding (finally, throw)
+import Control.Monad.Class.MonadThrow hiding (catch)
 import Control.Foldl qualified as Fold
 import Control.Monad
+import Control.Monad.Cont
 import Control.Monad.IO.Class
-import Control.Monad.Trans.Resource
+import Data.Aeson (ToJSON(..))
+import Data.Aeson qualified as JSON
 import Data.Binary.Builder (append, fromByteString, putStringUtf8)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as L
@@ -21,8 +26,8 @@ import Data.Morpheus
 import Data.Morpheus.Types
 import Data.Pool
 import Data.Text qualified as T
+import Data.Text.Encoding qualified as T
 import Data.Time.Clock
-import Data.Typeable
 import Data.UUID (fromText, toText)
 import Data.Vector qualified as V
 import GHC.Generics hiding (from)
@@ -32,10 +37,12 @@ import Hasql.CursorTransactionIO.TransactionIO
 import Hasql.Session
 import Hasql.TransactionIO
 import Hasql.TransactionIO.Sessions
+import Melo.Common.API
 import Melo.Common.Config
 import Melo.Common.Exception qualified as E
 import Melo.Common.Logging
 import Melo.Common.Monad
+import Melo.Common.Routing
 import Melo.Common.Tracing
 import Melo.Common.Uri
 import Melo.Common.Uuid
@@ -58,22 +65,17 @@ import Melo.Library.Track.Repo as Track
 import Melo.Library.Track.Types
 import Melo.Lookup.Covers (Cover (..), CoverService (..))
 import Melo.Lookup.Covers qualified as Covers
+import Melo.Metadata.Aggregate
 import Melo.Metadata.Mapping.Aggregate
+import Network.RSocket qualified as RSocket
 import Network.Wai (StreamingBody)
 import Rel8 (JSONBEncoded (..), (&&.), (==.))
 import Rel8 qualified
 import Streaming qualified as S
 import Streaming.Prelude qualified as S
 import System.FilePath as P
-import UnliftIO
 import Unsafe.Coerce
 import Prelude hiding (log)
-
-data SourceEvent
-  = SourceAdded (Ty.Source)
-  | SourceRemoved (Ty.SourceRef)
-  deriving (Show, Eq)
-  deriving (TextShow) via FromStringShow SourceEvent
 
 resolveSources ::
   ( Tr.MonadSourceTransform m,
@@ -305,7 +307,7 @@ newtype CollectionSourceGroupsArgs = CollectionSourceGroupsArgs
 
 data Metadata m = Metadata
   { tags :: Vector Ty.TagPair,
-    mappedTags :: MappedTagsArgs -> m MappedTags,
+    mappedTags :: MappedTagsArgs -> m Ty.MappedTags,
     formatId :: Text,
     format :: Text
   }
@@ -313,14 +315,8 @@ data Metadata m = Metadata
 
 instance Typeable m => GQLType (Metadata m)
 
-type MappedTags = Vector MappedTag
-
-data MappedTag = MappedTag
-  { mappingName :: Text,
-    values :: Vector Text
-  }
-  deriving (Show, Eq, Ord, Generic, GQLType, NFData)
-  deriving (TextShow) via FromGeneric MappedTag
+deriving instance GQLType Ty.MappedTag
+deriving instance NFData Ty.MappedTag
 
 data MappedTagsArgs = MappedTagsArgs
   { mappings :: Vector Text
@@ -348,12 +344,12 @@ instance
               Left e -> fail $ "failed to convert SourceEntity: " <> displayException e
           }
 
-resolveMappedTags :: (TagMappingAggregate m, Tracing m) => Ty.Source -> Vector Text -> m MappedTags
+resolveMappedTags :: (TagMappingAggregate m, Tracing m) => Ty.Source -> Vector Text -> m Ty.MappedTags
 resolveMappedTags src mappingNames = withSpan "resolveMappedTags" defaultSpanArguments do
   forM mappingNames $ \mappingName -> do
     values <- resolveMappingNamed mappingName src
     pure
-      MappedTag
+      Ty.MappedTag
         { mappingName,
           values
         }
@@ -384,7 +380,7 @@ resolveCollectionSourceGroups collectionRef groupMappingNames = lift do
     & Fold.impurely S.foldM_ Fold.vectorM
 
 data SourceGroup m = SourceGroup
-  { groupTags :: MappedTags,
+  { groupTags :: Ty.MappedTags,
     groupParentUri :: Text,
     sources :: [Source m],
     coverImage :: CoverImageArgs -> m [Image]
@@ -471,6 +467,22 @@ data SourceGroupStreamArgs = SourceGroupStreamArgs
 
 instance GQLType SourceGroupStreamArgs
 
+groupSources ::
+  ( Monad m,
+    Logging m
+  ) =>
+  TagMappingIndex ->
+  S.Stream (S.Of Ty.SourceEntity) m () ->
+  S.Stream (S.Stream (S.Of (Ty.SourceEntity, Ty.MappedTags)) m) m ()
+groupSources groupByMappings s =
+  s
+    & S.mapM
+      ( \e -> do
+          let !mappings = force $ extractMappedTags groupByMappings e
+          pure (e, mappings)
+      )
+    & S.groupBy (\(_, a) (_, b) -> a == b)
+
 groupSources' ::
   ( Tr.MonadSourceTransform m,
     ReleaseRepository m,
@@ -492,11 +504,7 @@ groupSources' ::
   S.Stream (S.Of (SourceGroup (Resolver o e m))) n ()
 groupSources' groupByMappings s =
   s
-    & S.mapM (\e -> do
-      let !mappings = force $ extractMappedTags groupByMappings e
-      pure (e, mappings)
-      )
-    & S.groupBy (\(_, a) (_, b) -> a == b)
+    & groupSources groupByMappings
     & S.mapped mkSrcGroup
 
 spanEffect ::
@@ -507,19 +515,20 @@ spanEffect ::
   Text ->
   S.Stream f m r ->
   S.Stream f m r
-spanEffect name = S.wrapEffect
-  do
-    createSpan name defaultSpanArguments
-  endSpan
+spanEffect name =
+  S.wrapEffect
+    do
+      createSpan name defaultSpanArguments
+    endSpan
 
-extractMappedTags :: TagMappingIndex -> Ty.SourceEntity -> MappedTags
+extractMappedTags :: TagMappingIndex -> Ty.SourceEntity -> Ty.MappedTags
 extractMappedTags mappings e = case tryFrom @_ @F.Metadata e of
   Left _ -> V.empty
   Right metadata ->
     V.fromList $
       filter (not . null . (.values)) $
         mappings ^@.. itraversed <&> \(name, mapping) ->
-          MappedTag
+          Ty.MappedTag
             { mappingName = name,
               values = metadata.tag mapping
             }
@@ -541,7 +550,7 @@ mkSrcGroup ::
     Logging n,
     Monad n
   ) =>
-  S.Stream (S.Of (Ty.SourceEntity, MappedTags)) n x ->
+  S.Stream (S.Of (Ty.SourceEntity, Ty.MappedTags)) n x ->
   n (S.Of (SourceGroup (Resolver o e m)) x)
 mkSrcGroup s =
   s
@@ -549,7 +558,7 @@ mkSrcGroup s =
     & toSourceGroup
   where
     toSourceGroup ::
-      S.Stream (S.Of (Source (Resolver o e m), MappedTags)) n x ->
+      S.Stream (S.Of (Source (Resolver o e m), Ty.MappedTags)) n x ->
       n (S.Of (SourceGroup (Resolver o e m)) x)
     toSourceGroup ss = do
       $(logDebug) "Creating source group"
@@ -558,7 +567,7 @@ mkSrcGroup s =
       $(logDebug) $ "Source group created from " <> showt (Prelude.length (S.fst' ofSources)) <> " sources"
       pure sg
       where
-        toSourceGroup' :: [(Source (Resolver o e m), MappedTags)] -> SourceGroup (Resolver o e m)
+        toSourceGroup' :: [(Source (Resolver o e m), Ty.MappedTags)] -> SourceGroup (Resolver o e m)
         toSourceGroup' ss =
           SourceGroup
             { groupParentUri,
@@ -573,6 +582,9 @@ mkSrcGroup s =
             coverImage = src.coverImage
 
 data SourceGroupFilter = AllSourceGroups | Orphaned
+  deriving (Generic)
+  deriving TextShow via FromGeneric SourceGroupFilter
+  deriving (FromJSON, ToJSON) via CustomJSON '[ConstructorTagModifier '[CamelToSnake, ToLower]] SourceGroupFilter
 
 streamSourceGroupsQuery :: AppData IO -> Ty.CollectionRef -> Vector Text -> SourceGroupFilter -> L.ByteString -> StreamingBody
 streamSourceGroupsQuery appData collectionRef groupByMappings filt rq sendChunk flush = do
@@ -620,7 +632,7 @@ streamSourceGroupsQuery appData collectionRef groupByMappings filt rq sendChunk 
     runIO :: MonadIO m => AppM IO IO a -> m a
     runIO (ReaderT m) = liftIO $ m appData
     sendFlush :: MonadIO m => BS.ByteString -> m ()
-    sendFlush buf = liftIO {-$ withSpan "sendFlush" defaultSpanArguments-} do
+    sendFlush buf = liftIO do -- \$ withSpan "sendFlush" defaultSpanArguments
       sendChunk $ fromByteString buf `append` (putStringUtf8 "\n\n")
       flush
 
@@ -788,3 +800,146 @@ instance From MetadataTransformation Tr.MetadataTransformation where
   from (RemoveTag k v) = Tr.RemoveTag k v
   from (RemoveTags k) = Tr.RemoveTags k
   from RemoveAll = Tr.RemoveAll
+
+-- RSocket API
+
+registerRoutes :: AppM IO IO ()
+registerRoutes = do
+  registerRoute (RouteKey "downloadCover") (jsonRqRsRoute getCoverImage)
+  registerRoute (RouteKey "getSources") (jsonStreamRoute streamSourceGroups)
+  pure ()
+
+data StreamSourceGroups = StreamSourceGroups
+  { collectionId :: Ty.CollectionRef
+  , groupByMappings :: Vector Text
+  , groupFilter :: Maybe SourceGroupFilter
+  }
+  deriving (Generic)
+  deriving (FromJSON, ToJSON) via CustomJSON JSONOptions StreamSourceGroups
+
+streamSourceGroups :: StreamSourceGroups -> RSocket.StreamId -> ContT () (AppM IO IO) (S.Stream (S.Of RSocket.Payload) (AppM IO IO) ())
+streamSourceGroups rq streamId = do
+  pool <- getConnectionPool
+  (conn, localPool) <- liftIO $ takeResource pool
+  (inChan, outChan) <- liftIO $ newChan 1
+  readThreadId <- lift $ fork do
+    finally
+      do
+        catch
+          do
+            streamSession conn inChan >>= either throwM pure
+          \(SomeException e) -> do
+            let cause = displayException e
+            $(logErrorVIO ['cause, 'streamId]) $ "Error while streaming sources"
+      do
+        liftIO do
+          writeChan inChan Nothing
+    pure ()
+  ContT \f -> f () `finally` killThread readThreadId
+  ContT \f -> f () `finally` liftIO (putResource localPool conn)
+  ContT \f -> f () `finally` ($(logInfoIO) $ "Finished streaming sources from collection " <> showt rq.collectionId)
+  groupByMappings <- lift $ getMappingsNamed rq.groupByMappings
+  pure
+    do
+      S.reread (liftIO . readChan) outChan
+        & groupSources groupByMappings
+        & S.mapped (\srcs -> mkSrcGrp srcs)
+        & S.map (\(srcGrp :: Ty.SourceGroup) -> buildStreamPayload (JsonPayload srcGrp) (RSocket.CompositeMetadata []) streamId)
+  where
+    sources = do
+      srcs <- orderByUri $ Rel8.each sourceSchema
+      case fromMaybe AllSourceGroups rq.groupFilter of
+        AllSourceGroups ->
+          Rel8.where_ (srcs.collection_id ==. Rel8.lit rq.collectionId)
+        Orphaned -> do
+          tracks <- Rel8.each trackSchema
+          releases <- Rel8.each releaseSchema
+          Rel8.where_
+            ( srcs.collection_id ==. Rel8.lit rq.collectionId
+                &&. tracks.source_id ==. srcs.id
+                &&. releases.id ==. tracks.release_id
+                &&. Rel8.isNull releases.musicbrainz_group_id
+            )
+      pure srcs
+    mkSrcGrp :: forall x. S.Stream (S.Of (Ty.SourceEntity, Ty.MappedTags)) (AppM IO IO) x -> AppM IO IO (S.Of Ty.SourceGroup x)
+    mkSrcGrp ss = do
+      S.next ss >>= \case
+        Left x -> do
+          let !msg = "Source group cannot be empty"
+          $(logErrorIO) msg
+          error (from msg)
+        Right ((firstSourceEntity, groupTags), rest) -> do
+          firstSource <- E.throwOnLeft (tryFrom firstSourceEntity)
+          let !groupParentUri = getParentUri (showt firstSource.source)
+          coverImage <- getCoverImage firstSource
+          let (!all :: S.Stream (S.Of Ty.Source) (AppM IO IO) x) = S.cons firstSource $! S.mapM (E.throwOnLeft . tryFrom . fst) rest
+          sources' <- Fold.impurely S.foldM Fold.vectorM all
+          pure $ sources' & S.mapOf \sources -> Ty.SourceGroup { groupTags, sources, groupParentUri, coverImage }
+    getCoverImage :: Ty.Source -> AppM IO IO (Maybe Ty.Image)
+    getCoverImage s =
+      firstJustM (findCoverImage . takeDirectory) (uriToFilePath s.source) >>= \case
+        Just imgPath ->
+          pure $
+            Just $
+              Ty.Image
+                { fileName = Just $ T.pack $ takeFileName imgPath,
+                  imageType = Just $ Ty.PictureTypeWrapper F.FrontCover
+                }
+        Nothing -> pure s.cover
+    streamSession conn inChan = do
+      liftIO $ run (transactionIO ReadCommitted ReadOnly NotDeferrable (cursorTransactionIO' (processStream inChan (selectStream sources)))) conn
+    processStream inChan s = do
+      $(logInfoIO) $ "Starting streaming sources from collection " <> showt rq.collectionId
+      (s & S.map Just >> S.yield Nothing)
+          & S.mapM_ (\s -> liftIO (writeChan inChan s))
+
+data DownloadCover = DownloadCover
+  { sourceId :: Ty.SourceRef
+  }
+  deriving (Generic)
+  deriving (FromJSON, ToJSON) via CustomJSON JSONOptions DownloadCover
+
+getCoverImage :: DownloadCover -> RSocket.StreamId -> AppM IO IO RSocket.Payload
+getCoverImage DownloadCover {..} streamId =
+  findCoverImageIO sourceId >>= \case
+    Nothing -> do
+      let !msg = "No cover image found for source " <> showt sourceId.unSourceRef
+      $(logWarnIO) msg
+      throw $ ServiceException msg
+    Just (Right path) -> do
+      $(logInfoIO) $ "Found cover image " <> showt path <> " for source " <> showt sourceId.unSourceRef
+      contents <- liftIO $ L.readFile path
+      let !metadata = encodeFilenameMetadata (takeFileName path)
+      pure $ buildPayload (RawPayload contents) metadata streamId True
+    Just (Left pic) -> do
+      $(logInfoIO) $ "Found embedded cover image for source " <> showt sourceId.unSourceRef
+      let !picMime = RSocket.RawMimeType (T.encodeUtf8 pic.mimeType)
+      pure $ buildPayload (TypedPayload picMime (L.fromStrict pic.pictureData)) (RSocket.CompositeMetadata []) streamId True
+  where
+    encodeFilenameMetadata fileName =
+      RSocket.TypedMetadata (RSocket.MimeTypeId RSocket.ApplicationJson) $
+        RSocket.DataPayload $
+          JSON.encode (JSON.object [("file_name", toJSON fileName)])
+    findCoverImageIO k = withSpan "findCoverImageIO" defaultSpanArguments do
+      getSource k >>= \case
+        Nothing -> do
+          $(logWarn) $ "No source found for ref " <> showt k
+          pure Nothing
+        Just src -> case uriToFilePath src.source of
+          Nothing -> do
+            $(logWarn) $ "No local file found for source " <> showt k
+            pure Nothing
+          Just path -> do
+            $(logInfo) $ "Locating cover image for source " <> showt k <> " at path " <> showt path
+            let dir = takeDirectory path
+            findCoverImage dir >>= \case
+              Just imgPath -> pure $ Just $ Right imgPath
+              Nothing -> do
+                openMetadataFile path >>= \case
+                  Left e -> do
+                    let cause = displayException e
+                    $(logWarnV ['cause]) $ "Could not look for embedded image in file " <> showt path
+                    pure Nothing
+                  Right mf -> do
+                    let coverKey = fromMaybe F.FrontCover (src.cover ^? _Just . #imageType . _Just . coerced)
+                    pure $ Left <$> lookup coverKey mf.pictures

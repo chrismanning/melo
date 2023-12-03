@@ -10,7 +10,6 @@ import Data.Text.Lazy qualified as LT
 import Data.Text.Lazy.Builder qualified as LTB
 import Data.Time.Clock.System (SystemTime (..), utcToSystemTime)
 import Data.Vector qualified as V
-import GHC.Generics hiding (from)
 import Katip.Core
 import Melo.Common.Exit
 import Melo.Common.Http as Http

@@ -13,6 +13,7 @@ import Data.Word
 import Hasql.Connection as Hasql
 import Hasql.CursorTransactionIO
 import Hasql.Session
+import Hasql.Statement as Hasql
 import Hasql.Streaming
 import Melo.Common.Exception
 import Melo.Common.Logging
@@ -114,12 +115,12 @@ instance
   getAll = do
     pool <- getConnectionPool
     RepositoryHandle {tbl} <- getRepoHandle @a
-    withSpan ("getAll$" <> T.pack tbl.name) defaultSpanArguments do
+    withSpan ("getAll$" <> T.pack tbl.name.name) defaultSpanArguments do
       runSelect pool $ Rel8.each tbl
   getByKey ks | length ks == 1 = do
     pool <- getConnectionPool
     RepositoryHandle {tbl, pk} <- getRepoHandle @a
-    withSpan ("getByKey$" <> T.pack tbl.name) defaultSpanArguments do
+    withSpan ("getByKey$" <> T.pack tbl.name.name) defaultSpanArguments do
       runSelect pool do
         all <- Rel8.each tbl
         let k = Rel8.lit $ V.head ks
@@ -128,7 +129,7 @@ instance
   getByKey ks = do
     pool <- getConnectionPool
     RepositoryHandle {tbl, pk} <- getRepoHandle @a
-    withSpan ("getByKey$" <> T.pack tbl.name) defaultSpanArguments do
+    withSpan ("getByKey$" <> T.pack tbl.name.name) defaultSpanArguments do
       runSelect pool do
         let keys = Rel8.lit <$> ks
         all <- Rel8.each tbl
@@ -138,67 +139,67 @@ instance
   insert es = do
     pool <- getConnectionPool
     RepositoryHandle {tbl, upsert} <- getRepoHandle @a
-    withSpan ("insert$" <> T.pack tbl.name) defaultSpanArguments do
-      V.fromList
-        <$> runInsert
-          pool
-          Rel8.Insert
-            { into = tbl,
-              rows = Rel8.values (from <$> es),
-              onConflict = fromMaybe Rel8.Abort (Rel8.DoUpdate <$> upsert),
-              returning = Rel8.Projection (\x -> x)
-            }
-  insert' es | null es = pure 0
-  insert' es = do
-    pool <- getConnectionPool
-    RepositoryHandle {tbl, upsert} <- getRepoHandle @a
-    withSpan ("insert'$" <> T.pack tbl.name) defaultSpanArguments do
+    withSpan ("insert$" <> T.pack tbl.name.name) defaultSpanArguments do
       runInsert
         pool
+        Rel8.runVector
         Rel8.Insert
           { into = tbl,
             rows = Rel8.values (from <$> es),
             onConflict = fromMaybe Rel8.Abort (Rel8.DoUpdate <$> upsert),
-            returning = fromIntegral <$> Rel8.NumberOfRowsAffected
+            returning = Rel8.Returning (\x -> x)
+          }
+  insert' es | null es = pure 0
+  insert' es = do
+    pool <- getConnectionPool
+    RepositoryHandle {tbl, upsert} <- getRepoHandle @a
+    withSpan ("insertN$" <> T.pack tbl.name.name) defaultSpanArguments do
+      runInsert
+        pool
+        Rel8.runN
+        Rel8.Insert
+          { into = tbl,
+            rows = Rel8.values (from <$> es),
+            onConflict = fromMaybe Rel8.Abort (Rel8.DoUpdate <$> upsert),
+            returning = Rel8.NoReturning
           }
   delete ks | null ks = pure mempty
   delete ks = do
     pool <- getConnectionPool
     RepositoryHandle {tbl, pk} <- getRepoHandle @a
-    withSpan' ("delete$" <> T.pack tbl.name) defaultSpanArguments \span -> do
+    withSpan' ("delete$" <> T.pack tbl.name.name) defaultSpanArguments \span -> do
       let keys = Rel8.lit <$> ks
       let d =
             Rel8.Delete
               { from = tbl,
                 using = pure (),
                 deleteWhere = \_ row -> pk row `Rel8.in_` keys,
-                returning = Rel8.Projection pk
+                returning = Rel8.Returning pk
               }
       do
         let statement = Rel8.showDelete d
         Otel.addAttributes span [("database.statement", Otel.toAttribute $ T.pack statement)]
         $(logDebugVIO ['statement]) "Executing DELETE"
-      let session = statement () $ Rel8.delete d
+      let session = statement () $ Rel8.runVector $ Rel8.delete d
       liftIO do
-        dels <- withResource pool $ \conn -> run session conn >>= throwOnLeft
-        pure $ V.fromList dels
+        withResource pool $ \conn -> run session conn >>= throwOnLeft
   update es | null es = pure mempty
   update es = do
     pool <- getConnectionPool
     h@RepositoryHandle {tbl} <- getRepoHandle @a
-    withSpan ("update$" <> T.pack tbl.name) defaultSpanArguments do
+    withSpan ("update$" <> T.pack tbl.name.name) defaultSpanArguments do
       us <- forM es $ \e ->
-        doUpdate h pool (from e) (Rel8.Projection (\x -> x))
-      pure $ V.fromList (concat us)
+        doUpdate h pool Rel8.runVector (from e) (Rel8.Returning (\x -> x))
+      pure (msum us)
   update' es | null es = pure ()
   update' es = do
     pool <- getConnectionPool
     h@RepositoryHandle {tbl} <- getRepoHandle @a
-    withSpan ("update'$" <> T.pack tbl.name) defaultSpanArguments do
-      forM_ es $ \e -> doUpdate h pool (from e) (pure ())
+    withSpan ("update'$" <> T.pack tbl.name.name) defaultSpanArguments do
+      forM_ es $ \e -> doUpdate h pool Rel8.run_ (from e) (Rel8.NoReturning)
 
 doUpdate ::
-  forall t' m b.
+  forall t' m b a.
   ( Rel8.Rel8able t',
     MonadIO m,
     Tracing m,
@@ -208,11 +209,12 @@ doUpdate ::
   ) =>
   RepositoryHandle t' ->
   Pool Connection ->
+  (Rel8.Statement b -> Hasql.Statement () a) ->
   t' Rel8.Result ->
   Rel8.Returning (t' Rel8.Name) b ->
-  m b
-doUpdate (RepositoryHandle {tbl, pk}) pool e ret = do
-  withSpan' ("doUpdate$" <> T.pack tbl.name) defaultSpanArguments \span -> do
+  m a
+doUpdate (RepositoryHandle {tbl, pk}) pool runner e ret = do
+  withSpan' ("doUpdate$" <> T.pack tbl.name.name) defaultSpanArguments \span -> do
     let u =
           Rel8.Update
             { target = tbl,
@@ -225,7 +227,7 @@ doUpdate (RepositoryHandle {tbl, pk}) pool e ret = do
       let statement = Rel8.showUpdate u
       Otel.addAttributes span [("database.statement", Otel.toAttribute $ T.pack statement)]
       $(logDebugVIO ['statement]) "Executing UPDATE"
-    let session = statement () $ Rel8.update u
+    let session = statement () $ runner $ Rel8.update u
     liftIO do
       withResource pool $ \conn ->
         run session conn >>= \case
@@ -246,7 +248,7 @@ runSelect pool q = withSpan' "runSelect" defaultSpanArguments \span -> do
     let statement = Rel8.showQuery q
     Otel.addAttributes span [("database.statement", Otel.toAttribute $ T.pack statement)]
     $(logDebugVIO ['statement]) "Executing SELECT"
-  let session = statement () $ Rel8.selectVector q
+  let session = statement () $ Rel8.runVector $ Rel8.select q
   liftIO $ withResource pool $ \conn -> run session conn >>= throwOnLeft
 
 selectStream ::
@@ -257,27 +259,27 @@ selectStream ::
 selectStream q = do
   let statement = showt (Rel8.showQuery q)
   $(logDebugVIO ['statement]) "Streaming SELECT"
-  streamingQuery (Rel8.select q) ()
+  streamingQuery (Rel8.run $ Rel8.select q) ()
 
-runInsert :: (MonadIO m, Tracing m) => Pool Connection -> Rel8.Insert a -> m a
-runInsert pool i = withSpan' "runInsert" defaultSpanArguments \span -> do
+runInsert :: (MonadIO m, Tracing m) => Pool Connection -> (Rel8.Statement b -> Hasql.Statement () a) -> Rel8.Insert b -> m a
+runInsert pool runner i = withSpan' "runInsert" defaultSpanArguments \span -> do
   do
     let statement = Rel8.showInsert i
     Otel.addAttributes span [("database.statement", Otel.toAttribute $ T.pack statement)]
     $(logDebugVIO ['statement]) "Executing INSERT"
-  let session = statement () $ Rel8.insert i
+  let session = statement () $ runner $ Rel8.insert i
   liftIO $ withResource pool $ \conn -> run session conn >>= throwOnLeft
 
-runInsert' :: (MonadIO m, Tracing m) => Pool Connection -> Rel8.Insert a -> m (Either QueryError a)
-runInsert' pool i = withSpan' "runInsert'" defaultSpanArguments \span -> do
+runInsert' :: (MonadIO m, Tracing m) => Pool Connection -> (Rel8.Statement b -> Hasql.Statement () a) -> Rel8.Insert b -> m (Either QueryError a)
+runInsert' pool runner i = withSpan' "runInsert'" defaultSpanArguments \span -> do
   do
     let statement = Rel8.showInsert i
     Otel.addAttributes span [("database.statement", Otel.toAttribute $ T.pack statement)]
     $(logDebugVIO ['statement]) "Executing INSERT"
-  let session = statement () $ Rel8.insert i
+  let session = statement () $ runner $ Rel8.insert i
   liftIO $ withResource pool $ \conn -> run session conn
 
 infixl 4 `startsWith`
 
-startsWith :: Rel8.Expr s -> Rel8.Expr s -> Rel8.Expr Bool
-startsWith = Rel8.function "starts_with"
+startsWith :: Rel8.Expr Text -> Rel8.Expr Text -> Rel8.Expr Bool
+startsWith a b = Rel8.function "starts_with" (a, b)

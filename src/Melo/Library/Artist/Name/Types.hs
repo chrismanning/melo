@@ -6,7 +6,6 @@ import Data.Hashable
 import Data.Morpheus.Kind
 import Data.Morpheus.Types as M
 import Data.UUID
-import GHC.Generics
 import Melo.Database.Repo
 import Melo.Library.Artist.Types
 import Rel8
@@ -44,7 +43,7 @@ data NewArtistName = NewArtistName
 instance From NewArtistName (ArtistNameTable Expr) where
   from n =
     ArtistNameTable
-      { id = nullaryFunction "uuid_generate_v4",
+      { id = function "uuid_generate_v4" (),
         artist_id = lit n.artist,
         name = lit n.name
       }

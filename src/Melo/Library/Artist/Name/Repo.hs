@@ -46,7 +46,6 @@ artistNameSchema :: TableSchema (ArtistNameTable Name)
 artistNameSchema =
   TableSchema
     { name = "artist_name",
-      schema = Nothing,
       columns =
         ArtistNameTable
           { id = "id",
@@ -65,6 +64,7 @@ initArtistNameRepo =
           Just
             Upsert
               { index = \t -> (t.artist_id, t.name),
+                predicate = Nothing,
                 set = \_new old -> old,
                 updateWhere = \_new _old -> lit True
               }

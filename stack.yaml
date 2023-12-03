@@ -1,4 +1,4 @@
-resolver: nightly-2023-06-27
+resolver: nightly-2023-12-01
 
 packages:
 - melo-format
@@ -24,7 +24,7 @@ extra-deps:
   - github: chrismanning/cue-sheet
     commit: fc6d7c15bdee3ae7877e2e6eb2d49abb154383f6
   - github: chrismanning/rel8
-    commit: 632eac9b91ee7d92dc038da493894c9833957d37
+    commit: dd7eeff9e1e3519342a8229ab48038d6840a6b85
   - github: chrismanning/kqueue
     commit: 742c7a29b5c5e43b330667f259b7ccea4503ba98
   - github: nikita-volkov/postgresql-binary
@@ -53,6 +53,11 @@ extra-deps:
       - propagators/w3c
       - sdk
       - utils/exceptions
+  - git: git@github.com:chrismanning/rsocket-hs.git
+    commit: ce25103b836ae95e1c479bc12e004ecab40e0c58
+    subdirs:
+      - rsocket
+      - rsocket-transport-tcp
   - hasql-streams-core-0.1.0.0
   - hasql-streams-streaming-0.1.0.0
   - mpg123-bindings-0.1.0.0
@@ -77,5 +82,10 @@ extra-deps:
   - thread-utils-context-0.3.0.3
   - thread-utils-finalizers-0.1.1.0
   - typerep-map-0.6.0.0
+  - io-classes-1.2.0.0
+  - io-classes-mtl-0.1.0.2
+  - io-sim-1.2.0.0
+  - si-timers-1.2.0.0
+  - strict-stm-1.2.0.0
 
 allow-newer: true

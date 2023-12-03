@@ -6,6 +6,8 @@ author:              "Chris Manning"
 maintainer:          "cmanning999@gmail.com"
 copyright:           "2021 Chris Manning"
 
+language: GHC2021
+
 extra-source-files:
 - README.md
 - ChangeLog.md
@@ -37,6 +39,7 @@ library:
   - caerbannog
   - casing
   - clock
+  - co-log-core
   - concurrency
   - conduit
   - conduit-audio
@@ -50,10 +53,12 @@ library:
   - deepseq
   - dependent-map
   - dependent-sum
+  - deriving-aeson
   - deriving-trans
   - directory
   - directory-tree
   - dns
+  - dotenv
   - edit-distance
   - either
   - exceptions
@@ -82,6 +87,7 @@ library:
   - http-conduit
   - http-types
   - imagesize-conduit
+  - io-classes
   - iproute
   - katip
   - katip-wai
@@ -120,6 +126,8 @@ library:
   - rel8
   - resource-pool
   - resourcet
+  - rsocket
+  - rsocket-transport-tcp
   - safe-exceptions
   - scotty
   - servant
@@ -129,6 +137,7 @@ library:
   - streaming
   - streaming-bytestring
   - streaming-utils
+  - strict-stm
   - string-combinators
   - tagged
   - template-haskell
@@ -142,6 +151,7 @@ library:
   - transformers-base
   - ttrie
   - typerep-map
+  - unagi-chan
   - unliftio
   - unordered-containers
   - utf8-string
@@ -168,37 +178,6 @@ executables:
     - -with-rtsopts=-N
     dependencies:
       - melo
-  melo-runner:
-    source-dirs: app/runner
-    main: Main.hs
-    ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
-    - -debug
-    dependencies:
-      - melo
-  melo-stream-sources:
-    source-dirs: app/stream-sources
-    main: Main.hs
-    ghc-options:
-      - -threaded
-      - -rtsopts
-      - -with-rtsopts=-N
-      - -debug
-    dependencies:
-      - melo
-      - bytestring
-      - hasql
-      - http-client
-      - http-client-tls
-      - raw-strings-qq
-      - resource-pool
-      - text-show
-      - uuid
-      - vector
-      - wai
-      - witch
 
 tests:
   melo-test:
@@ -220,6 +199,7 @@ tests:
     - concurrency
     - conduit
     - containers
+    - either
     - generic-lens
     - hashable
     - hspec
@@ -235,6 +215,7 @@ tests:
     - template-haskell
     - temporary
     - text
+    - time
     - transformers
     - transformers-base
     - unordered-containers
@@ -259,11 +240,11 @@ ghc-options:
 - -hiedir=.hie
 
 default-extensions:
-- GHC2021
 - ApplicativeDo
 - BlockArguments
 - DataKinds
 - DefaultSignatures
+- DeriveAnyClass
 - DerivingStrategies
 - DerivingVia
 - DisambiguateRecordFields

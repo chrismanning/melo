@@ -6,7 +6,6 @@ import Data.Hashable
 import Data.Int
 import Data.Time
 import Data.UUID
-import GHC.Generics
 import Melo.Database.Repo
 import Melo.Library.Release.Types
 import Melo.Library.Artist.Name.Types
@@ -60,7 +59,7 @@ data NewTrack = NewTrack
 instance From NewTrack (TrackTable Expr) where
   from t =
     TrackTable
-      { id = nullaryFunction "uuid_generate_v4",
+      { id = function "uuid_generate_v4" (),
         title = lit t.title,
         track_number = lit t.trackNumber,
         comment = lit t.comment,

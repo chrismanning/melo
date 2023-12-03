@@ -4,7 +4,6 @@ module Melo.Library.Source.TransformSpec where
 
 import Control.Concurrent.Classy
 import Control.Exception (evaluate)
-import Melo.Common.Exception
 import Control.Lens hiding (from)
 import Control.Monad
 import Control.Monad.Base
@@ -12,8 +11,9 @@ import Control.Monad.Mock
 import Control.Monad.Reader
 import Control.Monad.Trans
 import Control.Monad.Trans.Control
+import Control.Monad.Trans.State.Strict
 import Data.Coerce
-import Data.Either
+import Data.Either.Combinators
 import Data.HashMap.Strict as H
 import Data.List.NonEmpty as NE
 import Data.Maybe
@@ -23,8 +23,9 @@ import Data.UUID.V4
 import Data.Vector (Vector)
 import Data.Vector qualified as V
 import Data.Vector.Lens
+import Melo.Common.Exception
 import Melo.Common.FileSystem
-import Melo.Library.Collection.FileSystem.WatchService
+import Melo.Common.FileSystem.Watcher
 import Melo.Common.Logging
 import Melo.Metadata.Aggregate
 import Melo.Metadata.Aggregate.Mock
@@ -32,19 +33,30 @@ import Melo.Common.Uri
 import Melo.Database.Repo.Fake
 import Melo.Format.Flac
 import Melo.Format.Info as F
-import Melo.Format.Mapping
+import Melo.Format.Mapping as F
 import Melo.Format.Metadata as F
 import Melo.Format.Vorbis
+import Melo.Library.Artist.Name.Repo.Fake
+import Melo.Library.Artist.Name.Types qualified as Ty
+import Melo.Library.Artist.Repo.Fake
+import Melo.Library.Artist.Types qualified as Ty
 import Melo.Library.Collection.Repo.Fake
-import Melo.Library.Collection.Service
+import Melo.Library.Collection.Aggregate
 import Melo.Library.Collection.Types qualified as Ty
+import Melo.Library.Release.ArtistName.Repo.Fake
+import Melo.Library.Release.ArtistName.Types qualified as Ty
+import Melo.Library.Release.Types qualified as Ty
 import Melo.Library.Source.Repo.Fake
 import Melo.Library.Source.Transform qualified as SUT
 import Melo.Library.Source.Types (Source (..))
 import Melo.Library.Source.Types as Ty
+import Melo.Library.Track.Repo.Fake
+import Melo.Library.Track.Types qualified as Ty
+import Melo.Lookup.Covers.Mock
 import Melo.Lookup.MusicBrainz.Mock
 import Melo.Metadata.Mapping.Repo.Fake
 import Melo.Metadata.Mapping.Types
+import Rel8 qualified
 import Test.Hspec
 import Witch
 
@@ -61,7 +73,8 @@ spec = do
                       root_uri = "file:/music",
                       name = "music",
                       watch = False,
-                      kind = "filesystem"
+                      kind = "filesystem",
+                      rescan = False
                     }
                 )
               ]
@@ -74,6 +87,10 @@ spec = do
               ("track_number", trackNumber),
               ("track_title", trackTitle)
             ]
+    let trackRepo = mkTrackRepo []
+    let artistNameRepo = mkArtistNameRepo []
+    let releaseArtistNameRepo = mkReleaseArtistNameRepo []
+    let artistRepo = mkArtistRepo
     context "moving files by patterns" $ do
       let patterns =
             NE.fromList
@@ -96,15 +113,20 @@ spec = do
         let orig = mkSource collectionRef tags
         let fixture =
               TransformFixture
-                { transforms = [moveByPatterns patterns],
+                { transform = moveByPatterns patterns,
                   sourceRepo = mkSourceRepo [orig],
                   collectionRepo,
                   tagMappingRepo,
-                  metadataServiceActions = [],
-                  musicBrainzServiceActions = []
+                  trackRepo,
+                  artistNameRepo,
+                  releaseArtistNameRepo,
+                  artistRepo,
+                  metadataAggregateActions = [],
+                  musicBrainzServiceActions = [],
+                  coverServiceActions = []
                 }
         let expected = orig & #source .~ parseUriUnsafe "file:/music/Artist/1999%20-%20Album%20Title/01%20-%20Track%20Title.flac"
-        previewTransformationsFixture fixture (V.singleton orig) `shouldReturn` V.singleton expected
+        (rightToMaybe <$> previewTransformationFixture fixture orig) `shouldReturn` Just expected
       it "transforms with grouped pattern when tags missing date" $ do
         let tags =
               [ ("ARTIST", "Artist"),
@@ -115,15 +137,20 @@ spec = do
         let orig = mkSource collectionRef tags
         let fixture =
               TransformFixture
-                { transforms = [moveByPatterns patterns],
+                { transform = moveByPatterns patterns,
                   sourceRepo = mkSourceRepo [orig],
                   collectionRepo,
                   tagMappingRepo,
-                  metadataServiceActions = [],
-                  musicBrainzServiceActions = []
+                  trackRepo,
+                  artistNameRepo,
+                  releaseArtistNameRepo,
+                  artistRepo,
+                  metadataAggregateActions = [],
+                  musicBrainzServiceActions = [],
+                  coverServiceActions = []
                 }
         let expected = orig & #source .~ parseUriUnsafe "file:/music/Artist/Album%20Title/01%20-%20Track%20Title.flac"
-        previewTransformationsFixture fixture (V.singleton orig) `shouldReturn` V.singleton expected
+        (rightToMaybe <$> previewTransformationFixture fixture orig) `shouldReturn` Just expected
       it "transforms with cover image" $ do
         let tags =
               [ ("ARTIST", "Artist"),
@@ -134,15 +161,20 @@ spec = do
         let orig = mkSource collectionRef tags
         let fixture =
               TransformFixture
-                { transforms = [moveByPatterns patterns],
+                { transform = moveByPatterns patterns,
                   sourceRepo = mkSourceRepo [orig],
                   collectionRepo,
                   tagMappingRepo,
-                  metadataServiceActions = [],
-                  musicBrainzServiceActions = []
+                  trackRepo,
+                  artistNameRepo,
+                  releaseArtistNameRepo,
+                  artistRepo,
+                  metadataAggregateActions = [],
+                  musicBrainzServiceActions = [],
+                  coverServiceActions = []
                 }
         let expected = orig & #source .~ parseUriUnsafe "file:/music/Artist/Album%20Title/01%20-%20Track%20Title.flac"
-        previewTransformationsFixture fixture (V.singleton orig) `shouldReturn` V.singleton expected
+        (rightToMaybe <$> previewTransformationFixture fixture orig) `shouldReturn` Just expected
     context "editing metadata" $ do
       let metadataFile =
             F.MetadataFile
@@ -156,7 +188,8 @@ spec = do
                       bitsPerSample = Just 16,
                       totalSamples = Nothing,
                       quality = Nothing
-                    }
+                    },
+                pictures = []
               }
       it "removes single mapping" $ do
         let origTags =
@@ -176,17 +209,22 @@ spec = do
         let expected = mkSource collectionRef tags
         let fixture =
               TransformFixture
-                { transforms = [transformEditMetadata (SUT.RemoveMappings ["artist"])],
+                { transform = transformEditMetadata (SUT.RemoveMappings $ V.fromList ["artist"]),
                   sourceRepo = mkSourceRepo [orig],
                   collectionRepo,
                   tagMappingRepo,
-                  metadataServiceActions =
+                  trackRepo,
+                  artistNameRepo,
+                  releaseArtistNameRepo,
+                  artistRepo,
+                  metadataAggregateActions =
                     [ ReadMetadataFile flacFileId metadataFile.filePath :-> Right metadataFile
                     --            WriteMetadataFile metadataFile (metadataFile ^. #filePath) :-> Right metadataFile
                     ],
-                  musicBrainzServiceActions = []
+                  musicBrainzServiceActions = [],
+                  coverServiceActions = []
                 }
-        previewTransformationsFixture fixture (V.singleton orig) >>= (`shouldSatisfy` \actual -> (actual V.! 0 & #ref .~ orig.ref) == expected)
+        (rightToMaybe <$> previewTransformationFixture fixture orig) >>= (`shouldSatisfy` \actual -> (actual <&> #ref .~ orig.ref) == Just expected)
       it "retains mappings" $ do
         let origTags =
               [ ("ARTIST", "Artist"),
@@ -199,21 +237,26 @@ spec = do
         let orig = mkSource collectionRef origTags
         let fixture =
               TransformFixture
-                { transforms = [transformEditMetadata (SUT.Retain ["artist", "album"])],
+                { transform = transformEditMetadata (SUT.RetainMappings $ V.fromList ["artist", "album"]),
                   sourceRepo = mkSourceRepo [orig],
                   collectionRepo,
                   tagMappingRepo,
-                  metadataServiceActions =
+                  trackRepo,
+                  artistNameRepo,
+                  releaseArtistNameRepo,
+                  artistRepo,
+                  metadataAggregateActions =
                     [ ReadMetadataFile flacFileId metadataFile.filePath :-> Right metadataFile
                     ],
-                  musicBrainzServiceActions = []
+                  musicBrainzServiceActions = [],
+                  coverServiceActions = []
                 }
         let tags =
               [ ("ARTIST", "Artist"),
                 ("ALBUM", "Album Title")
               ]
         let expected = mkSource collectionRef tags
-        previewTransformationsFixture fixture (V.singleton orig) >>= (`shouldSatisfy` \actual -> (actual V.! 0 & #ref .~ orig.ref) == expected)
+        (rightToMaybe <$> previewTransformationFixture fixture orig) >>= (`shouldSatisfy` \actual -> (actual <&> #ref .~ orig.ref) == Just expected)
   describe "Pattern Parsing" $ do
     it "parses literal patterns from text" $ do
       SUT.parseMovePattern " " `shouldBe` Right (NE.singleton (Ty.LiteralPattern " "))
@@ -254,27 +297,38 @@ spec = do
                  ]
           )
 
-type TestTransformer = V.Vector Ty.Source -> TestTransformT (V.Vector Ty.Source)
+type TestTransformer = Ty.Source -> TestTransformT (Either SUT.TransformationError Ty.Source)
 
 type TestTransformT =
   SUT.TransformPreviewT
-    ( FakeTagMappingRepositoryT
-        ( FakeSourceRepositoryT
-            ( FakeCollectionRepositoryT
-                ( MockT
-                    MusicBrainzServiceAction
-                    ( MockT
-                        MetadataAggregateAction
-                        ( FileSystemWatcherIOT
-                            (FileSystemIOT
-                                (LoggingIOT IO)
-                            )
-                        )
-                    )
-                )
-            )
-        )
-    )
+      (SUT.VirtualArtistRepoT
+          (StateT SUT.VirtualEntities
+              ( FakeArtistRepositoryT
+                  ( FakeReleaseArtistNameRepositoryT
+                      ( FakeArtistNameRepositoryT
+                          ( FakeTrackRepositoryT
+                              ( FakeTagMappingRepositoryT
+                                  ( FakeSourceRepositoryT
+                                      ( FakeCollectionRepositoryT
+                                          ( MockT
+                                              CoverServiceAction
+                                              ( MockT
+                                                  MusicBrainzServiceAction
+                                                  ( MockT
+                                                      MetadataAggregateAction
+                                                      IO
+                                                  )
+                                              )
+                                          )
+                                      )
+                                  )
+                              )
+                          )
+                      )
+                  )
+              )
+          )
+      )
 
 instance (
   MonadIO m,
@@ -295,29 +349,39 @@ data TransformFixture = TransformFixture
   { collectionRepo :: FakeCollectionRepository,
     sourceRepo :: FakeSourceRepository,
     tagMappingRepo :: FakeTagMappingRepository,
-    metadataServiceActions :: [WithResult MetadataAggregateAction],
+    trackRepo :: FakeTrackRepository,
+    artistNameRepo :: FakeArtistNameRepository,
+    releaseArtistNameRepo :: FakeReleaseArtistNameRepository,
+    artistRepo :: FakeArtistRepository,
+    metadataAggregateActions :: [WithResult MetadataAggregateAction],
     musicBrainzServiceActions :: [WithResult MusicBrainzServiceAction],
-    transforms :: [TestTransformer]
+    coverServiceActions :: [WithResult CoverServiceAction],
+    transform :: TestTransformer
   }
 
-previewTransformationsFixture :: TransformFixture -> V.Vector Ty.Source -> IO (V.Vector Ty.Source)
-previewTransformationsFixture TransformFixture {..} ss = runSourceTransform $ SUT.previewTransformations transforms ss
+previewTransformationFixture :: TransformFixture -> Ty.Source -> IO (Either SUT.TransformationError Ty.Source)
+previewTransformationFixture TransformFixture {..} ss = runSourceTransform $ SUT.previewTransformation transform ss
   where
     runSourceTransform =
-      runStdoutLogging
-        . runFileSystemIO
-        . runFileSystemWatcherIO _ _
-        . runMockT metadataServiceActions
+--      runStdoutLogging
+--        . runFileSystemIO
+--        . runFileSystemWatcherIO _ _
+        runMockT metadataAggregateActions
         . runMockT musicBrainzServiceActions
+        . runMockT coverServiceActions
         . runFakeCollectionRepository collectionRepo
         . runFakeSourceRepository sourceRepo
         . runFakeTagMappingRepository tagMappingRepo
+        . runFakeTrackRepository trackRepo
+        . runFakeArtistNameRepository artistNameRepo
+        . runFakeReleaseArtistNameRepository releaseArtistNameRepo
+        . runFakeArtistRepository artistRepo
 
 moveByPatterns :: NonEmpty Ty.SourcePathPattern -> TestTransformer
 moveByPatterns patterns = SUT.evalTransformAction (SUT.Move Nothing patterns)
 
 transformEditMetadata :: SUT.MetadataTransformation -> TestTransformer
-transformEditMetadata mt = SUT.evalTransformAction (SUT.EditMetadata mt)
+transformEditMetadata mt = SUT.evalTransformAction (SUT.EditMetadata (V.singleton mt))
 
 parseUriUnsafe :: String -> URI
 parseUriUnsafe s = case parseURI s of
@@ -326,7 +390,7 @@ parseUriUnsafe s = case parseURI s of
 
 mkSource :: Ty.CollectionRef -> [(Text, Text)] -> Source
 mkSource collectionRef tags =
-  let Just metadata = mkMetadata vorbisCommentsId (Tags $ V.fromList tags)
+  let metadata = mkMetadata vorbisCommentsId (Tags $ V.fromList tags)
       srcRef = Ty.SourceRef $ fromWords64 2 2
    in Ty.Source
         { ref = srcRef,
@@ -342,9 +406,28 @@ mkSource collectionRef tags =
 mkSourceRepo :: [Ty.Source] -> FakeSourceRepository
 mkSourceRepo ss =
   FakeRepository $
-    H.fromList (fmap (\s -> s.ref, from s)) ss)
+    H.fromList (fmap (\s -> (s.ref, from s)) ss)
 
-mkTagMappingRepo :: [(Text, TagMapping)] -> FakeTagMappingRepository
+mkTagMappingRepo :: [(Text, F.TagMapping)] -> FakeTagMappingRepository
 mkTagMappingRepo tm =
   FakeRepository $
-    H.fromList (fmap (\(k, v) -> (k, from (NewTagMapping k (coerce v)))) tm)
+    H.fromList (fmap (\(k, v) -> (k, from (fromTagMapping k v))) tm)
+
+mkTrackRepo :: [Ty.Track] -> FakeTrackRepository
+mkTrackRepo ts =
+  FakeRepository $
+    H.fromList (fmap (\t -> (t.ref, from t)) ts)
+
+mkArtistNameRepo :: [Ty.ArtistNameEntity] -> FakeArtistNameRepository
+mkArtistNameRepo ns =
+  FakeRepository $
+    H.fromList (fmap (\n -> (n.id, from n)) ns)
+
+mkReleaseArtistNameRepo :: [(Ty.ReleaseRef, [Ty.ArtistNameEntity])] -> FakeReleaseArtistNameRepository
+mkReleaseArtistNameRepo ns =
+  FakeReleaseArtistNameRepository $
+    H.fromList (fmap (\(k, v) -> (k, V.fromList v)) ns)
+
+mkArtistRepo :: FakeArtistRepository
+mkArtistRepo =
+  FakeRepository mempty

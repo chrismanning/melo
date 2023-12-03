@@ -3,7 +3,6 @@
 module Melo.Library.Genre.Types where
 
 import Data.UUID
-import GHC.Generics hiding (from)
 import Melo.Database.Repo
 import Rel8 (
   Column,
@@ -12,7 +11,7 @@ import Rel8 (
   Expr,
   Rel8able,
   Result,
-  nullaryFunction,
+  function,
   lit,
   )
 
@@ -47,7 +46,7 @@ data NewGenre = NewGenre
 
 instance From NewGenre (GenreTable Expr) where
   from NewGenre { name, description } = GenreTable {
-    id = nullaryFunction "uuid_generate_v4",
+    id = function "uuid_generate_v4" (),
     name = lit name,
     description = lit description
   }

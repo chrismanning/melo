@@ -7,7 +7,7 @@ module Melo.Database.Repo where
 import Control.Monad
 import Control.Monad.State.Strict
 import Data.ByteString (ByteString)
-import Data.Kind
+import Data.Int
 import Data.Typeable
 import Data.Vector.Lens ()
 import Melo.Common.Exception (Exception)
@@ -21,7 +21,7 @@ class (Monad m, Entity e) => Repository e m where
   getAll :: m (Vector e)
   getByKey :: Vector (PrimaryKey e) -> m (Vector e)
   insert :: Vector (NewEntity e) -> m (Vector e)
-  insert' :: Vector (NewEntity e) -> m Int
+  insert' :: Vector (NewEntity e) -> m Int64
   delete :: Vector (PrimaryKey e) -> m (Vector (PrimaryKey e))
   update :: Vector e -> m (Vector e)
   update' :: Vector e -> m ()

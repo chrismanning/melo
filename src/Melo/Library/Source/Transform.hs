@@ -16,7 +16,6 @@ import Data.Map.Strict (Map)
 import Data.Text qualified as T
 import Data.Vector qualified as V
 import Data.Void (Void)
-import GHC.Generics hiding (from, to)
 import Melo.Common.Exception as E
 import Melo.Common.FileSystem as FS
 import Melo.Common.FileSystem.Watcher
@@ -261,7 +260,7 @@ newtype VirtualArtistRepoT m a = VirtualArtistRepoT
   deriving newtype (Functor, Applicative, Monad, MonadIO, MonadBase b, MonadBaseControl b, MonadConc, MonadCatch, MonadThrow, MonadMask, PrimMonad)
   deriving (MonadTrans, MonadTransControl) via IdentityT
 
-deriving instance (MonadState VirtualEntities m) => MonadState VirtualEntities (VirtualArtistRepoT m)
+deriving newtype instance (MonadState VirtualEntities m) => MonadState VirtualEntities (VirtualArtistRepoT m)
 
 instance
   {-# OVERLAPS #-}
@@ -293,7 +292,7 @@ instance
   insert es = do
     $(logDebug) "Preview insert @SourceEntity called"
     pure (from <$> es)
-  insert' = pure . V.length
+  insert' = pure . fromIntegral . V.length
   delete _ = pure V.empty
   update e = lift $ do
     $(logDebug) "Preview update @SourceEntity called"
@@ -352,7 +351,7 @@ instance
           let artist' = mkNewArtist id newArtist
           VirtualArtistRepoT ( #artists %= (at id ?~ artist') )
           pure artist'
-  insert' newArtists = Repo.insert @ArtistEntity newArtists <&> V.length
+  insert' newArtists = Repo.insert @ArtistEntity newArtists <&> fromIntegral . V.length
   delete _ = pure V.empty
   update e = do
     $(logDebug) "Preview update @ArtistEntity called"
@@ -427,7 +426,7 @@ instance
     id <- generateV4
     let artistName = fromNewArtistName a id
     #artistNames . at artistName.id <?= artistName
-  insert' artistNames = Repo.insert @ArtistNameEntity artistNames <&> V.length
+  insert' artistNames = Repo.insert @ArtistNameEntity artistNames <&> fromIntegral . V.length
   delete _ = pure V.empty
   update e = lift $ do
     $(logDebug) "Preview update @ArtistNameEntity called"
@@ -486,7 +485,7 @@ instance
     x <- gets (.releases)
     $(logDebug) $ "Preview releases inserted: " <> showt x
     pure as
-  insert' releases = Repo.insert @ReleaseEntity releases <&> V.length
+  insert' releases = Repo.insert @ReleaseEntity releases <&> fromIntegral . V.length
   delete _ = pure V.empty
   update e = lift $ do
     $(logDebug) "Preview update @ReleaseEntity called"
@@ -534,7 +533,7 @@ instance
     $(logDebug) "Preview insert @ReleaseArtistNameEntity called"
     #releaseArtists <>= V.toList as
     pure as
-  insert' releaseArtists = ReleaseArtist.insert releaseArtists <&> V.length
+  insert' releaseArtists = ReleaseArtist.insert releaseArtists <&> fromIntegral . V.length
 
 instance
   {-# OVERLAPS #-}
@@ -561,7 +560,7 @@ instance
     id <- generateV4
     let track = fromNewTrack t id
     #tracks . at track.id <?= track
-  insert' tracks = Repo.insert @TrackEntity tracks <&> V.length
+  insert' tracks = Repo.insert @TrackEntity tracks <&> fromIntegral . V.length
   delete _ = pure V.empty
   update = mapM \track -> do
     $(logDebug) "Preview update @TrackEntity called"
@@ -614,7 +613,7 @@ instance
     $(logDebug) "Preview insert @TrackArtistNameEntity called"
     #trackArtists <>= V.toList ts
     pure ts
-  insert' trackArtists = TrackArtist.insert trackArtists <&> V.length
+  insert' trackArtists = TrackArtist.insert trackArtists <&> fromIntegral . V.length
 
 instance
   {-# OVERLAPS #-}
@@ -724,6 +723,7 @@ instance
 instance
   {-# OVERLAPS #-}
   AppDataReader m => AppDataReader (TransformPreviewT m) where
+  alterAppData' = lift . alterAppData
   getAppData' = lift . getAppData'
   putAppData = lift . putAppData
   deleteAppData' = lift . deleteAppData'
@@ -731,6 +731,7 @@ instance
 instance
   {-# OVERLAPS #-}
   AppDataReader m => AppDataReader (VirtualArtistRepoT m) where
+  alterAppData' = lift . alterAppData
   getAppData' = lift . getAppData'
   putAppData = lift . putAppData
   deleteAppData' = lift . deleteAppData'

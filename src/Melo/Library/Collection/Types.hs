@@ -7,7 +7,6 @@ import Data.Morpheus.Kind
 import Data.Morpheus.Types as M
 import qualified Data.Text as T
 import Data.UUID
-import GHC.Generics
 import Melo.Common.Uri
 import Melo.Database.Repo
 import Rel8
@@ -27,8 +26,8 @@ deriving instance Show CollectionEntity
 deriving via (FromGeneric CollectionEntity) instance TextShow CollectionEntity
 
 newtype CollectionRef = CollectionRef { unCollectionRef :: UUID}
-  deriving (Show, Eq, Ord, Generic)
-  deriving newtype (DBType, DBEq, Hashable)
+  deriving (Generic)
+  deriving newtype (Show, Eq, Ord, DBType, DBEq, FromJSON, Hashable, ToJSON)
   deriving TextShow via FromGeneric CollectionRef
 
 instance GQLType CollectionRef where
@@ -63,7 +62,7 @@ data NewCollection = NewFilesystemCollection
 instance From NewCollection (CollectionTable Expr) where
   from c@NewFilesystemCollection {name, watch, rescan} =
     CollectionTable
-      { id = nullaryFunction "uuid_generate_v4",
+      { id = function "uuid_generate_v4" (),
         root_uri = lit $ showt $ rootUri c,
         name = lit name,
         watch = lit watch,

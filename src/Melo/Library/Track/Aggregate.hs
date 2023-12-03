@@ -7,7 +7,6 @@ import Data.Attoparsec.Text
 import Data.Int (Int16)
 import Data.Text qualified as T
 import Data.Vector qualified as V
-import GHC.Generics hiding (from)
 import Melo.Common.Logging
 import Melo.Common.Monad
 import Melo.Common.Uri

@@ -14,7 +14,6 @@ where
 import Conduit
 import Control.Concurrent.Classy.STM
 import Data.Aeson as A
-import Data.Aeson.Types
 import Data.ByteString.Char8 as C
 import Data.ByteString.Streaming.Aeson qualified as SA
 import Data.ByteString.Streaming.HTTP qualified as SH
@@ -23,10 +22,8 @@ import Data.Conduit.ImageSize qualified as ConduitImageSize
 import Data.Foldable qualified as F
 import Data.HashMap.Strict qualified as Map
 import Data.HashSet qualified as Set
-import Data.List.Extra (lower)
 import Data.String (IsString)
 import Data.Text qualified as T
-import GHC.Generics (Generic)
 import Melo.Common.Exception
 import Melo.Common.FileSystem
 import Melo.Common.Http as Http
@@ -65,8 +62,7 @@ data Cover = CoverInfo
     source :: CoverSource
   }
   deriving (Generic)
-
-instance ToJSON Cover
+  deriving (FromJSON, ToJSON) via CustomJSON JSONOptions Cover
 
 data ImageInfo = ImageInfo
   { width :: Int,
@@ -76,16 +72,14 @@ data ImageInfo = ImageInfo
     url :: Text
   }
   deriving (Generic)
-
-instance ToJSON ImageInfo
+  deriving (FromJSON, ToJSON) via CustomJSON JSONOptions ImageInfo
 
 data ImageFormat
   = GIF
   | JPG
   | PNG
   deriving (Generic)
-
-instance ToJSON ImageFormat
+  deriving (FromJSON, ToJSON) via CustomJSON '[ConstructorTagModifier ToLower] ImageFormat
 
 instance From ConduitImageSize.FileFormat ImageFormat where
   from ConduitImageSize.GIF = GIF
@@ -102,33 +96,15 @@ data SearchRequest = SearchRequest
     sources :: NonEmpty CoverSource
   }
   deriving (Generic)
-
-instance ToJSON SearchRequest where
-  toEncoding = genericToEncoding defaultOptions
+  deriving (FromJSON, ToJSON) via CustomJSON '[] SearchRequest
 
 data CoverSource
   = Bandcamp
   | Qobuz
   | Tidal
-  deriving (Show)
+  deriving (Generic, Show, Eq)
   deriving (TextShow) via FromStringShow CoverSource
-
-instance ToJSON CoverSource where
-  toJSON Bandcamp = toJSON @String "bandcamp"
-  toJSON Qobuz = toJSON @String "qobuz"
-  toJSON Tidal = toJSON @String "tidal"
-  toEncoding Bandcamp = toEncoding @String "bandcamp"
-  toEncoding Qobuz = toEncoding @String "qobuz"
-  toEncoding Tidal = toEncoding @String "tidal"
-
-instance FromJSON CoverSource where
-  parseJSON (A.String "bandcamp") = pure Bandcamp
-  parseJSON (A.String "qobuz") = pure Qobuz
-  parseJSON (A.String "tidal") = pure Tidal
-  parseJSON invalid =
-    prependFailure
-      "parsing Source failed, "
-      (typeMismatch "String" invalid)
+  deriving (FromJSON, ToJSON) via CustomJSON '[ConstructorTagModifier '[ToLower]] CoverSource
 
 data SearchResult
   = Source
@@ -141,18 +117,7 @@ data SearchResult
       }
   deriving (Generic, Show)
   deriving (TextShow) via FromGeneric SearchResult
-
-instance FromJSON SearchResult where
-  parseJSON =
-    genericParseJSON
-      defaultOptions
-        { sumEncoding =
-            TaggedObject
-              { tagFieldName = "type",
-                contentsFieldName = ""
-              },
-          constructorTagModifier = lower
-        }
+  deriving (FromJSON, ToJSON) via CustomJSON '[ConstructorTagModifier '[ToLower], SumTaggedObject "type" ""] SearchResult
 
 data ReleaseInfo = ReleaseInfo
   { title :: Maybe String,
@@ -160,8 +125,7 @@ data ReleaseInfo = ReleaseInfo
   }
   deriving (Generic, Show)
   deriving (TextShow) via FromGeneric ReleaseInfo
-
-instance FromJSON ReleaseInfo
+  deriving (FromJSON, ToJSON) via CustomJSON '[] ReleaseInfo
 
 data CoverServiceData = CoverServiceData
   { searchForCoversCache :: TVar (STM IO) (Map.HashMap Release [Cover]),

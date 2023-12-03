@@ -7,7 +7,9 @@ import Control.Applicative
 import Control.Lens (to)
 import Control.Monad
 import Data.Aeson hiding (Result)
+import Data.Attoparsec.ByteString.Char8 qualified as P
 import Data.Bits
+import Data.Bool (bool)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.Coerce
@@ -21,7 +23,9 @@ import Data.Morpheus.Types as M
 import Data.Range (Range (..))
 import Data.Range qualified as R
 import Data.Text qualified as T
+import Data.Text.Encoding qualified as T
 import Data.Time.Clock (NominalDiffTime ())
+import Data.Time.Format
 import Data.Time.Format.ISO8601
 import Data.Time.LocalTime
 import Data.UUID
@@ -43,6 +47,7 @@ import Rel8
   ( Column,
     DBEq,
     DBType (..),
+    Decoder (..),
     Expr,
     JSONBEncoded (..),
     ReadShow(..),
@@ -50,7 +55,7 @@ import Rel8
     Result,
     TypeInformation (..),
     lit,
-    nullaryFunction,
+    function,
   )
 import System.IO.Unsafe
 import Text.Read
@@ -75,7 +80,10 @@ data SourceTable f = SourceTable
 type SourceEntity = SourceTable Result
 
 deriving instance Show SourceEntity
+
 deriving via (FromGeneric SourceEntity) instance TextShow SourceEntity
+
+deriving via CustomJSON JSONOptions SourceEntity instance ToJSON SourceEntity
 
 instance Entity SourceEntity where
   type NewEntity SourceEntity = NewSource
@@ -86,6 +94,7 @@ newtype PictureTypeWrapper = PictureTypeWrapper PictureType
   deriving (Generic, Show, Eq)
   deriving DBType via ReadShow PictureType
   deriving TextShow via FromGeneric PictureTypeWrapper
+  deriving newtype ToJSON
 
 instance GQLType PictureTypeWrapper where
   type KIND PictureTypeWrapper = SCALAR
@@ -103,6 +112,10 @@ newtype IntervalRange = IntervalRange (Range CalendarDiffTime)
   deriving (Show, Eq)
   deriving TextShow via FromStringShow IntervalRange
 
+instance ToJSON IntervalRange where
+  toJSON (IntervalRange range) = toJSON (show range)
+  toEncoding (IntervalRange range) = toEncoding (show range)
+
 rangeLength :: IntervalRange -> Maybe NominalDiffTime
 rangeLength (IntervalRange r) = rangeLength' r
   where
@@ -113,23 +126,55 @@ rangeLength (IntervalRange r) = rangeLength' r
 instance DBType IntervalRange where
   typeInformation =
     TypeInformation
-      { encode = encode',
-        decode = decode',
+      { encode,
+        decode,
         typeName = "intervalrange"
       }
     where
-      encode' :: IntervalRange -> PrimExpr
-      encode' (IntervalRange (SingletonRange a)) = RangeExpr "intervalrange" (Inclusive (encodeInterval a)) (Inclusive (encodeInterval a))
-      encode' (IntervalRange (SpanRange a b)) = RangeExpr "intervalrange" (encodeBound a) (encodeBound b)
-      encode' (IntervalRange (LowerBoundRange a)) = RangeExpr "intervalrange" (encodeBound a) PosInfinity
-      encode' (IntervalRange (UpperBoundRange a)) = RangeExpr "intervalrange" NegInfinity (encodeBound a)
-      encode' (IntervalRange InfiniteRange) = RangeExpr "intervalrange" NegInfinity PosInfinity
+      encode :: IntervalRange -> PrimExpr
+      encode (IntervalRange (SingletonRange a)) = RangeExpr "intervalrange" (Inclusive (encodeInterval a)) (Inclusive (encodeInterval a))
+      encode (IntervalRange (SpanRange a b)) = RangeExpr "intervalrange" (encodeBound a) (encodeBound b)
+      encode (IntervalRange (LowerBoundRange a)) = RangeExpr "intervalrange" (encodeBound a) PosInfinity
+      encode (IntervalRange (UpperBoundRange a)) = RangeExpr "intervalrange" NegInfinity (encodeBound a)
+      encode (IntervalRange InfiniteRange) = RangeExpr "intervalrange" NegInfinity PosInfinity
       encodeInterval :: CalendarDiffTime -> PrimExpr
-      encodeInterval = CastExpr "interval" . ConstExpr . StringLit . formatShow (alternativeDurationTimeFormat BasicFormat)
+      encodeInterval = CastExpr "interval" . ConstExpr . StringLit . formatTime defaultTimeLocale "'%bmon %0Es'"
       encodeBound R.Bound {boundValue, boundType = R.Inclusive} = Inclusive (encodeInterval boundValue)
       encodeBound R.Bound {boundValue, boundType = R.Exclusive} = Exclusive (encodeInterval boundValue)
-      decode' :: Hasql.Value IntervalRange
-      decode' = Hasql.custom decodeRange
+      decode :: Rel8.Decoder (IntervalRange)
+      decode = Rel8.Decoder {
+        binary = Hasql.custom decodeRange,
+        parser = P.parseOnly (parser' <* P.endOfInput),
+        delimiter = ','
+      }
+      parser' = do
+        P.skipSpace
+        lowerBoundType <- P.char '[' <|> P.char '(' >>= \case
+          '[' -> pure R.Inclusive
+          '(' -> pure R.Exclusive
+          _ -> error "unknown bound"
+        P.skipSpace
+        lowerBound <- P.peekChar >>= \case
+          Just ',' -> pure Nothing
+          _ -> do
+            lowerBound <- calendarDiffTimeParser
+            pure $ Just $ R.Bound lowerBound lowerBoundType
+        P.skipSpace
+        upperBound <- P.peekChar >>= \case
+          Just ']' -> pure Nothing
+          Just ')' -> pure Nothing
+          _ -> do
+            upperBound <- calendarDiffTimeParser
+            upperBoundType <- P.char ']' <|> P.char ')' >>= \case
+              ']' -> pure R.Inclusive
+              ')' -> pure R.Exclusive
+              _ -> error "unknown bound"
+            pure $ Just $ R.Bound upperBound upperBoundType
+        pure $ IntervalRange $ case (lowerBound, upperBound) of
+          (Just lower, Just upper) -> R.SpanRange lower upper
+          (Just lower, Nothing) -> R.LowerBoundRange lower
+          (Nothing, Just upper) -> R.UpperBoundRange upper
+          (Nothing, Nothing) -> R.InfiniteRange
       decodeRange :: Bool -> ByteString -> Either Text IntervalRange
       decodeRange integerDatetimes = BP.run (rangeParser integerDatetimes)
       rangeParser :: Bool -> BP.BinaryParser IntervalRange
@@ -173,11 +218,71 @@ instance DBType IntervalRange where
         B.foldl' (\n h -> shiftL n 8 .|. fromIntegral h) 0
       intSized :: (Bits a, Integral a) => Int -> BinaryParser a
       intSized n = packNum <$> bytesOfSize n
+      calendarDiffTimeParser :: P.Parser CalendarDiffTime
+      calendarDiffTimeParser = iso8601 <|> postgres
+        where
+          iso8601 = P.takeByteString >>= iso8601ParseM . T.unpack . T.decodeUtf8Lenient
+          at = optional (P.char '@') *> P.skipSpace
+          plural unit = P.skipSpace <* (unit <* optional "s") <* P.skipSpace
+          parseMonths = sql <|> postgresql
+            where
+              sql = P.signed $ do
+                years <- P.decimal <* P.char '-'
+                months <- P.decimal <* P.skipSpace
+                pure $ years * 12 + months
+              postgresql = do
+                at
+                years <- P.signed P.decimal <* plural "year" <|> pure 0
+                months <- P.signed P.decimal <* plural "mon" <|> pure 0
+                pure $ years * 12 + months
+          parseTime = (+) <$> parseDays <*> time
+            where
+              time = realToFrac <$> (sql <|> postgresql)
+                where
+                  sql = P.signed $ do
+                    h <- P.signed P.decimal <* P.char ':'
+                    m <- twoDigits <* P.char ':'
+                    s <- secondsParser
+                    pure $ fromIntegral (((h * 60) + m) * 60) + s
+                  postgresql = do
+                    h <- P.signed P.decimal <* plural "hour" <|> pure 0
+                    m <- P.signed P.decimal <* plural "min" <|> pure 0
+                    s <- secondsParser <* plural "sec" <|> pure 0
+                    pure $ fromIntegral @Int (((h * 60) + m) * 60) + s
+              parseDays = do
+                days <- P.signed P.decimal <* (plural "days" <|> skipSpace1) <|> pure 0
+                pure $ fromIntegral @Int days * 24 * 60 * 60
+          postgres = do
+            months <- parseMonths
+            time <- parseTime
+            ago <- (True <$ (P.skipSpace *> "ago")) <|> pure False
+            pure $ CalendarDiffTime (bool Prelude.id negate ago months) (bool Prelude.id negate ago time)
+          skipSpace1 :: P.Parser ()
+          skipSpace1 = void $ P.takeWhile1 P.isSpace
+          twoDigits :: P.Parser Int
+          twoDigits = do
+            u <- P.digit
+            l <- P.digit
+            pure $ fromEnum u .&. 0xf * 10 + fromEnum l .&. 0xf
+          secondsParser :: P.Parser Pico
+          secondsParser = do
+            integral <- twoDigits
+            mfractional <- optional (P.char '.' *> P.takeWhile1 P.isDigit)
+            pure $ case mfractional of
+              Nothing -> fromIntegral integral
+              Just fractional -> parseFraction (fromIntegral integral) fractional
+           where
+            parseFraction integral digits = MkFixed (fromIntegral (n * 10 ^ e))
+              where
+                e = max 0 (12 - B.length digits)
+                n = B.foldl' go (integral :: Int64) (B.take 12 digits)
+                  where
+                    go acc digit = 10 * acc + fromIntegral (fromEnum digit .&. 0xf)
 
 instance From NewSource (SourceTable Expr) where
   from s =
     SourceTable
-      { id = nullaryFunction "uuid_generate_v4",
+      { id = function "uuid_generate_v4" (),
         kind = lit s.kind,
         metadata_format = lit s.metadataFormat,
         metadata = lit $ JSONBEncoded $ SourceMetadata (uncurry TagPair `V.map` coerce s.tags),
@@ -212,6 +317,7 @@ newtype SourceMetadata = SourceMetadata {tags :: Vector TagPair}
   deriving (Show, Eq, Generic)
   deriving (DBType) via JSONBEncoded SourceMetadata
   deriving TextShow via FromGeneric SourceMetadata
+  deriving (FromJSON, ToJSON) via CustomJSON JSONOptions SourceMetadata
 
 instance From Tags SourceMetadata where
   from (Tags tags) = SourceMetadata (uncurry TagPair <$> tags)
@@ -225,20 +331,7 @@ data TagPair = TagPair
   }
   deriving (Show, Eq, Generic, GQLType)
   deriving TextShow via FromGeneric TagPair
-
-instance ToJSON TagPair where
-  toJSON t = object ["key" .= t.key, "value" .= t.value]
-  toEncoding t = pairs ("key" .= t.key <> "value" .= t.value)
-
-deriving instance FromJSON TagPair
-
-instance ToJSON SourceMetadata where
-  toJSON (SourceMetadata tags) =
-    object ["tags" .= tags]
-  toEncoding (SourceMetadata tags) =
-    pairs ("tags" .= tags)
-
-deriving anyclass instance FromJSON SourceMetadata
+  deriving (FromJSON, ToJSON) via CustomJSON JSONOptions TagPair
 
 data NewImportSource
   = FileSource CollectionRef MetadataFile
@@ -323,6 +416,13 @@ data AudioRange = TimeRange (Range CalendarDiffTime)
   deriving (Eq, Show)
   deriving TextShow via FromStringShow AudioRange
 
+--instance FromJSON AudioRange where
+--  parseJSON = withText "AudioRange" (\v -> pure $ TimeRange (read v))
+
+instance ToJSON AudioRange where
+  toJSON (TimeRange range) = toJSON (show range)
+  toEncoding (TimeRange range) = toEncoding (show range)
+
 instance From AudioRange IntervalRange where
   from (TimeRange r) = IntervalRange r
 
@@ -347,7 +447,7 @@ instance From MetadataImportSource NewSource where
 
 newtype SourceRef = SourceRef {unSourceRef :: UUID}
   deriving (Generic)
-  deriving newtype (Show, Eq, Ord, DBType, DBEq, Hashable)
+  deriving newtype (Show, Eq, Ord, DBType, DBEq, FromJSON, Hashable, ToJSON)
   deriving TextShow via FromGeneric SourceRef
 
 instance GQLType SourceRef where
@@ -373,17 +473,15 @@ data Source = Source
     multiTrack :: Maybe MultiTrackDesc,
     collectionRef :: CollectionRef,
     length :: Maybe NominalDiffTime,
-    cover :: Maybe PictureType
+    cover :: Maybe Image
   }
-  deriving (Generic, Show, Eq)
+  deriving (Generic, Eq)
   deriving TextShow via FromGeneric Source
+  deriving (ToJSON) via CustomJSON JSONOptions Source
 
 instance TryFrom SourceEntity Source where
   tryFrom s = maybeToRight (TryFromException s Nothing) do
     uri <- parseURI $ T.unpack s.source_uri
-    let multiTrack = case (s.idx, s.time_range) of
-          (idx, Just timeRange) | idx > -1 -> Just MultiTrackDesc {idx, range = from timeRange}
-          _ -> Nothing
     pure
       Source
         { ref = s.id,
@@ -391,10 +489,17 @@ instance TryFrom SourceEntity Source where
           source = uri,
           kind = MetadataFileId s.kind,
           collectionRef = s.collection_id,
-          cover = coerce s.cover,
+          cover,
           length = s.time_range >>= rangeLength,
           metadata = metadataFromEntity s
         }
+    where
+      multiTrack = case (s.idx, s.time_range) of
+        (idx, Just timeRange) | idx > -1 -> Just MultiTrackDesc {idx, range = from timeRange}
+        _ -> Nothing
+      cover = case s.cover of
+        Just cover -> Just $ Image { fileName = Nothing, imageType = (Just cover) }
+        Nothing -> Nothing
 
 metadataFromEntity :: SourceEntity -> Maybe Metadata
 metadataFromEntity s = let JSONBEncoded (SourceMetadata tags) = s.metadata
@@ -404,6 +509,35 @@ metadataFromEntity s = let JSONBEncoded (SourceMetadata tags) = s.metadata
 
 instance TryFrom SourceEntity Metadata where
   tryFrom e = maybeToRight (TryFromException e Nothing) (metadataFromEntity e)
+
+data SourceGroup = SourceGroup
+  { groupTags :: MappedTags,
+    groupParentUri :: Text,
+    sources :: Vector Source,
+    coverImage :: Maybe Image
+  }
+  deriving (Eq, Generic)
+  deriving (TextShow) via FromGeneric SourceGroup
+  deriving (ToJSON) via CustomJSON JSONOptions SourceGroup
+
+type MappedTags = Vector MappedTag
+
+data MappedTag = MappedTag
+  { mappingName :: Text,
+    values :: Vector Text
+  }
+  deriving (Show, Eq, Ord, Generic)
+  deriving (TextShow) via FromGeneric MappedTag
+  deriving (ToJSON) via CustomJSON JSONOptions MappedTag
+
+data Image
+  = Image
+      { fileName :: Maybe Text,
+        imageType :: Maybe PictureTypeWrapper
+      }
+  deriving (Eq, Generic)
+  deriving (TextShow) via FromGeneric Image
+  deriving (ToJSON) via CustomJSON JSONOptions Image
 
 mkCueMetadata :: MetadataId -> Tags -> Maybe Metadata
 mkCueMetadata (MetadataId mid) tags
@@ -423,6 +557,7 @@ data MultiTrackDesc = MultiTrackDesc
   }
   deriving (Generic, Show, Eq)
   deriving TextShow via FromGeneric MultiTrackDesc
+  deriving (ToJSON) via CustomJSON JSONOptions MultiTrackDesc
 
 instance From Source SourceEntity where
   from Source {..} =
@@ -437,7 +572,7 @@ instance From Source SourceEntity where
           <|> (IntervalRange . R.ubi . calendarTimeTime <$> length),
         scanned = unsafeDupablePerformIO getCurrentLocalTime,
         collection_id = collectionRef,
-        cover = coerce cover
+        cover = cover >>= (.imageType)
       }
 
 type UpdateSource = SourceEntity

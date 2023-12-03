@@ -19,7 +19,6 @@ tagMappingSchema :: TableSchema (TagMappingTable Name)
 tagMappingSchema =
   TableSchema
     { name = "tag_mapping",
-      schema = Nothing,
       columns =
         TagMappingTable
           { name = "name",
@@ -36,6 +35,7 @@ initTagMappingRepo = putAppData
         Just
           Upsert
             { index = (.name),
+              predicate = Nothing,
               set = const,
               updateWhere = \new old -> new.name ==. old.name
             }

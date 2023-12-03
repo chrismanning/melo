@@ -19,6 +19,7 @@ module Melo.Common.Monad
     AppDataReader (..),
     LocalAppDataReader (..),
     AppM,
+    alterAppData,
     getAppData,
     deleteAppData,
     runAppM,
@@ -33,7 +34,7 @@ import Control.Applicative as A
 import Control.Concurrent.Classy
 import Control.Monad
 import Control.Monad.Base
-import Control.Monad.Conc.Class
+import Control.Monad.Conc.Class hiding (catch)
 import Control.Monad.Extra hiding
   ( allM,
     andM,
@@ -59,7 +60,6 @@ import Control.Monad.Trans.Identity hiding (liftCallCC, liftCatch)
 import Control.Monad.Trans.Maybe hiding (liftCallCC, liftCatch)
 import Control.Monad.Trans.Reader (ReaderT (..))
 import Data.Foldable.Extra
-import Data.Kind
 import Data.Proxy
 import Data.TMap as TMap
 import Data.Typeable
@@ -106,12 +106,15 @@ runAppM m = do
   runReaderT m appData
 
 class Monad m => AppDataReader m where
+  alterAppData' :: forall (a :: Type). Typeable a => (Maybe a -> Maybe a) -> m ()
   getAppData' :: forall (a :: Type). Typeable a => Proxy a -> m (Maybe a)
   putAppData :: forall (a :: Type). Typeable a => a -> m ()
   deleteAppData' :: forall (a :: Type). Typeable a => Proxy a -> m ()
 
-instance MonadIO m => AppDataReader (AppM IO m)
-  where
+instance MonadIO m => AppDataReader (AppM IO m) where
+  alterAppData' alter = do
+    mapVar <- asks (.typeMap)
+    liftIO $ atomically $ modifyTVar' mapVar (TMap.alter alter)
   getAppData' _ = do
     mapVar <- asks (.typeMap)
     map <- liftIO $ readTVarConc mapVar
@@ -134,9 +137,13 @@ instance
   ) =>
   AppDataReader (t m)
   where
+  alterAppData' = lift . alterAppData
   getAppData' = lift . getAppData'
   putAppData = lift . putAppData
   deleteAppData' = lift . deleteAppData'
+
+alterAppData :: forall (a :: Type) m. (AppDataReader m, Typeable a) => (Maybe a -> Maybe a) -> m ()
+alterAppData = alterAppData' @m @a
 
 getAppData :: forall (a :: Type) m. (AppDataReader m, Typeable a) => m (Maybe a)
 getAppData = getAppData' (Proxy @a)

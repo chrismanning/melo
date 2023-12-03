@@ -3,6 +3,7 @@
 module Melo.Library.Release.ArtistName.Repo where
 
 import Control.Monad.State.Strict
+import Data.Int
 import Data.Vector qualified as V
 import Melo.Common.Monad
 import Melo.Database.Repo.IO
@@ -18,7 +19,7 @@ import Rel8 qualified
 
 class Monad m => ReleaseArtistNameRepository m where
   getReleaseArtistNames :: ReleaseRef -> m (Vector ArtistNameEntity)
-  insert' :: Vector ReleaseArtistNameEntity -> m Int
+  insert' :: Vector ReleaseArtistNameEntity -> m Int64
   insert :: Vector ReleaseArtistNameEntity -> m (Vector ReleaseArtistNameEntity)
 
 insertSingle :: ReleaseArtistNameRepository m => ReleaseArtistNameEntity -> m (Maybe ReleaseArtistNameEntity)
@@ -45,24 +46,25 @@ instance ReleaseArtistNameRepository (AppM IO IO) where
     pool <- getConnectionPool
     runInsert
       pool
+      Rel8.runN
       Rel8.Insert
         { into = releaseArtistNameSchema,
           rows = Rel8.values (from <$> releaseArtistNames),
           onConflict = Rel8.DoNothing,
-          returning = fromIntegral <$> Rel8.NumberOfRowsAffected
+          returning = Rel8.NoReturning
         }
   insert releaseArtistNames | V.null releaseArtistNames = pure V.empty
   insert releaseArtistNames = do
     pool <- getConnectionPool
-    V.fromList
-      <$> runInsert
-        pool
-        Rel8.Insert
-          { into = releaseArtistNameSchema,
-            rows = Rel8.values (from <$> releaseArtistNames),
-            onConflict = Rel8.DoNothing,
-            returning = Rel8.Projection (\x -> x)
-          }
+    runInsert
+      pool
+      Rel8.runVector
+      Rel8.Insert
+        { into = releaseArtistNameSchema,
+          rows = Rel8.values (from <$> releaseArtistNames),
+          onConflict = Rel8.DoNothing,
+          returning = Rel8.Returning (\x -> x)
+        }
 
 releaseArtistForReleaseRef :: Expr ReleaseRef -> Query (ReleaseArtistNameTable Expr)
 releaseArtistForReleaseRef releaseRef =
@@ -77,7 +79,6 @@ releaseArtistNameSchema :: Rel8.TableSchema (ReleaseArtistNameTable Rel8.Name)
 releaseArtistNameSchema =
   Rel8.TableSchema
     { name = "release_artist_name",
-      schema = Nothing,
       columns =
         ReleaseArtistNameTable
           { release_id = "release_id",

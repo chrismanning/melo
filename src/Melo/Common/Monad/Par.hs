@@ -4,7 +4,6 @@ import Control.Concurrent.Classy.STM
 import Control.Monad.IO.Class
 import Control.Monad.Par.Class
 import Control.Monad.Par.IO
-import Data.Kind
 import Data.Proxy
 import Data.TMap qualified as TMap
 import Data.Typeable
@@ -45,6 +44,9 @@ instance ParIVar IVar ParAppM where
     liftIO $ runParIO $ put_ i a
 
 instance AppDataReader ParAppM where
+  alterAppData' alter = do
+    mapVar <- asks (.typeMap)
+    liftIO $ atomically $ modifyTVar' mapVar (TMap.alter alter)
   getAppData' _ = ParAppM do
     mapVar <- asks (.typeMap)
     map <- liftIO $ readTVarConc mapVar

@@ -4,10 +4,8 @@ module Melo.Library.API where
 
 import Control.Concurrent.Classy
 import Control.Monad.Reader
-import Data.Kind
 import Data.Morpheus.Types
 import Data.Typeable
-import GHC.Generics hiding (from)
 import GHC.OverloadedLabels ()
 import Melo.Common.Config
 import Melo.Common.FileSystem

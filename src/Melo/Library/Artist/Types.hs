@@ -9,7 +9,6 @@ import Data.Hashable
 import Data.Morpheus.Types as M
 import Data.Morpheus.Kind
 import Data.UUID
-import GHC.Generics hiding (from, to)
 import Melo.Database.Repo
 import qualified Melo.Lookup.MusicBrainz as MB
 import Rel8
@@ -110,7 +109,7 @@ data NewArtist = NewArtist
 instance From NewArtist (ArtistTable Expr) where
   from a =
     ArtistTable
-      { id = nullaryFunction "uuid_generate_v4",
+      { id = function "uuid_generate_v4" (),
         name = lit a.name,
         disambiguation = lit a.disambiguation,
         country = lit (alphaThreeLower <$> a.country),
