@@ -21,7 +21,6 @@ import Network.URI
 import OpenTelemetry.Trace qualified as Otel
 import Rel8
   ( Name,
-    Result,
     TableSchema (..),
     Upsert (..),
     in_,
@@ -31,7 +30,7 @@ import Rel8
 import Rel8 qualified
 
 class Repository CollectionEntity m => CollectionRepository m where
-  getByUri :: Vector URI -> m (Vector (CollectionTable Result))
+  getByUri :: Vector URI -> m (Vector CollectionEntity)
 
 instance
   {-# OVERLAPPABLE #-}

@@ -24,6 +24,7 @@ data CollectionTable f = CollectionTable
 type CollectionEntity = CollectionTable Result
 deriving instance Show CollectionEntity
 deriving via (FromGeneric CollectionEntity) instance TextShow CollectionEntity
+deriving via (CustomJSON JSONOptions CollectionEntity) instance ToJSON CollectionEntity
 
 newtype CollectionRef = CollectionRef { unCollectionRef :: UUID}
   deriving (Generic)
@@ -58,6 +59,7 @@ data NewCollection = NewFilesystemCollection
   }
   deriving (Show, Eq, Generic, GQLType)
   deriving TextShow via FromGeneric NewCollection
+  deriving (FromJSON, ToJSON) via CustomJSON JSONOptions NewCollection
 
 instance From NewCollection (CollectionTable Expr) where
   from c@NewFilesystemCollection {name, watch, rescan} =

@@ -561,8 +561,8 @@ instance From MetadataTransformation Tr.MetadataTransformation where
 
 registerRoutes :: AppM IO IO ()
 registerRoutes = do
-  registerRoute (RouteKey "downloadCover") (jsonRqRsRoute getCoverImage)
-  registerRoute (RouteKey "getSources") (jsonStreamRoute streamSourceGroups)
+  registerRoute (RouteKey "downloadCover") (jsonRqRawRsRoute getCoverImage)
+  registerRoute (RouteKey "getSources") (jsonRqJsonStreamRoute streamSourceGroups)
   pure ()
 
 data StreamSourceGroups = StreamSourceGroups
@@ -573,16 +573,15 @@ data StreamSourceGroups = StreamSourceGroups
   deriving (Generic)
   deriving (FromJSON, ToJSON) via CustomJSON JSONOptions StreamSourceGroups
 
-streamSourceGroups :: StreamSourceGroups -> RSocket.StreamId -> ContT () (AppM IO IO) (S.Stream (S.Of RSocket.Payload) (AppM IO IO) ())
-streamSourceGroups rq streamId = do
+streamSourceGroups :: StreamSourceGroups -> ContT () (AppM IO IO) (S.Stream (S.Of Ty.SourceGroup) (AppM IO IO) ())
+streamSourceGroups rq = do
   groupByMappings <- lift $ getMappingsNamed rq.groupByMappings
   stream <- selectStream sources
   pure
     do
       stream
         & groupSources groupByMappings
-        & S.mapped (\srcs -> mkSrcGrp srcs)
-        & S.map (\(srcGrp :: Ty.SourceGroup) -> buildStreamPayload (JsonPayload srcGrp) (RSocket.CompositeMetadata []) streamId)
+        & S.mapped mkSrcGrp
   where
     sources = do
       srcs <- orderByUri $ Rel8.each sourceSchema

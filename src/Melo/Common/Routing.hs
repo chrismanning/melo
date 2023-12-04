@@ -117,8 +117,8 @@ normaliseMimeType (RawMimeType "application/json") = MimeTypeId ApplicationJson
 normaliseMimeType (RawMimeType "text/plain") = MimeTypeId TextPlain
 normaliseMimeType m = m
 
-jsonRqRsRoute :: FromJSON a => (a -> RSocket.StreamId -> RouteResult RSocket.RequestResponse (AppM IO IO)) -> RouteHandler RSocket.RequestResponse (AppM IO IO)
-jsonRqRsRoute f _conn (TypedRequest streamId mimeType payload) _mimes =
+jsonRqRawRsRoute :: FromJSON a => (a -> RSocket.StreamId -> RouteResult RSocket.RequestResponse (AppM IO IO)) -> RouteHandler RSocket.RequestResponse (AppM IO IO)
+jsonRqRawRsRoute f _conn (TypedRequest streamId mimeType payload) _mimes =
   case normaliseMimeType mimeType of
     MimeTypeId ApplicationJson ->
       case JSON.eitherDecode' (RSocket.payloadData payload) of
@@ -132,12 +132,48 @@ jsonRqRsRoute f _conn (TypedRequest streamId mimeType payload) _mimes =
       $(logWarnIO) msg
       liftIO $ throwIO $ ServiceException msg
 
-jsonStreamRoute :: FromJSON a => (a -> RSocket.StreamId -> RouteResult RSocket.RequestStream (AppM IO IO)) -> RouteHandler RSocket.RequestStream (AppM IO IO)
-jsonStreamRoute f _conn (TypedRequest streamId mimeType payload) _mimes =
+jsonRqJsonRsRoute :: (FromJSON rq, ToJSON rs) => (rq -> AppM IO IO rs) -> RouteHandler RSocket.RequestResponse (AppM IO IO)
+jsonRqJsonRsRoute f _conn (TypedRequest streamId mimeType payload) _mimes =
+  case normaliseMimeType mimeType of
+    MimeTypeId ApplicationJson ->
+      case JSON.eitherDecode' (RSocket.payloadData payload) of
+        Right a -> do
+          rs <- f a
+          pure $! buildPayload (JsonPayload rs) (RSocket.CompositeMetadata []) streamId True
+        Left e -> do
+          let !msg = "Failed to decode request: " <> showt e
+          $(logWarnIO) msg
+          liftIO $ throwIO $ ServiceException msg
+    _ -> do
+      let !msg = "Unsupported request type " <> T.pack (show mimeType)
+      $(logWarnIO) msg
+      liftIO $ throwIO $ ServiceException msg
+
+jsonRqRawStreamRoute :: FromJSON a => (a -> RSocket.StreamId -> RouteResult RSocket.RequestStream (AppM IO IO)) -> RouteHandler RSocket.RequestStream (AppM IO IO)
+jsonRqRawStreamRoute f _conn (TypedRequest streamId mimeType payload) _mimes =
   case normaliseMimeType mimeType of
     MimeTypeId ApplicationJson ->
       case JSON.eitherDecode' (RSocket.payloadData payload) of
         Right a -> f a streamId
+        Left e -> do
+          let !msg = "Failed to decode request: " <> showt e
+          $(logWarnIO) msg
+          liftIO $ throwIO $ ServiceException msg
+    _ -> do
+      let !msg = "Unsupported request type " <> T.pack (show mimeType)
+      $(logWarnIO) msg
+      liftIO $ throwIO $ ServiceException msg
+
+jsonRqJsonStreamRoute :: (FromJSON rq, ToJSON rs) => (rq -> ContT () (AppM IO IO) (S.Stream (S.Of rs) (AppM IO IO) ())) -> RouteHandler RSocket.RequestStream (AppM IO IO)
+jsonRqJsonStreamRoute f _conn (TypedRequest streamId mimeType payload) _mimes =
+  case normaliseMimeType mimeType of
+    MimeTypeId ApplicationJson ->
+      case JSON.eitherDecode' (RSocket.payloadData payload) of
+        Right a -> do
+          s <- f a
+          pure $!
+            s
+              & S.map (\rs -> buildStreamPayload (JsonPayload rs) (RSocket.CompositeMetadata []) streamId)
         Left e -> do
           let !msg = "Failed to decode request: " <> showt e
           $(logWarnIO) msg
