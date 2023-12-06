@@ -1,74 +1,52 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE UndecidableInstances #-}
-
 module Melo.Metadata.API where
 
-import Control.Concurrent.Classy
-import Control.Monad.Reader
-import Data.Foldable qualified as F
 import Data.List.NonEmpty qualified as NE
-import Data.Morpheus.Types
-import Data.Typeable
 import Data.Vector qualified as V
-import GHC.OverloadedLabels ()
+import Melo.Common.API
 import Melo.Common.Config
 import Melo.Common.Monad
-import Melo.Format qualified as F
+import Melo.Common.Routing
 import Melo.Metadata.Aggregate
 import Melo.Metadata.Mapping.Aggregate
 import Melo.Metadata.Mapping.Types
 import Melo.Metadata.Types
 
-data MetadataQuery m = MetadataQuery
-  { formats :: m (Vector (MetadataFormat m)),
-    mappings :: m (Vector TagMapping)
-  }
-  deriving (Generic)
-
-instance Typeable m => GQLType (MetadataQuery m)
-
-data MetadataFormat m = MetadataFormat
+data MetadataFormat = MetadataFormat
   { id :: Text,
     description :: Text,
-    mappings :: m (Vector TagMapping)
+    mappings :: Vector TagMapping
   }
-  deriving (Generic, GQLType)
+  deriving (Generic)
+  deriving (FromJSON, ToJSON) via CustomJSON JSONOptions MetadataFormat
 
-resolveMetadata ::
-  ( TagMappingAggregate m,
-    MonadConc m,
-    ConfigService m
-  ) =>
-  ResolverQ e m MetadataQuery
-resolveMetadata =
-  lift $
-    pure
-      MetadataQuery
-        { mappings = lift do
-            allMappings <- V.fromList . itoListOf itraversed <$> getAllMappings
-            pure $ fmap (uncurry fromTagMapping) allMappings,
-          formats = do
-            config <- lift $ getConfigDefault metadataConfigKey
-            let allowed f = f.metadataFormat.formatId `F.elem` config.tagPreference
-            getMappings <- lift $ once do
-              allMappings <- V.fromList . itoListOf itraversed <$> getAllMappings
-              pure $ fmap (uncurry fromTagMapping) allMappings
-            pure $
-              V.fromList $
-                mfilter allowed factories <&> \f ->
-                  MetadataFormat
-                    { id = f.metadataFormat.formatId.unMetadataId,
-                      description = f.metadataFormat.formatDesc,
-                      mappings = do
-                        allMappings <- lift $ getMappings
-                        let !id = f.metadataFormat.formatId.unMetadataId
-                        pure $
-                          allMappings <&> \mapping ->
-                            mapping
-                              { fieldMappings =
-                                  NE.fromList $
-                                    NE.filter (\fm -> fm.formatId == id) mapping.fieldMappings
-                              }
-                    }
-        }
+getMetadataTagMappings :: AppM IO IO (Vector TagMapping)
+getMetadataTagMappings = do
+  allMappings <- V.fromList . itoListOf itraversed <$> getAllMappings
+  pure $ fmap (uncurry fromTagMapping) allMappings
+
+getMetadataFormats :: AppM IO IO (Vector MetadataFormat)
+getMetadataFormats = do
+  config <- getConfigDefault metadataConfigKey
+  let allowed f = f ^. #metadataFormat . #formatId `elem` config.tagPreference
+  allMappings <- getMetadataTagMappings
+  pure $
+    V.fromList $
+      mfilter allowed factories <&> \f -> do
+        MetadataFormat
+          { id = formatId f,
+            description = formatDesc f,
+            mappings = mappings f allMappings
+          }
+  where
+    formatId f = f ^. #metadataFormat . #formatId . #unMetadataId
+    formatDesc f = f ^. #metadataFormat . #formatDesc
+    mappings :: MetadataFormatFactory -> Vector TagMapping -> Vector TagMapping
+    mappings f allMappings = allMappings
+      & filter (\m -> any (\fm -> fm.formatId == formatId f) m.fieldMappings)
+      <&> (#fieldMappings %~ NE.fromList . filter (\fm -> fm.formatId == formatId f) . toList)
+
+registerRoutes :: AppM IO IO ()
+registerRoutes = do
+  registerRoute (RouteKey "getMetadataFormats") (nullRqJsonRsRoute getMetadataFormats)
+  registerRoute (RouteKey "getMetadataTagMappings") (nullRqJsonRsRoute getMetadataTagMappings)
+  pure ()

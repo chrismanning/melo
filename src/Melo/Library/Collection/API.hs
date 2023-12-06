@@ -41,9 +41,9 @@ getCollection GetCollection {id} = getSingle @CollectionEntity id
 
 registerRoutes :: AppM IO IO ()
 registerRoutes = do
-  registerRoute (RouteKey "getAllCollections") (jsonRqJsonRsRoute \() -> getAll @CollectionEntity)
+  registerRoute (RouteKey "getAllCollections") (nullRqJsonRsRoute (getAll @CollectionEntity))
   registerRoute (RouteKey "getCollection") (jsonRqJsonRsRoute getCollection)
   registerRoute (RouteKey "addCollection") (jsonRqJsonRsRoute \AddCollection {newCollection} -> addCollection newCollection)
-  registerRoute (RouteKey "deleteAllCollections") (jsonRqJsonRsRoute \() -> deleteAllCollections)
-  registerRoute (RouteKey "deleteCollections") (jsonRqJsonRsRoute \DeleteCollection {id} -> deleteCollection id)
+  registerRoute (RouteKey "deleteAllCollections") (nullRqJsonRsRoute deleteAllCollections)
+  registerRoute (RouteKey "deleteCollection") (jsonRqJsonRsRoute \DeleteCollection {id} -> deleteCollection id)
   pure ()
