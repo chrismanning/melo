@@ -3,19 +3,20 @@
 
 module Melo.Library.Source.Transform where
 
-import Control.Applicative hiding (many, some)
+import Control.Applicative
 import Control.Concurrent.Classy
 import Control.Foldl qualified as Fold
 import Control.Lens (to)
 import Control.Monad.State.Class
 import Control.Monad.Trans.State.Strict (StateT, evalStateT)
+import Data.Attoparsec.Text qualified as P
+import Data.Attoparsec.Text ((<?>))
 import Data.Char
 import Data.Default
 import Data.HashMap.Strict qualified as HashMap
 import Data.Map.Strict (Map)
 import Data.Text qualified as T
 import Data.Vector qualified as V
-import Data.Void (Void)
 import Melo.Common.Exception as E
 import Melo.Common.FileSystem as FS
 import Melo.Common.FileSystem.Watcher
@@ -56,30 +57,26 @@ import Melo.Metadata.Mapping.Aggregate
 import Melo.Metadata.Mapping.Repo
 import Melo.Metadata.Mapping.Types
 import System.FilePath
-import System.IO (TextEncoding)
-import Text.Megaparsec hiding (try)
-import Text.Megaparsec qualified as MP
-import Text.Megaparsec.Char
 import Text.Printf
 
 type Transform m = Source -> m (Either TransformationError Source)
 
-data TransformAction where
-  Move :: Maybe CollectionRef -> NonEmpty SourcePathPattern -> TransformAction
-  Copy :: Maybe CollectionRef -> NonEmpty SourcePathPattern -> TransformAction
-  ExtractEmbeddedImage :: URI -> TransformAction
-  EmbedImage :: URI -> TransformAction
-  CopyCoverImage :: URI -> TransformAction
-  SplitMultiTrackFile :: Maybe CollectionRef -> NonEmpty SourcePathPattern -> TransformAction
-  RemoveOtherFiles :: TransformAction
-  MusicBrainzLookup :: TransformAction
-  ConvertEncoding :: TextEncoding -> TransformAction
-  EditMetadata :: Vector MetadataTransformation -> TransformAction
-  ConvertMetadataFormat :: F.MetadataId -> TransformAction
-  ConvertFileFormat :: F.MetadataFileId -> TransformAction
-
-deriving instance Show TransformAction
-deriving via (FromStringShow TransformAction) instance TextShow TransformAction
+data TransformAction =
+    Move { destinationCollection :: Maybe CollectionRef, outputPathPattern :: NonEmpty SourcePathPattern }
+  | Copy { destinationCollection :: Maybe CollectionRef, outputPathPattern :: NonEmpty SourcePathPattern }
+  | ExtractEmbeddedImage URI
+  | EmbedImage URI
+  | CopyCoverImage URI
+  | SplitMultiTrackFile { destinationCollection :: Maybe CollectionRef, outputPathPattern :: NonEmpty SourcePathPattern }
+  | RemoveOtherFiles
+  | MusicBrainzLookup
+  | ConvertEncoding Text
+  | EditMetadata (Vector MetadataTransformation)
+  | ConvertMetadataFormat F.MetadataId
+  | ConvertFileFormat F.MetadataFileId
+  deriving (Generic)
+  deriving TextShow via FromGeneric TransformAction
+  deriving (FromJSON, ToJSON) via CustomJSON JSONOptions TransformAction
 
 evalTransformActions :: MonadSourceTransform m => Vector TransformAction -> Source -> m (Either TransformationError Source)
 evalTransformActions ts s = lockSource s $
@@ -888,7 +885,7 @@ renderSourcePattern ::
   SourcePathPattern ->
   m (Maybe FilePath)
 renderSourcePattern src = \case
-  LiteralPattern p -> pure $ Just p
+  LiteralPattern p -> pure $ Just (T.unpack p)
   GroupPattern pats -> do
     ts <- forM pats (renderSourcePattern src)
     let x = foldl' appendJust (Just "") ts
@@ -908,18 +905,22 @@ renderSourcePattern src = \case
     appendJust (Just a) (Just b) = Just (a <> b)
     appendJust _ _ = Nothing
 
-parseMovePattern :: Text -> Either (Maybe (ParseErrorBundle Text Void)) (NonEmpty SourcePathPattern)
-parseMovePattern s = nonEmptyRight =<< first Just (parse terms "" s)
+parseMovePattern :: Text -> Either (Maybe Text) (NonEmpty SourcePathPattern)
+parseMovePattern s = parse >>= nonEmptyRight
   where
-    nonEmptyRight :: [SourcePathPattern] -> Either (Maybe (ParseErrorBundle Text Void)) (NonEmpty SourcePathPattern)
+    parse = case P.parse terms s of
+      P.Fail _ _ctx e -> Left (Just (T.pack e))
+      P.Partial _ -> Left Nothing
+      P.Done _ r -> Right r
+    nonEmptyRight :: [SourcePathPattern] -> Either (Maybe Text) (NonEmpty SourcePathPattern)
     nonEmptyRight (p : ps) = Right $ p :| ps
     nonEmptyRight [] = Left Nothing
-    terms = someTill term eof
-    term = MP.try format <|> MP.try group <|> MP.try literal
+    terms = many term
+    term = P.try format <|> P.try group <|> P.try literal
     format = do
-      void (char '%')
-      padZero <- isn't _Nothing <$> optional (char '0')
-      width <- fmap (: []) <$> optional digitChar
+      void (P.char '%')
+      padZero <- isn't _Nothing <$> P.option Nothing (Just <$> P.char '0')
+      width <- fmap (: []) <$> P.option Nothing (Just <$> P.digit)
       mapping' <- mapping
       case width of
         Just width' ->
@@ -927,19 +928,16 @@ parseMovePattern s = nonEmptyRight =<< first Just (parse terms "" s)
             PrintfPattern ("%" <> (if padZero then "0" else ".") <> width' <> "s") $
               MappingPattern mapping'
         Nothing -> pure $ MappingPattern mapping'
-    mapping = T.pack <$> some (letterChar <|> char '_') <?> "mapping"
+    mapping = P.takeWhile1 (\c -> c == '_' || isLetter c) <?> "mapping"
     group = do
-      void (char '[')
-      someTill term (char ']') >>= \case
+      void (P.char '[')
+      P.manyTill term (P.char ']') >>= \case
         (t : ts) -> pure $ GroupPattern (t :| ts)
         [] -> fail "no terms in group"
     literal =
       LiteralPattern
-        <$> ( some
-                ( satisfy @Void isAlphaNum
-                    <|> satisfy @Void isSpace
-                    <|> satisfy @Void (\c -> not (isReservedSymbol c) && isPunctuation c)
-                )
+        <$> (P.takeWhile1
+                 (\c -> isAlphaNum c || isSpace c || not (isReservedSymbol c) && isPunctuation c)
                 <?> "literal"
             )
     isReservedSymbol c = elem c ['[', ']', '%']
@@ -993,15 +991,16 @@ extractTrack collectionRef' patterns s@Source {multiTrack = Just MultiTrackDesc 
 extractTrack _ _ src = pure $ Right src
 
 data MetadataTransformation
-  = SetMapping Text (Vector Text)
+  = SetMapping { mappingName :: Text, values :: Vector Text }
   | RemoveMappings (Vector Text)
   | RetainMappings (Vector Text)
-  | AddTag {key :: Text, value :: Text}
-  | RemoveTag {key :: Text, value :: Text}
-  | RemoveTags {key :: Text}
+  | AddTag {mappingName :: Text, value :: Text}
+  | RemoveTag {mappingName :: Text, value :: Text}
+  | RemoveTags {mappingName :: Text}
   | RemoveAll
-  deriving (Show)
-  deriving TextShow via FromStringShow MetadataTransformation
+  deriving Generic
+  deriving TextShow via FromGeneric MetadataTransformation
+  deriving (FromJSON, ToJSON) via CustomJSON JSONOptions MetadataTransformation
 
 editMetadata :: MonadSourceTransform m => Vector MetadataTransformation -> Source -> m (Either TransformationError Source)
 editMetadata _ src@Source {metadata = Nothing} = pure $ Right src

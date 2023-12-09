@@ -140,8 +140,8 @@ initApp = do
   initMetadataConfig
   MB.initMusicBrainzConfig
   insertDefaultMappings
-  initCollections
   API.registerRoutes
+  initCollections
 
 mapSeverity :: Colog.Severity -> Severity
 mapSeverity Colog.Info = InfoS

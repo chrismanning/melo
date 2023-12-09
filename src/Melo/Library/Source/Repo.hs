@@ -52,31 +52,29 @@ instance
 instance {-# OVERLAPS #-} Repository SourceEntity (AppM IO IO) where
   getAll = do
     pool <- getConnectionPool
-    RepositoryHandle {tbl} <- getRepoHandle @SourceTable
+    let !tbl = sourceSchema
     withSpan ("getAll$" <> T.pack tbl.name.name) defaultSpanArguments do
       runSelect pool $ orderByUri $ Rel8.each tbl
-  getByKey ks | Prelude.length ks == 1 = do
+  getByKey ks | V.length ks == 0 = pure mempty
+  getByKey ks | V.length ks == 1 = do
     pool <- getConnectionPool
-    RepositoryHandle {tbl, pk} <- getRepoHandle @SourceTable
+    let !tbl = sourceSchema
     withSpan ("getByKey$" <> T.pack tbl.name.name) defaultSpanArguments do
       runSelect pool do
-        all <- Rel8.each tbl
+        srcs <- Rel8.each tbl
         let k = Rel8.lit $ V.head ks
-        Rel8.where_ $ pk all ==. k
-        pure all
+        Rel8.where_ $ srcs.id ==. k
+        pure srcs
   getByKey ks = do
     pool <- getConnectionPool
-    RepositoryHandle {tbl, pk} <- getRepoHandle @SourceTable
+    let !tbl = sourceSchema
     withSpan ("getByKey$" <> T.pack tbl.name.name) defaultSpanArguments do
-      runSelect pool do
-        let keys = Rel8.lit <$> ks
-        all <- orderByUri $ Rel8.each tbl
-        Rel8.where_ $ pk all `Rel8.in_` keys
-        pure all
+      runSelect pool (sourcesByKeys ks)
   insert es | null es = pure mempty
   insert es = do
     pool <- getConnectionPool
-    RepositoryHandle {tbl, upsert} <- getRepoHandle @SourceTable
+    let !tbl = sourceSchema
+    RepositoryHandle {upsert} <- getRepoHandle @SourceTable
     withSpan ("insert$" <> T.pack tbl.name.name) defaultSpanArguments do
       sortByUri
         <$> runInsert
@@ -91,7 +89,8 @@ instance {-# OVERLAPS #-} Repository SourceEntity (AppM IO IO) where
   insert' es | null es = pure 0
   insert' es = do
     pool <- getConnectionPool
-    RepositoryHandle {tbl, upsert} <- getRepoHandle @SourceTable
+    let !tbl = sourceSchema
+    RepositoryHandle {upsert} <- getRepoHandle @SourceTable
     withSpan ("insert'$" <> T.pack tbl.name.name) defaultSpanArguments do
       runInsert
         pool
@@ -105,15 +104,15 @@ instance {-# OVERLAPS #-} Repository SourceEntity (AppM IO IO) where
   delete ks | null ks = pure mempty
   delete ks = do
     pool <- getConnectionPool
-    RepositoryHandle {tbl, pk} <- getRepoHandle @SourceTable
+    let !tbl = sourceSchema
     withSpan' ("delete$" <> T.pack tbl.name.name) defaultSpanArguments \span -> do
       let keys = Rel8.lit <$> ks
       let d =
             Rel8.Delete
               { from = tbl,
                 using = pure (),
-                deleteWhere = \_ row -> pk row `Rel8.in_` keys,
-                returning = Rel8.Returning pk
+                deleteWhere = \_ row -> row.id `Rel8.in_` keys,
+                returning = Rel8.Returning (.id)
               }
       do
         let statement = Rel8.showDelete d
@@ -125,7 +124,8 @@ instance {-# OVERLAPS #-} Repository SourceEntity (AppM IO IO) where
   update es | null es = pure mempty
   update es = do
     pool <- getConnectionPool
-    h@RepositoryHandle {tbl} <- getRepoHandle @SourceTable
+    let !tbl = sourceSchema
+    h <- getRepoHandle @SourceTable
     withSpan ("update$" <> T.pack tbl.name.name) defaultSpanArguments do
       us <- forM es $ \e ->
         doUpdate h pool Rel8.runVector (from e) (Rel8.Returning (\x -> x))
@@ -133,9 +133,17 @@ instance {-# OVERLAPS #-} Repository SourceEntity (AppM IO IO) where
   update' es | null es = pure ()
   update' es = do
     pool <- getConnectionPool
-    h@RepositoryHandle {tbl} <- getRepoHandle @SourceTable
+    let !tbl = sourceSchema
+    h <- getRepoHandle @SourceTable
     withSpan ("update'$" <> T.pack tbl.name.name) defaultSpanArguments do
       forM_ es $ \e -> doUpdate h pool Rel8.run_ (from e) Rel8.NoReturning
+
+sourcesByKeys :: (Foldable f, Monad f) => f SourceRef -> Rel8.Query (SourceTable Rel8.Expr)
+sourcesByKeys ks = do
+  let !keys = Rel8.lit <$!> ks
+  srcs <- orderByUri $ Rel8.each sourceSchema
+  Rel8.where_ $ srcs.id `Rel8.in_` keys
+  pure srcs
 
 orderByUri :: Rel8.Query (SourceTable Rel8.Expr) -> Rel8.Query (SourceTable Rel8.Expr)
 orderByUri = Rel8.orderBy (source_uri >$< Rel8.asc)
@@ -147,7 +155,7 @@ instance SourceRepository (AppM IO IO) where
   getByUri us | null us = pure mempty
   getByUri us = do
     pool <- getConnectionPool
-    RepositoryHandle {tbl} <- getRepoHandle @SourceTable
+    let !tbl = sourceSchema
     withSpan ("getByUri$" <> T.pack tbl.name.name) defaultSpanArguments do
       runSelect pool do
         let us' = Rel8.lit . showt <$> us
@@ -156,7 +164,7 @@ instance SourceRepository (AppM IO IO) where
         pure srcs
   getByUriPrefix prefix = do
     pool <- getConnectionPool
-    RepositoryHandle {tbl} <- getRepoHandle @SourceTable
+    let !tbl = sourceSchema
     withSpan ("getByUriPrefix$" <> T.pack tbl.name.name) defaultSpanArguments do
       runSelect pool do
         srcs <- orderByUri $ Rel8.each tbl
@@ -165,24 +173,24 @@ instance SourceRepository (AppM IO IO) where
   getKeysByUri us | null us = pure mempty
   getKeysByUri us = do
     pool <- getConnectionPool
-    RepositoryHandle {tbl, pk} <- getRepoHandle @SourceTable
+    let !tbl = sourceSchema
     withSpan ("getKeysByUri$" <> T.pack tbl.name.name) defaultSpanArguments do
       runSelect pool do
         let us' = Rel8.lit . showt <$> us
         srcs <- Rel8.each tbl
         Rel8.where_ $ srcs.source_uri `Rel8.in_` us'
-        pure (pk srcs)
+        pure srcs.id
   getKeysByUriPrefix prefix = do
     pool <- getConnectionPool
-    RepositoryHandle {tbl, pk} <- getRepoHandle @SourceTable
+    let !tbl = sourceSchema
     withSpan ("getKeysByUriPrefix$" <> T.pack tbl.name.name) defaultSpanArguments do
       runSelect pool do
         srcs <- Rel8.each tbl
         Rel8.where_ (srcs.source_uri `startsWith` Rel8.lit (showt prefix))
-        pure (pk srcs)
+        pure srcs.id
   getCollectionSources collectionRef = do
     pool <- getConnectionPool
-    RepositoryHandle {tbl} <- getRepoHandle @SourceTable
+    let !tbl = sourceSchema
     withSpan ("getCollectionSources$" <> T.pack tbl.name.name) defaultSpanArguments do
       runSelect pool do
         srcs <- orderByUri $ Rel8.each tbl

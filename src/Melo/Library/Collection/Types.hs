@@ -3,8 +3,6 @@
 module Melo.Library.Collection.Types where
 
 import Data.Hashable
-import Data.Morpheus.Kind
-import Data.Morpheus.Types as M
 import qualified Data.Text as T
 import Data.UUID
 import Melo.Common.Uri
@@ -31,18 +29,6 @@ newtype CollectionRef = CollectionRef { unCollectionRef :: UUID}
   deriving newtype (Show, Eq, Ord, DBType, DBEq, FromJSON, Hashable, ToJSON)
   deriving TextShow via FromGeneric CollectionRef
 
-instance GQLType CollectionRef where
-  type KIND CollectionRef = SCALAR
-
-instance EncodeScalar CollectionRef where
-  encodeScalar (CollectionRef uuid) = M.String $ toText uuid
-
-instance DecodeScalar CollectionRef where
-  decodeScalar (M.String s) = case fromText s of
-    Nothing -> Left "CollectionRef must be UUID"
-    Just uuid -> Right $ CollectionRef uuid
-  decodeScalar _ = Left "CollectionRef must be a String"
-
 instance From CollectionRef UUID where
   from (CollectionRef uuid) = uuid
 
@@ -57,7 +43,7 @@ data NewCollection = NewFilesystemCollection
     watch :: Bool,
     rescan :: Bool
   }
-  deriving (Show, Eq, Generic, GQLType)
+  deriving (Show, Eq, Generic)
   deriving TextShow via FromGeneric NewCollection
   deriving (FromJSON, ToJSON) via CustomJSON JSONOptions NewCollection
 

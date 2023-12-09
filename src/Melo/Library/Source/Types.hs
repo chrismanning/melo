@@ -4,6 +4,7 @@ module Melo.Library.Source.Types where
 
 import BinaryParser as BP
 import Control.Applicative
+import Control.DeepSeq
 import Control.Lens (to)
 import Control.Monad
 import Data.Aeson hiding (Result)
@@ -18,8 +19,6 @@ import Data.Fixed
 import Data.HashMap.Strict qualified as H
 import Data.Hashable
 import Data.Int
-import Data.Morpheus.Kind
-import Data.Morpheus.Types as M
 import Data.Range (Range (..))
 import Data.Range qualified as R
 import Data.Text qualified as T
@@ -58,7 +57,6 @@ import Rel8
     function,
   )
 import System.IO.Unsafe
-import Text.Read
 import Prelude hiding ((.=))
 
 -- TODO source attributes/flags - no linked artist, album, track - missing certain tags
@@ -95,18 +93,6 @@ newtype PictureTypeWrapper = PictureTypeWrapper PictureType
   deriving DBType via ReadShow PictureType
   deriving TextShow via FromGeneric PictureTypeWrapper
   deriving newtype ToJSON
-
-instance GQLType PictureTypeWrapper where
-  type KIND PictureTypeWrapper = SCALAR
-
-instance EncodeScalar PictureTypeWrapper where
-  encodeScalar (PictureTypeWrapper pictureType) =
-    M.String $ showt pictureType
-
-instance DecodeScalar PictureTypeWrapper where
-  decodeScalar (M.String s) =
-    first T.pack $ PictureTypeWrapper <$> readEither (T.unpack s)
-  decodeScalar _ = Left "PictureType must be a String"
 
 newtype IntervalRange = IntervalRange (Range CalendarDiffTime)
   deriving (Show, Eq)
@@ -329,7 +315,7 @@ data TagPair = TagPair
   { key :: Text,
     value :: Text
   }
-  deriving (Show, Eq, Generic, GQLType)
+  deriving (Show, Eq, Generic)
   deriving TextShow via FromGeneric TagPair
   deriving (FromJSON, ToJSON) via CustomJSON JSONOptions TagPair
 
@@ -416,9 +402,6 @@ data AudioRange = TimeRange (Range CalendarDiffTime)
   deriving (Eq, Show)
   deriving TextShow via FromStringShow AudioRange
 
---instance FromJSON AudioRange where
---  parseJSON = withText "AudioRange" (\v -> pure $ TimeRange (read v))
-
 instance ToJSON AudioRange where
   toJSON (TimeRange range) = toJSON (show range)
   toEncoding (TimeRange range) = toEncoding (show range)
@@ -449,18 +432,6 @@ newtype SourceRef = SourceRef {unSourceRef :: UUID}
   deriving (Generic)
   deriving newtype (Show, Eq, Ord, DBType, DBEq, FromJSON, Hashable, ToJSON)
   deriving TextShow via FromGeneric SourceRef
-
-instance GQLType SourceRef where
-  type KIND SourceRef = SCALAR
-
-instance EncodeScalar SourceRef where
-  encodeScalar (SourceRef uuid) = M.String $ toText uuid
-
-instance DecodeScalar SourceRef where
-  decodeScalar (M.String s) = case fromText s of
-    Nothing -> Left "SourceRef must be UUID"
-    Just uuid -> Right $ SourceRef uuid
-  decodeScalar _ = Left "SourceRef must be a String"
 
 instance From SourceRef UUID where
   from (SourceRef uuid) = uuid
@@ -526,7 +497,7 @@ data MappedTag = MappedTag
   { mappingName :: Text,
     values :: Vector Text
   }
-  deriving (Show, Eq, Ord, Generic)
+  deriving (Show, Eq, Ord, Generic, NFData)
   deriving (TextShow) via FromGeneric MappedTag
   deriving (ToJSON) via CustomJSON JSONOptions MappedTag
 
@@ -608,13 +579,14 @@ instance Monoid ImportStats where
       }
 
 data SourcePathPattern
-  = LiteralPattern FilePath
+  = LiteralPattern Text
   | GroupPattern (NonEmpty SourcePathPattern)
   | MappingPattern Text
   | DefaultPattern SourcePathPattern SourcePathPattern
   | PrintfPattern String SourcePathPattern
-  deriving (Show, Eq)
-  deriving TextShow via FromStringShow SourcePathPattern
+  deriving (Generic, Eq)
+  deriving TextShow via FromGeneric SourcePathPattern
+  deriving (FromJSON, ToJSON) via CustomJSON JSONOptions SourcePathPattern
 
 data SourceFileManipError
   = FileSystemFileManipError FileManipError

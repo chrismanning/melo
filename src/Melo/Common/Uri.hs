@@ -2,7 +2,6 @@ module Melo.Common.Uri
   ( fileUri,
     uriToFilePath,
     module Network.URI,
-    module Network.URI.JSON,
   )
 where
 

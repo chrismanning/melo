@@ -147,15 +147,7 @@ deriving newtype instance FromJSON F.MetadataId
 
 deriving newtype instance ToJSON F.MetadataId
 
--- instance FromJSON F.TagMapping where
---  parseJSON (Array a) = F.TagMapping . NE.fromList . toList <$> for a (genericParseJSON snakeCakeJsonOptions)
---  parseJSON invalid =
---    prependFailure
---      "parsing TagMapping failed, "
---      (typeMismatch "Array" invalid)
---
--- instance ToJSON F.TagMapping where
---  toJSON (F.TagMapping fms) = toJSON (toList fms)
+deriving via (FromStringShow F.MetadataId) instance TextShow F.MetadataId
 
 deriving newtype instance FromJSON F.TagMapping
 
@@ -173,7 +165,7 @@ deriving via CustomJSON JSONOptions F.FieldMatchMode instance FromJSON F.FieldMa
 
 deriving via CustomJSON JSONOptions F.FieldMatchMode instance ToJSON F.FieldMatchMode
 
-type JSONOptions = '[FieldLabelModifier '[CamelToSnake], OmitNothingFields, ConstructorTagModifier CamelToScreamingSnake]
+type JSONOptions = '[FieldLabelModifier '[CamelToSnake], OmitNothingFields, ConstructorTagModifier '[CamelToSnake, ToLower], SumObjectWithSingleField]
 
 type CamelToScreamingSnake = (CamelToSnake, ToUpper)
 

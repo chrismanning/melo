@@ -3,8 +3,6 @@
 module Melo.Library.Artist.Name.Types where
 
 import Data.Hashable
-import Data.Morpheus.Kind
-import Data.Morpheus.Types as M
 import Data.UUID
 import Melo.Database.Repo
 import Melo.Library.Artist.Types
@@ -60,18 +58,6 @@ newtype ArtistNameRef = ArtistNameRef UUID
   deriving (Show, Eq, Ord, Generic)
   deriving newtype (DBType, DBEq, Hashable)
   deriving TextShow via FromGeneric ArtistNameRef
-
-instance GQLType ArtistNameRef where
-  type KIND ArtistNameRef = SCALAR
-
-instance EncodeScalar ArtistNameRef where
-  encodeScalar (ArtistNameRef uuid) = M.String $ toText uuid
-
-instance DecodeScalar ArtistNameRef where
-  decodeScalar (M.String s) = case fromText s of
-    Nothing -> Left "ArtistNameRef must be UUID"
-    Just uuid -> Right $ ArtistNameRef uuid
-  decodeScalar _ = Left "ArtistNameRef must be a String"
 
 instance From ArtistNameRef UUID where
   from (ArtistNameRef uuid) = uuid

@@ -6,8 +6,6 @@ import Control.Applicative
 import Control.Lens (to)
 import Country
 import Data.Hashable
-import Data.Morpheus.Types as M
-import Data.Morpheus.Kind
 import Data.UUID
 import Melo.Database.Repo
 import qualified Melo.Lookup.MusicBrainz as MB
@@ -40,18 +38,6 @@ newtype ArtistRef = ArtistRef UUID
   deriving (Show, Eq, Ord, Generic)
   deriving newtype (DBType, DBEq, Hashable)
   deriving TextShow via FromGeneric ArtistRef
-
-instance GQLType ArtistRef where
-  type KIND ArtistRef = SCALAR
-
-instance EncodeScalar ArtistRef where
-  encodeScalar (ArtistRef uuid) = M.String $ toText uuid
-
-instance DecodeScalar ArtistRef where
-  decodeScalar (M.String s) = case fromText s of
-    Nothing -> Left "ArtistRef must be UUID"
-    Just uuid -> Right $ ArtistRef uuid
-  decodeScalar _ = Left "ArtistRef must be a String"
 
 instance From ArtistRef UUID where
   from (ArtistRef uuid) = uuid

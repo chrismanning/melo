@@ -5,7 +5,6 @@ module Melo.Metadata.Mapping.Types where
 import Data.Coerce
 import Data.Default
 import Data.List.NonEmpty as NE
-import Data.Morpheus.Types as M
 import Melo.Database.Repo
 import Melo.Format qualified as F
 import Rel8
@@ -37,7 +36,7 @@ data TagMapping = TagMapping
   { name :: Text,
     fieldMappings :: NonEmpty FieldMapping
   }
-  deriving (Show, Eq, Generic, GQLType)
+  deriving (Show, Eq, Generic)
   deriving (TextShow) via FromGeneric TagMapping
   deriving (FromJSON, ToJSON) via CustomJSON JSONOptions TagMapping
 
@@ -49,7 +48,7 @@ data FieldMapping = FieldMapping
     name :: Text,
     kind :: FieldMatchingKind
   }
-  deriving (Show, Eq, Generic, GQLType)
+  deriving (Show, Eq, Generic)
   deriving (TextShow) via FromGeneric FieldMapping
   deriving (FromJSON, ToJSON) via CustomJSON JSONOptions FieldMapping
 
@@ -72,7 +71,7 @@ data FieldMatchingKind
   = CaseSensitive
   | CaseInsensitive
   | Virtual
-  deriving (Show, Eq, Generic, GQLType)
+  deriving (Show, Eq, Generic)
   deriving (TextShow) via FromGeneric FieldMatchingKind
   deriving (FromJSON, ToJSON) via CustomJSON JSONOptions FieldMatchingKind
 

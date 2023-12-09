@@ -6,8 +6,6 @@ import Hasql.Decoders qualified as Hasql
 import Data.Aeson qualified as A
 import Data.Attoparsec.ByteString.Char8 qualified as P
 import Data.Hashable
-import Data.Morpheus.Kind
-import Data.Morpheus.Types as M
 import Data.Time
 import Data.UUID
 import Melo.Database.Repo
@@ -46,18 +44,6 @@ newtype ReleaseRef = ReleaseRef UUID
   deriving (Show, Eq, Ord, Generic)
   deriving newtype (DBType, DBEq, Hashable)
   deriving TextShow via FromGeneric ReleaseRef
-
-instance GQLType ReleaseRef where
-  type KIND ReleaseRef = SCALAR
-
-instance EncodeScalar ReleaseRef where
-  encodeScalar (ReleaseRef uuid) = M.String $ toText uuid
-
-instance DecodeScalar ReleaseRef where
-  decodeScalar (M.String s) = case fromText s of
-    Nothing -> Left "ReleaseRef must be UUID"
-    Just uuid -> Right $ ReleaseRef uuid
-  decodeScalar _ = Left "ReleaseRef must be a String"
 
 instance From ReleaseRef UUID where
   from (ReleaseRef uuid) = uuid
