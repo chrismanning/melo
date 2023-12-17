@@ -47,7 +47,6 @@ extra-deps:
       - instrumentation/conduit
       - instrumentation/http-client
       - instrumentation/hspec
-      - instrumentation/wai
       - otlp
       - propagators/b3
       - propagators/w3c

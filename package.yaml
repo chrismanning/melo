@@ -78,7 +78,6 @@ library:
   - hs-opentelemetry-exporter-otlp
   - hs-opentelemetry-instrumentation-conduit
   - hs-opentelemetry-instrumentation-http-client
-  - hs-opentelemetry-instrumentation-wai
   - hs-opentelemetry-sdk
   - hs-opentelemetry-utils-exceptions
   - hsndfile
@@ -90,7 +89,6 @@ library:
   - io-classes
   - iproute
   - katip
-  - katip-wai
   - lens
   - lifted-base
   - megaparsec
@@ -124,9 +122,6 @@ library:
   - rsocket
   - rsocket-transport-tcp
   - safe-exceptions
-  - scotty
-  - servant
-  - servant-server
   - singletons
   - stm
   - streaming
@@ -153,11 +148,6 @@ library:
   - uuid
   - vector
   - vector-algorithms
-  - wai
-  - wai-cors
-  - wai-extra
-  - wai-websockets
-  - warp
   - wave
   - websockets
   - witch

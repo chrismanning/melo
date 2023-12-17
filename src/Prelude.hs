@@ -32,8 +32,6 @@ module Prelude
 where
 
 import Control.Lens hiding (each, from, to)
-import Control.Monad.Primitive
-import Control.Monad.Trans
 import Country
 import Data.Aeson as JSON
 import Data.Bifunctor
@@ -74,7 +72,6 @@ import TextShow hiding
   )
 import TextShow.Generic
 import TextShow.Instances
-import Web.Scotty.Trans
 import Witch
 import Witherable
 import "base" Prelude hiding
@@ -85,10 +82,6 @@ import "base" Prelude hiding
 
 instance From (NonEmpty a) (Vector a) where
   from (a :| as) = V.fromList (a : as)
-
-instance (PrimMonad m) => PrimMonad (ActionT m) where
-  type PrimState (ActionT m) = PrimState m
-  primitive = lift . primitive
 
 deriving instance Show a => Show (JSONBEncoded a)
 
