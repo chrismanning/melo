@@ -15,7 +15,8 @@ data CollectionTable f = CollectionTable
     name :: Column f Text,
     watch :: Column f Bool,
     kind :: Column f Text,
-    rescan :: Column f Bool
+    rescan :: Column f Bool,
+    library :: Column f Bool
   }
   deriving (Generic, Rel8able)
 
@@ -41,21 +42,23 @@ data NewCollection = NewFilesystemCollection
   { rootPath :: Text,
     name :: Text,
     watch :: Bool,
-    rescan :: Bool
+    rescan :: Bool,
+    library :: Bool
   }
   deriving (Show, Eq, Generic)
   deriving TextShow via FromGeneric NewCollection
   deriving (FromJSON, ToJSON) via CustomJSON JSONOptions NewCollection
 
 instance From NewCollection (CollectionTable Expr) where
-  from c@NewFilesystemCollection {name, watch, rescan} =
+  from c@NewFilesystemCollection {name, watch, rescan, library} =
     CollectionTable
       { id = function "uuid_generate_v4" (),
         root_uri = lit $ showt $ rootUri c,
         name = lit name,
         watch = lit watch,
         kind = lit $ kind c,
-        rescan = lit rescan
+        rescan = lit rescan,
+        library = lit library
       }
     where
       rootUri NewFilesystemCollection {rootPath} = fileUri $ T.unpack rootPath

@@ -94,7 +94,8 @@ CREATE TABLE melo.collection (
     name text NOT NULL,
     watch boolean NOT NULL,
     kind text NOT NULL,
-    rescan boolean DEFAULT true
+    rescan boolean DEFAULT true,
+    library boolean DEFAULT false NOT NULL
 );
 
 
@@ -116,6 +117,16 @@ CREATE TABLE melo.genre (
     id uuid DEFAULT melo.uuid_generate_v4() NOT NULL,
     name text NOT NULL,
     description text
+);
+
+
+--
+-- Name: genre_parent; Type: TABLE; Schema: melo; Owner: -
+--
+
+CREATE TABLE melo.genre_parent (
+    genre_id uuid NOT NULL,
+    parent_genre uuid NOT NULL
 );
 
 
@@ -313,6 +324,22 @@ ALTER TABLE ONLY melo.genre
 
 ALTER TABLE ONLY melo.genre
     ADD CONSTRAINT genre_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: genre_parent parent_genre_id_parent_u; Type: CONSTRAINT; Schema: melo; Owner: -
+--
+
+ALTER TABLE ONLY melo.genre_parent
+    ADD CONSTRAINT parent_genre_id_parent_u UNIQUE (genre_id, parent_genre);
+
+
+--
+-- Name: genre_parent parent_genre_pk; Type: CONSTRAINT; Schema: melo; Owner: -
+--
+
+ALTER TABLE ONLY melo.genre_parent
+    ADD CONSTRAINT parent_genre_pk PRIMARY KEY (genre_id);
 
 
 --
@@ -569,6 +596,22 @@ ALTER TABLE ONLY melo.artist_name
 
 
 --
+-- Name: genre_parent parent_genre_genre_fk; Type: FK CONSTRAINT; Schema: melo; Owner: -
+--
+
+ALTER TABLE ONLY melo.genre_parent
+    ADD CONSTRAINT parent_genre_genre_fk FOREIGN KEY (parent_genre) REFERENCES melo.genre(id);
+
+
+--
+-- Name: genre_parent parent_genre_id_genre_fk; Type: FK CONSTRAINT; Schema: melo; Owner: -
+--
+
+ALTER TABLE ONLY melo.genre_parent
+    ADD CONSTRAINT parent_genre_id_genre_fk FOREIGN KEY (genre_id) REFERENCES melo.genre(id);
+
+
+--
 -- Name: related_artist related_artist_artist_id_fkey; Type: FK CONSTRAINT; Schema: melo; Owner: -
 --
 
@@ -718,4 +761,6 @@ INSERT INTO melo.schema_migrations (version) VALUES
     ('20221211232034'),
     ('20230219160659'),
     ('20230422225419'),
-    ('20230708170753');
+    ('20230708170753'),
+    ('20231216191423'),
+    ('20231216215146');

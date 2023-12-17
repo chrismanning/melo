@@ -8,6 +8,7 @@ import Control.Foldl (impurely, vectorM)
 import Control.Monad.State.Strict
 import Data.Char
 import Data.Range qualified as R
+import Data.HashSet qualified as HashSet
 import Data.Text qualified as T
 import Data.Time.LocalTime
 import Data.Vector qualified as V
@@ -22,6 +23,7 @@ import Melo.Common.Vector
 import Melo.Database.Repo as Repo
 import Melo.Format.Metadata (Metadata (..), MetadataFile (..), PictureType(..))
 import Melo.Format.Info
+import Melo.Library.Collection.Types
 import Melo.Library.Release.Aggregate
 import Melo.Library.Source.Repo
 import Melo.Library.Source.Types
@@ -55,18 +57,34 @@ instance SourceAggregate (AppM IO IO) where
   importSources ss | null ss = pure mempty
   importSources ss = do
     $(logDebug) $ "Importing " <> showt (V.length ss) <> " sources"
-    metadataSources <- S.each ss & S.mapMaybeM transformImportSource & impurely S.foldM_ vectorM
-    $(logDebug) $ "Importing " <> showt (V.length metadataSources) <> " metadata sources"
-    -- TODO handle Left errors
-    srcs <- rights . fmap tryFrom <$> insert @SourceEntity (fmap (from @MetadataImportSource) metadataSources)
+    srcs <- S.each ss
+      & S.mapMaybeM transformImportSource
+      & S.map (from @MetadataImportSource)
+      & impurely S.foldM_ vectorM
+      >>= insert @SourceEntity
+    srcs <- S.each srcs
+      & S.map (tryInto @Source)
+      & S.partitionEithers
+      & S.mapM_ (\(TryFromException src e) -> do
+          let cause = fromMaybe "" $ displayException <$> e
+          let source = src.id
+          $(logErrorVIO ['cause, 'source]) "Failed to convert source")
+      & impurely S.foldM_ vectorM
     let sources = fmap (showt . (.ref)) srcs
-    $(logDebugV ['sources]) "Imported sources"
-    -- TODO publish sources imported event
-    fork $ void $ importReleases srcs
+    $(logDebugV ['sources]) $ "Imported " <> showt (V.length srcs) <> " sources"
+    fork
+      do
+        collections <- getByKey @CollectionEntity (HashSet.fromList (srcs <&> (.collectionRef) & toList) & toList & V.fromList)
+        forM_ collections \collection ->
+          when collection.library do
+            void $ importReleases srcs
     pure srcs
   updateSource s = do
     e <- try (writeMetadata >> updateDB)
-    void $ importReleases (pure s)
+    getSingle @CollectionEntity s.collectionRef >>= \case
+      Just collection -> when collection.library do
+        void $ importReleases (pure s)
+      _ -> pure ()
     pure e
     where
       writeMetadata :: AppM IO IO ()

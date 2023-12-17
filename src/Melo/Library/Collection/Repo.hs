@@ -156,7 +156,8 @@ collectionSchema =
             name = "name",
             watch = "watch",
             kind = "kind",
-            rescan = "rescan"
+            rescan = "rescan",
+            library = "library"
           }
     }
 
