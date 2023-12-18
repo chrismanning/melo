@@ -1,7 +1,4 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-{-# LANGUAGE PartialTypeSignatures #-}
-{-# LANGUAGE UnboxedTuples #-}
-{-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Library.Collection.FileSystem.Scan
   ( scanPathIO,
@@ -13,6 +10,7 @@ import Control.Concurrent.Classy
 import Control.Concurrent.STM.Map qualified as SM
 import Control.Monad.Extra
 import Control.Monad.Par.Combinator
+import Control.Monad.Par.IO
 import Data.HashMap.Strict qualified as H
 import Data.Text qualified as T
 import Data.Time.LocalTime
@@ -22,7 +20,6 @@ import Melo.Common.Exception
 import Melo.Common.FileSystem.Watcher
 import Melo.Common.Logging
 import Melo.Common.Monad
-import Melo.Common.Monad.Par
 import Melo.Common.Tracing ()
 import Melo.Common.Uri
 import Melo.Database.Repo qualified as Repo
@@ -48,23 +45,21 @@ data ScanType = ScanNewOrModified | ScanAll
   deriving (Eq)
 
 scanPathIO ::
-  ( MonadReader (AppData IO) m,
-    MonadIO m
-  ) =>
   ScanType ->
   CollectionRef ->
   FilePath ->
-  m ()
+  AppM IO IO ()
 scanPathIO scanType ref p = do
   appData <- ask
-  liftIO $ runParAppM appData (scanPath scanType ref p)
+  liftIO $ runParIO (scanPath appData scanType ref p)
 
 scanPath ::
+  AppData IO ->
   ScanType ->
   CollectionRef ->
   FilePath ->
-  ParAppM ()
-scanPath scanType ref p' =
+  ParIO ()
+scanPath appData scanType ref p' =
   do
     p <- Dir.canonicalizePath p'
     $(logInfoIO) $ "Scanning " <> showt p
@@ -80,7 +75,7 @@ scanPath scanType ref p' =
           entries <- Dir.listDirectory p
           dirs <- filterM Dir.doesDirectoryExist ((p </>) <$> entries)
 
-          _ <- parMapM (scanPath scanType ref) dirs
+          _ <- parMapM (scanPath appData scanType ref) dirs
 
           files <- filterM Dir.doesFileExist ((p </>) <$> entries)
           let cuefiles = filter ((== ".cue") . takeExtension) files
@@ -101,9 +96,8 @@ scanPath scanType ref p' =
     $(logInfoIO) $ showt srcs <> " sources imported from path " <> showt p
     pure ()
   where
-    run :: AppM IO IO a -> ParAppM a
+    run :: AppM IO IO a -> ParIO a
     run m = do
-      appData <- ask
       liftIO $ runReaderT' appData m
     handleScanErrors ps = handleAny (logShow ps >=> \_ -> pure 0)
     importTransaction :: [FilePath] -> AppM IO IO Int
@@ -223,15 +217,15 @@ handleEvent appData ref event = runReaderT' appData $ unlessM isLocked' do
       $(logInfo) $ "directory added; skipping " <> showt p
     FS.Added p _ FS.IsFile -> do
       $(logInfo) $ "file added; scanning " <> showt p
-      runParAppM appData (scanPath ScanAll ref p)
+      liftIO $ runParIO (scanPath appData ScanAll ref p)
       pure ()
     FS.Modified p _ _ -> do
       $(logInfo) $ "file/directory modified; scanning " <> showt p
-      runParAppM appData (scanPath ScanNewOrModified ref p)
+      liftIO $ runParIO (scanPath appData ScanNewOrModified ref p)
       pure ()
     FS.ModifiedAttributes p _ _ -> do
       $(logInfo) $ "file/directory attributes modified; scanning " <> showt p
-      runParAppM appData (scanPath ScanNewOrModified ref p)
+      liftIO $ runParIO (scanPath appData ScanNewOrModified ref p)
       pure ()
     FS.WatchedDirectoryRemoved p _ _ -> do
       $(logInfo) $ "watched directory removed " <> showt p
