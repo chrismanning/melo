@@ -25,6 +25,7 @@ import Melo.Library.Artist.Name.Repo
 import Melo.Library.Artist.Repo
 import Melo.Library.Collection.Aggregate
 import Melo.Library.Collection.Repo
+import Melo.Library.Genre.Repo
 import Melo.Library.Release.Repo
 import Melo.Library.Source.Repo
 import Melo.Library.Track.Repo
@@ -133,6 +134,7 @@ initApp = do
   initArtistNameRepo
   initCollectionRepo
   initConfigRepo
+  initGenreRepo
   initReleaseRepo
   initSourceRepo
   initTrackRepo

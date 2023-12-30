@@ -1,92 +1,116 @@
-{-# LANGUAGE UndecidableInstances #-}
-
 module Melo.Library.Genre.Repo where
 
---import Control.Concurrent.Classy
---import Melo.Common.Exception
---import Control.Monad.Base
---import Control.Monad.Reader
---import Control.Monad.Trans.Control
---import Melo.Database.Repo
---import Melo.Database.Repo.IO
---import Melo.Library.Artist.Types
---import Melo.Library.Genre.Types
---import Melo.Library.Release.Types
---import Melo.Library.Track.Types
---import Rel8
---
---class Repository (GenreTable Result) m => GenreRepository m where
---  getByName :: [Text] -> m [Genre]
---  getArtists :: [GenreRef] -> m [(GenreRef, Artist)]
---  getReleases :: [GenreRef] -> m [(GenreRef, Release)]
---  getTracks :: [GenreRef] -> m [(GenreRef, Track)]
+import Data.Functor.Contravariant
+import Melo.Common.Monad
+import Melo.Database.Repo as Repo
+import Melo.Database.Repo.IO
+import Melo.Library.Genre.Types
+import Rel8
+  ( Expr,
+    ListTable,
+    Name,
+    Query,
+    TableSchema (..),
+    Upsert (..),
+    asc,
+    each,
+    in_,
+    lit,
+    many,
+    manyExpr,
+    orderBy,
+    some,
+    where_,
+    (==.),
+    (&&.),
+  )
+import Rel8 qualified
 
---instance
---  (MonadIO m) =>
---  GenreRepository (GenreRepositoryIOT m)
---  where
+type GenreRepository = Repository GenreEntity
 
---  getGenresByName [] = pure []
---  getGenresByName ns = GenreRepositoryIOT $
---    ReaderT $ \conn -> do
---      let names = val_ <$> ns
---      let q = select $ filter_ (\g -> g ^. #name `in_` names) (all_ tbl)
---      $(runPgDebugIO') conn (runSelectReturningList q)
---  searchGenres "" = pure []
---  searchGenres t = GenreRepositoryIOT $
---    ReaderT $ \conn -> do
---      let q = select $ do
---            genre <- all_ (DB.meloDb ^. #genre)
---            guard_ (toTsVector Nothing (genre ^. #name) @@ toTsQuery Nothing (val_ (t <> "|" <> t <> ":*")))
---            pure genre
---      $(runPgDebugIO') conn (runSelectReturningList q)
---  getGenreArtists [] = pure []
---  getGenreArtists ks = GenreRepositoryIOT $
---    ReaderT $ \conn -> do
---      let q = select $ do
---            (g, a) <-
---              manyToMany_
---                (DB.meloDb ^. #artist_genre)
---                (^. #genre_id)
---                (^. #artist_id)
---                (byKeys tbl ks)
---                (all_ (DB.meloDb ^. #artist))
---            pure (primaryKey g, a)
---      $(runPgDebugIO') conn (runSelectReturningList q)
---  getGenreAlbums [] = pure []
---  getGenreAlbums ks = GenreRepositoryIOT $
---    ReaderT $ \conn -> do
---      let q = select $ do
---            (g, a) <-
---              manyToMany_
---                (DB.meloDb ^. #album_genre)
---                (^. #genre_id)
---                (^. #release_id)
---                (byKeys tbl ks)
---                (all_ (DB.meloDb ^. #album))
---            pure (primaryKey g, a)
---      $(runPgDebugIO') conn (runSelectReturningList q)
---  getGenreTracks [] = pure []
---  getGenreTracks ks = GenreRepositoryIOT $
---    ReaderT $ \conn -> do
---      let q = select $ do
---            (g, t) <-
---              manyToMany_
---                (DB.meloDb ^. #track_genre)
---                (^. #genre_id)
---                (^. #track_id)
---                (byKeys tbl ks)
---                (all_ (DB.meloDb ^. #track))
---            pure (primaryKey g, t)
---      $(runPgDebugIO') conn (runSelectReturningList q)
+--type TopLevelGenre f = (GenreTable f, ListTable f (f GenreRef, f Text), ListTable f (f GenreRef, f Text))
 
---newGenres :: NewGenre -> DB.GenreT (QExpr Postgres s)
---newGenres g =
---  DB.Genre
---    { id = default_,
---      name = val_ $ g ^. #name,
---      description = val_ $ g ^. #description
---    }
---
---runGenreRepositoryIO :: Connection -> GenreRepositoryIOT m a -> m a
---runGenreRepositoryIO conn = flip runReaderT conn . runGenreRepositoryIOT
+topLevelGenres :: Query (TopLevelGenreTable Expr)
+topLevelGenres =
+  orderBy ((.name) >$< asc) $ each topLevelGenreSchema
+--  topLevelGenre <- each genreSchema
+--  where_ topLevelGenre.top_level
+--  parentRefs <- many do
+--    genre <- each genreSchema
+--    parent <- each genreParentSchema
+--    where_ $ parent.genre_id ==. topLevelGenre.id &&. genre.id ==. parent.parent_genre
+--    pure (parent.parent_genre, genre.name)
+--  childRefs <- many do
+--    genre <- each genreSchema
+--    parent <- each genreParentSchema
+--    where_ $ parent.parent_genre ==. topLevelGenre.id &&. genre.id ==. parent.genre_id
+--    pure (parent.genre_id, genre.name)
+--  pure (topLevelGenre, parentRefs, childRefs)
+
+genreParents :: GenreRef -> Query (GenreTable Expr)
+genreParents ref = do
+  parents <- each genreParentSchema
+  genres <- each genreSchema
+  where_ $ parents.genre_id ==. lit ref &&. genres.id ==. parents.parent_genre
+  pure genres
+
+genreChildren :: GenreRef -> Query (GenreTable Expr)
+genreChildren ref = do
+  parents <- each genreParentSchema
+  genres <- each genreSchema
+  where_ $ parents.parent_genre ==. lit ref &&. genres.id ==. parents.genre_id
+  pure genres
+
+genreSchema :: TableSchema (GenreTable Name)
+genreSchema =
+  TableSchema
+    { name = "genre",
+      columns =
+        GenreTable
+          { id = "id",
+            name = "name",
+            description = "description",
+            top_level = "top_level"
+          }
+    }
+
+genreParentSchema :: TableSchema (GenreParentTable Name)
+genreParentSchema =
+  TableSchema
+    { name = "genre_parent",
+      columns =
+        GenreParentTable
+          { genre_id = "genre_id",
+            parent_genre = "parent_genre"
+          }
+    }
+
+topLevelGenreSchema :: TableSchema (TopLevelGenreTable Name)
+topLevelGenreSchema =
+  TableSchema
+    { name = "genre_top_level",
+      columns =
+        TopLevelGenreTable
+          { id = "id",
+            name = "name",
+            description = "description",
+            parents = "parents",
+            children = "children"
+          }
+    }
+
+initGenreRepo :: AppDataReader m => m ()
+initGenreRepo =
+  putAppData
+    RepositoryHandle
+      { tbl = genreSchema,
+        pk = \e -> e.id,
+        upsert =
+          Just
+            Upsert
+              { index = \c -> c.name,
+                predicate = Nothing,
+                set = const,
+                updateWhere = \new old -> new.id ==. old.id
+              }
+      }
