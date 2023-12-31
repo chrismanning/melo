@@ -93,9 +93,15 @@ data GenreLink = GenreLink
   { ref :: GenreRef
   , name :: Text
   }
-  deriving (Eq, Generic, Show)
+  deriving (Eq, Generic, Show, Hashable)
   deriving TextShow via FromGeneric GenreLink
   deriving (FromJSON, ToJSON) via CustomJSON JSONOptions GenreLink
+
+instance From GenreEntity GenreLink where
+  from e = GenreLink
+    { ref = e.id,
+      name = e.name
+    }
 
 data GenreOrLink = ResolvedGenre Genre
   | UnresolvedGenre GenreLink

@@ -18,6 +18,7 @@ data ArtistNameTable f = ArtistNameTable
 type ArtistNameEntity = ArtistNameTable Result
 
 deriving instance Show ArtistNameEntity
+
 deriving via (FromGeneric ArtistNameEntity) instance TextShow ArtistNameEntity
 
 deriving instance Ord ArtistNameEntity
@@ -36,7 +37,7 @@ data NewArtistName = NewArtistName
     name :: Text
   }
   deriving (Show, Eq, Generic)
-  deriving TextShow via FromGeneric NewArtistName
+  deriving (TextShow) via FromGeneric NewArtistName
 
 instance From NewArtistName (ArtistNameTable Expr) where
   from n =
@@ -57,7 +58,14 @@ fromNewArtistName n ref =
 newtype ArtistNameRef = ArtistNameRef UUID
   deriving (Show, Eq, Ord, Generic)
   deriving newtype (DBType, DBEq, Hashable)
-  deriving TextShow via FromGeneric ArtistNameRef
+  deriving (TextShow) via FromGeneric ArtistNameRef
 
 instance From ArtistNameRef UUID where
   from (ArtistNameRef uuid) = uuid
+
+instance From ArtistNameEntity ArtistLink where
+  from e =
+    ArtistLink
+      { ref = e.artist_id,
+        name = e.name
+      }

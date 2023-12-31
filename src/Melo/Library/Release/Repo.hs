@@ -13,6 +13,8 @@ import Melo.Common.Monad
 import Melo.Common.Tracing
 import Melo.Database.Repo
 import Melo.Database.Repo.IO
+import Melo.Library.Genre.Repo
+import Melo.Library.Genre.Types
 import Melo.Library.Release.Types
 import Melo.Lookup.MusicBrainz qualified as MB
 import OpenTelemetry.Trace qualified as Otel
@@ -133,6 +135,16 @@ instance ReleaseRepository (AppM IO IO) where
 releaseForRef :: Expr ReleaseRef -> Query (ReleaseTable Expr)
 releaseForRef releaseRef = Rel8.filter (\release -> release.id ==. releaseRef) =<< Rel8.each releaseSchema
 
+genreForRelease :: Expr ReleaseRef -> Query (GenreTable Expr)
+genreForRelease releaseRef = do
+  releaseGenre <- Rel8.each releaseGenreSchema
+  Rel8.where_ $ releaseGenre.release_id ==. releaseRef
+  genre <- Rel8.each genreSchema
+  Rel8.where_ $ genre.id ==. releaseGenre.genre_id
+  pure genre
+
+type ReleaseGenreRepository = Repository ReleaseGenreEntity
+
 releaseSchema :: Rel8.TableSchema (ReleaseTable Rel8.Name)
 releaseSchema =
   Rel8.TableSchema
@@ -152,17 +164,35 @@ releaseSchema =
           }
     }
 
-initReleaseRepo :: AppDataReader m => m ()
-initReleaseRepo = putAppData
-  RepositoryHandle
-    { tbl = releaseSchema,
-      pk = (.id),
-      upsert =
-        Just
-          Rel8.Upsert
-            { index = (.musicbrainz_id),
-              predicate = Nothing,
-              set = \new old -> new & #id .~ old.id,
-              updateWhere = \new old -> new.musicbrainz_id ==. old.musicbrainz_id
-            }
+releaseGenreSchema :: Rel8.TableSchema (ReleaseGenreTable Rel8.Name)
+releaseGenreSchema =
+  Rel8.TableSchema
+    { name = "release_genre",
+      columns =
+        ReleaseGenreTable
+          { release_id = "release_id",
+            genre_id = "genre_id"
+          }
     }
+
+initReleaseRepo :: AppDataReader m => m ()
+initReleaseRepo = do
+  putAppData
+    RepositoryHandle
+      { tbl = releaseGenreSchema,
+        pk = (.release_id),
+        upsert = Nothing
+      }
+  putAppData
+    RepositoryHandle
+      { tbl = releaseSchema,
+        pk = (.id),
+        upsert =
+          Just
+            Rel8.Upsert
+              { index = (.musicbrainz_id),
+                predicate = Nothing,
+                set = \new old -> new & #id .~ old.id,
+                updateWhere = \new old -> new.musicbrainz_id ==. old.musicbrainz_id
+              }
+      }

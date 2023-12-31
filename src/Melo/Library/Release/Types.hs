@@ -2,17 +2,26 @@
 
 module Melo.Library.Release.Types where
 
-import Hasql.Decoders qualified as Hasql
 import Data.Aeson qualified as A
 import Data.Attoparsec.ByteString.Char8 qualified as P
 import Data.Hashable
 import Data.Time
 import Data.UUID
+import Hasql.Decoders qualified as Hasql
 import Melo.Database.Repo
-import Melo.Library.Artist.Name.Types
+import Melo.Library.Artist.Types
+import Melo.Library.Genre.Types
 import Melo.Lookup.MusicBrainz qualified as MB
 import Opaleye.Internal.HaskellDB.PrimQuery (Literal (..), PrimExpr (..))
-import Rel8
+import Rel8 hiding (from)
+
+newtype ReleaseRef = ReleaseRef UUID
+  deriving (Show, Eq, Ord, Generic)
+  deriving newtype (DBType, DBEq, Hashable, FromJSON, ToJSON)
+  deriving (TextShow) via FromGeneric ReleaseRef
+
+instance From ReleaseRef UUID where
+  from (ReleaseRef uuid) = uuid
 
 data ReleaseTable f = ReleaseTable
   { id :: Column f ReleaseRef,
@@ -31,6 +40,7 @@ data ReleaseTable f = ReleaseTable
 type ReleaseEntity = ReleaseTable Result
 
 deriving instance Show ReleaseEntity
+
 deriving via (FromGeneric ReleaseEntity) instance TextShow ReleaseEntity
 
 deriving instance Eq ReleaseEntity
@@ -40,13 +50,27 @@ instance Entity ReleaseEntity where
   type PrimaryKey ReleaseEntity = ReleaseRef
   primaryKey e = e.id
 
-newtype ReleaseRef = ReleaseRef UUID
-  deriving (Show, Eq, Ord, Generic)
-  deriving newtype (DBType, DBEq, Hashable)
-  deriving TextShow via FromGeneric ReleaseRef
+data ReleaseGenreTable f = ReleaseGenreTable
+  { release_id :: Column f ReleaseRef,
+    genre_id :: Column f GenreRef
+  }
+  deriving (Generic, Rel8able)
 
-instance From ReleaseRef UUID where
-  from (ReleaseRef uuid) = uuid
+type ReleaseGenreEntity = ReleaseGenreTable Result
+
+deriving instance Show ReleaseGenreEntity
+
+deriving via (FromGeneric ReleaseGenreEntity) instance TextShow ReleaseGenreEntity
+
+deriving instance Eq ReleaseGenreEntity
+
+instance Entity ReleaseGenreEntity where
+  type NewEntity ReleaseGenreEntity = ReleaseGenreEntity
+  type PrimaryKey ReleaseGenreEntity = ReleaseRef
+  primaryKey e = e.release_id
+
+instance From ReleaseGenreEntity (ReleaseGenreTable Expr) where
+  from = lit
 
 data ReleaseKind
   = AlbumKind
@@ -56,18 +80,19 @@ data ReleaseKind
   | CompilationKind
   | OtherKind
   deriving (Show, Eq, Ord, Generic, Hashable)
-  deriving TextShow via FromGeneric ReleaseKind
+  deriving (TextShow) via FromGeneric ReleaseKind
   deriving (FromJSON, ToJSON) via CustomJSON '[ConstructorTagModifier '[StripSuffix "Kind", ToLower]] ReleaseKind
 
 instance DBType ReleaseKind where
   typeInformation =
     TypeInformation
       { encode,
-        decode = Rel8.Decoder {
-          binary,
-          parser = P.parseOnly (parser' <* P.endOfInput),
-          delimiter = ','
-        },
+        decode =
+          Rel8.Decoder
+            { binary,
+              parser = P.parseOnly (parser' <* P.endOfInput),
+              delimiter = ','
+            },
         typeName = "text"
       }
     where
@@ -78,13 +103,14 @@ instance DBType ReleaseKind where
       encode CompilationKind = ConstExpr $ StringLit "compilation"
       encode OtherKind = ConstExpr $ StringLit "other"
       binary :: Hasql.Value ReleaseKind
-      binary = Hasql.text <&> \case
-        "album" -> AlbumKind
-        "single" -> SingleKind
-        "ep" -> EPKind
-        "live" -> LiveKind
-        "compilation" -> CompilationKind
-        _ -> OtherKind
+      binary =
+        Hasql.text <&> \case
+          "album" -> AlbumKind
+          "single" -> SingleKind
+          "ep" -> EPKind
+          "live" -> LiveKind
+          "compilation" -> CompilationKind
+          _ -> OtherKind
       parser' = do
         P.takeByteString >>= \case
           "album" -> pure AlbumKind
@@ -94,7 +120,7 @@ instance DBType ReleaseKind where
           "compilation" -> pure CompilationKind
           _ -> pure OtherKind
 
-instance DBEq ReleaseKind where
+instance DBEq ReleaseKind
 
 data Release = Release
   { ref :: ReleaseRef,
@@ -102,21 +128,24 @@ data Release = Release
     yearReleased :: Maybe Text,
     originalYearReleased :: Maybe Text,
     catalogueNumber :: Maybe Text,
-    artists :: [ArtistNameEntity],
+    artists :: Vector ArtistLink,
+    genres :: Vector GenreLink,
     kind :: ReleaseKind
   }
   deriving (Show, Eq, Generic, Hashable)
-  deriving TextShow via FromGeneric Release
+  deriving (TextShow) via FromGeneric Release
+  deriving (ToJSON) via CustomJSON JSONOptions Release
 
-mkRelease :: Foldable f => f ArtistNameEntity -> ReleaseEntity -> Release
-mkRelease releaseArtists e =
+mkRelease :: (From a ArtistLink, From g GenreLink) => Vector a -> Vector g -> ReleaseEntity -> Release
+mkRelease releaseArtists releaseGenres e =
   Release
     { ref = e.id,
       title = e.title,
       yearReleased = e.year_released,
       originalYearReleased = e.original_year_released,
       catalogueNumber = e.catalogue_number,
-      artists = toList releaseArtists,
+      artists = from <$> releaseArtists,
+      genres = from <$> releaseGenres,
       kind = e.kind
     }
 
@@ -131,7 +160,7 @@ data NewRelease = NewRelease
     kind :: ReleaseKind
   }
   deriving (Generic, Eq, Ord, Show)
-  deriving TextShow via FromGeneric NewRelease
+  deriving (TextShow) via FromGeneric NewRelease
 
 instance A.ToJSON NewRelease where
   toEncoding = A.genericToEncoding A.defaultOptions

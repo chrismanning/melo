@@ -168,6 +168,24 @@ instance
             returning = Rel8.NoReturning
           }
   delete ks | null ks = pure mempty
+  delete ks | length ks == 1 = do
+    pool <- getConnectionPool
+    RepositoryHandle {tbl, pk} <- getRepoHandle @a
+    withSpan' ("delete$" <> T.pack tbl.name.name) defaultSpanArguments \span -> do
+      let d =
+            Rel8.Delete
+              { from = tbl,
+                using = pure (),
+                deleteWhere = \_ row -> pk row ==. Rel8.lit (ks V.! 0),
+                returning = Rel8.Returning pk
+              }
+      do
+        let statement = Rel8.showDelete d
+        Otel.addAttributes span [("database.statement", Otel.toAttribute $ T.pack statement)]
+        $(logDebugVIO ['statement]) "Executing DELETE"
+      let session = statement () $ Rel8.runVector $ Rel8.delete d
+      liftIO do
+        withResource pool $ \conn -> run session conn >>= throwOnLeft
   delete ks = do
     pool <- getConnectionPool
     RepositoryHandle {tbl, pk} <- getRepoHandle @a
@@ -254,6 +272,19 @@ runSelect pool q = withSpan' "runSelect" defaultSpanArguments \span -> do
     $(logDebugVIO ['statement]) "Executing SELECT"
   let session = statement () $ Rel8.runVector $ Rel8.select q
   liftIO $ withResource pool $ \conn -> run session conn >>= throwOnLeft
+
+runSelectM ::
+  ( AppDataReader m,
+    MonadIO m,
+    MonadThrow m,
+    Tracing m,
+    Rel8.Serializable exprs (Rel8.FromExprs exprs)
+  ) =>
+  Rel8.Query exprs ->
+  m (Vector (Rel8.FromExprs exprs))
+runSelectM q = do
+  pool <- getConnectionPool
+  runSelect pool q
 
 data StreamItem a =
     RowItem a

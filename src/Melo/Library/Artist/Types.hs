@@ -36,11 +36,19 @@ instance Entity ArtistEntity where
 
 newtype ArtistRef = ArtistRef UUID
   deriving (Show, Eq, Ord, Generic)
-  deriving newtype (DBType, DBEq, Hashable)
+  deriving newtype (DBType, DBEq, Hashable, FromJSON, ToJSON)
   deriving TextShow via FromGeneric ArtistRef
 
 instance From ArtistRef UUID where
   from (ArtistRef uuid) = uuid
+
+data ArtistLink = ArtistLink
+  { ref :: ArtistRef,
+    name :: Text
+  }
+  deriving (Eq, Generic, Show, Hashable)
+  deriving (TextShow) via FromGeneric ArtistLink
+  deriving (FromJSON, ToJSON) via CustomJSON JSONOptions ArtistLink
 
 data Artist = Artist
   { key :: ArtistRef,

@@ -37,6 +37,7 @@ import Data.Aeson as JSON
 import Data.Bifunctor
 import Data.Char qualified
 import Data.Foldable
+import Data.Hashable
 import Data.Kind
 import Data.List qualified as List
 import Data.List.NonEmpty (NonEmpty (..))
@@ -181,6 +182,9 @@ instance KnownSymbol s => StringModifier (StripSuffix s) where
 
 deriving newtype instance FromJSON RSocket.StreamId
 deriving newtype instance ToJSON RSocket.StreamId
+
+instance Hashable a => Hashable (Vector a) where
+  hashWithSalt s v = hashWithSalt s (toList v)
 
 makeClassyPrisms ''RSocket.Frame
 makeClassyPrisms ''RSocket.Metadata
