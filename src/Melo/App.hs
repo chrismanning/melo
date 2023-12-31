@@ -65,7 +65,7 @@ app = runAppM do
             exitFailure
         )
     let !addr = SockAddrInet (fromIntegral env.server.port.unwrap) 0
-    forever do
+    replicateM_ 3 do
       RSocket.runServer addr RSocket.Config {
         logger,
         onConnection = onConnection . eraseConnection,
