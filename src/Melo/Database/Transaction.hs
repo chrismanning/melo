@@ -2,14 +2,14 @@
 
 module Melo.Database.Transaction where
 
-import Melo.Common.Exception as E
 import Control.Monad.Reader
 import Data.Pool as P
 import Hasql.Connection
 import Hasql.Decoders
 import Hasql.Encoders
-import Hasql.Statement
 import Hasql.Session
+import Hasql.Statement
+import Melo.Common.Exception as E
 import Melo.Common.Logging
 
 withTransaction :: (MonadMask m, MonadIO m) => Pool Connection -> (Connection -> t -> m a) -> t -> m a

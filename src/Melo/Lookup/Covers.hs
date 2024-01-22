@@ -41,7 +41,7 @@ import System.FilePath
 import Text.EditDistance
 import Text.Read hiding (lift)
 
-class Monad m => CoverService m where
+class (Monad m) => CoverService m where
   searchForCovers :: Release -> m [Cover]
   copyCoverToDir :: URI -> FilePath -> m ()
 
@@ -86,7 +86,7 @@ instance From ConduitImageSize.FileFormat ImageFormat where
   from ConduitImageSize.JPG = JPG
   from ConduitImageSize.PNG = PNG
 
-requestUri :: IsString s => s
+requestUri :: (IsString s) => s
 requestUri = "https://covers.musichoarders.xyz/api/search"
 
 data SearchRequest = SearchRequest
@@ -166,16 +166,17 @@ instance CoverService (AppM IO IO) where
             $(logErrorV ['clientRequestUrl, 'clientResponseStatus]) "Response received from cover search"
             pure []
           else do
-            covers <- response.responseBody
-              & SA.decoded
-              & S.mapM \case
-                Just Cover {..} | matches releaseInfo artist -> do
-                  smallCover <- getImageInfo smallCoverUrl manager
-                  bigCover <- getImageInfo bigCoverUrl manager
-                  pure $ Just CoverInfo {smallCover, bigCover, source}
-                _ -> pure Nothing
-              & S.catMaybes
-              & S.toList_
+            covers <-
+              response.responseBody
+                & SA.decoded
+                & S.mapM \case
+                  Just Cover {..} | matches releaseInfo artist -> do
+                    smallCover <- getImageInfo smallCoverUrl manager
+                    bigCover <- getImageInfo bigCoverUrl manager
+                    pure $ Just CoverInfo {smallCover, bigCover, source}
+                  _ -> pure Nothing
+                & S.catMaybes
+                & S.toList_
             liftIO $ atomically $ modifyTVar' cacheVar (at release ?~ covers)
             $(logInfo) $ "Found " <> showt (F.length covers) <> " covers for release " <> release.title
             pure covers
@@ -201,9 +202,9 @@ instance CoverService (AppM IO IO) where
               bytes = fromMaybe 0 (C.unpack <$> length >>= readMaybe)
             }
       matches :: Maybe ReleaseInfo -> Text -> Bool
-      matches (Just ReleaseInfo {artist=Just artist, title=Just title}) artistName =
+      matches (Just ReleaseInfo {artist = Just artist, title = Just title}) artistName =
         levenshteinDistance defaultEditCosts (T.unpack artistName) artist < 4
-        && levenshteinDistance defaultEditCosts (T.unpack release.title) title < 4
+          && levenshteinDistance defaultEditCosts (T.unpack release.title) title < 4
       matches _ _ = False
       handleErrors = handleHttp \e -> do
         let cause = show e

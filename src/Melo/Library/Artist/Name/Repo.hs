@@ -9,7 +9,7 @@ import Melo.Library.Artist.Name.Types
 import Melo.Library.Artist.Types
 import Rel8
 
-class Repository ArtistNameEntity m => ArtistNameRepository m where
+class (Repository ArtistNameEntity m) => ArtistNameRepository m where
   getArtistNames :: ArtistRef -> m (Vector ArtistNameEntity)
   getAlias :: ArtistRef -> Text -> m (Maybe ArtistNameEntity)
 
@@ -54,7 +54,7 @@ artistNameSchema =
           }
     }
 
-initArtistNameRepo :: AppDataReader m => m ()
+initArtistNameRepo :: (AppDataReader m) => m ()
 initArtistNameRepo =
   putAppData
     RepositoryHandle

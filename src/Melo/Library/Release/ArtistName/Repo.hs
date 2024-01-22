@@ -7,22 +7,22 @@ import Data.Int
 import Data.Vector qualified as V
 import Melo.Common.Monad
 import Melo.Database.Repo.IO
-import Melo.Library.Release.ArtistName.Types
-import Melo.Library.Release.Types (ReleaseRef (..))
 import Melo.Library.Artist.Name.Repo (artistNameSchema)
 import Melo.Library.Artist.Name.Types
   ( ArtistNameEntity,
     ArtistNameTable (..),
   )
+import Melo.Library.Release.ArtistName.Types
+import Melo.Library.Release.Types (ReleaseRef (..))
 import Rel8 (Expr, Query, lit, (==.))
 import Rel8 qualified
 
-class Monad m => ReleaseArtistNameRepository m where
+class (Monad m) => ReleaseArtistNameRepository m where
   getReleaseArtistNames :: ReleaseRef -> m (Vector ArtistNameEntity)
   insert' :: Vector ReleaseArtistNameEntity -> m Int64
   insert :: Vector ReleaseArtistNameEntity -> m (Vector ReleaseArtistNameEntity)
 
-insertSingle :: ReleaseArtistNameRepository m => ReleaseArtistNameEntity -> m (Maybe ReleaseArtistNameEntity)
+insertSingle :: (ReleaseArtistNameRepository m) => ReleaseArtistNameEntity -> m (Maybe ReleaseArtistNameEntity)
 insertSingle e = firstOf traverse <$> insert (V.singleton e)
 
 instance

@@ -3,6 +3,7 @@
 
 module Melo.Library.Release.Repo where
 
+import Data.HashMap.Strict qualified as HashMap
 import Data.Pool
 import Data.Text qualified as T
 import Data.Vector qualified as V
@@ -21,7 +22,7 @@ import OpenTelemetry.Trace qualified as Otel
 import Rel8 (Expr, Query, lit, (==.), (||.))
 import Rel8 qualified
 
-class Repository ReleaseEntity m => ReleaseRepository m where
+class (Repository ReleaseEntity m) => ReleaseRepository m where
   getByMusicBrainzId :: MB.MusicBrainzId -> m (Maybe ReleaseEntity)
 
 instance
@@ -101,7 +102,7 @@ instance {-# OVERLAPPING #-} Repository ReleaseEntity (AppM IO IO) where
               }
       do
         let statement = Rel8.showDelete d
-        Otel.addAttributes span [("database.statement", Otel.toAttribute $ T.pack statement)]
+        Otel.addAttributes span (HashMap.fromList [("database.statement", Otel.toAttribute $ T.pack statement)])
         $(logDebugVIO ['statement]) "Executing DELETE"
       let session = Hasql.statement () $ Rel8.runVector $ Rel8.delete d
       liftIO do
@@ -175,7 +176,7 @@ releaseGenreSchema =
           }
     }
 
-initReleaseRepo :: AppDataReader m => m ()
+initReleaseRepo :: (AppDataReader m) => m ()
 initReleaseRepo = do
   putAppData
     RepositoryHandle

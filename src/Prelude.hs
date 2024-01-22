@@ -84,25 +84,27 @@ import "base" Prelude hiding
 instance From (NonEmpty a) (Vector a) where
   from (a :| as) = V.fromList (a : as)
 
-deriving instance Show a => Show (JSONBEncoded a)
+deriving instance (Show a) => Show (JSONBEncoded a)
 
-deriving newtype instance ToJSON a => ToJSON (JSONBEncoded a)
+deriving newtype instance (ToJSON a) => ToJSON (JSONBEncoded a)
 
-deriving via (FromStringShow (JSONBEncoded a)) instance Show a => TextShow (JSONBEncoded a)
+deriving via (FromStringShow (JSONBEncoded a)) instance (Show a) => TextShow (JSONBEncoded a)
 
 deriving via (FromStringShow F.Metadata) instance TextShow F.Metadata
 
 instance ToJSON F.Metadata where
-  toJSON m = JSON.object [
-    ("format_id", toJSON m.formatId),
-    ("format_desc", toJSON m.formatDesc),
-    ("tags", toJSON m.tags)
-    ]
-  toEncoding m = JSON.pairs (
-    ("format_id" JSON..= m.formatId) <>
-    ("format_desc" JSON..= m.formatDesc) <>
-    ("tags" JSON..= m.tags)
-    )
+  toJSON m =
+    JSON.object
+      [ ("format_id", toJSON m.formatId),
+        ("format_desc", toJSON m.formatDesc),
+        ("tags", toJSON m.tags)
+      ]
+  toEncoding m =
+    JSON.pairs
+      ( ("format_id" JSON..= m.formatId)
+          <> ("format_desc" JSON..= m.formatDesc)
+          <> ("tags" JSON..= m.tags)
+      )
 
 deriving via (FromStringShow F.MetadataFileId) instance TextShow F.MetadataFileId
 
@@ -175,15 +177,16 @@ instance StringModifier ToLower where
 
 data StripSuffix s
 
-instance KnownSymbol s => StringModifier (StripSuffix s) where
+instance (KnownSymbol s) => StringModifier (StripSuffix s) where
   getStringModifier = stripSuffix (symbolVal (Proxy @s))
     where
       stripSuffix s x = if s `List.isSuffixOf` x then List.take (List.length x - List.length s) x else x
 
 deriving newtype instance FromJSON RSocket.StreamId
+
 deriving newtype instance ToJSON RSocket.StreamId
 
-instance Hashable a => Hashable (Vector a) where
+instance (Hashable a) => Hashable (Vector a) where
   hashWithSalt s v = hashWithSalt s (toList v)
 
 makeClassyPrisms ''RSocket.Frame

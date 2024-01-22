@@ -52,8 +52,8 @@ import Control.Monad.Extra hiding
   )
 import Control.Monad.Primitive
 import Control.Monad.Reader.Class
-import Control.Monad.State.Strict
 import Control.Monad.STM.Class
+import Control.Monad.State.Strict
 import Control.Monad.Trans
 import Control.Monad.Trans.Control
 import Control.Monad.Trans.Identity hiding (liftCallCC, liftCatch)
@@ -65,7 +65,7 @@ import Data.TMap as TMap
 import Data.Typeable
 import Data.Vector qualified as V
 
-forMaybeM :: Monad m => V.Vector a -> (a -> m (Maybe b)) -> m (V.Vector b)
+forMaybeM :: (Monad m) => V.Vector a -> (a -> m (Maybe b)) -> m (V.Vector b)
 forMaybeM = flip V.mapMaybeM
 
 (<<|>>) :: (Monad m, Alternative f, Eq (f a)) => m (f a) -> m (f a) -> m (f a)
@@ -78,7 +78,7 @@ a <<|>> b =
             b' -> pure b'
     a' -> pure a'
 
-once :: MonadConc m => m a -> m (m a)
+once :: (MonadConc m) => m a -> m (m a)
 once action = do
   mvar <- newEmptyMVar
   return $ do
@@ -105,13 +105,13 @@ runAppM m = do
   let !appData = AppData typeMapVar
   runReaderT m appData
 
-class Monad m => AppDataReader m where
-  alterAppData' :: forall (a :: Type). Typeable a => (Maybe a -> Maybe a) -> m ()
-  getAppData' :: forall (a :: Type). Typeable a => Proxy a -> m (Maybe a)
-  putAppData :: forall (a :: Type). Typeable a => a -> m ()
-  deleteAppData' :: forall (a :: Type). Typeable a => Proxy a -> m ()
+class (Monad m) => AppDataReader m where
+  alterAppData' :: forall (a :: Type). (Typeable a) => (Maybe a -> Maybe a) -> m ()
+  getAppData' :: forall (a :: Type). (Typeable a) => Proxy a -> m (Maybe a)
+  putAppData :: forall (a :: Type). (Typeable a) => a -> m ()
+  deleteAppData' :: forall (a :: Type). (Typeable a) => Proxy a -> m ()
 
-instance MonadIO m => AppDataReader (AppM IO m) where
+instance (MonadIO m) => AppDataReader (AppM IO m) where
   alterAppData' alter = do
     mapVar <- asks (.typeMap)
     liftIO $ atomically $ modifyTVar' mapVar (TMap.alter alter)
@@ -123,7 +123,7 @@ instance MonadIO m => AppDataReader (AppM IO m) where
     mapVar <- asks (.typeMap)
     liftIO $ atomically (modifyTVar' mapVar (TMap.insert a))
     pure ()
-  deleteAppData' :: forall (a :: Type). Typeable a => Proxy a -> AppM IO m ()
+  deleteAppData' :: forall (a :: Type). (Typeable a) => Proxy a -> AppM IO m ()
   deleteAppData' _ = do
     mapVar <- asks (.typeMap)
     liftIO $ atomically (modifyTVar' mapVar (TMap.delete @a))
@@ -151,11 +151,11 @@ getAppData = getAppData' (Proxy @a)
 deleteAppData :: forall (a :: Type) m. (AppDataReader m, Typeable a) => m ()
 deleteAppData = deleteAppData' (Proxy @a)
 
-class Monad m => LocalAppDataReader m where
-  localAppData :: forall (a :: Type) x. Typeable a => (Maybe a -> Maybe a) -> m x -> m x
+class (Monad m) => LocalAppDataReader m where
+  localAppData :: forall (a :: Type) x. (Typeable a) => (Maybe a -> Maybe a) -> m x -> m x
 
-instance MonadIO m => LocalAppDataReader (AppM IO m) where
-  localAppData :: forall (a :: Type) x. Typeable a => (Maybe a -> Maybe a) -> AppM IO m x -> AppM IO m x
+instance (MonadIO m) => LocalAppDataReader (AppM IO m) where
+  localAppData :: forall (a :: Type) x. (Typeable a) => (Maybe a -> Maybe a) -> AppM IO m x -> AppM IO m x
   localAppData f m = do
     mapVar <- asks (.typeMap)
     map <- liftIO $ readTVarConc mapVar

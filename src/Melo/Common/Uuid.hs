@@ -6,7 +6,7 @@ import Data.UUID
 import Data.UUID.V4
 import Melo.Common.Monad
 
-class Monad m => UuidGenerator m where
+class (Monad m) => UuidGenerator m where
   generateV4 :: m UUID
 
 instance

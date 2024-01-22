@@ -5,7 +5,7 @@ module Melo.Common.FileSystem.Watcher where
 import Control.Concurrent.Classy
 import Control.Monad.State.Strict
 import Control.Monad.Trans.Control
-import Data.ByteString as BS ((!?), null)
+import Data.ByteString as BS (null, (!?))
 import Data.ByteString.Char8 (ByteString (), pack)
 import Data.Char
 import Data.HashMap.Strict (HashMap)
@@ -19,7 +19,7 @@ import Melo.Common.Monad
 import Melo.Library.Collection.Types (CollectionRef)
 import System.FSNotify qualified as FS
 
-class Monad m => FileSystemWatcher m where
+class (Monad m) => FileSystemWatcher m where
   startWatching :: CollectionRef -> FilePath -> m ()
   stopWatching :: CollectionRef -> m ()
 
@@ -33,7 +33,7 @@ instance
   startWatching ref p = lift (startWatching ref p)
   stopWatching = lift . stopWatching
 
-class Monad m => FileSystemWatchLocks m where
+class (Monad m) => FileSystemWatchLocks m where
   lockPathsDuring :: NonEmpty FilePath -> m a -> m a
 
 instance
@@ -66,7 +66,7 @@ data CollectionWatchState m = CollectionWatchState
   }
   deriving (Typeable)
 
-emptyWatchState :: MonadConc m => m (CollectionWatchState m)
+emptyWatchState :: (MonadConc m) => m (CollectionWatchState m)
 emptyWatchState =
   atomically $
     CollectionWatchState <$> newTVar mempty <*> newTVar mempty

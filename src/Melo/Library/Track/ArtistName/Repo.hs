@@ -17,12 +17,12 @@ import Rel8 (lit, (&&.), (==.))
 import Rel8 qualified
 import Streaming qualified as S
 
-class Monad m => TrackArtistNameRepository m where
+class (Monad m) => TrackArtistNameRepository m where
   getTrackArtistNames :: TrackRef -> m (Vector ArtistNameEntity)
   insert' :: Vector TrackArtistNameEntity -> m Int64
   insert :: Vector TrackArtistNameEntity -> m (Vector TrackArtistNameEntity)
 
-insertSingle :: TrackArtistNameRepository m => TrackArtistNameEntity -> m (Maybe TrackArtistNameEntity)
+insertSingle :: (TrackArtistNameRepository m) => TrackArtistNameEntity -> m (Maybe TrackArtistNameEntity)
 insertSingle e = firstOf traverse <$> insert (V.singleton e)
 
 instance
@@ -76,7 +76,7 @@ instance
   {-# OVERLAPPING #-}
   ( TrackArtistNameRepository m,
     Functor f
-  )=>
+  ) =>
   TrackArtistNameRepository (S.Stream f m)
   where
   getTrackArtistNames = lift . getTrackArtistNames

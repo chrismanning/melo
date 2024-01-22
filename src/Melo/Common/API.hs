@@ -19,7 +19,7 @@ data ErrorResponse = ErrorResponse
     message :: Text
   }
   deriving (Generic)
-  deriving TextShow via FromGeneric ErrorResponse
+  deriving (TextShow) via FromGeneric ErrorResponse
   deriving (FromJSON, ToJSON) via CustomJSON JSONOptions ErrorResponse
 
 data ErrorCode
@@ -27,7 +27,7 @@ data ErrorCode
   | RouteNotFound
   | ServiceError
   deriving (Generic)
-  deriving TextShow via FromGeneric ErrorCode
+  deriving (TextShow) via FromGeneric ErrorCode
   deriving (FromJSON, ToJSON) via CustomJSON JSONOptions ErrorCode
 
 data ApiException
@@ -79,7 +79,7 @@ apiStreamExceptionHandlers conn =
 data PayloadWrapper
   = RawPayload L.ByteString
   | TypedPayload RSocket.MimeType L.ByteString
-  | forall a. ToJSON a => JsonPayload a
+  | forall a. (ToJSON a) => JsonPayload a
 
 buildStreamPayload :: PayloadWrapper -> RSocket.Metadata -> RSocket.StreamId -> RSocket.Payload
 buildStreamPayload r metadata streamId = buildPayload r metadata streamId False

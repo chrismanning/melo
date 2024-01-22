@@ -5,7 +5,7 @@
 module Melo.Env
   ( initEnv,
     Env (..),
-    EnvVar(..),
+    EnvVar (..),
     Server (..),
     Database (..),
     DatabaseConnectionPool (..),
@@ -23,13 +23,13 @@ import Data.Word
 import GHC.Exts
 import GHC.Generics
 import GHC.TypeLits
-import System.Environment (lookupEnv)
 import Melo.Common.Exit
+import System.Environment (lookupEnv)
 import Text.Casing
 import Text.Read
 import Prelude hiding (Text)
 
-initEnv :: MonadIO m => m Env
+initEnv :: (MonadIO m) => m Env
 initEnv = liftIO $ getEnv @Env
 
 data Env = Env
@@ -38,7 +38,7 @@ data Env = Env
     logging :: LoggingConfig
   }
   deriving (Show, Generic)
-  deriving TextShow via FromGeneric Env
+  deriving (TextShow) via FromGeneric Env
 
 instance GetEnv Env
 
@@ -46,7 +46,7 @@ data Server = Server
   { port :: EnvVar Int 5000
   }
   deriving (Show, Generic)
-  deriving TextShow via FromGeneric Server
+  deriving (TextShow) via FromGeneric Server
 
 data Database = Database
   { host :: EnvVar C8.ByteString "localhost",
@@ -57,34 +57,34 @@ data Database = Database
     pool :: DatabaseConnectionPool
   }
   deriving (Show, Generic)
-  deriving TextShow via FromGeneric Database
+  deriving (TextShow) via FromGeneric Database
 
 data DatabaseConnectionPool = DatabaseConnectionPool
   { maxIdleTime :: EnvVar NominalDiffTime 20,
     maxConnections :: EnvVar Int 10
   }
   deriving (Show, Generic)
-  deriving TextShow via FromGeneric DatabaseConnectionPool
+  deriving (TextShow) via FromGeneric DatabaseConnectionPool
 
 data LoggingConfig = Logging
   { loki :: LokiConfig,
     console :: ConsoleConfig
   }
   deriving (Show, Generic)
-  deriving TextShow via FromGeneric LoggingConfig
+  deriving (TextShow) via FromGeneric LoggingConfig
 
 data LokiConfig = LokiConfig
-  { url :: Maybe String
-  , bufferSize :: Maybe Natural
+  { url :: Maybe String,
+    bufferSize :: Maybe Natural
   }
   deriving (Show, Generic)
-  deriving TextShow via FromGeneric LokiConfig
+  deriving (TextShow) via FromGeneric LokiConfig
 
 data ConsoleConfig = ConsoleConfig
   { level :: EnvVar String "info"
   }
   deriving (Show, Generic)
-  deriving TextShow via FromGeneric ConsoleConfig
+  deriving (TextShow) via FromGeneric ConsoleConfig
 
 class GetEnv a where
   getEnv :: IO a
@@ -94,10 +94,10 @@ class GetEnv a where
 class EnvValue a where
   parseEnv :: String -> Either String a
 
-parseEnvMaybe :: EnvValue a => String -> Maybe a
+parseEnvMaybe :: (EnvValue a) => String -> Maybe a
 parseEnvMaybe = rightToMaybe . parseEnv
 
-instance {-# OVERLAPPABLE #-} Read a => EnvValue a where
+instance {-# OVERLAPPABLE #-} (Read a) => EnvValue a where
   parseEnv = readEither
 
 instance EnvValue String where
@@ -109,19 +109,19 @@ instance EnvValue C8.ByteString where
 class GetEnv' f where
   getEnv' :: Maybe String -> IO (f a)
 
-instance GetEnv' f => GetEnv' (D1 m f) where
+instance (GetEnv' f) => GetEnv' (D1 m f) where
   getEnv' prefix = M1 <$> getEnv' @f prefix
 
-instance TypeError (Text "Cannot handle multiple contructors") => GetEnv' (x :+: y) where
+instance (TypeError (Text "Cannot handle multiple contructors")) => GetEnv' (x :+: y) where
   getEnv' _ = error "unreachable"
 
-instance TypeError (Text "Cannot handle non-record types") => GetEnv' (C1 ('MetaCons x y 'False) f) where
+instance (TypeError (Text "Cannot handle non-record types")) => GetEnv' (C1 ('MetaCons x y 'False) f) where
   getEnv' _ = error "unreachable"
 
-instance TypeError (Text "Fields must be named") => GetEnv' (C1 ('MetaCons x y 'True) (S1 ('MetaSel 'Nothing u s l) k)) where
+instance (TypeError (Text "Fields must be named")) => GetEnv' (C1 ('MetaCons x y 'True) (S1 ('MetaSel 'Nothing u s l) k)) where
   getEnv' _ = error "unreachable"
 
-instance GetEnv' s => GetEnv' (C1 ('MetaCons x y 'True) s) where
+instance (GetEnv' s) => GetEnv' (C1 ('MetaCons x y 'True) s) where
   getEnv' prefix = M1 <$> getEnv' @s prefix
 
 instance (GetEnv' s, GetEnv' ss) => GetEnv' (s :*: ss) where
@@ -163,8 +163,8 @@ instance (KnownSymbol n, EnvValue a) => GetEnv' (S1 ('MetaSel ('Just n) u s l) (
 instance {-# OVERLAPPABLE #-} (KnownSymbol n, Generic a, GetEnv' (Rep a)) => GetEnv' (S1 ('MetaSel ('Just n) u s l) (Rec0 a)) where
   getEnv' prefix = M1 . K1 . to <$> getEnv' @(Rep a) (Just (getEnvVarName @n prefix))
 
-getEnvVarName :: forall n. KnownSymbol n => Maybe String -> String
+getEnvVarName :: forall n. (KnownSymbol n) => Maybe String -> String
 getEnvVarName prefix = fromMaybe "" (fmap (<> "_") prefix) <> toScreamingSnake (fromAny $ symbolVal' (proxy# @n))
 
-newtype EnvVar a d = EnvVar { unwrap :: a }
+newtype EnvVar a d = EnvVar {unwrap :: a}
   deriving newtype (Show, TextShow)

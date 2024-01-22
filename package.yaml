@@ -104,10 +104,9 @@ library:
   - network-bsd
   - network-multicast
   - network-uri
-  - network-uri-json
+#  - network-uri-json
   - newtype-generics
   - opaleye
-  - opentelemetry
   - path
   - path-io
   - postgresql-binary

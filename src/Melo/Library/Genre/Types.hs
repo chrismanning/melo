@@ -6,22 +6,23 @@ import Data.Hashable
 import Data.UUID
 import Data.Vector qualified as V
 import Melo.Database.Repo
-import Rel8 (
-  Column,
-  DBEq,
-  DBType,
-  Expr,
-  JSONBEncoded (..),
-  Rel8able,
-  Result,
-  function,
-  lit,
+import Rel8
+  ( Column,
+    DBEq,
+    DBType,
+    Expr,
+    JSONBEncoded (..),
+    ListTable (..),
+    Rel8able,
+    Result,
+    function,
+    lit,
   )
 
 newtype GenreRef = GenreRef UUID
   deriving (Generic)
   deriving newtype (Show, Eq, Ord, DBType, DBEq, FromJSON, Hashable, ToJSON)
-  deriving TextShow via FromGeneric GenreRef
+  deriving (TextShow) via FromGeneric GenreRef
 
 instance From GenreRef UUID where
   from (GenreRef uuid) = uuid
@@ -35,6 +36,7 @@ data GenreTable f = GenreTable
   deriving (Generic, Rel8able)
 
 type GenreEntity = GenreTable Result
+
 deriving via (FromGeneric GenreEntity) instance TextShow GenreEntity
 
 instance Entity (GenreTable Result) where
@@ -60,6 +62,7 @@ data TopLevelGenreTable f = TopLevelGenreTable
   deriving (Generic, Rel8able)
 
 type TopLevelGenreEntity = TopLevelGenreTable Result
+
 deriving via (FromGeneric TopLevelGenreEntity) instance TextShow TopLevelGenreEntity
 
 data NewGenre = NewGenre
@@ -68,61 +71,74 @@ data NewGenre = NewGenre
     topLevel :: Bool
   }
   deriving (Generic, Eq, Show)
-  deriving TextShow via FromGeneric NewGenre
+  deriving (TextShow) via FromGeneric NewGenre
 
 instance From NewGenre (GenreTable Expr) where
-  from new = GenreTable {
-    id = function "uuid_generate_v4" (),
-    name = lit new.name,
-    description = lit new.description,
-    top_level = lit new.topLevel
-  }
+  from new =
+    GenreTable
+      { id = function "uuid_generate_v4" (),
+        name = lit new.name,
+        description = lit new.description,
+        top_level = lit new.topLevel
+      }
 
 data Genre = Genre
-  { ref :: GenreRef
-  , name :: Text
-  , description :: Maybe Text
-  , parents :: Vector GenreOrLink
-  , children :: Vector GenreOrLink
+  { ref :: GenreRef,
+    name :: Text,
+    description :: Maybe Text,
+    parents :: Vector GenreOrLink,
+    children :: Vector GenreOrLink
   }
   deriving (Eq, Generic)
-  deriving TextShow via FromGeneric Genre
-  deriving ToJSON via CustomJSON JSONOptions Genre
+  deriving (TextShow) via FromGeneric Genre
+  deriving (ToJSON) via CustomJSON JSONOptions Genre
 
 data GenreLink = GenreLink
-  { ref :: GenreRef
-  , name :: Text
+  { ref :: GenreRef,
+    name :: Text
   }
   deriving (Eq, Generic, Show, Hashable)
-  deriving TextShow via FromGeneric GenreLink
+  deriving (TextShow) via FromGeneric GenreLink
   deriving (FromJSON, ToJSON) via CustomJSON JSONOptions GenreLink
 
 instance From GenreEntity GenreLink where
-  from e = GenreLink
-    { ref = e.id,
-      name = e.name
-    }
+  from e =
+    GenreLink
+      { ref = e.id,
+        name = e.name
+      }
 
-data GenreOrLink = ResolvedGenre Genre
+data GenreOrLink
+  = ResolvedGenre Genre
   | UnresolvedGenre GenreLink
   deriving (Eq, Generic)
-  deriving TextShow via FromGeneric GenreOrLink
-  deriving ToJSON via CustomJSON '[SumUntaggedValue] GenreOrLink
+  deriving (TextShow) via FromGeneric GenreOrLink
+  deriving (ToJSON) via CustomJSON '[SumUntaggedValue] GenreOrLink
 
 mkGenre :: GenreEntity -> [GenreLink] -> [GenreLink] -> Genre
-mkGenre e parents children = Genre {
-  ref = e.id,
-  name = e.name,
-  description = e.description,
-  parents = V.fromList (UnresolvedGenre <$> parents),
-  children = V.fromList (UnresolvedGenre <$> children)
-}
+mkGenre e parents children =
+  Genre
+    { ref = e.id,
+      name = e.name,
+      description = e.description,
+      parents = V.fromList (UnresolvedGenre <$> parents),
+      children = V.fromList (UnresolvedGenre <$> children)
+    }
 
 instance From TopLevelGenreEntity Genre where
-  from e = Genre {
-    ref = e.id,
-    name = e.name,
-    description = e.description,
-    parents = V.fromList $ UnresolvedGenre . fromJSONBEncoded <$> e.parents,
-    children = V.fromList $ UnresolvedGenre . fromJSONBEncoded <$> e.children
-  }
+  from e =
+    Genre
+      { ref = e.id,
+        name = e.name,
+        description = e.description,
+        parents = V.fromList $ UnresolvedGenre . fromJSONBEncoded <$> e.parents,
+        children = V.fromList $ UnresolvedGenre . fromJSONBEncoded <$> e.children
+      }
+
+type TopLevelGenre f = (GenreTable f, ListTable f (f GenreRef, f Text), ListTable f (f GenreRef, f Text))
+
+instance From (TopLevelGenre Result) Genre where
+  from (g, parents, children) = mkGenre g [] []
+
+instance From (GenreEntity, [(GenreRef, Text)], [(GenreRef, Text)]) Genre where
+  from (g, parents, children) = mkGenre g (fmap (uncurry GenreLink) parents) (fmap (uncurry GenreLink) children)

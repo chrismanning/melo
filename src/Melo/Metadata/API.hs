@@ -41,9 +41,10 @@ getMetadataFormats = do
     formatId f = f ^. #metadataFormat . #formatId . #unMetadataId
     formatDesc f = f ^. #metadataFormat . #formatDesc
     mappings :: MetadataFormatFactory -> Vector TagMapping -> Vector TagMapping
-    mappings f allMappings = allMappings
-      & filter (\m -> any (\fm -> fm.formatId == formatId f) m.fieldMappings)
-      <&> (#fieldMappings %~ NE.fromList . filter (\fm -> fm.formatId == formatId f) . toList)
+    mappings f allMappings =
+      allMappings
+        & filter (\m -> any (\fm -> fm.formatId == formatId f) m.fieldMappings)
+        <&> (#fieldMappings %~ NE.fromList . filter (\fm -> fm.formatId == formatId f) . toList)
 
 registerRoutes :: AppM IO IO ()
 registerRoutes = do

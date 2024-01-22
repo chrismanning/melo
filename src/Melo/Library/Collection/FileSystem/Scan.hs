@@ -84,8 +84,8 @@ scanPath appData scanType ref p' =
             [cuefile] -> do
               $(logDebugIO) $ "Cue file found " <> showt cuefile
               handleAny (logShow files >=> \_ -> handleScanErrors files $ importTransaction files) $
-                  V.length
-                    <$> ( openCueFile cuefile <&> (CueFileImportSource ref <$>) >>= importSources)
+                V.length
+                  <$> (openCueFile cuefile <&> (CueFileImportSource ref <$>) >>= importSources)
             _ -> do
               $(logWarnIO) $ "Multiple cue file found in " <> showt p <> "; skipping..."
               pure 0
@@ -127,7 +127,7 @@ scanPath appData scanType ref p' =
           let cause = displayException e
           $(logErrorVIO ['cause]) $ "Could not open by extension " <> showt p
           pure Nothing
-    logShow :: Logging m => [FilePath] -> SomeException -> m ()
+    logShow :: (Logging m) => [FilePath] -> SomeException -> m ()
     logShow filePaths e =
       let !cause = displayException e
        in $(logErrorV ['filePaths, 'cause]) "error during scan"
@@ -250,7 +250,7 @@ handleEvent appData ref event = runReaderT' appData $ unlessM isLocked' do
       watchState <- getWatchState
       isLocked watchState event.eventPath
 
-isLocked :: MonadConc m => CollectionWatchState m -> FilePath -> m Bool
+isLocked :: (MonadConc m) => CollectionWatchState m -> FilePath -> m Bool
 isLocked watchState p = do
   !locks <- atomically $ readTVar watchState.locks
   pure $ isPathLocked p locks

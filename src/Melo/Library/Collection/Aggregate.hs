@@ -14,7 +14,7 @@ import Melo.Library.Collection.FileSystem.Scan
 import Melo.Library.Collection.Repo as Repo
 import Melo.Library.Collection.Types
 
-class Monad m => CollectionAggregate m where
+class (Monad m) => CollectionAggregate m where
   addCollection :: NewCollection -> m CollectionRef
   deleteCollection :: CollectionRef -> m (Maybe CollectionRef)
   rescanCollection :: CollectionRef -> m ()

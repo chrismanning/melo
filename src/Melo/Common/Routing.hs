@@ -117,7 +117,7 @@ normaliseMimeType (RawMimeType "application/json") = MimeTypeId ApplicationJson
 normaliseMimeType (RawMimeType "text/plain") = MimeTypeId TextPlain
 normaliseMimeType m = m
 
-jsonRqRawRsRoute :: FromJSON a => (a -> RSocket.StreamId -> RouteResult RSocket.RequestResponse (AppM IO IO)) -> RouteHandler RSocket.RequestResponse (AppM IO IO)
+jsonRqRawRsRoute :: (FromJSON a) => (a -> RSocket.StreamId -> RouteResult RSocket.RequestResponse (AppM IO IO)) -> RouteHandler RSocket.RequestResponse (AppM IO IO)
 jsonRqRawRsRoute f _conn (TypedRequest streamId mimeType payload) _mimes =
   case normaliseMimeType mimeType of
     MimeTypeId ApplicationJson ->
@@ -149,7 +149,7 @@ jsonRqJsonRsRoute f _conn (TypedRequest streamId mimeType payload) _mimes =
       $(logWarnIO) msg
       liftIO $ throwIO $ ServiceException msg
 
-nullRqJsonRsRoute :: ToJSON rs => AppM IO IO rs -> RouteHandler RSocket.RequestResponse (AppM IO IO)
+nullRqJsonRsRoute :: (ToJSON rs) => AppM IO IO rs -> RouteHandler RSocket.RequestResponse (AppM IO IO)
 nullRqJsonRsRoute f _conn (TypedRequest streamId mimeType _payload) _mimes =
   case normaliseMimeType mimeType of
     MimeTypeId ApplicationJson -> do
@@ -160,7 +160,7 @@ nullRqJsonRsRoute f _conn (TypedRequest streamId mimeType _payload) _mimes =
       $(logWarnIO) msg
       liftIO $ throwIO $ ServiceException msg
 
-jsonRqRawStreamRoute :: FromJSON a => (a -> RSocket.StreamId -> RouteResult RSocket.RequestStream (AppM IO IO)) -> RouteHandler RSocket.RequestStream (AppM IO IO)
+jsonRqRawStreamRoute :: (FromJSON a) => (a -> RSocket.StreamId -> RouteResult RSocket.RequestStream (AppM IO IO)) -> RouteHandler RSocket.RequestStream (AppM IO IO)
 jsonRqRawStreamRoute f _conn (TypedRequest streamId mimeType payload) _mimes =
   case normaliseMimeType mimeType of
     MimeTypeId ApplicationJson ->

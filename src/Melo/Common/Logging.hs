@@ -1,6 +1,6 @@
-{-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE UnboxedTuples #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Common.Logging
   ( Logging (..),
@@ -52,7 +52,7 @@ import System.IO
 import System.IO.Unsafe
 import Prelude hiding (log)
 
-class Monad m => Logging m where
+class (Monad m) => Logging m where
   log :: Namespace -> Severity -> Text -> m ()
   logV :: Namespace -> Severity -> Text -> K.SimpleLogPayload -> m ()
 
@@ -62,7 +62,7 @@ class LogRet r where
 instance LogRet [Name] where
   logVRet = id
 
-instance LogRet r => LogRet (Name -> r) where
+instance (LogRet r) => LogRet (Name -> r) where
   logVRet ns n = logVRet (ns <> [n])
 
 instance
@@ -80,13 +80,13 @@ instance Logging IO where
   log ns severity msg = logIOImpl' ns severity msg mempty
   logV = logIOImpl'
 
-logImpl :: Logging m => String -> Int -> Text -> m ()
+logImpl :: (Logging m) => String -> Int -> Text -> m ()
 logImpl ns severity msg = log (Namespace (filter (not . T.null) $ T.split (== '.') $ T.pack ns)) (toEnum severity) msg
 
 foldArgs :: [(String, A.Value)] -> K.SimpleLogPayload
 foldArgs = foldl (\payload (name, value) -> payload <> K.sl (T.pack name) value) mempty
 
-logVImpl :: Logging m => String -> Int -> [(String, A.Value)] -> Text -> m ()
+logVImpl :: (Logging m) => String -> Int -> [(String, A.Value)] -> Text -> m ()
 logVImpl ns severity payload msg = logV (Namespace (filter (not . T.null) $ T.split (== '.') $ T.pack ns)) (toEnum severity) msg (foldArgs payload)
 
 -- Convert a list of Name values to a list of expressions that evaluate to their values
@@ -148,7 +148,7 @@ logErrorV = logV_ K.ErrorS
 logErrorShow :: Q Exp
 logErrorShow = logShow K.ErrorS
 
-logIOImpl :: MonadIO m => String -> Int -> Text -> m ()
+logIOImpl :: (MonadIO m) => String -> Int -> Text -> m ()
 logIOImpl ns severity msg =
   let namespace = Namespace (filter (not . T.null) $ T.split (== '.') $ T.pack ns)
    in logIOImpl' namespace (toEnum severity) msg mempty
@@ -158,25 +158,27 @@ logVIOImpl ns severity payload msg =
   let namespace = Namespace (filter (not . T.null) $ T.split (== '.') $ T.pack ns)
    in logIOImpl' namespace (toEnum severity) msg (foldArgs payload)
 
-logIOImpl' :: MonadIO m => Namespace -> Severity -> Text -> SimpleLogPayload -> m ()
+logIOImpl' :: (MonadIO m) => Namespace -> Severity -> Text -> SimpleLogPayload -> m ()
 logIOImpl' ns severity s payload =
   liftIO do
-    logEnv@LogEnv{..} <- readIORef logEnv
-    item <- Item <$> pure _logEnvApp
-                <*> pure _logEnvEnv
-                <*> pure severity
-                <*> (mkThreadIdText <$> myThreadId)
-                <*> pure _logEnvHost
-                <*> pure _logEnvPid
-                <*> pure payload
-                <*> pure (logStr s)
-                <*> _logEnvTimer
-                <*> pure (_logEnvApp <> ns)
-                <*> pure Nothing
+    logEnv@LogEnv {..} <- readIORef logEnv
+    item <-
+      Item
+        <$> pure _logEnvApp
+        <*> pure _logEnvEnv
+        <*> pure severity
+        <*> (mkThreadIdText <$> myThreadId)
+        <*> pure _logEnvHost
+        <*> pure _logEnvPid
+        <*> pure payload
+        <*> pure (logStr s)
+        <*> _logEnvTimer
+        <*> pure (_logEnvApp <> ns)
+        <*> pure Nothing
     K.runKatipT logEnv $ logKatipItem' item
   where
     logKatipItem' item = do
-      LogEnv{..} <- getLogEnv
+      LogEnv {..} <- getLogEnv
       liftIO $
         forM_ (M.elems _logEnvScribes) $ \ScribeHandle {..} -> do
           whenM (scribePermitItem shScribe item) do

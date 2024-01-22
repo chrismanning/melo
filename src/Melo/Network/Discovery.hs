@@ -3,7 +3,6 @@
 module Melo.Network.Discovery where
 
 import Control.Concurrent
-import Melo.Common.Exception hiding (throwTo)
 import Control.Monad
 import Control.Monad.Base
 import Control.Monad.IO.Class
@@ -20,6 +19,7 @@ import Data.String
 import Data.Text.Encoding
 import Data.Unique
 import Data.Word (Word16)
+import Melo.Common.Exception hiding (throwTo)
 import Melo.Common.Logging
 import Network.DNS hiding (TYPE (..))
 import Network.DNS qualified as DNS
@@ -28,20 +28,20 @@ import Network.Socket
 import Network.Socket.ByteString
 import System.Random hiding (split)
 
-class Monad m => NetworkDiscovery m where
+class (Monad m) => NetworkDiscovery m where
   discoverService :: DiscoverServiceName -> m [Service]
 
 newtype DiscoverServiceName = DiscoverServiceName Text
   deriving (Show, Eq)
   deriving newtype (IsString)
-  deriving TextShow via FromStringShow DiscoverServiceName
+  deriving (TextShow) via FromStringShow DiscoverServiceName
 
 data Service = Service
   { name :: ServiceName,
     addr :: SockAddr
   }
   deriving (Show, Eq)
-  deriving TextShow via FromStringShow Service
+  deriving (TextShow) via FromStringShow Service
 
 instance
   {-# OVERLAPPABLE #-}
@@ -162,7 +162,7 @@ data MulticastDNSQuestion = MulticastDNSQuestion
     unicastResponse :: !UnicastResponse
   }
   deriving (Show, Eq)
-  deriving TextShow via FromStringShow MulticastDNSQuestion
+  deriving (TextShow) via FromStringShow MulticastDNSQuestion
 
 data DNSRecordType
   = A
@@ -171,11 +171,11 @@ data DNSRecordType
   | SRV
   | TXT
   deriving (Show, Eq)
-  deriving TextShow via FromStringShow DNSRecordType
+  deriving (TextShow) via FromStringShow DNSRecordType
 
 data UnicastResponse = UnicastResponse | MulticastResponse
   deriving (Show, Eq)
-  deriving TextShow via FromStringShow UnicastResponse
+  deriving (TextShow) via FromStringShow UnicastResponse
 
 encodeMulticastDNSQuestion :: Word16 -> MulticastDNSQuestion -> ByteString
 encodeMulticastDNSQuestion identifier MulticastDNSQuestion {..} =

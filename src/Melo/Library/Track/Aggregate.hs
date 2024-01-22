@@ -27,7 +27,7 @@ import Melo.Lookup.MusicBrainz qualified as MB
 import Melo.Metadata.Mapping.Aggregate
 import Streaming.Prelude qualified as S
 
-class Monad m => TrackAggregate m where
+class (Monad m) => TrackAggregate m where
   importReleaseTracks :: Vector Source -> Release -> m ()
 
 instance

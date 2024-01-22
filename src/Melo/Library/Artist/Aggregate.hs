@@ -15,7 +15,7 @@ import Melo.Library.Artist.Repo
 import Melo.Library.Artist.Types
 import Melo.Lookup.MusicBrainz qualified as MB
 
-class Monad m => ArtistAggregate m where
+class (Monad m) => ArtistAggregate m where
   importArtistCredit :: MB.ArtistCredit -> m (Maybe ArtistNameEntity)
   importMusicBrainzArtist :: MB.Artist -> m (Maybe (ArtistEntity, Vector ArtistNameEntity))
 
@@ -69,7 +69,7 @@ instance ArtistAggregate (AppM IO IO) where
       getAliases (Just aliases) = Just $ fmap (.name) $ V.filter (\a -> a.type' == Just "Artist Name") aliases
       getAliases _ = Nothing
 
---getArtistNamed ::
+-- getArtistNamed ::
 --  ( MB.MusicBrainzService m,
 --    ArtistRepository m,
 --    ArtistNameRepository m,
@@ -77,6 +77,6 @@ instance ArtistAggregate (AppM IO IO) where
 --  ) =>
 --  ArtistNameRef ->
 --  m (Maybe Artist)
---getArtistNamed ref = do
+-- getArtistNamed ref = do
 --  -- TODO getArtistNamed
 --  undefined

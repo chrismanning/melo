@@ -4,8 +4,8 @@ import Colog.Core qualified as Colog
 import Configuration.Dotenv qualified as Dotenv
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception.Safe (catch)
-import Control.Monad.Class.MonadThrow as E (Handler (..), Exception (..))
 import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadThrow as E (Exception (..), Handler (..))
 import Data.Pool
 import Data.Text qualified as T
 import Katip (Namespace (..), Severity (..))
@@ -18,7 +18,6 @@ import Melo.Common.Logging as Logging
 import Melo.Common.Logging.Env
 import Melo.Common.Monad hiding (atomically, writeTVar)
 import Melo.Common.Tracing
-import Melo.Metadata.Aggregate
 import Melo.Database.Repo.IO as DB
 import Melo.Env
 import Melo.Library.Artist.Name.Repo
@@ -30,6 +29,7 @@ import Melo.Library.Release.Repo
 import Melo.Library.Source.Repo
 import Melo.Library.Track.Repo
 import Melo.Lookup.MusicBrainz qualified as MB
+import Melo.Metadata.Aggregate
 import Melo.Metadata.Mapping.Aggregate
 import Melo.Metadata.Mapping.Repo
 import Network.RSocket as RSocket
@@ -46,9 +46,9 @@ app = runAppM do
     putAppData (into @DB.Config env.database)
 
     catch
-      (do
-        pool <- DB.getConnectionPool
-        liftIO $ withResource pool (const $ pure ())
+      ( do
+          pool <- DB.getConnectionPool
+          liftIO $ withResource pool (const $ pure ())
       )
       ( \(SomeException e) -> do
           let cause = displayException e
@@ -66,12 +66,14 @@ app = runAppM do
         )
     let !addr = SockAddrInet (fromIntegral env.server.port.unwrap) 0
     replicateM_ 3 do
-      RSocket.runServer addr RSocket.Config {
-        logger,
-        onConnection = onConnection . eraseConnection,
-        customiseTransport,
-        exceptionHandlers
-      }
+      RSocket.runServer
+        addr
+        RSocket.Config
+          { logger,
+            onConnection = onConnection . eraseConnection,
+            customiseTransport,
+            exceptionHandlers
+          }
   where
     logger = Colog.LogAction (\(Colog.WithSeverity msg sev) -> Logging.log (Namespace ["Melo", "App", "RSocket"]) (mapSeverity sev) (T.pack msg))
     customiseTransport :: RSocket.Customiser TCP (AppM IO IO)
@@ -120,11 +122,12 @@ app = runAppM do
                 writeExceptionHandlers = exceptionHandlers,
                 handleFrame = \exceptionHandlers frame -> do
                   $(logDebugVIO ['remoteAddress]) ("Got frame: " <> T.pack (show frame))
-                  _ <- handleInteractive
-                    (rsocketHandlers metadataMimeType dataMimeType)
-                    exceptionHandlers
-                    conn
-                    frame
+                  _ <-
+                    handleInteractive
+                      (rsocketHandlers metadataMimeType dataMimeType)
+                      exceptionHandlers
+                      conn
+                      frame
                   pure ()
               }
 

@@ -21,31 +21,29 @@ import Rel8
     orderBy,
     some,
     where_,
-    (==.),
     (&&.),
+    (==.),
   )
 import Rel8 qualified
 
 type GenreRepository = Repository GenreEntity
 
---type TopLevelGenre f = (GenreTable f, ListTable f (f GenreRef, f Text), ListTable f (f GenreRef, f Text))
-
-topLevelGenres :: Query (TopLevelGenreTable Expr)
-topLevelGenres =
-  orderBy ((.name) >$< asc) $ each topLevelGenreSchema
---  topLevelGenre <- each genreSchema
---  where_ topLevelGenre.top_level
---  parentRefs <- many do
---    genre <- each genreSchema
---    parent <- each genreParentSchema
---    where_ $ parent.genre_id ==. topLevelGenre.id &&. genre.id ==. parent.parent_genre
---    pure (parent.parent_genre, genre.name)
---  childRefs <- many do
---    genre <- each genreSchema
---    parent <- each genreParentSchema
---    where_ $ parent.parent_genre ==. topLevelGenre.id &&. genre.id ==. parent.genre_id
---    pure (parent.genre_id, genre.name)
---  pure (topLevelGenre, parentRefs, childRefs)
+topLevelGenres :: Query (TopLevelGenre Expr)
+topLevelGenres = do
+  --  orderBy ((.name) >$< asc) $ each topLevelGenreSchema
+  topLevelGenre <- each genreSchema
+  where_ topLevelGenre.top_level
+  parentRefs <- many do
+    genre <- each genreSchema
+    parent <- each genreParentSchema
+    where_ $ parent.genre_id ==. topLevelGenre.id &&. genre.id ==. parent.parent_genre
+    pure (parent.parent_genre, genre.name)
+  childRefs <- many do
+    genre <- each genreSchema
+    parent <- each genreParentSchema
+    where_ $ parent.parent_genre ==. topLevelGenre.id &&. genre.id ==. parent.genre_id
+    pure (parent.genre_id, genre.name)
+  pure (topLevelGenre, parentRefs, childRefs)
 
 genreParents :: GenreRef -> Query (GenreTable Expr)
 genreParents ref = do
@@ -88,7 +86,7 @@ genreParentSchema =
 topLevelGenreSchema :: TableSchema (TopLevelGenreTable Name)
 topLevelGenreSchema =
   TableSchema
-    { name = "genre_top_level",
+    { name = "genre_top_level_tree",
       columns =
         TopLevelGenreTable
           { id = "id",
@@ -99,7 +97,7 @@ topLevelGenreSchema =
           }
     }
 
-initGenreRepo :: AppDataReader m => m ()
+initGenreRepo :: (AppDataReader m) => m ()
 initGenreRepo =
   putAppData
     RepositoryHandle

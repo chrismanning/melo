@@ -11,7 +11,7 @@ import Control.Foldl qualified as Fold
 import Control.Monad
 import Control.Monad.Cont
 import Control.Monad.IO.Class
-import Data.Aeson (ToJSON(..))
+import Data.Aeson (ToJSON (..))
 import Data.Aeson qualified as JSON
 import Data.ByteString.Lazy qualified as L
 import Data.Coerce
@@ -82,10 +82,10 @@ resolveMappedTags src mappingNames = withSpan "resolveMappedTags" defaultSpanArg
 
 -- TODO cover image search API
 data ImageSearchResult = ImageSearchResult
-      { smallCover :: ImageInfo,
-        bigCover :: ImageInfo,
-        source :: CoverSource
-      }
+  { smallCover :: ImageInfo,
+    bigCover :: ImageInfo,
+    source :: CoverSource
+  }
   deriving (Generic)
   deriving (ToJSON) via CustomJSON JSONOptions ImageSearchResult
 
@@ -154,10 +154,9 @@ transformSourcesImpl transformer preview req = selectStream (sourcesByKeys req.s
     spanTag = if preview then "previewTransformSource" else "transformSource"
     transformSourceImpl :: Ty.SourceEntity -> AppM IO IO UpdatedSourceResult
     transformSourceImpl s = withSpan spanTag defaultSpanArguments do
-      if preview then
-        $(logDebug) $ "Previewing source transformation of " <> showt s.id <> " with " <> showt req.transformations
-      else
-        $(logDebug) $ "Transforming source " <> showt s.id <> " with " <> showt req.transformations
+      if preview
+        then $(logDebug) $ "Previewing source transformation of " <> showt s.id <> " with " <> showt req.transformations
+        else $(logDebug) $ "Transforming source " <> showt s.id <> " with " <> showt req.transformations
       E.catchAny
         do
           s' <- E.throwOnLeft (tryFrom s)
@@ -166,12 +165,12 @@ transformSourcesImpl transformer preview req = selectStream (sourcesByKeys req.s
           let cause = displayException e
           let msg = if preview then "Transformation preview failed" else "Transformation failed"
           $(logErrorV ['cause]) msg
-          pure FailedSourceUpdate { id = s.id, msg = from cause }
+          pure FailedSourceUpdate {id = s.id, msg = from cause}
 
 data StreamSourceGroups = StreamSourceGroups
-  { collectionId :: Ty.CollectionRef
-  , groupByMappings :: Vector Text
-  , groupFilter :: Maybe SourceGroupFilter
+  { collectionId :: Ty.CollectionRef,
+    groupByMappings :: Vector Text,
+    groupFilter :: Maybe SourceGroupFilter
   }
   deriving (Generic)
   deriving (FromJSON, ToJSON) via CustomJSON JSONOptions StreamSourceGroups
@@ -214,7 +213,7 @@ streamSourceGroups rq = do
           coverImage <- getCoverImage firstSource
           let (!all :: S.Stream (S.Of Ty.Source) (AppM IO IO) x) = S.cons firstSource $! S.mapM (E.throwOnLeft . tryFrom . fst) rest
           sources' <- Fold.impurely S.foldM Fold.vectorM all
-          pure $ sources' & S.mapOf \sources -> Ty.SourceGroup { groupTags, sources, groupParentUri, coverImage }
+          pure $ sources' & S.mapOf \sources -> Ty.SourceGroup {groupTags, sources, groupParentUri, coverImage}
     getCoverImage :: Ty.Source -> AppM IO IO (Maybe Ty.Image)
     getCoverImage s =
       firstJustM (findCoverImage . takeDirectory) (uriToFilePath s.source) >>= \case
@@ -228,7 +227,7 @@ streamSourceGroups rq = do
         Nothing -> pure s.cover
 
 groupSources ::
-  Monad m =>
+  (Monad m) =>
   TagMappingIndex ->
   S.Stream (S.Of Ty.SourceEntity) m () ->
   S.Stream (S.Stream (S.Of (Ty.SourceEntity, Ty.MappedTags)) m) m ()
@@ -240,22 +239,22 @@ groupSources groupByMappings s =
           pure (e, mappings)
       )
     & S.groupBy (\(_, a) (_, b) -> a == b)
-    where
-      extractMappedTags :: TagMappingIndex -> Ty.SourceEntity -> Ty.MappedTags
-      extractMappedTags mappings e = case tryFrom @_ @F.Metadata e of
-        Left _ -> V.empty
-        Right metadata ->
-          V.fromList $
-            filter (not . null . (.values)) $
-              mappings ^@.. itraversed <&> \(name, mapping) ->
-                Ty.MappedTag
-                  { mappingName = name,
-                    values = metadata.tag mapping
-                  }
+  where
+    extractMappedTags :: TagMappingIndex -> Ty.SourceEntity -> Ty.MappedTags
+    extractMappedTags mappings e = case tryFrom @_ @F.Metadata e of
+      Left _ -> V.empty
+      Right metadata ->
+        V.fromList $
+          filter (not . null . (.values)) $
+            mappings ^@.. itraversed <&> \(name, mapping) ->
+              Ty.MappedTag
+                { mappingName = name,
+                  values = metadata.tag mapping
+                }
 
 data SourceGroupFilter = AllSourceGroups | Orphaned
   deriving (Generic)
-  deriving TextShow via FromGeneric SourceGroupFilter
+  deriving (TextShow) via FromGeneric SourceGroupFilter
   deriving (FromJSON, ToJSON) via CustomJSON '[ConstructorTagModifier '[CamelToSnake, ToLower]] SourceGroupFilter
 
 getParentUri :: Text -> Text

@@ -49,12 +49,12 @@ import Rel8
     Decoder (..),
     Expr,
     JSONBEncoded (..),
-    ReadShow(..),
+    ReadShow (..),
     Rel8able,
     Result,
     TypeInformation (..),
-    lit,
     function,
+    lit,
   )
 import System.IO.Unsafe
 import Prelude hiding ((.=))
@@ -90,13 +90,13 @@ instance Entity SourceEntity where
 
 newtype PictureTypeWrapper = PictureTypeWrapper PictureType
   deriving (Generic, Show, Eq)
-  deriving DBType via ReadShow PictureType
-  deriving TextShow via FromGeneric PictureTypeWrapper
-  deriving newtype ToJSON
+  deriving (DBType) via ReadShow PictureType
+  deriving (TextShow) via FromGeneric PictureTypeWrapper
+  deriving newtype (ToJSON)
 
 newtype IntervalRange = IntervalRange (Range CalendarDiffTime)
   deriving (Show, Eq)
-  deriving TextShow via FromStringShow IntervalRange
+  deriving (TextShow) via FromStringShow IntervalRange
 
 instance ToJSON IntervalRange where
   toJSON (IntervalRange range) = toJSON (show range)
@@ -128,34 +128,39 @@ instance DBType IntervalRange where
       encodeBound R.Bound {boundValue, boundType = R.Inclusive} = Inclusive (encodeInterval boundValue)
       encodeBound R.Bound {boundValue, boundType = R.Exclusive} = Exclusive (encodeInterval boundValue)
       decode :: Rel8.Decoder (IntervalRange)
-      decode = Rel8.Decoder {
-        binary = Hasql.custom decodeRange,
-        parser = P.parseOnly (parser' <* P.endOfInput),
-        delimiter = ','
-      }
+      decode =
+        Rel8.Decoder
+          { binary = Hasql.custom decodeRange,
+            parser = P.parseOnly (parser' <* P.endOfInput),
+            delimiter = ','
+          }
       parser' = do
         P.skipSpace
-        lowerBoundType <- P.char '[' <|> P.char '(' >>= \case
-          '[' -> pure R.Inclusive
-          '(' -> pure R.Exclusive
-          _ -> error "unknown bound"
+        lowerBoundType <-
+          P.char '[' <|> P.char '(' >>= \case
+            '[' -> pure R.Inclusive
+            '(' -> pure R.Exclusive
+            _ -> error "unknown bound"
         P.skipSpace
-        lowerBound <- P.peekChar >>= \case
-          Just ',' -> pure Nothing
-          _ -> do
-            lowerBound <- calendarDiffTimeParser
-            pure $ Just $ R.Bound lowerBound lowerBoundType
+        lowerBound <-
+          P.peekChar >>= \case
+            Just ',' -> pure Nothing
+            _ -> do
+              lowerBound <- calendarDiffTimeParser
+              pure $ Just $ R.Bound lowerBound lowerBoundType
         P.skipSpace
-        upperBound <- P.peekChar >>= \case
-          Just ']' -> pure Nothing
-          Just ')' -> pure Nothing
-          _ -> do
-            upperBound <- calendarDiffTimeParser
-            upperBoundType <- P.char ']' <|> P.char ')' >>= \case
-              ']' -> pure R.Inclusive
-              ')' -> pure R.Exclusive
-              _ -> error "unknown bound"
-            pure $ Just $ R.Bound upperBound upperBoundType
+        upperBound <-
+          P.peekChar >>= \case
+            Just ']' -> pure Nothing
+            Just ')' -> pure Nothing
+            _ -> do
+              upperBound <- calendarDiffTimeParser
+              upperBoundType <-
+                P.char ']' <|> P.char ')' >>= \case
+                  ']' -> pure R.Inclusive
+                  ')' -> pure R.Exclusive
+                  _ -> error "unknown bound"
+              pure $ Just $ R.Bound upperBound upperBoundType
         pure $ IntervalRange $ case (lowerBound, upperBound) of
           (Just lower, Just upper) -> R.SpanRange lower upper
           (Just lower, Nothing) -> R.LowerBoundRange lower
@@ -257,13 +262,13 @@ instance DBType IntervalRange where
             pure $ case mfractional of
               Nothing -> fromIntegral integral
               Just fractional -> parseFraction (fromIntegral integral) fractional
-           where
-            parseFraction integral digits = MkFixed (fromIntegral (n * 10 ^ e))
-              where
-                e = max 0 (12 - B.length digits)
-                n = B.foldl' go (integral :: Int64) (B.take 12 digits)
-                  where
-                    go acc digit = 10 * acc + fromIntegral (fromEnum digit .&. 0xf)
+            where
+              parseFraction integral digits = MkFixed (fromIntegral (n * 10 ^ e))
+                where
+                  e = max 0 (12 - B.length digits)
+                  n = B.foldl' go (integral :: Int64) (B.take 12 digits)
+                    where
+                      go acc digit = 10 * acc + fromIntegral (fromEnum digit .&. 0xf)
 
 instance From NewSource (SourceTable Expr) where
   from s =
@@ -302,7 +307,7 @@ getCurrentLocalTime = zonedTimeToLocalTime <$> getZonedTime
 newtype SourceMetadata = SourceMetadata {tags :: Vector TagPair}
   deriving (Show, Eq, Generic)
   deriving (DBType) via JSONBEncoded SourceMetadata
-  deriving TextShow via FromGeneric SourceMetadata
+  deriving (TextShow) via FromGeneric SourceMetadata
   deriving (FromJSON, ToJSON) via CustomJSON JSONOptions SourceMetadata
 
 instance From Tags SourceMetadata where
@@ -316,14 +321,14 @@ data TagPair = TagPair
     value :: Text
   }
   deriving (Show, Eq, Generic)
-  deriving TextShow via FromGeneric TagPair
+  deriving (TextShow) via FromGeneric TagPair
   deriving (FromJSON, ToJSON) via CustomJSON JSONOptions TagPair
 
 data NewImportSource
   = FileSource CollectionRef MetadataFile
   | CueFileImportSource CollectionRef CueFileSource
   deriving (Eq, Show)
-  deriving TextShow via FromStringShow NewImportSource
+  deriving (TextShow) via FromStringShow NewImportSource
 
 data CueFileSource = CueFileSource
   { metadata :: Metadata,
@@ -336,7 +341,7 @@ data CueFileSource = CueFileSource
     pictures :: [(PictureType, EmbeddedPicture)]
   }
   deriving (Eq, Show, Generic)
-  deriving TextShow via FromGeneric CueFileSource
+  deriving (TextShow) via FromGeneric CueFileSource
 
 data MetadataImportSource = MetadataImportSource
   { metadata :: Maybe Metadata,
@@ -349,7 +354,7 @@ data MetadataImportSource = MetadataImportSource
     cover :: Maybe PictureType
   }
   deriving (Show, Generic)
-  deriving TextShow via FromStringShow MetadataImportSource
+  deriving (TextShow) via FromStringShow MetadataImportSource
 
 getSourceUri :: NewImportSource -> URI
 getSourceUri (FileSource _ f) = fileUri f.filePath
@@ -396,11 +401,11 @@ data NewSource = NewSource
     cover :: Maybe PictureType
   }
   deriving (Show, Eq, Generic)
-  deriving TextShow via FromGeneric NewSource
+  deriving (TextShow) via FromGeneric NewSource
 
 data AudioRange = TimeRange (Range CalendarDiffTime)
   deriving (Eq, Show)
-  deriving TextShow via FromStringShow AudioRange
+  deriving (TextShow) via FromStringShow AudioRange
 
 instance ToJSON AudioRange where
   toJSON (TimeRange range) = toJSON (show range)
@@ -431,7 +436,7 @@ instance From MetadataImportSource NewSource where
 newtype SourceRef = SourceRef {unSourceRef :: UUID}
   deriving (Generic)
   deriving newtype (Show, Eq, Ord, DBType, DBEq, FromJSON, Hashable, ToJSON)
-  deriving TextShow via FromGeneric SourceRef
+  deriving (TextShow) via FromGeneric SourceRef
 
 instance From SourceRef UUID where
   from (SourceRef uuid) = uuid
@@ -447,7 +452,7 @@ data Source = Source
     cover :: Maybe Image
   }
   deriving (Generic, Eq)
-  deriving TextShow via FromGeneric Source
+  deriving (TextShow) via FromGeneric Source
   deriving (ToJSON) via CustomJSON JSONOptions Source
 
 instance TryFrom SourceEntity Source where
@@ -469,14 +474,15 @@ instance TryFrom SourceEntity Source where
         (idx, Just timeRange) | idx > -1 -> Just MultiTrackDesc {idx, range = from timeRange}
         _ -> Nothing
       cover = case s.cover of
-        Just cover -> Just $ Image { fileName = Nothing, imageType = (Just cover) }
+        Just cover -> Just $ Image {fileName = Nothing, imageType = (Just cover)}
         Nothing -> Nothing
 
 metadataFromEntity :: SourceEntity -> Maybe Metadata
-metadataFromEntity s = let JSONBEncoded (SourceMetadata tags) = s.metadata
-                           tags' = Tags $ tags <&> (\p -> (p.key, p.value))
-                           mid = MetadataId s.metadata_format in
-  mfilter (\m -> m.formatId /= nullMetadata) $ mkCueMetadata mid tags' <|> mkMetadata mid tags'
+metadataFromEntity s =
+  let JSONBEncoded (SourceMetadata tags) = s.metadata
+      tags' = Tags $ tags <&> (\p -> (p.key, p.value))
+      mid = MetadataId s.metadata_format
+   in mfilter (\m -> m.formatId /= nullMetadata) $ mkCueMetadata mid tags' <|> mkMetadata mid tags'
 
 instance TryFrom SourceEntity Metadata where
   tryFrom e = maybeToRight (TryFromException e Nothing) (metadataFromEntity e)
@@ -501,11 +507,10 @@ data MappedTag = MappedTag
   deriving (TextShow) via FromGeneric MappedTag
   deriving (ToJSON) via CustomJSON JSONOptions MappedTag
 
-data Image
-  = Image
-      { fileName :: Maybe Text,
-        imageType :: Maybe PictureTypeWrapper
-      }
+data Image = Image
+  { fileName :: Maybe Text,
+    imageType :: Maybe PictureTypeWrapper
+  }
   deriving (Eq, Generic)
   deriving (TextShow) via FromGeneric Image
   deriving (ToJSON) via CustomJSON JSONOptions Image
@@ -527,7 +532,7 @@ data MultiTrackDesc = MultiTrackDesc
     range :: AudioRange
   }
   deriving (Generic, Show, Eq)
-  deriving TextShow via FromGeneric MultiTrackDesc
+  deriving (TextShow) via FromGeneric MultiTrackDesc
   deriving (ToJSON) via CustomJSON JSONOptions MultiTrackDesc
 
 instance From Source SourceEntity where
@@ -539,8 +544,9 @@ instance From Source SourceEntity where
         metadata = JSONBEncoded $ from $ fromMaybe emptyTags (metadata ^? _Just . (to (.tags))),
         source_uri = showt source,
         idx = fromMaybe (-1) (multiTrack ^? _Just . #idx),
-        time_range = (from <$> multiTrack ^? _Just . #range)
-          <|> (IntervalRange . R.ubi . calendarTimeTime <$> length),
+        time_range =
+          (from <$> multiTrack ^? _Just . #range)
+            <|> (IntervalRange . R.ubi . calendarTimeTime <$> length),
         scanned = unsafeDupablePerformIO getCurrentLocalTime,
         collection_id = collectionRef,
         cover = cover >>= (.imageType)
@@ -556,7 +562,7 @@ data ImportStats = ImportStats
     genresImported :: Natural
   }
   deriving (Eq, Show, Generic)
-  deriving TextShow via FromGeneric ImportStats
+  deriving (TextShow) via FromGeneric ImportStats
 
 instance Semigroup ImportStats where
   a <> b =
@@ -585,7 +591,7 @@ data SourcePathPattern
   | DefaultPattern SourcePathPattern SourcePathPattern
   | PrintfPattern String SourcePathPattern
   deriving (Generic, Eq)
-  deriving TextShow via FromGeneric SourcePathPattern
+  deriving (TextShow) via FromGeneric SourcePathPattern
   deriving (FromJSON, ToJSON) via CustomJSON JSONOptions SourcePathPattern
 
 data SourceFileManipError
@@ -597,7 +603,7 @@ data SourceFileManipError
   | WrongCollection
   | ConversionError (TryFromException SourceEntity Source)
   deriving (Show)
-  deriving TextShow via FromStringShow SourceFileManipError
+  deriving (TextShow) via FromStringShow SourceFileManipError
 
 instance From FileManipError SourceFileManipError where
   from = FileSystemFileManipError

@@ -5,6 +5,7 @@ module Melo.Library.Collection.Repo where
 
 import Control.Monad.State.Strict
 import Data.Functor.Contravariant
+import Data.HashMap.Strict qualified as HashMap
 import Data.Pool
 import Data.Text qualified as T
 import Data.Vector qualified as V
@@ -29,7 +30,7 @@ import Rel8
   )
 import Rel8 qualified
 
-class Repository CollectionEntity m => CollectionRepository m where
+class (Repository CollectionEntity m) => CollectionRepository m where
   getByUri :: Vector URI -> m (Vector CollectionEntity)
 
 instance
@@ -110,7 +111,7 @@ instance {-# OVERLAPS #-} Repository CollectionEntity (AppM IO IO) where
               }
       do
         let statement = Rel8.showDelete d
-        Otel.addAttributes span [("database.statement", Otel.toAttribute $ T.pack statement)]
+        Otel.addAttributes span (HashMap.fromList [("database.statement", Otel.toAttribute $ T.pack statement)])
         $(logDebugVIO ['statement]) "Executing DELETE"
       let session = Hasql.statement () $ Rel8.runVector $ Rel8.delete d
       liftIO do
@@ -161,7 +162,7 @@ collectionSchema =
           }
     }
 
-initCollectionRepo :: AppDataReader m => m ()
+initCollectionRepo :: (AppDataReader m) => m ()
 initCollectionRepo =
   putAppData
     RepositoryHandle

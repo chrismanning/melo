@@ -7,6 +7,7 @@ import Data.Default
 import Data.List.NonEmpty as NE
 import Melo.Database.Repo
 import Melo.Format qualified as F
+import Melo.Library.Source.Cue
 import Rel8
   ( Column,
     Expr,
@@ -15,7 +16,6 @@ import Rel8
     Result,
     lit,
   )
-import Melo.Library.Source.Cue
 
 data TagMappingTable f = TagMappingTable
   { name :: Column f Text,
@@ -54,14 +54,15 @@ data FieldMapping = FieldMapping
 
 instance From FieldMapping F.FieldMappings where
   from fm = case F.MetadataId fm.formatId of
-    mid | mid == F.apeV1Id -> def { F.ape = Just (from fm) }
-        | mid == F.apeV2Id -> def { F.ape = Just (from fm) }
-        | mid == F.id3v1Id -> def { F.id3v1 = Just (from fm) }
-        | mid == F.id3v23Id -> def { F.id3v2_3 = Just (from fm) }
-        | mid == F.id3v24Id -> def { F.id3v2_4 = Just (from fm) }
-        | mid == F.riffId -> def { F.riff = Just (from fm) }
-        | mid == F.vorbisCommentsId -> def { F.vorbis = Just (from fm) }
-        | mid == cueId -> def { F.cue = Just (from fm) }
+    mid
+      | mid == F.apeV1Id -> def {F.ape = Just (from fm)}
+      | mid == F.apeV2Id -> def {F.ape = Just (from fm)}
+      | mid == F.id3v1Id -> def {F.id3v1 = Just (from fm)}
+      | mid == F.id3v23Id -> def {F.id3v2_3 = Just (from fm)}
+      | mid == F.id3v24Id -> def {F.id3v2_4 = Just (from fm)}
+      | mid == F.riffId -> def {F.riff = Just (from fm)}
+      | mid == F.vorbisCommentsId -> def {F.vorbis = Just (from fm)}
+      | mid == cueId -> def {F.cue = Just (from fm)}
     _ -> def
 
 instance From FieldMapping F.FieldMapping where
@@ -91,17 +92,22 @@ instance Entity (TagMappingTable Result) where
   primaryKey e = e.name
 
 fromTagMapping :: Text -> F.TagMapping -> TagMapping
-fromTagMapping name (F.TagMapping fm) = TagMapping name (fm >>= \fm' ->
-  NE.fromList $ catMaybes [
-    FieldMapping (coerce F.apeV1Id) <$> fmap (.canonicalForm) fm'.ape <*> fmap (from . (.fieldMatcher)) fm'.ape,
-    FieldMapping (coerce F.apeV2Id) <$> fmap (.canonicalForm) fm'.ape <*> fmap (from . (.fieldMatcher)) fm'.ape,
-    FieldMapping (coerce F.id3v1Id) <$> fmap (.canonicalForm) fm'.id3v1 <*> fmap (from . (.fieldMatcher)) fm'.id3v1,
-    FieldMapping (coerce F.id3v23Id) <$> fmap (.canonicalForm) fm'.id3v2_3 <*> fmap (from . (.fieldMatcher)) fm'.id3v2_3,
-    FieldMapping (coerce F.id3v24Id) <$> fmap (.canonicalForm) fm'.id3v2_4 <*> fmap (from . (.fieldMatcher)) fm'.id3v2_4,
-    FieldMapping (coerce F.riffId) <$> fmap (.canonicalForm) fm'.riff <*> fmap (from . (.fieldMatcher)) fm'.riff,
-    FieldMapping (coerce F.vorbisCommentsId) <$> fmap (.canonicalForm) fm'.vorbis <*> fmap (from . (.fieldMatcher)) fm'.vorbis,
-    FieldMapping (coerce cueId) <$> fmap (.canonicalForm) fm'.cue <*> fmap (from . (.fieldMatcher)) fm'.cue
-  ])
+fromTagMapping name (F.TagMapping fm) =
+  TagMapping
+    name
+    ( fm >>= \fm' ->
+        NE.fromList $
+          catMaybes
+            [ FieldMapping (coerce F.apeV1Id) <$> fmap (.canonicalForm) fm'.ape <*> fmap (from . (.fieldMatcher)) fm'.ape,
+              FieldMapping (coerce F.apeV2Id) <$> fmap (.canonicalForm) fm'.ape <*> fmap (from . (.fieldMatcher)) fm'.ape,
+              FieldMapping (coerce F.id3v1Id) <$> fmap (.canonicalForm) fm'.id3v1 <*> fmap (from . (.fieldMatcher)) fm'.id3v1,
+              FieldMapping (coerce F.id3v23Id) <$> fmap (.canonicalForm) fm'.id3v2_3 <*> fmap (from . (.fieldMatcher)) fm'.id3v2_3,
+              FieldMapping (coerce F.id3v24Id) <$> fmap (.canonicalForm) fm'.id3v2_4 <*> fmap (from . (.fieldMatcher)) fm'.id3v2_4,
+              FieldMapping (coerce F.riffId) <$> fmap (.canonicalForm) fm'.riff <*> fmap (from . (.fieldMatcher)) fm'.riff,
+              FieldMapping (coerce F.vorbisCommentsId) <$> fmap (.canonicalForm) fm'.vorbis <*> fmap (from . (.fieldMatcher)) fm'.vorbis,
+              FieldMapping (coerce cueId) <$> fmap (.canonicalForm) fm'.cue <*> fmap (from . (.fieldMatcher)) fm'.cue
+            ]
+    )
 
 instance From TagMapping (TagMappingTable Expr) where
   from c =

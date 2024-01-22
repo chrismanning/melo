@@ -1,7 +1,6 @@
 module Melo.Library.Source.Cue where
 
 import Control.Applicative
-import Melo.Common.Exception
 import Control.Monad
 import Control.Monad.IO.Class
 import Data.ByteString qualified as B
@@ -11,17 +10,18 @@ import Data.Range
 import Data.Time
 import Data.Vector qualified as V
 import GHC.Natural (naturalToInteger)
+import Melo.Common.Exception
 import Melo.Common.Tracing
-import Melo.Metadata.Aggregate
 import Melo.Format.Info
 import Melo.Format.Mapping qualified as Mapping
 import Melo.Format.Metadata
   ( Metadata (..),
-    MetadataId (..),
     MetadataFile (..),
+    MetadataId (..),
     Tags (..),
   )
 import Melo.Library.Source.Types
+import Melo.Metadata.Aggregate
 import System.FilePath
 import Text.CueSheet
 
@@ -75,16 +75,18 @@ openCueFile cueFilePath = withSpan "openCueFile" defaultSpanArguments do
             case audioLength mf.audioInfo of
               Just totalFileLength ->
                 pure
-                  (CueFileSource
-                    { metadata,
-                      idx = fromIntegral trackNum,
-                      audioInfo = mf.audioInfo,
-                      range = cueTimeRange (NE.head cueTrackIndices),
-                      fileId = mf.fileId,
-                      filePath = mf.filePath,
-                      pictures = mf.pictures,
-                      cueFilePath
-                    }, totalFileLength)
+                  ( CueFileSource
+                      { metadata,
+                        idx = fromIntegral trackNum,
+                        audioInfo = mf.audioInfo,
+                        range = cueTimeRange (NE.head cueTrackIndices),
+                        fileId = mf.fileId,
+                        filePath = mf.filePath,
+                        pictures = mf.pictures,
+                        cueFilePath
+                      },
+                    totalFileLength
+                  )
               Nothing -> error "file has no length"
       pure $ V.fromList $ squashTimeRanges processedTracks
       where

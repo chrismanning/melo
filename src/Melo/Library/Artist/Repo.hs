@@ -5,6 +5,7 @@ module Melo.Library.Artist.Repo where
 
 import Control.Foldl (impurely, vectorM)
 import Data.Coerce
+import Data.HashMap.Strict qualified as HashMap
 import Data.Pool
 import Data.Text qualified as T
 import Data.Vector qualified as V
@@ -28,7 +29,7 @@ import OpenTelemetry.Trace qualified as Otel
 import Rel8
 import Streaming.Prelude qualified as S
 
-class Repository ArtistEntity m => ArtistRepository m where
+class (Repository ArtistEntity m) => ArtistRepository m where
   getByMusicBrainzId :: MB.MusicBrainzId -> m (Maybe ArtistEntity)
   getReleaseArtists :: ReleaseRef -> m (Vector (ArtistEntity, ArtistNameEntity))
   getSourceReleaseArtists :: SourceRef -> m (Vector (ArtistEntity, ArtistNameEntity))
@@ -115,7 +116,7 @@ instance {-# OVERLAPS #-} Repository ArtistEntity (AppM IO IO) where
               }
       do
         let statement = Rel8.showDelete d
-        Otel.addAttributes span [("database.statement", Otel.toAttribute $ T.pack statement)]
+        Otel.addAttributes span (HashMap.fromList [("database.statement", Otel.toAttribute $ T.pack statement)])
         $(logDebugVIO ['statement]) "Executing DELETE"
       let session = Hasql.statement () $ Rel8.runVector $ Rel8.delete d
       liftIO do
@@ -219,10 +220,11 @@ artistSchema =
           }
     }
 
-initArtistRepo :: AppDataReader m => m ()
-initArtistRepo = putAppData
-  RepositoryHandle
-    { tbl = artistSchema,
-      pk = (.id),
-      upsert = Nothing
-    }
+initArtistRepo :: (AppDataReader m) => m ()
+initArtistRepo =
+  putAppData
+    RepositoryHandle
+      { tbl = artistSchema,
+        pk = (.id),
+        upsert = Nothing
+      }

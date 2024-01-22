@@ -20,7 +20,7 @@ import Melo.Common.Monad
 newtype ParAppM a = ParAppM (AppM IO ParIO a)
   deriving newtype (Functor, Applicative, Monad, MonadIO, MonadReader (AppData IO))
 
-runParAppM :: MonadIO m => AppData IO -> ParAppM a -> m a
+runParAppM :: (MonadIO m) => AppData IO -> ParAppM a -> m a
 runParAppM appData (ParAppM (ReaderT m)) = liftIO $ runParIO $ m appData
 
 instance ParFuture IVar ParAppM where
@@ -55,7 +55,7 @@ instance AppDataReader ParAppM where
     mapVar <- asks (.typeMap)
     liftIO $ atomically (modifyTVar' mapVar (TMap.insert a))
     pure ()
-  deleteAppData' :: forall (a :: Type). Typeable a => Proxy a -> ParAppM ()
+  deleteAppData' :: forall (a :: Type). (Typeable a) => Proxy a -> ParAppM ()
   deleteAppData' _ = ParAppM do
     mapVar <- asks (.typeMap)
     liftIO $ atomically (modifyTVar' mapVar (TMap.delete @a))

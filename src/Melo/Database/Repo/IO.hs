@@ -6,6 +6,7 @@ module Melo.Database.Repo.IO where
 import Control.Concurrent.Chan.Unagi.Bounded
 import Control.Monad.Trans.Cont
 import Data.ByteString.Char8 qualified as C8
+import Data.HashMap.Strict qualified as HashMap
 import Data.Pool
 import Data.Text qualified as T
 import Data.Time.Clock
@@ -32,10 +33,10 @@ import Streaming.Prelude qualified as S
 
 data RepositoryHandle a = RepositoryHandle
   { tbl :: Rel8.TableSchema (a Rel8.Name),
-    pk :: forall f. Entity (a Rel8.Result) => a f -> Rel8.Column f (PrimaryKey (a Rel8.Result)),
+    pk :: forall f. (Entity (a Rel8.Result)) => a f -> Rel8.Column f (PrimaryKey (a Rel8.Result)),
     upsert :: Maybe (Rel8.Upsert (a Rel8.Name))
   }
-  deriving Typeable
+  deriving (Typeable)
 
 data Config = Config
   { host :: C8.ByteString,
@@ -54,20 +55,22 @@ data ConnectionPoolConfig = ConnectionPoolConfig
   deriving (Show, Typeable)
 
 instance From Env.Database Config where
-  from envDb = Config {
-    host = envDb.host.unwrap,
-    port = envDb.port.unwrap,
-    user = envDb.user.unwrap,
-    password = envDb.password.unwrap,
-    database = envDb.database.unwrap,
-    pool = from envDb.pool
-  }
+  from envDb =
+    Config
+      { host = envDb.host.unwrap,
+        port = envDb.port.unwrap,
+        user = envDb.user.unwrap,
+        password = envDb.password.unwrap,
+        database = envDb.database.unwrap,
+        pool = from envDb.pool
+      }
 
 instance From Env.DatabaseConnectionPool ConnectionPoolConfig where
-  from envPool = ConnectionPoolConfig {
-    maxIdleTime = envPool.maxIdleTime.unwrap,
-    maxConnections = envPool.maxConnections.unwrap
-  }
+  from envPool =
+    ConnectionPoolConfig
+      { maxIdleTime = envPool.maxIdleTime.unwrap,
+        maxConnections = envPool.maxConnections.unwrap
+      }
 
 newtype ConnectionPool = ConnectionPool (Pool Connection)
   deriving (Typeable)
@@ -181,7 +184,7 @@ instance
               }
       do
         let statement = Rel8.showDelete d
-        Otel.addAttributes span [("database.statement", Otel.toAttribute $ T.pack statement)]
+        Otel.addAttributes span (HashMap.fromList [("database.statement", Otel.toAttribute $ T.pack statement)])
         $(logDebugVIO ['statement]) "Executing DELETE"
       let session = statement () $ Rel8.runVector $ Rel8.delete d
       liftIO do
@@ -200,7 +203,7 @@ instance
               }
       do
         let statement = Rel8.showDelete d
-        Otel.addAttributes span [("database.statement", Otel.toAttribute $ T.pack statement)]
+        Otel.addAttributes span (HashMap.fromList [("database.statement", Otel.toAttribute $ T.pack statement)])
         $(logDebugVIO ['statement]) "Executing DELETE"
       let session = statement () $ Rel8.runVector $ Rel8.delete d
       liftIO do
@@ -247,7 +250,7 @@ doUpdate (RepositoryHandle {tbl, pk}) pool runner e ret = do
             }
     do
       let statement = Rel8.showUpdate u
-      Otel.addAttributes span [("database.statement", Otel.toAttribute $ T.pack statement)]
+      Otel.addAttributes span (HashMap.fromList [("database.statement", Otel.toAttribute $ T.pack statement)])
       $(logDebugVIO ['statement]) "Executing UPDATE"
     let session = statement () $ runner $ Rel8.update u
     liftIO do
@@ -268,7 +271,7 @@ runSelect ::
 runSelect pool q = withSpan' "runSelect" defaultSpanArguments \span -> do
   do
     let statement = Rel8.showQuery q
-    Otel.addAttributes span [("database.statement", Otel.toAttribute $ T.pack statement)]
+    Otel.addAttributes span (HashMap.fromList [("database.statement", Otel.toAttribute $ T.pack statement)])
     $(logDebugVIO ['statement]) "Executing SELECT"
   let session = statement () $ Rel8.runVector $ Rel8.select q
   liftIO $ withResource pool $ \conn -> run session conn >>= throwOnLeft
@@ -286,8 +289,8 @@ runSelectM q = do
   pool <- getConnectionPool
   runSelect pool q
 
-data StreamItem a =
-    RowItem a
+data StreamItem a
+  = RowItem a
   | EndOfStream
   | StreamError SomeException
 
@@ -332,7 +335,7 @@ selectStream query = do
     processStream inChan s = do
       $(logInfoIO) $ "Starting streaming results"
       (s & S.map RowItem >> S.yield EndOfStream)
-          & S.mapM_ (\s -> liftIO (writeChan inChan s))
+        & S.mapM_ (\s -> liftIO (writeChan inChan s))
     streamQuery :: Rel8.Query exprs -> S.Stream (S.Of (Rel8.FromExprs exprs)) (CursorTransactionIO s) ()
     streamQuery q = do
       let statement = showt (Rel8.showQuery q)
@@ -343,7 +346,7 @@ runInsert :: (MonadIO m, Tracing m) => Pool Connection -> (Rel8.Statement b -> H
 runInsert pool runner i = withSpan' "runInsert" defaultSpanArguments \span -> do
   do
     let statement = Rel8.showInsert i
-    Otel.addAttributes span [("database.statement", Otel.toAttribute $ T.pack statement)]
+    Otel.addAttributes span (HashMap.fromList [("database.statement", Otel.toAttribute $ T.pack statement)])
     $(logDebugVIO ['statement]) "Executing INSERT"
   let session = statement () $ runner $ Rel8.insert i
   liftIO $ withResource pool $ \conn -> run session conn >>= throwOnLeft
@@ -352,7 +355,7 @@ runInsert' :: (MonadIO m, Tracing m) => Pool Connection -> (Rel8.Statement b -> 
 runInsert' pool runner i = withSpan' "runInsert'" defaultSpanArguments \span -> do
   do
     let statement = Rel8.showInsert i
-    Otel.addAttributes span [("database.statement", Otel.toAttribute $ T.pack statement)]
+    Otel.addAttributes span (HashMap.fromList [("database.statement", Otel.toAttribute $ T.pack statement)])
     $(logDebugVIO ['statement]) "Executing INSERT"
   let session = statement () $ runner $ Rel8.insert i
   liftIO $ withResource pool $ \conn -> run session conn

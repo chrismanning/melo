@@ -21,19 +21,19 @@ import Melo.Metadata.Mapping.Repo
 import Melo.Metadata.Mapping.Types
 import Streaming.Prelude qualified as S
 
-class Monad m => TagMappingAggregate m where
+class (Monad m) => TagMappingAggregate m where
   resolveMappingNamed :: Text -> Source -> m (Vector Text)
   getMappingNamed :: Text -> m (Maybe M.TagMapping)
   getMappingsNamed :: Vector Text -> m TagMappingIndex
   getAllMappings :: m TagMappingIndex
 
-instance TagMappingAggregate m => TagMappingAggregate (StateT s m) where
+instance (TagMappingAggregate m) => TagMappingAggregate (StateT s m) where
   resolveMappingNamed m s = lift (resolveMappingNamed m s)
   getMappingNamed = lift . getMappingNamed
   getMappingsNamed = lift . getMappingsNamed
   getAllMappings = lift getAllMappings
 
-singleMapping :: TagMappingAggregate m => Text -> Source -> m (Maybe Text)
+singleMapping :: (TagMappingAggregate m) => Text -> Source -> m (Maybe Text)
 singleMapping m src = firstOf traverse <$> resolveMappingNamed m src
 
 type TagMappingIndex = HashMap Text M.TagMapping
@@ -49,10 +49,9 @@ getTagMappingIndex =
   getAppData @TagMappingIndexWrapper >>= \case
     Just w -> do
       now <- liftIO getCurrentTime
-      if now `diffUTCTime` w.lastUpdated > secondsToNominalDiffTime 300 then
-        updateMappings
-      else
-        pure w.index
+      if now `diffUTCTime` w.lastUpdated > secondsToNominalDiffTime 300
+        then updateMappings
+        else pure w.index
     Nothing -> updateMappings
   where
     updateMappings = do

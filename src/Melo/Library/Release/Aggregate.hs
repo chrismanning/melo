@@ -29,15 +29,15 @@ import Melo.Library.Source.Types
 import Melo.Library.Track.Aggregate
 import Melo.Lookup.MusicBrainz qualified as MB
 import Melo.Metadata.Mapping.Aggregate
-import Rel8 qualified
 import Rel8 (in_)
+import Rel8 qualified
 import Streaming.Prelude qualified as S
 
-class Monad m => ReleaseAggregate m where
+class (Monad m) => ReleaseAggregate m where
   importReleases :: Vector Source -> m (Vector Release)
   getRelease :: ReleaseRef -> m (Maybe Release)
 
-instance ReleaseAggregate m => ReleaseAggregate (StateT s m) where
+instance (ReleaseAggregate m) => ReleaseAggregate (StateT s m) where
   importReleases = lift . importReleases
   getRelease = lift . getRelease
 
@@ -220,3 +220,7 @@ importReleasesImpl srcs =
             genres <&> \genre -> ReleaseGenreTable release.id genre.id
           pure genres
         Nothing -> pure mempty
+
+getReleasesForGenre :: GenreRef -> AppM IO IO (Vector Release)
+getReleasesForGenre genre = do
+  undefined

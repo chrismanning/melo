@@ -1,10 +1,11 @@
-module Melo.Common.Exit (
-    Exit.ExitCode(..)
-  , exitWith
-  , exitFailure
-  , exitSuccess
-  , die
-  ) where
+module Melo.Common.Exit
+  ( Exit.ExitCode (..),
+    exitWith,
+    exitFailure,
+    exitSuccess,
+    die,
+  )
+where
 
 import Control.Monad.IO.Class
 import GHC.IO.Exception

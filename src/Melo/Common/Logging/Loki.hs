@@ -52,7 +52,7 @@ mkLokiScribe config = case config.url of
             scribePermitItem = const (pure True)
           }
     where
-      liPush :: LogItem a => Http.Manager -> Http.Request -> Item a -> IO ()
+      liPush :: (LogItem a) => Http.Manager -> Http.Request -> Item a -> IO ()
       liPush manager baseReq item = do
         let !body = A.encode PushRequest {streams = buildStream item :| []}
         let !req = baseReq {requestBody = RequestBodyLBS body}
@@ -74,7 +74,7 @@ mkLokiScribe config = case config.url of
       scribeFinalizer = do
         System.IO.putStrLn "loki scribe closing"
         pure ()
-      buildEntry :: LogItem a => Item a -> Entry
+      buildEntry :: (LogItem a) => Item a -> Entry
       buildEntry item =
         Entry
           { timestamp = from $ utcToSystemTime item._itemTime,

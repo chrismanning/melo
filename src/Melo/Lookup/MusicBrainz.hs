@@ -39,8 +39,8 @@ module Melo.Lookup.MusicBrainz
 where
 
 import Control.Concurrent.Classy
-import Control.Concurrent.TokenLimiter
 import Control.Concurrent.STM.Map as SM
+import Control.Concurrent.TokenLimiter
 import Control.Monad.Reader
 import Data.Aeson as A
 import Data.Aeson.Casing (trainCase)
@@ -75,20 +75,20 @@ newtype MusicBrainzId = MusicBrainzId
   }
   deriving (Show, Eq, Ord)
   deriving newtype (FromJSON, ToJSON, Hashable)
-  deriving TextShow via FromStringShow MusicBrainzId
+  deriving (TextShow) via FromStringShow MusicBrainzId
 
 newtype ArtistSearch = ArtistSearch
   { artist :: Text
   }
   deriving stock (Show, Generic, Eq, Ord)
   deriving newtype (Hashable)
-  deriving TextShow via FromGeneric ArtistSearch
+  deriving (TextShow) via FromGeneric ArtistSearch
 
 newtype ArtistSearchResult = ArtistSearchResult
   { artists :: Maybe (Vector Artist)
   }
   deriving (Show, Generic, Eq)
-  deriving TextShow via FromGeneric ArtistSearchResult
+  deriving (TextShow) via FromGeneric ArtistSearchResult
 
 instance FromJSON ArtistSearchResult
 
@@ -104,7 +104,7 @@ data Artist = Artist
     aliases :: Maybe (Vector ArtistAlias)
   }
   deriving (Show, Generic, Eq)
-  deriving TextShow via FromGeneric Artist
+  deriving (TextShow) via FromGeneric Artist
 
 instance Ord Artist where
   a <= b = a.id <= b.id && a.name <= b.name
@@ -122,7 +122,7 @@ data ArtistAlias = ArtistAlias
     type' :: Maybe Text
   }
   deriving (Show, Generic, Eq)
-  deriving TextShow via FromGeneric ArtistAlias
+  deriving (TextShow) via FromGeneric ArtistAlias
 
 instance FromJSON ArtistAlias where
   parseJSON = withObject "ArtistAlias" $ \v ->
@@ -140,7 +140,7 @@ data Area = Area
     iso3166_1codes :: Maybe (Vector Text)
   }
   deriving (Show, Generic, Eq)
-  deriving TextShow via FromGeneric Area
+  deriving (TextShow) via FromGeneric Area
 
 instance FromJSON Area where
   parseJSON = withObject "Area" $ \v ->
@@ -157,7 +157,7 @@ data CountrySubdivision = CountrySubdivision
     subdivision :: Text
   }
   deriving (Show, Generic, Eq)
-  deriving TextShow via FromGeneric CountrySubdivision
+  deriving (TextShow) via FromGeneric CountrySubdivision
 
 instance FromJSON CountrySubdivision where
   parseJSON (String s) = case T.split (== '-') s of
@@ -182,7 +182,7 @@ data ReleaseSearch = ReleaseSearch
     catNum :: Maybe Text
   }
   deriving (Show, Generic, Eq, Ord)
-  deriving TextShow via FromGeneric ReleaseSearch
+  deriving (TextShow) via FromGeneric ReleaseSearch
 
 instance Default ReleaseSearch
 
@@ -192,7 +192,7 @@ newtype ReleaseSearchResult = ReleaseSearchResult
   { releases :: Maybe (Vector Release)
   }
   deriving (Show, Generic, Eq)
-  deriving TextShow via FromGeneric ReleaseSearchResult
+  deriving (TextShow) via FromGeneric ReleaseSearchResult
 
 instance FromJSON ReleaseSearchResult
 
@@ -206,7 +206,7 @@ data Release = Release
     labelInfo :: Maybe (Vector LabelInfo)
   }
   deriving (Show, Generic, Eq)
-  deriving TextShow via FromGeneric Release
+  deriving (TextShow) via FromGeneric Release
 
 instance FromJSON Release where
   parseJSON = genericParseJSON mbAesonOptions
@@ -216,7 +216,7 @@ data ArtistCredit = ArtistCredit
     artist :: Artist
   }
   deriving (Show, Generic, Eq, Ord)
-  deriving TextShow via FromGeneric ArtistCredit
+  deriving (TextShow) via FromGeneric ArtistCredit
 
 instance FromJSON ArtistCredit where
   parseJSON = genericParseJSON mbAesonOptions
@@ -230,7 +230,7 @@ data LabelInfo = LabelInfo
     label :: Maybe Label
   }
   deriving (Show, Generic, Eq)
-  deriving TextShow via FromGeneric LabelInfo
+  deriving (TextShow) via FromGeneric LabelInfo
 
 instance FromJSON LabelInfo where
   parseJSON = genericParseJSON mbAesonOptions
@@ -240,7 +240,7 @@ data Label = Label
     name :: Text
   }
   deriving (Show, Generic, Eq)
-  deriving TextShow via FromGeneric Label
+  deriving (TextShow) via FromGeneric Label
 
 instance FromJSON Label where
   parseJSON = genericParseJSON mbAesonOptions
@@ -249,7 +249,7 @@ newtype ReleaseGroupSearchResult = ReleaseGroupSearchResult
   { releaseGroups :: Maybe (Vector ReleaseGroup)
   }
   deriving (Show, Generic, Eq)
-  deriving TextShow via FromGeneric ReleaseGroupSearchResult
+  deriving (TextShow) via FromGeneric ReleaseGroupSearchResult
 
 instance FromJSON ReleaseGroupSearchResult where
   parseJSON = genericParseJSON mbAesonOptions
@@ -263,7 +263,7 @@ data ReleaseGroup = ReleaseGroup
     score :: Maybe Int
   }
   deriving (Show, Generic, Eq)
-  deriving TextShow via FromGeneric ReleaseGroup
+  deriving (TextShow) via FromGeneric ReleaseGroup
 
 instance FromJSON ReleaseGroup where
   parseJSON = genericParseJSON mbAesonOptions
@@ -278,7 +278,7 @@ data RecordingSearch = RecordingSearch
     isrc :: Maybe Text
   }
   deriving (Show, Generic, Eq, Ord)
-  deriving TextShow via FromGeneric RecordingSearch
+  deriving (TextShow) via FromGeneric RecordingSearch
 
 instance Default RecordingSearch
 
@@ -288,7 +288,7 @@ newtype RecordingSearchResult = RecordingSearchResult
   { recordings :: Maybe (Vector Recording)
   }
   deriving (Show, Generic, Eq)
-  deriving TextShow via FromGeneric RecordingSearchResult
+  deriving (TextShow) via FromGeneric RecordingSearchResult
 
 instance FromJSON RecordingSearchResult
 
@@ -300,12 +300,12 @@ data Recording = Recording
     releases :: Maybe (Vector Release)
   }
   deriving (Show, Generic, Eq)
-  deriving TextShow via FromGeneric Recording
+  deriving (TextShow) via FromGeneric Recording
 
 instance FromJSON Recording where
   parseJSON = genericParseJSON mbAesonOptions
 
-class Monad m => MusicBrainzService m where
+class (Monad m) => MusicBrainzService m where
   searchReleases :: ReleaseSearch -> m (Vector Release)
   searchReleaseGroups :: ReleaseSearch -> m (Vector ReleaseGroup)
   searchArtists :: ArtistSearch -> m (Vector Artist)
@@ -339,7 +339,7 @@ instance
   getRecording = lift . getRecording
 
 getReleaseOrGroup ::
-  MusicBrainzService m =>
+  (MusicBrainzService m) =>
   F.Metadata ->
   m (Maybe (Either Release ReleaseGroup))
 getReleaseOrGroup m =
@@ -348,7 +348,7 @@ getReleaseOrGroup m =
     Nothing -> fmap Right <$> getReleaseGroupFromMetadata m
 
 getReleaseAndGroup ::
-  MusicBrainzService m =>
+  (MusicBrainzService m) =>
   F.Metadata ->
   m (Maybe ReleaseGroup, Maybe Release)
 getReleaseAndGroup m = do
@@ -357,20 +357,20 @@ getReleaseAndGroup m = do
   pure (releaseGroup, release)
 
 getReleaseFromMetadata ::
-  MusicBrainzService m =>
+  (MusicBrainzService m) =>
   F.Metadata ->
   m (Maybe Release)
 getReleaseFromMetadata m =
   getReleaseByMusicBrainzId m <<|>> getReleaseByAlbum m
 
 getReleaseByMusicBrainzId ::
-  MusicBrainzService m =>
+  (MusicBrainzService m) =>
   F.Metadata ->
   m (Maybe Release)
 getReleaseByMusicBrainzId m = firstJustM getRelease (MusicBrainzId <$> m.tagHead releaseIdTag)
 
 getReleaseByAlbum ::
-  MusicBrainzService m =>
+  (MusicBrainzService m) =>
   F.Metadata ->
   m (Maybe Release)
 getReleaseByAlbum m = do
@@ -385,20 +385,20 @@ getReleaseByAlbum m = do
     else pure Nothing
 
 getReleaseGroupFromMetadata ::
-  MusicBrainzService m =>
+  (MusicBrainzService m) =>
   F.Metadata ->
   m (Maybe ReleaseGroup)
 getReleaseGroupFromMetadata m =
   getReleaseGroupByMusicBrainzId m <<|>> getReleaseGroupByAlbum m
 
 getReleaseGroupByMusicBrainzId ::
-  MusicBrainzService m =>
+  (MusicBrainzService m) =>
   F.Metadata ->
   m (Maybe ReleaseGroup)
 getReleaseGroupByMusicBrainzId m = firstJustM getReleaseGroup (MusicBrainzId <$> m.tagHead releaseGroupIdTag)
 
 getReleaseGroupByAlbum ::
-  MusicBrainzService m =>
+  (MusicBrainzService m) =>
   F.Metadata ->
   m (Maybe ReleaseGroup)
 getReleaseGroupByAlbum m = do
@@ -412,7 +412,7 @@ getReleaseGroupByAlbum m = do
     else pure Nothing
 
 getRecordingFromMetadata ::
-  MusicBrainzService m =>
+  (MusicBrainzService m) =>
   F.Metadata ->
   m (Maybe Recording)
 getRecordingFromMetadata m =
@@ -421,13 +421,13 @@ getRecordingFromMetadata m =
     <<|>> getRecordingByTrack m
 
 getRecordingByMusicBrainzId ::
-  MusicBrainzService m =>
+  (MusicBrainzService m) =>
   F.Metadata ->
   m (Maybe Recording)
 getRecordingByMusicBrainzId m = firstJustM getRecording (MusicBrainzId <$> m.tagHead recordingIdTag)
 
 getRecordingByReleaseIdTags ::
-  MusicBrainzService m =>
+  (MusicBrainzService m) =>
   F.Metadata ->
   m (Maybe Recording)
 getRecordingByReleaseIdTags m = do
@@ -446,7 +446,7 @@ getRecordingByReleaseIdTags m = do
     else pure Nothing
 
 getRecordingByTrack ::
-  MusicBrainzService m =>
+  (MusicBrainzService m) =>
   F.Metadata ->
   m (Maybe Recording)
 getRecordingByTrack m = do
@@ -484,30 +484,35 @@ renderQueryParam qs = case catMaybes $ fmap encodeTerm qs of
     encodeTerm q@MultiTerm {} = q.values <&> \v -> q.key <> ":%22" <> T.intercalate " & " (decodeUtf8 . urlEncode True . encodeUtf8 <$> v) <> "%22"
 
 newtype RateLimitWrapper = RateLimitWrapper (LimitConfig, RateLimiter)
-  deriving Typeable
+  deriving (Typeable)
 
-getRateLimiter :: (
-  AppDataReader m,
-  ConfigService m,
-  MonadIO m
-  ) => m (Maybe RateLimitWrapper)
-getRateLimiter = getConfigDefault musicbrainzConfigKey >>= \case
-  config | config == def ->
-    getAppData @RateLimitWrapper >>= \case
-      Nothing -> do
-        rateLimiter <- liftIO $ newRateLimiter mbRateLimitConfig
-        pure $ Just $ RateLimitWrapper (mbRateLimitConfig, rateLimiter)
-      rl -> pure rl
-  _ -> pure Nothing
+getRateLimiter ::
+  ( AppDataReader m,
+    ConfigService m,
+    MonadIO m
+  ) =>
+  m (Maybe RateLimitWrapper)
+getRateLimiter =
+  getConfigDefault musicbrainzConfigKey >>= \case
+    config
+      | config == def ->
+          getAppData @RateLimitWrapper >>= \case
+            Nothing -> do
+              rateLimiter <- liftIO $ newRateLimiter mbRateLimitConfig
+              pure $ Just $ RateLimitWrapper (mbRateLimitConfig, rateLimiter)
+            rl -> pure rl
+    _ -> pure Nothing
 
-waitReady :: (
-  AppDataReader m,
-  ConfigService m,
-  MonadIO m
-  ) => m ()
-waitReady = getRateLimiter >>= \case
-  Nothing -> pure ()
-  Just (RateLimitWrapper (lc, rl)) -> liftIO $ waitDebit lc rl 1
+waitReady ::
+  ( AppDataReader m,
+    ConfigService m,
+    MonadIO m
+  ) =>
+  m ()
+waitReady =
+  getRateLimiter >>= \case
+    Nothing -> pure ()
+    Just (RateLimitWrapper (lc, rl)) -> liftIO $ waitDebit lc rl 1
 
 mbHttp ::
   forall a m.
@@ -541,17 +546,29 @@ data CacheAggregate = CacheAggregate
   }
   deriving (Generic, Typeable)
 
-doCache :: Hashable k => (CacheAggregate -> SM.Map k a) -> k -> AppM IO IO a -> AppM IO IO a
+doCache :: (Hashable k) => (CacheAggregate -> SM.Map k a) -> k -> AppM IO IO a -> AppM IO IO a
 doCache f k m = do
-  cache <- getAppData @CacheAggregate >>= \case
-    Just cache -> pure cache
-    Nothing -> do
-      a <- atomically (CacheAggregate <$> SM.empty <*> SM.empty
-        <*> SM.empty <*> SM.empty <*> SM.empty
-        <*> SM.empty <*> SM.empty <*> SM.empty
-        <*> SM.empty <*> SM.empty <*> SM.empty)
-      putAppData a
-      pure a
+  cache <-
+    getAppData @CacheAggregate >>= \case
+      Just cache -> pure cache
+      Nothing -> do
+        a <-
+          atomically
+            ( CacheAggregate
+                <$> SM.empty
+                <*> SM.empty
+                <*> SM.empty
+                <*> SM.empty
+                <*> SM.empty
+                <*> SM.empty
+                <*> SM.empty
+                <*> SM.empty
+                <*> SM.empty
+                <*> SM.empty
+                <*> SM.empty
+            )
+        putAppData a
+        pure a
   let !map = f cache
   atomically (SM.lookup k map) >>= \case
     Just a -> pure a
@@ -696,7 +713,7 @@ data MusicBrainzConfig = MusicBrainzConfig
   { baseUrl :: String
   }
   deriving (Show, Eq, Generic)
-  deriving TextShow via FromGeneric MusicBrainzConfig
+  deriving (TextShow) via FromGeneric MusicBrainzConfig
 
 instance Default MusicBrainzConfig where
   def =
@@ -711,7 +728,7 @@ instance ToJSON MusicBrainzConfig
 musicbrainzConfigKey :: ConfigKey MusicBrainzConfig
 musicbrainzConfigKey = ConfigKey "musicbrainz"
 
-initMusicBrainzConfig :: ConfigService m => m ()
+initMusicBrainzConfig :: (ConfigService m) => m ()
 initMusicBrainzConfig = setConfig musicbrainzConfigKey def
 
 mbRateLimitConfig :: LimitConfig

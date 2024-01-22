@@ -5,8 +5,8 @@ module Melo.Common.Uri
   )
 where
 
+import Data.Aeson ()
 import Network.URI
-import Network.URI.JSON ()
 
 fileUri :: FilePath -> URI
 fileUri p =

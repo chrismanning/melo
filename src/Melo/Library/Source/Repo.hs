@@ -4,6 +4,7 @@
 module Melo.Library.Source.Repo where
 
 import Data.Functor.Contravariant
+import Data.HashMap.Strict qualified as HashMap
 import Data.Pool
 import Data.Text qualified as T
 import Data.Vector qualified as V
@@ -28,7 +29,7 @@ import Rel8
   )
 import Rel8 qualified
 
-class Repository SourceEntity m => SourceRepository m where
+class (Repository SourceEntity m) => SourceRepository m where
   getByUri :: Vector URI -> m (Vector SourceEntity)
   getKeysByUri :: Vector URI -> m (Vector (PrimaryKey SourceEntity))
   getByUriPrefix :: URI -> m (Vector SourceEntity)
@@ -116,7 +117,7 @@ instance {-# OVERLAPS #-} Repository SourceEntity (AppM IO IO) where
               }
       do
         let statement = Rel8.showDelete d
-        Otel.addAttributes span [("database.statement", Otel.toAttribute $ T.pack statement)]
+        Otel.addAttributes span (HashMap.fromList [("database.statement", Otel.toAttribute $ T.pack statement)])
         $(logDebugVIO ['statement]) "Executing DELETE"
       let session = Hasql.statement () $ Rel8.runVector $ Rel8.delete d
       liftIO do
@@ -216,7 +217,7 @@ sourceSchema =
           }
     }
 
-initSourceRepo :: AppDataReader m => m ()
+initSourceRepo :: (AppDataReader m) => m ()
 initSourceRepo =
   putAppData
     RepositoryHandle

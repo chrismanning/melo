@@ -1,5 +1,5 @@
-{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnboxedTuples #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Library.Source.MultiTrack where
 
@@ -13,18 +13,18 @@ import Data.Time
 import Melo.Common.Exception
 import Melo.Common.FileSystem.Watcher
 import Melo.Common.Monad
-import Melo.Metadata.Aggregate
 import Melo.Format.Error
 import Melo.Format.Metadata (MetadataFile)
 import Melo.Library.Source.Types
+import Melo.Metadata.Aggregate
 import Sound.File.Sndfile qualified as Sndfile
 import System.Directory qualified as Dir
 import System.FilePath
 
-class Monad m => MultiTrack m where
+class (Monad m) => MultiTrack m where
   extractTrackTo :: CueFileSource -> FilePath -> m (Either MultiTrackError MetadataFile)
 
-instance MultiTrack m => MultiTrack (StateT s m) where
+instance (MultiTrack m) => MultiTrack (StateT s m) where
   extractTrackTo s p = lift (extractTrackTo s p)
 
 data MultiTrackError
@@ -32,7 +32,7 @@ data MultiTrackError
   | DecoderError String
   | MetadataError MetadataException
   deriving (Show)
-  deriving TextShow via FromStringShow MultiTrackError
+  deriving (TextShow) via FromStringShow MultiTrackError
 
 instance Exception MultiTrackError
 

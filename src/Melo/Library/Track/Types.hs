@@ -7,8 +7,8 @@ import Data.Int
 import Data.Time
 import Data.UUID
 import Melo.Database.Repo
-import Melo.Library.Release.Types
 import Melo.Library.Artist.Name.Types
+import Melo.Library.Release.Types
 import Melo.Library.Source.Types
 import Melo.Lookup.MusicBrainz as MB
 import Rel8
@@ -29,6 +29,7 @@ data TrackTable f = TrackTable
 type TrackEntity = TrackTable Result
 
 deriving instance Show TrackEntity
+
 deriving via (FromGeneric TrackEntity) instance TextShow TrackEntity
 
 deriving instance Eq TrackEntity
@@ -41,7 +42,7 @@ instance Entity TrackEntity where
 newtype TrackRef = TrackRef UUID
   deriving (Show, Eq, Ord, Generic)
   deriving newtype (DBType, DBEq, Hashable)
-  deriving TextShow via FromGeneric TrackRef
+  deriving (TextShow) via FromGeneric TrackRef
 
 data NewTrack = NewTrack
   { title :: Text,
@@ -54,7 +55,7 @@ data NewTrack = NewTrack
     musicBrainzId :: Maybe MB.MusicBrainzId
   }
   deriving (Generic, Eq, Ord, Show)
-  deriving TextShow via FromGeneric NewTrack
+  deriving (TextShow) via FromGeneric NewTrack
 
 instance From NewTrack (TrackTable Expr) where
   from t =
@@ -97,9 +98,9 @@ data Track = Track
     musicBrainzId :: Maybe MB.MusicBrainzId
   }
   deriving (Generic, Eq, Ord, Show)
-  deriving TextShow via FromGeneric Track
+  deriving (TextShow) via FromGeneric Track
 
-mkTrack :: Foldable f => f ArtistNameEntity -> TrackEntity -> Track
+mkTrack :: (Foldable f) => f ArtistNameEntity -> TrackEntity -> Track
 mkTrack artists t =
   Track
     { ref = t.id,

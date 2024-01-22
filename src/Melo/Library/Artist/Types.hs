@@ -8,7 +8,7 @@ import Country
 import Data.Hashable
 import Data.UUID
 import Melo.Database.Repo
-import qualified Melo.Lookup.MusicBrainz as MB
+import Melo.Lookup.MusicBrainz qualified as MB
 import Rel8
 
 data ArtistTable f = ArtistTable
@@ -25,8 +25,11 @@ data ArtistTable f = ArtistTable
 type ArtistEntity = ArtistTable Result
 
 deriving instance Show ArtistEntity
+
 deriving via (FromGeneric ArtistEntity) instance TextShow ArtistEntity
+
 deriving instance Eq ArtistEntity
+
 deriving instance Ord ArtistEntity
 
 instance Entity ArtistEntity where
@@ -37,7 +40,7 @@ instance Entity ArtistEntity where
 newtype ArtistRef = ArtistRef UUID
   deriving (Show, Eq, Ord, Generic)
   deriving newtype (DBType, DBEq, Hashable, FromJSON, ToJSON)
-  deriving TextShow via FromGeneric ArtistRef
+  deriving (TextShow) via FromGeneric ArtistRef
 
 instance From ArtistRef UUID where
   from (ArtistRef uuid) = uuid
@@ -61,7 +64,7 @@ data Artist = Artist
     shortBiography :: Maybe Text
   }
   deriving (Generic, Show)
-  deriving TextShow via FromGeneric Artist
+  deriving (TextShow) via FromGeneric Artist
 
 mkArtist :: ArtistEntity -> [Text] -> Artist
 mkArtist dbArtist names =
@@ -87,7 +90,7 @@ data ArtistId
       { spotifyArtistId :: Text
       }
   deriving (Show, Eq)
-  deriving TextShow via FromStringShow ArtistId
+  deriving (TextShow) via FromStringShow ArtistId
 
 data NewArtist = NewArtist
   { name :: Text,
@@ -98,7 +101,7 @@ data NewArtist = NewArtist
     musicBrainzId :: Maybe MB.MusicBrainzId
   }
   deriving (Generic, Eq, Ord, Show)
-  deriving TextShow via FromGeneric NewArtist
+  deriving (TextShow) via FromGeneric NewArtist
 
 instance From NewArtist (ArtistTable Expr) where
   from a =
@@ -114,37 +117,38 @@ instance From NewArtist (ArtistTable Expr) where
 
 mergeArtist :: ArtistEntity -> NewArtist -> ArtistEntity
 mergeArtist artist newArtist =
-  artist {
-    name = newArtist.name,
-    disambiguation = newArtist.disambiguation,
-    country = newArtist.country <&> alphaThreeLower,
-    bio = newArtist.bio,
-    short_bio = newArtist.shortBio,
-    musicbrainz_id = newArtist.musicBrainzId <&> (.mbid)
-  }
+  artist
+    { name = newArtist.name,
+      disambiguation = newArtist.disambiguation,
+      country = newArtist.country <&> alphaThreeLower,
+      bio = newArtist.bio,
+      short_bio = newArtist.shortBio,
+      musicbrainz_id = newArtist.musicBrainzId <&> (.mbid)
+    }
 
 mkNewArtist :: ArtistRef -> NewArtist -> ArtistEntity
 mkNewArtist artistRef newArtist =
-  ArtistTable {
-    id = artistRef,
-    name = newArtist.name,
-    disambiguation = newArtist.disambiguation,
-    country = newArtist.country <&> alphaThreeLower,
-    bio = newArtist.bio,
-    short_bio = newArtist.shortBio,
-    musicbrainz_id = newArtist.musicBrainzId <&> (.mbid)
-  }
+  ArtistTable
+    { id = artistRef,
+      name = newArtist.name,
+      disambiguation = newArtist.disambiguation,
+      country = newArtist.country <&> alphaThreeLower,
+      bio = newArtist.bio,
+      short_bio = newArtist.shortBio,
+      musicbrainz_id = newArtist.musicBrainzId <&> (.mbid)
+    }
 
 instance From MB.Artist NewArtist where
   from a =
     NewArtist
       { name = a.name,
         disambiguation = a.disambiguation,
-        country = (a.country >>= decodeAlphaTwo)
-          <|> (a.area ^? _Just . (to (.iso3166_2codes)) . _Just . _head . (to (.country)) >>= decodeAlphaTwo)
-          <|> (a.area ^? _Just . (to (.iso3166_1codes)) . _Just . _head >>= decodeAlphaTwo)
-          <|> (a.beginArea ^? _Just . (to (.iso3166_2codes)) . _Just . _head . (to (.country)) >>= decodeAlphaTwo)
-          <|> (a.beginArea ^? _Just . (to (.iso3166_1codes)) . _Just . _head >>= decodeAlphaTwo),
+        country =
+          (a.country >>= decodeAlphaTwo)
+            <|> (a.area ^? _Just . (to (.iso3166_2codes)) . _Just . _head . (to (.country)) >>= decodeAlphaTwo)
+            <|> (a.area ^? _Just . (to (.iso3166_1codes)) . _Just . _head >>= decodeAlphaTwo)
+            <|> (a.beginArea ^? _Just . (to (.iso3166_2codes)) . _Just . _head . (to (.country)) >>= decodeAlphaTwo)
+            <|> (a.beginArea ^? _Just . (to (.iso3166_1codes)) . _Just . _head >>= decodeAlphaTwo),
         bio = Nothing,
         shortBio = Nothing,
         musicBrainzId = Just a.id

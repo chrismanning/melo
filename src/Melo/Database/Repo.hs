@@ -1,6 +1,6 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE AllowAmbiguousTypes #-}
 
 module Melo.Database.Repo where
 
@@ -26,19 +26,19 @@ class (Monad m, Entity e) => Repository e m where
   update :: Vector e -> m (Vector e)
   update' :: Vector e -> m ()
 
-getSingle :: forall e m. Repository e m => PrimaryKey e -> m (Maybe e)
+getSingle :: forall e m. (Repository e m) => PrimaryKey e -> m (Maybe e)
 getSingle k = firstOf traverse <$> getByKey (pure k)
 
-insertSingle :: forall e m. Repository e m => NewEntity e -> m (Maybe e)
+insertSingle :: forall e m. (Repository e m) => NewEntity e -> m (Maybe e)
 insertSingle e = firstOf traverse <$> insert (pure e)
 
-insertSingle' :: forall e m. Repository e m => NewEntity e -> m ()
+insertSingle' :: forall e m. (Repository e m) => NewEntity e -> m ()
 insertSingle' e = void $ insert @e (pure e)
 
-updateSingle :: forall e m. Repository e m => e -> m (Maybe e)
+updateSingle :: forall e m. (Repository e m) => e -> m (Maybe e)
 updateSingle e = firstOf traverse <$> update (pure e)
 
-updateSingle' :: forall e m. Repository e m => e -> m ()
+updateSingle' :: forall e m. (Repository e m) => e -> m ()
 updateSingle' e = void $ update @e (pure e)
 
 instance
@@ -57,9 +57,10 @@ instance
   update = lift . update
   update' = lift . update'
 
-data DatabaseError = ConnectionError (Maybe ByteString)
+data DatabaseError
+  = ConnectionError (Maybe ByteString)
   | DatabaseNotConfigured
   | EntityNotConfigured TypeRep
   | OtherDatabaseError
   deriving (Show, Exception)
-  deriving TextShow via FromStringShow DatabaseError
+  deriving (TextShow) via FromStringShow DatabaseError

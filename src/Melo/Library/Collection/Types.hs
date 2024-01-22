@@ -3,7 +3,7 @@
 module Melo.Library.Collection.Types where
 
 import Data.Hashable
-import qualified Data.Text as T
+import Data.Text qualified as T
 import Data.UUID
 import Melo.Common.Uri
 import Melo.Database.Repo
@@ -21,14 +21,17 @@ data CollectionTable f = CollectionTable
   deriving (Generic, Rel8able)
 
 type CollectionEntity = CollectionTable Result
+
 deriving instance Show CollectionEntity
+
 deriving via (FromGeneric CollectionEntity) instance TextShow CollectionEntity
+
 deriving via (CustomJSON JSONOptions CollectionEntity) instance ToJSON CollectionEntity
 
-newtype CollectionRef = CollectionRef { unCollectionRef :: UUID}
+newtype CollectionRef = CollectionRef {unCollectionRef :: UUID}
   deriving (Generic)
   deriving newtype (Show, Eq, Ord, DBType, DBEq, FromJSON, Hashable, ToJSON)
-  deriving TextShow via FromGeneric CollectionRef
+  deriving (TextShow) via FromGeneric CollectionRef
 
 instance From CollectionRef UUID where
   from (CollectionRef uuid) = uuid
@@ -46,7 +49,7 @@ data NewCollection = NewFilesystemCollection
     library :: Bool
   }
   deriving (Show, Eq, Generic)
-  deriving TextShow via FromGeneric NewCollection
+  deriving (TextShow) via FromGeneric NewCollection
   deriving (FromJSON, ToJSON) via CustomJSON JSONOptions NewCollection
 
 instance From NewCollection (CollectionTable Expr) where

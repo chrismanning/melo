@@ -10,7 +10,7 @@ import Melo.Library.Track.Types
 import Melo.Lookup.MusicBrainz as MB
 import Rel8
 
-class Repository TrackEntity m => TrackRepository m where
+class (Repository TrackEntity m) => TrackRepository m where
   getByMusicBrainzId :: MB.MusicBrainzId -> m (Maybe TrackEntity)
   getBySrcRef :: SourceRef -> m (Maybe TrackEntity)
 
@@ -67,8 +67,7 @@ trackSchema =
           }
     }
 
-
-initTrackRepo :: AppDataReader m => m ()
+initTrackRepo :: (AppDataReader m) => m ()
 initTrackRepo =
   putAppData
     RepositoryHandle

@@ -1,23 +1,23 @@
-{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnboxedTuples #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Melo.Common.FileSystem where
 
-import Melo.Common.Exception
 import Control.Monad.Extra
 import Control.Monad.Trans
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import GHC.IO.Exception
+import Melo.Common.Exception
 import Melo.Common.Logging
 import System.Directory qualified as Dir
-import System.FilePath qualified as P
 import System.FilePath ((</>))
+import System.FilePath qualified as P
 import System.IO hiding (readFile)
 import System.IO.Error hiding (catchIOError)
 import Prelude hiding (readFile)
 
-class Monad m => FileSystem m where
+class (Monad m) => FileSystem m where
   doesFileExist :: FilePath -> m Bool
   doesDirectoryExist :: FilePath -> m Bool
   listDirectory :: FilePath -> m [FilePath]
@@ -51,7 +51,7 @@ data FileManipError
   | SourceDoesNotExist
   | FileManipIOError IOError
   deriving (Show)
-  deriving TextShow via FromStringShow FileManipError
+  deriving (TextShow) via FromStringShow FileManipError
 
 instance Exception FileManipError
 
@@ -60,7 +60,7 @@ data RemoveError
   | DirectoryDoesNotExist
   | RemoveIOError IOError
   deriving (Show)
-  deriving TextShow via FromStringShow RemoveError
+  deriving (TextShow) via FromStringShow RemoveError
 
 instance Exception RemoveError
 
@@ -71,8 +71,9 @@ instance FileSystem IO where
   canonicalizePath p = liftIO $ Dir.canonicalizePath p
   readFile p = liftIO $ withBinaryFile p ReadMode BS.hGetContents
   movePath a b = liftIO $ movePathIO a b
-  copyPath a b = liftIO $
-    catchIOError (Dir.createDirectoryIfMissing True (P.takeDirectory b) >> Dir.copyFileWithMetadata a b >> pure (Right ())) (pure . Left . FileManipIOError)
+  copyPath a b =
+    liftIO $
+      catchIOError (Dir.createDirectoryIfMissing True (P.takeDirectory b) >> Dir.copyFileWithMetadata a b >> pure (Right ())) (pure . Left . FileManipIOError)
   removePath p = liftIO $ handleIOError (pure . Left . RemoveIOError) do
     whenM (Dir.doesDirectoryExist p) (Dir.removeDirectory p)
     whenM (Dir.doesFileExist p) (Dir.removeFile p)
@@ -80,14 +81,16 @@ instance FileSystem IO where
   removeEmptyDirectories dir =
     doesDirectoryExist dir >>= \case
       False -> pure ()
-      True -> handleIO (const $ pure ()) (
-        listDirectory dir >>= \case
-          [] -> do
-            liftIO $ Dir.removeDirectory dir
-            $(logInfo) $ "Removed directory " <> showt dir
-            pure ()
-          es -> forM_ es removeEmptyDirectories
-        )
+      True ->
+        handleIO
+          (const $ pure ())
+          ( listDirectory dir >>= \case
+              [] -> do
+                liftIO $ Dir.removeDirectory dir
+                $(logInfo) $ "Removed directory " <> showt dir
+                pure ()
+              es -> forM_ es removeEmptyDirectories
+          )
 
 movePathIO :: FilePath -> FilePath -> IO (Either FileManipError ())
 movePathIO a b =

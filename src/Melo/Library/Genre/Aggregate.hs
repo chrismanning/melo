@@ -11,4 +11,5 @@ getTopLevelGenres = do
   $(logInfo) "Getting top-level genres"
   pool <- getConnectionPool
   results <- runSelect pool topLevelGenres
+  $(logDebug) "Got top-level genres"
   pure $! from <$!> results

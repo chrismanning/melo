@@ -116,8 +116,7 @@ CREATE TABLE melo.config (
 CREATE TABLE melo.genre (
     id uuid DEFAULT melo.uuid_generate_v4() NOT NULL,
     name text NOT NULL,
-    description text,
-    top_level boolean
+    description text
 );
 
 
@@ -129,59 +128,6 @@ CREATE TABLE melo.genre_parent (
     genre_id uuid NOT NULL,
     parent_genre uuid NOT NULL
 );
-
-
---
--- Name: genre_top_level; Type: VIEW; Schema: melo; Owner: -
---
-
-CREATE VIEW melo.genre_top_level AS
- WITH genre_top_level AS (
-         SELECT genre.id,
-            genre.name,
-            genre.description,
-            genre.top_level
-           FROM melo.genre
-          WHERE genre.top_level
-        ), parent_ref AS (
-         SELECT genre_parent.genre_id AS id,
-            genre_parent.parent_genre AS parent
-           FROM melo.genre_parent
-          WHERE (genre_parent.genre_id IN ( SELECT genre_top_level.id
-                   FROM genre_top_level))
-        ), parents AS (
-         SELECT parent_ref.id,
-            genre.id AS parent_id,
-            genre.name AS parent_name
-           FROM melo.genre,
-            parent_ref
-          WHERE (genre.id = parent_ref.parent)
-        ), child_ref AS (
-         SELECT genre_parent.parent_genre AS id,
-            genre_parent.genre_id AS child
-           FROM melo.genre_parent
-          WHERE (genre_parent.parent_genre IN ( SELECT genre_top_level.id
-                   FROM genre_top_level))
-        ), children AS (
-         SELECT child_ref.id,
-            genre.id AS child_id,
-            genre.name AS child_name
-           FROM melo.genre,
-            child_ref
-          WHERE (genre.id = child_ref.child)
-        )
- SELECT g.id,
-    g.name,
-    g.description,
-    COALESCE(( SELECT array_agg(jsonb_build_object('ref', parents.parent_id, 'name', parents.parent_name)) AS array_agg
-           FROM parents
-          WHERE (parents.id = g.id)), '{}'::jsonb[]) AS parents,
-    COALESCE(( SELECT array_agg(jsonb_build_object('ref', children.child_id, 'name', children.child_name)) AS array_agg
-           FROM children
-          WHERE (children.id = g.id)), '{}'::jsonb[]) AS children
-   FROM genre_top_level g
-  GROUP BY g.id, g.name, g.description
-  ORDER BY g.name;
 
 
 --
@@ -381,14 +327,6 @@ ALTER TABLE ONLY melo.genre
 
 
 --
--- Name: genre_parent parent_genre_pk; Type: CONSTRAINT; Schema: melo; Owner: -
---
-
-ALTER TABLE ONLY melo.genre_parent
-    ADD CONSTRAINT parent_genre_pk PRIMARY KEY (genre_id, parent_genre);
-
-
---
 -- Name: related_artist related_artist_pkey; Type: CONSTRAINT; Schema: melo; Owner: -
 --
 
@@ -548,6 +486,20 @@ CREATE UNIQUE INDEX collection_root_uri_uindex ON melo.collection USING btree (r
 
 
 --
+-- Name: parent_genre_genre_id_index; Type: INDEX; Schema: melo; Owner: -
+--
+
+CREATE INDEX parent_genre_genre_id_index ON melo.genre_parent USING btree (genre_id);
+
+
+--
+-- Name: parent_genre_parent_genre_index; Type: INDEX; Schema: melo; Owner: -
+--
+
+CREATE INDEX parent_genre_parent_genre_index ON melo.genre_parent USING btree (parent_genre);
+
+
+--
 -- Name: release_musicbrainz_group_id_uindex; Type: INDEX; Schema: melo; Owner: -
 --
 
@@ -646,7 +598,7 @@ ALTER TABLE ONLY melo.artist_name
 --
 
 ALTER TABLE ONLY melo.genre_parent
-    ADD CONSTRAINT parent_genre_genre_fk FOREIGN KEY (parent_genre) REFERENCES melo.genre(id);
+    ADD CONSTRAINT parent_genre_genre_fk FOREIGN KEY (parent_genre) REFERENCES melo.genre(id) ON DELETE CASCADE;
 
 
 --
@@ -654,7 +606,7 @@ ALTER TABLE ONLY melo.genre_parent
 --
 
 ALTER TABLE ONLY melo.genre_parent
-    ADD CONSTRAINT parent_genre_id_genre_fk FOREIGN KEY (genre_id) REFERENCES melo.genre(id);
+    ADD CONSTRAINT parent_genre_id_genre_fk FOREIGN KEY (genre_id) REFERENCES melo.genre(id) ON DELETE CASCADE;
 
 
 --
@@ -809,5 +761,4 @@ INSERT INTO melo.schema_migrations (version) VALUES
     ('20230422225419'),
     ('20230708170753'),
     ('20231216191423'),
-    ('20231216215146'),
-    ('20231227234504');
+    ('20231216215146');

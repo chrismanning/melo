@@ -48,11 +48,11 @@ newtype ConfigKey v = ConfigKey
 
 type ConfigValue = A.Value
 
-class Monad m => ConfigService m where
--- TODO invalidateCache :: m ()
-  getConfig :: A.FromJSON v => ConfigKey v -> m (Maybe v)
-  setConfig :: A.ToJSON v => ConfigKey v -> v -> m ()
-  updateConfig :: A.ToJSON v => ConfigKey v -> v -> m ()
+class (Monad m) => ConfigService m where
+  -- TODO invalidateCache :: m ()
+  getConfig :: (A.FromJSON v) => ConfigKey v -> m (Maybe v)
+  setConfig :: (A.ToJSON v) => ConfigKey v -> v -> m ()
+  updateConfig :: (A.ToJSON v) => ConfigKey v -> v -> m ()
 
 getConfigDefault :: (A.FromJSON v, Default v, ConfigService m) => ConfigKey v -> m v
 getConfigDefault k = fromMaybe def <$> getConfig k
@@ -67,13 +67,14 @@ newtype ConfigCache = ConfigCache {configs :: HashMap Text ConfigEntity}
   deriving newtype (TextShow)
 
 getConfigCache :: (AppDataReader m, ConfigRepository m) => m ConfigCache
-getConfigCache = getAppData @ConfigCache >>= \case
-  Just config -> pure config
-  Nothing -> do
-    all <- toList <$> getAll @ConfigEntity
-    let !config = ConfigCache $ HashMap.fromList $ fmap (\c -> (c.key, c)) all
-    putAppData config
-    pure config
+getConfigCache =
+  getAppData @ConfigCache >>= \case
+    Just config -> pure config
+    Nothing -> do
+      all <- toList <$> getAll @ConfigEntity
+      let !config = ConfigCache $ HashMap.fromList $ fmap (\c -> (c.key, c)) all
+      putAppData config
+      pure config
 
 instance
   ( Logging m,
@@ -112,10 +113,11 @@ configSchema =
           }
     }
 
-initConfigRepo :: AppDataReader m => m ()
-initConfigRepo = putAppData
-  RepositoryHandle
-    { tbl = configSchema,
-      pk = (.key),
-      upsert = Nothing
-    }
+initConfigRepo :: (AppDataReader m) => m ()
+initConfigRepo =
+  putAppData
+    RepositoryHandle
+      { tbl = configSchema,
+        pk = (.key),
+        upsert = Nothing
+      }

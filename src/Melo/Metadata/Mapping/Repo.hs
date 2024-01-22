@@ -26,17 +26,18 @@ tagMappingSchema =
           }
     }
 
-initTagMappingRepo :: AppDataReader m => m ()
-initTagMappingRepo = putAppData
-  RepositoryHandle
-    { tbl = tagMappingSchema,
-      pk = (.name),
-      upsert =
-        Just
-          Upsert
-            { index = (.name),
-              predicate = Nothing,
-              set = const,
-              updateWhere = \new old -> new.name ==. old.name
-            }
-    }
+initTagMappingRepo :: (AppDataReader m) => m ()
+initTagMappingRepo =
+  putAppData
+    RepositoryHandle
+      { tbl = tagMappingSchema,
+        pk = (.name),
+        upsert =
+          Just
+            Upsert
+              { index = (.name),
+                predicate = Nothing,
+                set = const,
+                updateWhere = \new old -> new.name ==. old.name
+              }
+      }
