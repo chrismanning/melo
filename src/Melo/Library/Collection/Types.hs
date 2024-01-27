@@ -67,4 +67,12 @@ instance From NewCollection (CollectionTable Expr) where
       rootUri NewFilesystemCollection {rootPath} = fileUri $ T.unpack rootPath
       kind NewFilesystemCollection {} = "filesystem"
 
-type UpdateCollection = CollectionEntity
+data CollectionUpdates = CollectionUpdates
+  { name :: Maybe Text,
+    watch :: Maybe Bool,
+    kind :: Maybe Text,
+    rescan :: Maybe Bool,
+    library :: Maybe Bool
+  }
+  deriving (Generic)
+  deriving (FromJSON, ToJSON) via CustomJSON JSONOptions CollectionUpdates

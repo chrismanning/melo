@@ -164,7 +164,7 @@ instance
   FileSystemWatcher (AppM IO m)
   where
   startWatching ref p = do
-    $(logInfo) $ "starting to watch path " <> showt p
+    $(logInfo) $ "Starting to watch path " <> showt p
     let conf = FS.defaultConfig {FS.confThreadingMode = ThreadPerWatch, FS.confOnHandlerException = handleException}
     void $
       fork $
@@ -203,6 +203,7 @@ instance
     case H.lookup ref stoppers' of
       Just stop -> liftIO stop
       Nothing -> pure ()
+    $(logInfo) $ "Stopped watching collection " <> showt ref
 
 handleEvent ::
   AppData IO ->

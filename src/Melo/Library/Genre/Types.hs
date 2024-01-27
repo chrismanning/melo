@@ -12,7 +12,7 @@ import Rel8
     DBType,
     Expr,
     JSONBEncoded (..),
-    ListTable (..),
+    ListTable,
     Rel8able,
     Result,
     function,

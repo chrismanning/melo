@@ -4,6 +4,7 @@
 module Melo.Library.Collection.Aggregate where
 
 import Control.Concurrent.Classy
+import Data.Aeson qualified as Aeson
 import Data.Text qualified as T
 import Melo.Common.FileSystem.Watcher
 import Melo.Common.Logging
@@ -18,6 +19,7 @@ class (Monad m) => CollectionAggregate m where
   addCollection :: NewCollection -> m CollectionRef
   deleteCollection :: CollectionRef -> m (Maybe CollectionRef)
   rescanCollection :: CollectionRef -> m ()
+  updateCollection :: CollectionRef -> CollectionUpdates -> m ()
 
 instance CollectionAggregate (AppM IO IO) where
   addCollection c@NewFilesystemCollection {..} = do
@@ -42,6 +44,31 @@ instance CollectionAggregate (AppM IO IO) where
   deleteCollection ref = do
     stopWatching ref
     firstOf traverse <$> delete @CollectionEntity (pure ref)
+  updateCollection ref updates = do
+    getSingle @CollectionEntity ref >>= \case
+      Just old@CollectionTable {} -> do
+        $(logInfo) $ "Updating collection " <> showt old.name <> " with " <> T.pack (show (Aeson.toEncoding updates))
+        let !updated = entity old
+        case updates.watch of
+          Just False | old.watch -> stopWatching old.id
+          Just True | not old.watch -> case parseURI (T.unpack old.root_uri) >>= uriToFilePath of
+            Just rootPath -> startWatching old.id rootPath
+            _ -> pure ()
+          _ -> pure ()
+        updateSingle' @CollectionEntity updated
+      Nothing -> $(logWarn) $ "collection " <> showt ref <> " not found"
+    pure ()
+    where
+      entity old =
+        CollectionTable
+          { id = ref,
+            root_uri = old.root_uri,
+            name = fromMaybe old.name updates.name,
+            watch = fromMaybe old.watch updates.watch,
+            kind = fromMaybe old.kind updates.kind,
+            rescan = fromMaybe old.rescan updates.rescan,
+            library = fromMaybe old.library updates.library
+          }
 
 getCollectionsByKey :: (CollectionRepository m) => Vector CollectionRef -> m (Vector CollectionEntity)
 getCollectionsByKey = getByKey

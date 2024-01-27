@@ -116,7 +116,9 @@ CREATE TABLE melo.config (
 CREATE TABLE melo.genre (
     id uuid DEFAULT melo.uuid_generate_v4() NOT NULL,
     name text NOT NULL,
-    description text
+    description text,
+    top_level boolean,
+    short_description text
 );
 
 
@@ -327,6 +329,14 @@ ALTER TABLE ONLY melo.genre
 
 
 --
+-- Name: genre_parent parent_genre_pk; Type: CONSTRAINT; Schema: melo; Owner: -
+--
+
+ALTER TABLE ONLY melo.genre_parent
+    ADD CONSTRAINT parent_genre_pk PRIMARY KEY (genre_id, parent_genre);
+
+
+--
 -- Name: related_artist related_artist_pkey; Type: CONSTRAINT; Schema: melo; Owner: -
 --
 
@@ -483,6 +493,13 @@ CREATE UNIQUE INDEX collection_name_uindex ON melo.collection USING btree (name)
 --
 
 CREATE UNIQUE INDEX collection_root_uri_uindex ON melo.collection USING btree (root_uri);
+
+
+--
+-- Name: genre_top_level_index; Type: INDEX; Schema: melo; Owner: -
+--
+
+CREATE INDEX genre_top_level_index ON melo.genre USING btree (top_level);
 
 
 --
@@ -761,4 +778,5 @@ INSERT INTO melo.schema_migrations (version) VALUES
     ('20230422225419'),
     ('20230708170753'),
     ('20231216191423'),
-    ('20231216215146');
+    ('20231216215146'),
+    ('20231227234504');

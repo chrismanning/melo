@@ -7,31 +7,25 @@ import Melo.Database.Repo.IO
 import Melo.Library.Genre.Types
 import Rel8
   ( Expr,
-    ListTable,
     Name,
     Query,
     TableSchema (..),
     Upsert (..),
     asc,
     each,
-    in_,
     lit,
     many,
-    manyExpr,
     orderBy,
-    some,
     where_,
     (&&.),
     (==.),
   )
-import Rel8 qualified
 
 type GenreRepository = Repository GenreEntity
 
 topLevelGenres :: Query (TopLevelGenre Expr)
 topLevelGenres = do
-  --  orderBy ((.name) >$< asc) $ each topLevelGenreSchema
-  topLevelGenre <- each genreSchema
+  topLevelGenre <- orderBy ((.name) >$< asc) $ each genreSchema
   where_ topLevelGenre.top_level
   parentRefs <- many do
     genre <- each genreSchema

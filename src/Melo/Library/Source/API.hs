@@ -14,43 +14,28 @@ import Control.Monad.IO.Class
 import Data.Aeson (ToJSON (..))
 import Data.Aeson qualified as JSON
 import Data.ByteString.Lazy qualified as L
-import Data.Coerce
-import Data.Either.Combinators
-import Data.Generics.Labels ()
-import Data.Kind
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as T
-import Data.Time.Clock
-import Data.UUID (fromText, toText)
 import Data.Vector qualified as V
-import GHC.Generics hiding (from)
 import Melo.Common.API
-import Melo.Common.Config
 import Melo.Common.Exception qualified as E
 import Melo.Common.Logging
 import Melo.Common.Monad
 import Melo.Common.Routing
 import Melo.Common.Tracing
 import Melo.Common.Uri
-import Melo.Common.Uuid
-import Melo.Database.Repo as Repo
 import Melo.Database.Repo.IO (selectStream)
 import Melo.Format qualified as F
-import Melo.Library.Artist.Name.Repo
-import Melo.Library.Collection.Repo (CollectionRepository)
 import Melo.Library.Collection.Types qualified as Ty
-import Melo.Library.Release.Aggregate as Release
-import Melo.Library.Release.ArtistName.Repo
 import Melo.Library.Release.Repo
 import Melo.Library.Release.Types
 import Melo.Library.Source.Aggregate
 import Melo.Library.Source.Repo
 import Melo.Library.Source.Transform qualified as Tr
 import Melo.Library.Source.Types qualified as Ty
-import Melo.Library.Track.ArtistName.Repo
 import Melo.Library.Track.Repo as Track
 import Melo.Library.Track.Types
-import Melo.Lookup.Covers (Cover (..), CoverService (..))
+import Melo.Lookup.Covers (Cover (..))
 import Melo.Lookup.Covers qualified as Covers
 import Melo.Metadata.Aggregate
 import Melo.Metadata.Mapping.Aggregate
