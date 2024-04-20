@@ -20,6 +20,7 @@ import Data.ByteString.Streaming.HTTP qualified as SH
 import Data.Conduit.ImageSize (sinkImageInfo)
 import Data.Conduit.ImageSize qualified as ConduitImageSize
 import Data.Foldable qualified as F
+import Data.Hashable
 import Data.HashMap.Strict qualified as Map
 import Data.HashSet qualified as Set
 import Data.String (IsString)
@@ -31,7 +32,6 @@ import Melo.Common.Logging
 import Melo.Common.Monad
 import Melo.Common.Tracing
 import Melo.Common.Uri
-import Melo.Library.Release.Types
 import Network.HTTP.Conduit as Http
 import Network.HTTP.Types
 import OpenTelemetry.Context.ThreadLocal qualified as Context
@@ -42,8 +42,15 @@ import Text.EditDistance
 import Text.Read hiding (lift)
 
 class (Monad m) => CoverService m where
-  searchForCovers :: Release -> m [Cover]
+  searchForCovers :: CoverSearchIdentity -> m [Cover]
   copyCoverToDir :: URI -> FilePath -> m ()
+
+data CoverSearchIdentity = CoverSearchIdentity
+  { releaseTitle :: Text
+  , releaseArtist :: Text
+  }
+  deriving (Eq, Generic, Hashable)
+  deriving (FromJSON, ToJSON) via CustomJSON JSONOptions CoverSearchIdentity
 
 instance
   {-# OVERLAPS #-}
@@ -128,7 +135,7 @@ data ReleaseInfo = ReleaseInfo
   deriving (FromJSON, ToJSON) via CustomJSON '[] ReleaseInfo
 
 data CoverServiceData = CoverServiceData
-  { searchForCoversCache :: TVar (STM IO) (Map.HashMap Release [Cover]),
+  { searchForCoversCache :: TVar (STM IO) (Map.HashMap CoverSearchIdentity [Cover]),
     copyCoverToDirCache :: TVar (STM IO) (Set.HashSet (String, FilePath))
   }
   deriving (Typeable)
@@ -143,16 +150,16 @@ getCacheData =
       pure cacheData
 
 instance CoverService (AppM IO IO) where
-  searchForCovers release = handleErrors $ withSpan "searchForCovers" defaultSpanArguments do
+  searchForCovers tags = handleErrors $ withSpan "searchForCovers" defaultSpanArguments do
     cacheVar <- getCacheData <&> (.searchForCoversCache)
     cache <- liftIO $ atomically $ readTVar cacheVar
-    case cache ^? at release . _Just of
+    case cache ^? at tags . _Just of
       Just covers -> pure covers
       Nothing -> runResourceT do
         manager <- Http.getManager
         initialRequest <- parseRequest requestUri
-        let !artist = fromMaybe "" $ release.artists ^? _head . #name
-        let !requestObject = SearchRequest {artist, album = release.title, country = "gb", sources = (Bandcamp :| [Qobuz, Tidal])}
+        let !artist = tags.releaseArtist
+        let !requestObject = SearchRequest {artist, album = tags.releaseTitle, country = "gb", sources = (Bandcamp :| [Qobuz, Tidal])}
         let !request = initialRequest {method = "POST", requestHeaders = [(hContentType, "application/json")], requestBody = RequestBodyLBS $ encode requestObject}
         let clientRequestUrl = T.pack requestUri
         $(logInfoV ['clientRequestUrl]) "Searching for images"
@@ -177,8 +184,8 @@ instance CoverService (AppM IO IO) where
                   _ -> pure Nothing
                 & S.catMaybes
                 & S.toList_
-            liftIO $ atomically $ modifyTVar' cacheVar (at release ?~ covers)
-            $(logInfo) $ "Found " <> showt (F.length covers) <> " covers for release " <> release.title
+            liftIO $ atomically $ modifyTVar' cacheVar (at tags ?~ covers)
+            $(logInfo) $ "Found " <> showt (F.length covers) <> " covers for release " <> tags.releaseTitle
             pure covers
     where
       getImageInfo url manager = do
@@ -204,7 +211,7 @@ instance CoverService (AppM IO IO) where
       matches :: Maybe ReleaseInfo -> Text -> Bool
       matches (Just ReleaseInfo {artist = Just artist, title = Just title}) artistName =
         levenshteinDistance defaultEditCosts (T.unpack artistName) artist < 4
-          && levenshteinDistance defaultEditCosts (T.unpack release.title) title < 4
+          && levenshteinDistance defaultEditCosts (T.unpack tags.releaseTitle) title < 4
       matches _ _ = False
       handleErrors = handleHttp \e -> do
         let cause = show e

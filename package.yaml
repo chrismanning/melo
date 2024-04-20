@@ -86,6 +86,7 @@ library:
   - http-conduit
   - http-types
   - imagesize-conduit
+  - inline-c
   - io-classes
   - iproute
   - katip
@@ -141,6 +142,7 @@ library:
   - ttrie
   - typerep-map
   - unagi-chan
+  - unix
   - unliftio
   - unordered-containers
   - utf8-string

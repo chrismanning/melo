@@ -43,7 +43,7 @@ import Data.List qualified as List
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Maybe
 import Data.Proxy
-import Data.Text
+import Data.Text as T
 import Data.Time.LocalTime
 import Data.Traversable
 import Data.Vector (Vector)
@@ -191,3 +191,6 @@ instance (Hashable a) => Hashable (Vector a) where
 
 makeClassyPrisms ''RSocket.Frame
 makeClassyPrisms ''RSocket.Metadata
+
+instance HasField "unpack" Text String where
+  getField text = T.unpack text

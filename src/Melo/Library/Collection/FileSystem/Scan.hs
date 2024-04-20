@@ -6,17 +6,20 @@ module Melo.Library.Collection.FileSystem.Scan
   )
 where
 
-import Control.Concurrent.Classy
+import Control.Concurrent.Chan.Unagi.Bounded
+import Control.Concurrent.Classy (modifyTVar',)
 import Control.Concurrent.STM.Map qualified as SM
 import Control.Monad.Extra
-import Control.Monad.Par.Combinator
+import Control.Monad.Par.Class hiding (fork)
 import Control.Monad.Par.IO
+import Control.Monad.Trans.Cont
 import Data.HashMap.Strict qualified as H
 import Data.Text qualified as T
 import Data.Time.LocalTime
 import Data.Typeable
 import Data.Vector qualified as V
 import Melo.Common.Exception
+import Melo.Common.FileSystem
 import Melo.Common.FileSystem.Watcher
 import Melo.Common.Logging
 import Melo.Common.Monad
@@ -35,6 +38,7 @@ import Melo.Library.Source.Types
     SourceTable (..),
   )
 import Melo.Metadata.Aggregate
+import Streaming.Prelude qualified as S
 import System.FSNotify (ThreadingMode (..))
 import System.FSNotify qualified as FS
 import System.FilePath
@@ -68,36 +72,42 @@ scanPath appData scanType ref p' =
       else $(logDebugIO) $ "Looking for files in " <> showt p
     isDir <- Dir.doesDirectoryExist p
     isFile <- Dir.doesFileExist p
-    srcs <-
-      if isDir
-        then do
-          $(logDebugIO) $ showt p <> " is directory; recursing..."
-          entries <- Dir.listDirectory p
-          dirs <- filterM Dir.doesDirectoryExist ((p </>) <$> entries)
-
-          _ <- parMapM (scanPath appData scanType ref) dirs
-
-          files <- filterM Dir.doesFileExist ((p </>) <$> entries)
-          let cuefiles = filter ((== ".cue") . takeExtension) files
-          run case cuefiles of
-            [] -> handleScanErrors files $ importTransaction files
-            [cuefile] -> do
-              $(logDebugIO) $ "Cue file found " <> showt cuefile
-              handleAny (logShow files >=> \_ -> handleScanErrors files $ importTransaction files) $
-                V.length
-                  <$> (openCueFile cuefile <&> (CueFileImportSource ref <$>) >>= importSources)
-            _ -> do
-              $(logWarnIO) $ "Multiple cue file found in " <> showt p <> "; skipping..."
-              pure 0
-        else
-          if isFile
-            then run $ handleScanErrors [p] $ importTransaction [p]
-            else pure 0
+    srcs <- do
+      (inChan, outChan) <- liftIO $ newChan 1
+      runContT'
+        (liftIO . writeChan inChan)
+        if isDir
+          then do
+            $(logDebugIO) $ showt p <> " is directory; recursing..."
+            entries <- streamDirEntriesIO p <&> S.map (\e -> e & #name %~ (p </>))
+            files <-
+              lift $
+                S.partition (\e -> e.type' == DirEntryDir) entries
+                  & S.mapM_ (\e -> lift $ spawn_ (scanPath appData scanType ref e.name))
+                  & S.map (.name)
+                  & S.toList_
+            let cuefiles = filter ((== ".cue") . takeExtension) files
+            lift $ runAppM case cuefiles of
+              [] -> handleScanErrors files $ importTransaction files
+              [cuefile] -> do
+                $(logDebugIO) $ "Cue file found " <> showt cuefile
+                handleAny (logShow files >=> \_ -> handleScanErrors files $ importTransaction files) $
+                  V.length
+                    <$> (openCueFile cuefile <&> (CueFileImportSource ref <$>) >>= importSources)
+              _ -> do
+                $(logWarnIO) $ "Multiple cue file found in " <> showt p <> "; skipping..."
+                pure 0
+          else
+            if isFile
+              then lift $ runAppM $ handleScanErrors [p] $ importTransaction [p]
+              else pure 0
+      liftIO $ readChan outChan
     $(logInfoIO) $ showt srcs <> " sources imported from path " <> showt p
     pure ()
   where
-    run :: AppM IO IO a -> ParIO a
-    run m = do
+    runContT' = flip runContT
+    runAppM :: AppM IO IO a -> ParIO a
+    runAppM m = do
       liftIO $ runReaderT' appData m
     handleScanErrors ps = handleAny (logShow ps >=> \_ -> pure 0)
     importTransaction :: [FilePath] -> AppM IO IO Int

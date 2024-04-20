@@ -9,6 +9,7 @@ import Melo.Common.Logging
 import Melo.Common.Monad
 import Melo.Common.Routing
 import Melo.Library.Collection.API qualified as CollectionAPI
+import Melo.Library.Collection.FileSystem.API qualified as FileSystemAPI
 import Melo.Library.Genre.API qualified as GenreAPI
 import Melo.Library.Source.API qualified as SourceAPI
 import Melo.Metadata.API qualified as MetadataAPI
@@ -17,6 +18,7 @@ import Network.RSocket as RSocket
 registerRoutes :: AppM IO IO ()
 registerRoutes = do
   CollectionAPI.registerRoutes
+  FileSystemAPI.registerRoutes
   GenreAPI.registerRoutes
   MetadataAPI.registerRoutes
   SourceAPI.registerRoutes

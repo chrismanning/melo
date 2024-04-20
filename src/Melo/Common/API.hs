@@ -1,5 +1,7 @@
 module Melo.Common.API where
 
+import Control.Concurrent.Class.MonadSTM.Strict.TQueue
+import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
 import Data.Aeson qualified as JSON
 import Data.ByteString.Builder
@@ -7,7 +9,7 @@ import Data.ByteString.Lazy qualified as L
 import Data.Hashable
 import Data.Text qualified as T
 import Melo.Common.Logging
-import Melo.Common.Monad
+import Melo.Common.Monad hiding (atomically)
 import Network.RSocket qualified as RSocket
 
 newtype RouteKey = RouteKey {unRouteKey :: Text}
@@ -46,11 +48,21 @@ apiStreamExceptionHandlers conn =
         conn
         ( RSocket.ErrorFrame $
             RSocket.Error (RSocket.StreamId streamId) (RSocket.errorCode RSocket.ApplicationError) (RSocket.DataPayload (JSON.encode (toErrorResponse e)))
-        )
-        -- \$(logInfoVIO ['remoteAddress, 'streamId]) "Stopping connection"
-        -- -- Add `ShutdownItem` to read queue to effectively stop the connection.
-        -- atomically do
-        --   writeTQueue conn.readQueue ShutdownItem
+        ),
+    Handler \case
+      e@(RSocket.ConnectionException code) -> do
+        let !cause = displayException e
+        let !remoteAddress = T.pack $! show conn.handle.addr
+        $(logErrorVIO ['cause, 'remoteAddress]) "Unrecoverable error in RSocket connection"
+        RSocket.writeFrame conn (RSocket.ErrorFrame $ RSocket.Error (RSocket.StreamId 0) (RSocket.errorCode code) mempty)
+        $(logWarnVIO ['remoteAddress]) "Stopping connection"
+        -- Add `ShutdownItem` to read queue to effectively stop the connection.
+        atomically do
+          writeTQueue conn.readQueue RSocket.ShutdownItem
+      e@(RSocket.NoSuchStreamException (RSocket.StreamId streamId)) -> do
+        let !cause = displayException e
+        let !remoteAddress = T.pack $! show conn.handle.addr
+        $(logErrorVIO ['cause, 'remoteAddress, 'streamId]) "Request received for unknown RSocket stream"
   ]
   where
     toErrorResponse :: SomeException -> ErrorResponse

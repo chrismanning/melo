@@ -17,6 +17,18 @@ import Melo.Library.Source.Types
 import Rel8 qualified
 import Streaming.Prelude qualified as S
 
+registerRoutes :: AppM IO IO ()
+registerRoutes = do
+  registerRoute (RouteKey "addCollection") (jsonRqJsonRsRoute addCollection)
+  registerRoute (RouteKey "deleteAllCollections") (nullRqJsonRsRoute deleteAllCollections)
+  registerRoute (RouteKey "deleteCollection") (jsonRqFnfRoute \CollectionRefWrapper {id} -> void $ deleteCollection id)
+  registerRoute (RouteKey "getAllCollections") (nullRqJsonRsRoute (getAll @CollectionEntity))
+  registerRoute (RouteKey "getCollection") (jsonRqJsonRsRoute \CollectionRefWrapper {id} -> getSingle @CollectionEntity id)
+  registerRoute (RouteKey "getCollectionStatistics") (jsonRqJsonRsRoute getCollectionStatistics)
+  registerRoute (RouteKey "scanCollection") (jsonRqFnfRoute scanCollection)
+  registerRoute (RouteKey "updateCollection") (jsonRqFnfRoute \UpdateCollection {id, updates} -> updateCollection id updates)
+  pure ()
+
 newtype CollectionRefWrapper = CollectionRefWrapper
   { id :: CollectionRef
   }
@@ -62,15 +74,3 @@ data UpdateCollection = UpdateCollection
   }
   deriving (Generic)
   deriving (FromJSON, ToJSON) via CustomJSON JSONOptions UpdateCollection
-
-registerRoutes :: AppM IO IO ()
-registerRoutes = do
-  registerRoute (RouteKey "addCollection") (jsonRqJsonRsRoute addCollection)
-  registerRoute (RouteKey "deleteAllCollections") (nullRqJsonRsRoute deleteAllCollections)
-  registerRoute (RouteKey "deleteCollection") (jsonRqFnfRoute \CollectionRefWrapper {id} -> void $ deleteCollection id)
-  registerRoute (RouteKey "getAllCollections") (nullRqJsonRsRoute (getAll @CollectionEntity))
-  registerRoute (RouteKey "getCollection") (jsonRqJsonRsRoute \CollectionRefWrapper {id} -> getSingle @CollectionEntity id)
-  registerRoute (RouteKey "getCollectionStatistics") (jsonRqJsonRsRoute getCollectionStatistics)
-  registerRoute (RouteKey "scanCollection") (jsonRqFnfRoute scanCollection)
-  registerRoute (RouteKey "updateCollection") (jsonRqFnfRoute \UpdateCollection {id, updates} -> updateCollection id updates)
-  pure ()

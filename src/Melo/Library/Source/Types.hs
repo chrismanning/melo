@@ -27,7 +27,7 @@ import Data.Time.Clock (NominalDiffTime ())
 import Data.Time.Format
 import Data.Time.Format.ISO8601
 import Data.Time.LocalTime
-import Data.UUID
+import Data.UUID hiding (null)
 import Data.UUID.V4
 import Data.Vector qualified as V
 import GHC.Generics hiding (from, to)
@@ -444,6 +444,7 @@ instance From SourceRef UUID where
 data Source = Source
   { ref :: SourceRef,
     metadata :: Maybe Metadata,
+    mappedTags :: MappedTags,
     source :: URI,
     kind :: MetadataFileId,
     multiTrack :: Maybe MultiTrackDesc,
@@ -455,27 +456,28 @@ data Source = Source
   deriving (TextShow) via FromGeneric Source
   deriving (ToJSON) via CustomJSON JSONOptions Source
 
-instance TryFrom SourceEntity Source where
-  tryFrom s = maybeToRight (TryFromException s Nothing) do
-    uri <- parseURI $ T.unpack s.source_uri
-    pure
-      Source
-        { ref = s.id,
-          multiTrack,
-          source = uri,
-          kind = MetadataFileId s.kind,
-          collectionRef = s.collection_id,
-          cover,
-          length = s.time_range >>= rangeLength,
-          metadata = metadataFromEntity s
-        }
-    where
-      multiTrack = case (s.idx, s.time_range) of
-        (idx, Just timeRange) | idx > -1 -> Just MultiTrackDesc {idx, range = from timeRange}
-        _ -> Nothing
-      cover = case s.cover of
-        Just cover -> Just $ Image {fileName = Nothing, imageType = (Just cover)}
-        Nothing -> Nothing
+sourceFromEntity :: H.HashMap Text Mapping.TagMapping -> SourceEntity -> Either (TryFromException SourceEntity Source) Source
+sourceFromEntity trackMappings s = maybeToRight (TryFromException s Nothing) do
+  uri <- parseURI $ T.unpack s.source_uri
+  pure
+    Source
+      { ref = s.id,
+        multiTrack,
+        source = uri,
+        kind = MetadataFileId s.kind,
+        collectionRef = s.collection_id,
+        cover,
+        length = s.time_range >>= rangeLength,
+        metadata = metadataFromEntity s,
+        mappedTags = extractMappedTags trackMappings s
+      }
+  where
+    multiTrack = case (s.idx, s.time_range) of
+      (idx, Just timeRange) | idx > -1 -> Just MultiTrackDesc {idx, range = from timeRange}
+      _ -> Nothing
+    cover = case s.cover of
+      Just cover -> Just $ Image {fileName = Nothing, imageType = (Just cover)}
+      Nothing -> Nothing
 
 metadataFromEntity :: SourceEntity -> Maybe Metadata
 metadataFromEntity s =
@@ -483,6 +485,18 @@ metadataFromEntity s =
       tags' = Tags $ tags <&> (\p -> (p.key, p.value))
       mid = MetadataId s.metadata_format
    in mfilter (\m -> m.formatId /= nullMetadata) $ mkCueMetadata mid tags' <|> mkMetadata mid tags'
+
+extractMappedTags :: H.HashMap Text Mapping.TagMapping -> SourceEntity -> MappedTags
+extractMappedTags mappings e = case tryInto @Metadata e of
+  Left _ -> V.empty
+  Right metadata ->
+    V.fromList $
+      filter (not . null . (.values)) $
+        mappings ^@.. itraversed <&> \(name, mapping) ->
+          MappedTag
+            { mappingName = name,
+              values = metadata.tag mapping
+            }
 
 instance TryFrom SourceEntity Metadata where
   tryFrom e = maybeToRight (TryFromException e Nothing) (metadataFromEntity e)

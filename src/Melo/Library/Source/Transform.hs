@@ -840,7 +840,7 @@ moveSourceWithPattern collectionRef pats src@Source {ref, source} =
               void $ removeEmptyDirectories (takeDirectory srcPath)
               let movedSrc = src & #source .~ fileUri destPath
               Repo.updateSingle @SourceEntity (from movedSrc) >>= \case
-                Just updatedSrc -> pure $ first ConversionError $ tryFrom updatedSrc
+                Just updatedSrc -> pure $ first ConversionError $ sourceFromEntity mempty updatedSrc
                 Nothing -> pure $ Left SourceUpdateError
         Nothing -> pure $ Left PatternError
     Nothing -> pure $ Left SourcePathError

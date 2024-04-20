@@ -65,7 +65,7 @@ instance SourceAggregate (AppM IO IO) where
         >>= insert @SourceEntity
     srcs <-
       S.each srcs
-        & S.map (tryInto @Source)
+        & S.map (sourceFromEntity mempty)
         & S.partitionEithers
         & S.mapM_
           ( \(TryFromException src e) -> do
@@ -119,7 +119,7 @@ instance SourceAggregate (AppM IO IO) where
       updateDB :: AppM IO IO Source
       updateDB =
         updateSingle @SourceEntity (from s) >>= \case
-          Just s' -> throwOnLeft $ first (UpdateSourceError . Just . SomeException) $ tryFrom s'
+          Just s' -> throwOnLeft $ first (UpdateSourceError . Just . SomeException) $ sourceFromEntity mempty s'
           Nothing -> throwM $ UpdateSourceError Nothing
 
 transformImportSource :: (MetadataAggregate m) => NewImportSource -> m (Maybe MetadataImportSource)
@@ -148,12 +148,12 @@ transformImportSource s = do
     getPictures (FileSource _ mf) = mf.pictures
 
 getAllSources :: (SourceRepository m) => m (Vector Source)
-getAllSources = rights <$> fmap tryFrom <$> Repo.getAll @SourceEntity
+getAllSources = rights <$> fmap (sourceFromEntity mempty) <$> Repo.getAll @SourceEntity
 
 getSource :: (SourceRepository m) => SourceRef -> m (Maybe Source)
 getSource key = do
   srcs <- Repo.getByKey @SourceEntity (pure key)
-  pure $ firstOf traverse $ rights $ tryFrom <$> srcs
+  pure $ firstOf traverse $ rights $ sourceFromEntity mempty <$> srcs
 
 getSourcesByUriPrefix ::
   (SourceRepository m) =>
@@ -161,7 +161,7 @@ getSourcesByUriPrefix ::
   m (Vector Source)
 getSourcesByUriPrefix prefix = do
   srcs <- getByUriPrefix prefix
-  pure (rights $ fmap tryFrom srcs)
+  pure (rights $ fmap (sourceFromEntity mempty) srcs)
 
 length' :: (Foldable f, Num a) => f b -> a
 length' = foldl' (const . (+ 1)) 0

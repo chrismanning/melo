@@ -20,7 +20,7 @@ CREATE SCHEMA melo;
 -- Name: numeric; Type: COLLATION; Schema: melo; Owner: -
 --
 
-CREATE COLLATION melo."numeric" (provider = icu, locale = 'en@colNumeric=yes');
+CREATE COLLATION melo."numeric" (provider = icu, locale = 'en-u-kn');
 
 
 --
@@ -326,6 +326,14 @@ ALTER TABLE ONLY melo.genre
 
 ALTER TABLE ONLY melo.genre
     ADD CONSTRAINT genre_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: genre_parent parent_genre_id_parent_u; Type: CONSTRAINT; Schema: melo; Owner: -
+--
+
+ALTER TABLE ONLY melo.genre_parent
+    ADD CONSTRAINT parent_genre_id_parent_u UNIQUE (genre_id, parent_genre);
 
 
 --

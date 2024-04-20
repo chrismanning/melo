@@ -3,7 +3,7 @@ module Melo.App where
 import Colog.Core qualified as Colog
 import Configuration.Dotenv qualified as Dotenv
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Exception.Safe (catch)
+import Control.Exception.Safe (IOException, catch)
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow as E (Exception (..), Handler (..))
 import Data.Pool
@@ -65,15 +65,19 @@ app = runAppM do
             exitFailure
         )
     let !addr = SockAddrInet (fromIntegral env.server.port.unwrap) 0
-    replicateM_ 3 do
-      RSocket.runServer
-        addr
-        RSocket.Config
-          { logger,
-            onConnection = onConnection . eraseConnection,
-            customiseTransport,
-            exceptionHandlers
-          }
+    catch
+      do
+        forever do
+          RSocket.runServer addr
+            RSocket.Config
+              { logger,
+                onConnection = onConnection . eraseConnection,
+                customiseTransport,
+                exceptionHandlers
+              }
+      \(SomeException e) -> do
+        let cause = displayException e
+        $(logErrorVIO ['cause]) "RSocket error"
   where
     logger = Colog.LogAction (\(Colog.WithSeverity msg sev) -> Logging.log (Namespace ["Melo", "App", "RSocket"]) (mapSeverity sev) (T.pack msg))
     customiseTransport :: RSocket.Customiser TCP (AppM IO IO)
@@ -82,6 +86,11 @@ app = runAppM do
     exceptionHandlers :: [E.Handler (AppM IO IO) Bool]
     exceptionHandlers =
       [ E.Handler
+          \(e :: IOException) -> do
+            let cause = displayException e
+            $(logErrorVIO ['cause]) "Fatal server error"
+            throw e,
+        E.Handler
           \(SomeException e) -> do
             let cause = displayException e
             $(logErrorVIO ['cause]) "Server error"

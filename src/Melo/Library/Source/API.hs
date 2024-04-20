@@ -16,7 +16,6 @@ import Data.Aeson qualified as JSON
 import Data.ByteString.Lazy qualified as L
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as T
-import Data.Vector qualified as V
 import Melo.Common.API
 import Melo.Common.Exception qualified as E
 import Melo.Common.Logging
@@ -25,6 +24,7 @@ import Melo.Common.Routing
 import Melo.Common.Tracing
 import Melo.Common.Uri
 import Melo.Database.Repo.IO (selectStream)
+import Melo.Database.Repo qualified as Repo
 import Melo.Format qualified as F
 import Melo.Library.Collection.Types qualified as Ty
 import Melo.Library.Release.Repo
@@ -43,8 +43,10 @@ import Network.RSocket qualified as RSocket
 import Rel8 ((&&.), (==.))
 import Rel8 qualified
 import Streaming qualified as S
+import Streaming.ByteString qualified as SB
 import Streaming.Prelude qualified as S
 import System.FilePath as P
+import System.IO
 
 registerRoutes :: AppM IO IO ()
 registerRoutes = do
@@ -52,6 +54,8 @@ registerRoutes = do
   registerRoute (RouteKey "getSources") (jsonRqJsonStreamRoute streamSourceGroups)
   registerRoute (RouteKey "previewTransformSources") (jsonRqJsonStreamRoute previewTransformSources)
   registerRoute (RouteKey "transformSources") (jsonRqJsonStreamRoute transformSources)
+  registerRoute (RouteKey "searchForCovers") (jsonRqJsonRsRoute (fmap (fmap (into @ImageSearchResult)) . Covers.searchForCovers))
+  registerRoute (RouteKey "downloadSource") (jsonRqRawStreamRoute downloadSource)
   pure ()
 
 -- TODO API getting specific (mapped) tags for source(s)
@@ -144,7 +148,7 @@ transformSourcesImpl transformer preview req = selectStream (sourcesByKeys req.s
         else $(logDebug) $ "Transforming source " <> showt s.id <> " with " <> showt req.transformations
       E.catchAny
         do
-          s' <- E.throwOnLeft (tryFrom s)
+          s' <- E.throwOnLeft (Ty.sourceFromEntity mempty s)
           transformer req.transformations s' >>= E.throwOnLeft <&> UpdatedSource
         \(SomeException e) -> do
           let cause = displayException e
@@ -155,7 +159,8 @@ transformSourcesImpl transformer preview req = selectStream (sourcesByKeys req.s
 data StreamSourceGroups = StreamSourceGroups
   { collectionId :: Ty.CollectionRef,
     groupByMappings :: Vector Text,
-    groupFilter :: Maybe SourceGroupFilter
+    groupFilter :: Maybe SourceGroupFilter,
+    trackMappings :: Maybe (Vector Text)
   }
   deriving (Generic)
   deriving (FromJSON, ToJSON) via CustomJSON JSONOptions StreamSourceGroups
@@ -163,12 +168,15 @@ data StreamSourceGroups = StreamSourceGroups
 streamSourceGroups :: StreamSourceGroups -> ContT () (AppM IO IO) (S.Stream (S.Of Ty.SourceGroup) (AppM IO IO) ())
 streamSourceGroups rq = do
   groupByMappings <- lift $ getMappingsNamed rq.groupByMappings
+  trackMappings <- case rq.trackMappings of
+    Just trackMappings -> lift $ getMappingsNamed trackMappings
+    _ -> pure mempty
   stream <- selectStream sources
   pure
     do
       stream
         & groupSources groupByMappings
-        & S.mapped mkSrcGrp
+        & S.mapped (mkSrcGrp trackMappings)
   where
     sources = do
       srcs <- orderByUri $ Rel8.each sourceSchema
@@ -185,18 +193,18 @@ streamSourceGroups rq = do
                 &&. Rel8.isNull releases.musicbrainz_group_id
             )
       pure srcs
-    mkSrcGrp :: forall x. S.Stream (S.Of (Ty.SourceEntity, Ty.MappedTags)) (AppM IO IO) x -> AppM IO IO (S.Of Ty.SourceGroup x)
-    mkSrcGrp ss = do
+    mkSrcGrp :: forall x. TagMappingIndex -> S.Stream (S.Of (Ty.SourceEntity, Ty.MappedTags)) (AppM IO IO) x -> AppM IO IO (S.Of Ty.SourceGroup x)
+    mkSrcGrp trackMappings ss = do
       S.next ss >>= \case
         Left x -> do
           let !msg = "Source group cannot be empty"
           $(logErrorIO) msg
           error (from msg)
         Right ((firstSourceEntity, groupTags), rest) -> do
-          firstSource <- E.throwOnLeft (tryFrom firstSourceEntity)
+          firstSource <- E.throwOnLeft (Ty.sourceFromEntity trackMappings firstSourceEntity)
           let !groupParentUri = getParentUri (showt firstSource.source)
           coverImage <- getCoverImage firstSource
-          let (!all :: S.Stream (S.Of Ty.Source) (AppM IO IO) x) = S.cons firstSource $! S.mapM (E.throwOnLeft . tryFrom . fst) rest
+          let (!all :: S.Stream (S.Of Ty.Source) (AppM IO IO) x) = S.cons firstSource $! S.mapM (E.throwOnLeft . Ty.sourceFromEntity trackMappings . fst) rest
           sources' <- Fold.impurely S.foldM Fold.vectorM all
           pure $ sources' & S.mapOf \sources -> Ty.SourceGroup {groupTags, sources, groupParentUri, coverImage}
     getCoverImage :: Ty.Source -> AppM IO IO (Maybe Ty.Image)
@@ -220,22 +228,10 @@ groupSources groupByMappings s =
   s
     & S.mapM
       ( \e -> do
-          let !mappings = force $ extractMappedTags groupByMappings e
+          let !mappings = force $ Ty.extractMappedTags groupByMappings e
           pure (e, mappings)
       )
     & S.groupBy (\(_, a) (_, b) -> a == b)
-  where
-    extractMappedTags :: TagMappingIndex -> Ty.SourceEntity -> Ty.MappedTags
-    extractMappedTags mappings e = case tryFrom @_ @F.Metadata e of
-      Left _ -> V.empty
-      Right metadata ->
-        V.fromList $
-          filter (not . null . (.values)) $
-            mappings ^@.. itraversed <&> \(name, mapping) ->
-              Ty.MappedTag
-                { mappingName = name,
-                  values = metadata.tag mapping
-                }
 
 data SourceGroupFilter = AllSourceGroups | Orphaned
   deriving (Generic)
@@ -299,3 +295,26 @@ getCoverImage DownloadCover {..} streamId =
                   Right mf -> do
                     let coverKey = fromMaybe F.FrontCover (src.cover ^? _Just . #imageType . _Just . coerced)
                     pure $ Left <$> lookup coverKey mf.pictures
+
+newtype SourceRefWrapper = SourceRefWrapper
+  { id :: Ty.SourceRef
+  }
+  deriving (Generic)
+  deriving (FromJSON, ToJSON) via CustomJSON JSONOptions SourceRefWrapper
+
+downloadSource :: SourceRefWrapper -> RSocket.StreamId -> ContT () (AppM IO IO) (S.Stream (S.Of RSocket.Payload) (AppM IO IO) ())
+downloadSource ref streamId =
+  Repo.getSingle @Ty.SourceEntity ref.id >>= \case
+    Just src -> do
+      case parseURI (src.source_uri.unpack) >>= uriToFilePath of
+        Just path -> do
+          h <- liftIO $ openBinaryFile path ReadMode
+          ContT \f -> f () `E.finally` liftIO (hClose h)
+          pure $
+            SB.toChunks (SB.hGetContents h)
+            & S.map (\bs -> buildStreamPayload (RawPayload (L.fromStrict bs)) (RSocket.CompositeMetadata []) streamId)
+        Nothing -> throwIO UnsupportedSourceUri
+    Nothing -> throwIO SourceNotFound
+
+data DownloadSourceException = UnsupportedSourceUri | SourceNotFound
+  deriving (Show, Exception)
