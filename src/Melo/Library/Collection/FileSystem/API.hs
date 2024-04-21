@@ -1,15 +1,11 @@
 module Melo.Library.Collection.FileSystem.API where
 
-import Control.Foldl qualified as F
 import Control.Lens.At ()
 import Control.Monad.Trans.Cont
 import Data.List qualified as List
-import Data.Pool
 import Data.Text qualified as T
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
-import Data.Vector qualified as V
-import Hasql.Session qualified as Hasql
 import Melo.Common.API
 import Melo.Common.Exception
 import Melo.Common.FileSystem
@@ -18,8 +14,6 @@ import Melo.Common.Routing
 import Melo.Common.Uri
 import Melo.Database.Repo as Repo
 import Melo.Database.Repo.IO
-import Melo.Library.Collection.Aggregate
-import Melo.Library.Collection.Repo hiding (orderByUri)
 import Melo.Library.Collection.Types
 import Melo.Library.Source.Repo
 import Melo.Library.Source.Types
@@ -29,7 +23,6 @@ import Streaming qualified as S
 import Streaming.Prelude qualified as S
 import System.FilePath
 import System.Posix.Files
-import UnliftIO.Directory qualified as Dir
 
 registerRoutes :: AppM IO IO ()
 registerRoutes = do
@@ -50,10 +43,12 @@ data FileSystemEntry = FileSystemEntry
   }
   deriving (Generic)
   deriving (FromJSON, ToJSON) via CustomJSON JSONOptions FileSystemEntry
+  deriving (TextShow) via FromGeneric FileSystemEntry
 
 data EntryType = Directory | File
-  deriving (Generic)
+  deriving (Generic, Eq)
   deriving (FromJSON, ToJSON) via CustomJSON JSONOptions EntryType
+  deriving (TextShow) via FromGeneric EntryType
 
 instance From DirEntryType EntryType where
   from DirEntryDir = Directory
@@ -89,7 +84,13 @@ listEntries req =
                           else Nothing
                 pure $! FileSystemEntry (T.pack p) (posixSecondsToUTCTime mtime) <$!> t
                 )
+              & dirsFirst
     _ -> throwIO CollectionNotFound
+  where
+    dirsFirst :: S.Stream (S.Of FileSystemEntry) (AppM IO IO) () -> S.Stream (S.Of FileSystemEntry) (AppM IO IO) ()
+    dirsFirst es = do
+      files <- S.toList_ $ S.partition (\e -> e.type_ == File) es
+      S.each files
 
 data FileSystemException =
     CollectionNotFound
