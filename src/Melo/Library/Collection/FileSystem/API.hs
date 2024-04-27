@@ -58,7 +58,7 @@ listEntries :: ListEntries -> ContT () (AppM IO IO) (S.Stream (S.Of FileSystemEn
 listEntries req =
   getSingle @CollectionEntity req.collectionId >>= \case
     Just collection | collection.root_uri `T.isPrefixOf` showt req.parent ->
-      case dropTrailingPathSeparator <$!> uriToFilePath req.parent of
+      case addTrailingPathSeparator <$!> uriToFilePath req.parent of
         Nothing -> throwIO FileSystemNotBrowsable
         Just parent ->
           do
@@ -66,11 +66,11 @@ listEntries req =
               selectStream do
                 srcs <- orderByUri $ Rel8.each sourceSchema
                 Rel8.where_ do
-                  srcs.collection_id ==. Rel8.lit req.collectionId &&. srcs.source_uri `startsWith` Rel8.lit (showt req.parent)
+                  srcs.collection_id ==. Rel8.lit req.collectionId &&. srcs.source_uri `startsWith` Rel8.lit (T.pack $! addTrailingPathSeparator $! show req.parent)
                 pure srcs.source_uri
             pure $! uris
               & S.mapMaybe (\uri ->
-                parseURI uri.unpack >>= uriToFilePath >>= List.stripPrefix parent
+                parseURI uri.unpack >>= uriToFilePath >>= List.stripPrefix (dropTrailingPathSeparator parent)
                 )
               & S.mapMaybe (\p -> splitDirectories p ^? ix 1)
               & S.nubOrd
