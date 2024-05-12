@@ -53,7 +53,7 @@ extra-deps:
       - sdk
       - utils/exceptions
   - git: git@github.com:chrismanning/rsocket-hs.git
-    commit: 8c592d683de48c4cb510c55a589d752d10b7bd65
+    commit: 278bbee70d34e8ef9fde44cba0671c35364e1df8
     subdirs:
       - rsocket
       - rsocket-transport-tcp
